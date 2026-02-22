@@ -7,6 +7,7 @@ import {
   appendMessage,
   getRecentMessages,
 } from "../db/models/conversation.js";
+import { getNextProactiveAt, setNextProactiveAt } from "../db/models/scheduler-state.js";
 import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
 import type { PlatformAdapter } from "../platform/types.js";
@@ -44,6 +45,12 @@ function scheduleNext(chatId: string, delayMs?: number): void {
   if (existing) clearTimeout(existing);
 
   const delay = delayMs ?? randomBetween(MIN_INTERVAL, MAX_INTERVAL);
+  const nextAt = new Date(Date.now() + delay);
+
+  // Persist so we survive restarts
+  setNextProactiveAt(chatId, nextAt).catch((error) => {
+    logger.error({ error, chatId }, "Failed to persist scheduler state");
+  });
 
   const timeout = setTimeout(() => {
     timers.delete(chatId);
@@ -102,6 +109,13 @@ async function generateProactiveMessage(chatId: string, adapter: PlatformAdapter
     assembleProactiveSystemPrompt(),
     assembleMessages(chatId),
   ]);
+
+  // API requires conversation to end with a user message.
+  // For proactive messages there's no real user input, so we add a
+  // synthetic nudge that the system prompt will override.
+  if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
+    messages.push({ role: "user", content: "[Time has passed. Text him if you feel like it.]" });
+  }
 
   const toolContext: ToolContext = { chatId, adapter };
 
@@ -185,16 +199,29 @@ export function startProactiveScheduler(adapter: PlatformAdapter): () => void {
   for (const userId of config.ALLOWED_USER_IDS) {
     const chatId = String(userId);
 
-    // Check last message to determine initial delay
-    getRecentMessages(chatId, 1)
-      .then((recent) => {
+    // Restore persisted timer, falling back to last-message heuristic
+    getNextProactiveAt(chatId)
+      .then(async (savedAt) => {
+        if (savedAt) {
+          const remaining = savedAt.getTime() - Date.now();
+          if (remaining > 0) {
+            // Timer hasn't expired yet — resume exactly where we left off
+            scheduleNext(chatId, remaining);
+            return;
+          }
+          // Timer expired while we were down — fire soon but not instantly
+          scheduleNext(chatId, randomBetween(STARTUP_MIN, STARTUP_MAX));
+          return;
+        }
+
+        // No saved state — fall back to last message heuristic
+        const recent = await getRecentMessages(chatId, 1);
         let delay: number;
         if (recent.length === 0) {
           delay = randomBetween(STARTUP_MIN, STARTUP_MAX);
         } else {
           const elapsed = Date.now() - recent[0].timestamp.getTime();
           const remaining = randomBetween(MIN_INTERVAL, MAX_INTERVAL) - elapsed;
-          // If interval already passed, use startup delay to avoid immediate send
           delay = remaining > 0 ? remaining : randomBetween(STARTUP_MIN, STARTUP_MAX);
         }
         scheduleNext(chatId, delay);
