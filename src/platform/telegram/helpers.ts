@@ -1,7 +1,7 @@
 import type { TelegramAdapter } from "./adapter.js";
 
 export function escapeMarkdown(text: string): string {
-  return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, "\\$1");
+  return text.replace(/([_*[\]()~`>#+\-=|{}.!])/g, "\\$1");
 }
 
 export async function sendPhotoWithCache(

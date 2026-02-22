@@ -19,9 +19,7 @@ export class TelegramAdapter implements PlatformAdapter {
       userName: msg.from.first_name || "Unknown",
       text: msg.text,
       timestamp: new Date(msg.date * 1000),
-      replyToMessageId: msg.reply_to_message
-        ? String(msg.reply_to_message.message_id)
-        : undefined,
+      replyToMessageId: msg.reply_to_message ? String(msg.reply_to_message.message_id) : undefined,
     };
   }
 
@@ -36,9 +34,7 @@ export class TelegramAdapter implements PlatformAdapter {
     photo: { path?: string; fileId?: string },
     caption?: string,
   ): Promise<string | undefined> {
-    const input = photo.fileId
-      ? photo.fileId
-      : new InputFile(photo.path!);
+    const input = photo.fileId ? photo.fileId : new InputFile(photo.path!);
 
     const sent = await this.bot.api.sendPhoto(Number(chatId), input, {
       caption,

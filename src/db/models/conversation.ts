@@ -48,10 +48,7 @@ const conversationSchema = new Schema<IConversation>(
 
 conversationSchema.index({ chatId: 1, updatedAt: -1 });
 
-export const Conversation = mongoose.model<IConversation>(
-  "Conversation",
-  conversationSchema,
-);
+export const Conversation = mongoose.model<IConversation>("Conversation", conversationSchema);
 
 export async function getOrCreateConversation(
   chatId: string,
@@ -78,18 +75,12 @@ export async function getOrCreateConversation(
   return convo;
 }
 
-export async function appendMessage(
-  convo: IConversation,
-  message: IMessage,
-): Promise<void> {
+export async function appendMessage(convo: IConversation, message: IMessage): Promise<void> {
   convo.messages.push(message);
   await convo.save();
 }
 
-export async function getRecentMessages(
-  chatId: string,
-  limit = 40,
-): Promise<IMessage[]> {
+export async function getRecentMessages(chatId: string, limit = 40): Promise<IMessage[]> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -131,10 +122,7 @@ export async function getOverflowMessages(
   };
 }
 
-export async function trimConversation(
-  conversationId: string,
-  keep = 40,
-): Promise<void> {
+export async function trimConversation(conversationId: string, keep = 40): Promise<void> {
   const convo = await Conversation.findById(conversationId);
   if (!convo) return;
 

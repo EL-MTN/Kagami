@@ -54,10 +54,7 @@ export function createBot(token: string): Bot {
       return;
     }
 
-    logger.info(
-      { userId: incoming.userId, text: incoming.text.slice(0, 50) },
-      "Incoming message",
-    );
+    logger.info({ userId: incoming.userId, text: incoming.text.slice(0, 50) }, "Incoming message");
 
     try {
       await ctx.replyWithChatAction("typing");

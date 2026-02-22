@@ -22,9 +22,5 @@ export interface PlatformAdapter {
     photo: { path?: string; fileId?: string },
     caption?: string,
   ): Promise<string | undefined>; // returns file_id if available
-  sendPhotoBuffer(
-    chatId: string,
-    buffer: Buffer,
-    caption?: string,
-  ): Promise<string | undefined>;
+  sendPhotoBuffer(chatId: string, buffer: Buffer, caption?: string): Promise<string | undefined>;
 }

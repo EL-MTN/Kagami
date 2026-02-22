@@ -10,7 +10,7 @@ import type { ImageGenerationRequest, GeneratedImage } from "./types.js";
 const ai = new GoogleGenAI({ apiKey: config.GEMINI_API_KEY });
 const MODEL = "gemini-3-pro-image-preview";
 
-let referenceParts: Part[] = [];
+const referenceParts: Part[] = [];
 
 export function loadReferenceImages() {
   const refDir = path.join(config.MEDIA_PATH, "references");
@@ -34,10 +34,7 @@ export function loadReferenceImages() {
     const data = fs.readFileSync(filePath);
     const bytes = data.length;
     const ext = path.extname(file).toLowerCase();
-    const mimeType =
-      ext === ".png" ? "image/png" :
-      ext === ".webp" ? "image/webp" :
-      "image/jpeg";
+    const mimeType = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
 
     referenceParts.push({
       inlineData: {
@@ -56,9 +53,7 @@ function hashPrompt(prompt: string): string {
   return crypto.createHash("sha256").update(prompt).digest("hex");
 }
 
-export async function generateImage(
-  request: ImageGenerationRequest,
-): Promise<GeneratedImage> {
+export async function generateImage(request: ImageGenerationRequest): Promise<GeneratedImage> {
   const promptHash = hashPrompt(request.prompt);
 
   // Check cache first

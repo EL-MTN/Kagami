@@ -73,9 +73,7 @@ export async function assembleProactiveSystemPrompt(): Promise<string> {
   return parts.join("\n\n---\n\n");
 }
 
-export async function assembleMessages(
-  chatId: string,
-): Promise<CoreMessage[]> {
+export async function assembleMessages(chatId: string): Promise<CoreMessage[]> {
   // History already includes the current message (saved before this call)
   const history = await getRecentMessages(chatId, 40);
 
@@ -111,7 +109,11 @@ export async function assembleMessages(
           content: msg.toolCalls.map((tc, i) => {
             let result: unknown = "done";
             if (tc.result) {
-              try { result = JSON.parse(tc.result); } catch { result = tc.result; }
+              try {
+                result = JSON.parse(tc.result);
+              } catch {
+                result = tc.result;
+              }
             }
             return {
               type: "tool-result" as const,

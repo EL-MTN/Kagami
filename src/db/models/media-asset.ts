@@ -20,7 +20,4 @@ const mediaAssetSchema = new Schema<IMediaAsset>({
 
 mediaAssetSchema.index({ promptHash: 1 });
 
-export const MediaAsset = mongoose.model<IMediaAsset>(
-  "MediaAsset",
-  mediaAssetSchema,
-);
+export const MediaAsset = mongoose.model<IMediaAsset>("MediaAsset", mediaAssetSchema);

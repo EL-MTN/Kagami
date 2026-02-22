@@ -20,12 +20,8 @@ const envSchema = z.object({
   VAULT_PATH: z.string().default("./vault"),
   MEDIA_PATH: z.string().default("./media"),
 
-  LOG_LEVEL: z
-    .enum(["fatal", "error", "warn", "info", "debug", "trace"])
-    .default("info"),
-  NODE_ENV: z
-    .enum(["development", "production", "test"])
-    .default("development"),
+  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 });
 
 const parsed = envSchema.safeParse(process.env);

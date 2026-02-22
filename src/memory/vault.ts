@@ -33,10 +33,7 @@ export async function writeVaultFile(
   logger.debug({ path: filePath }, "Wrote vault file");
 }
 
-export async function appendToVaultFile(
-  filePath: string,
-  content: string,
-): Promise<void> {
+export async function appendToVaultFile(filePath: string, content: string): Promise<void> {
   const existing = await readVaultFile(filePath);
   if (existing) {
     // Line-level dedup: only add lines that aren't already present
@@ -47,17 +44,15 @@ export async function appendToVaultFile(
         .filter(Boolean),
     );
 
-    const newLines = content
-      .split("\n")
-      .filter((line) => {
-        const normalized = line.trim().toLowerCase();
-        if (!normalized) return true; // keep blank lines for formatting
-        if (normalized.startsWith("#")) {
-          // Keep headers only if they don't already exist
-          return !existingLines.has(normalized);
-        }
+    const newLines = content.split("\n").filter((line) => {
+      const normalized = line.trim().toLowerCase();
+      if (!normalized) return true; // keep blank lines for formatting
+      if (normalized.startsWith("#")) {
+        // Keep headers only if they don't already exist
         return !existingLines.has(normalized);
-      });
+      }
+      return !existingLines.has(normalized);
+    });
 
     if (newLines.every((l) => !l.trim())) {
       logger.debug({ path: filePath }, "appendToVaultFile: nothing new to add");

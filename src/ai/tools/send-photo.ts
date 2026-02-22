@@ -23,10 +23,7 @@ export function createSendPhotoTool(chatId: string, adapter: PlatformAdapter) {
         .describe(
           "Vivid scene description for the photo, e.g. 'selfie at a cozy coffee shop, warm lighting, wearing a cream sweater, latte in hand'",
         ),
-      caption: z
-        .string()
-        .optional()
-        .describe("Caption to send with the photo"),
+      caption: z.string().optional().describe("Caption to send with the photo"),
       aspectRatio: z
         .enum(["1:1", "3:4", "4:3", "9:16", "16:9"])
         .optional()
@@ -34,13 +31,13 @@ export function createSendPhotoTool(chatId: string, adapter: PlatformAdapter) {
     }),
     execute: async ({ description, caption, aspectRatio }) => {
       const prompt = buildImagePrompt(description);
-      const promptHash = crypto
-        .createHash("sha256")
-        .update(prompt)
-        .digest("hex");
+      const promptHash = crypto.createHash("sha256").update(prompt).digest("hex");
 
       // Check if we have a cached Telegram file_id for this exact prompt
-      const cached = await MediaAsset.findOne({ promptHash, telegramFileId: { $exists: true, $ne: null } });
+      const cached = await MediaAsset.findOne({
+        promptHash,
+        telegramFileId: { $exists: true, $ne: null },
+      });
       if (cached?.telegramFileId) {
         logger.debug({ promptHash }, "Sending cached photo via file_id");
         await adapter.sendPhoto(chatId, { fileId: cached.telegramFileId }, caption);

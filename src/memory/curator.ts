@@ -17,9 +17,7 @@ export async function curateIfNeeded(chatId: string): Promise<void> {
   );
 
   // Format overflow as transcript
-  const transcript = overflow.overflow
-    .map((m) => `${m.role}: ${m.content}`)
-    .join("\n");
+  const transcript = overflow.overflow.map((m) => `${m.role}: ${m.content}`).join("\n");
 
   // Summarize overflow
   const result = await generateText({
@@ -80,7 +78,8 @@ async function updateUserFacts(summary: string): Promise<void> {
   });
 
   if (result.text.trim() !== "NONE" && result.text.trim().length > 5) {
-    const updated = aboutYou.content + "\n\n## Updated " + format(new Date(), "yyyy-MM-dd") + "\n" + result.text;
+    const updated =
+      aboutYou.content + "\n\n## Updated " + format(new Date(), "yyyy-MM-dd") + "\n" + result.text;
     await writeVaultFile("memories/about-you.md", updated, aboutYou.frontmatter);
     logger.info("Updated about-you.md with new facts");
   }
@@ -124,11 +123,10 @@ async function weeklyDeepCuration(oldFiles: string[]): Promise<void> {
   });
 
   const weekOf = format(subDays(new Date(), 7), "yyyy-MM-dd");
-  await writeVaultFile(
-    `memories/conversations/week-of-${weekOf}.md`,
-    result.text,
-    { type: "weekly-summary", weekOf },
-  );
+  await writeVaultFile(`memories/conversations/week-of-${weekOf}.md`, result.text, {
+    type: "weekly-summary",
+    weekOf,
+  });
 
   logger.info({ weekOf, mergedFiles: oldFiles.length }, "Weekly curation complete");
 }

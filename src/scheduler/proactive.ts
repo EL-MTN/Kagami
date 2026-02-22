@@ -1,9 +1,6 @@
 import { generateText } from "ai";
 import { getModel } from "../ai/provider.js";
-import {
-  assembleProactiveSystemPrompt,
-  assembleMessages,
-} from "../ai/context-assembler.js";
+import { assembleProactiveSystemPrompt, assembleMessages } from "../ai/context-assembler.js";
 import { allTools, type ToolContext } from "../ai/tools/index.js";
 import {
   getOrCreateConversation,
@@ -57,10 +54,7 @@ function scheduleNext(chatId: string, delayMs?: number): void {
   }, delay);
 
   timers.set(chatId, timeout);
-  logger.debug(
-    { chatId, nextIn: Math.round(delay / 60_000) + "m" },
-    "Proactive timer scheduled",
-  );
+  logger.debug({ chatId, nextIn: Math.round(delay / 60_000) + "m" }, "Proactive timer scheduled");
 }
 
 async function fireProactive(chatId: string): Promise<void> {
@@ -101,10 +95,7 @@ async function fireProactive(chatId: string): Promise<void> {
   scheduleNext(chatId);
 }
 
-async function generateProactiveMessage(
-  chatId: string,
-  adapter: PlatformAdapter,
-): Promise<void> {
+async function generateProactiveMessage(chatId: string, adapter: PlatformAdapter): Promise<void> {
   logger.info({ chatId }, "Generating proactive message");
 
   const [systemPrompt, messages] = await Promise.all([
@@ -139,10 +130,7 @@ async function generateProactiveMessage(
     return;
   }
 
-  logger.info(
-    { chatId, preview: responseText.slice(0, 120) },
-    "Proactive message generated",
-  );
+  logger.info({ chatId, preview: responseText.slice(0, 120) }, "Proactive message generated");
 
   // Save to conversation history
   const conversation = await getOrCreateConversation(chatId, chatId, "telegram");
@@ -217,10 +205,7 @@ export function startProactiveScheduler(adapter: PlatformAdapter): () => void {
       });
   }
 
-  logger.info(
-    { chats: config.ALLOWED_USER_IDS.length },
-    "Proactive scheduler started",
-  );
+  logger.info({ chats: config.ALLOWED_USER_IDS.length }, "Proactive scheduler started");
 
   return () => {
     for (const timeout of timers.values()) {
