@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+media/selfies/*
+media/outfits/*
+media/mood/*
+media/reactions/*
+!media/**/.gitkeep

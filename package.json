@@ -1,0 +1,30 @@
+{
+  "name": "aigf",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "seed:vault": "tsx scripts/seed-vault.ts",
+    "seed:media": "tsx scripts/seed-media.ts"
+  },
+  "dependencies": {
+    "grammy": "^1.30.0",
+    "ai": "^4.3.0",
+    "@ai-sdk/anthropic": "^1.2.0",
+    "@ai-sdk/openai": "^1.2.0",
+    "mongoose": "^8.9.0",
+    "zod": "^3.24.0",
+    "dotenv": "^16.4.0",
+    "gray-matter": "^4.0.3",
+    "date-fns": "^4.1.0",
+    "pino": "^9.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "tsup": "^8.3.0",
+    "@types/node": "^22.0.0"
+  }
+}
