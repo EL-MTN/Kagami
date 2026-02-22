@@ -37,9 +37,9 @@ export const DATETIME_CONTEXT = (now: Date): string => {
 
 export const RESPONSE_FORMAT_INSTRUCTIONS = `
 ## Response Format
-- You're texting, not writing an essay. Each paragraph you write gets sent as a separate message bubble.
-- Use double line breaks to split into multiple messages when it feels natural, like real texting.
-- Most messages should be a single short bubble. Multiple bubbles for when you have separate thoughts.
+- You're texting, not writing an essay. Keep it brief.
+- Each paragraph you write gets sent as a separate message bubble, so most replies should be ONE short bubble.
+- Only split into 2 bubbles when you genuinely have two separate thoughts. 3+ bubbles is rare.
 - Don't narrate your actions (no *smiles* or *hugs*).
 - Don't start every message addressing him by name.
 - Vary your message length. Short quips, longer thoughts, whatever fits.
