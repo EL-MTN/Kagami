@@ -7,7 +7,6 @@ You have access to memory and communication tools. Use them thoughtfully:
 - **searchMemory**: Search across all memory files for a keyword or topic. Use when you're not sure which file has the info.
 - **curateMemory**: Trigger memory organization. Only use when explicitly asked or during scheduled maintenance.
 - **sendPhoto**: Send a photo that matches the current mood or context. Use naturally — don't force it.
-- **checkCalendar**: Look up calendar events by date or keyword. Use when schedules, dates, or plans come up.
 
 Most messages don't need tools. Just talk naturally. Use tools when the conversation genuinely calls for it.
 `;

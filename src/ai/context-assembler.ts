@@ -33,19 +33,13 @@ export async function assembleSystemPrompt(): Promise<string> {
     parts.push("## Relationship History\n" + milestones.content);
   }
 
-  // 4. Calendar context
-  const calendar = await readVaultFile("calendar/events.md");
-  if (calendar) {
-    parts.push("## Upcoming Events\n" + calendar.content);
-  }
-
-  // 5. Date/time
+  // 4. Date/time
   parts.push(DATETIME_CONTEXT(new Date()));
 
-  // 6. Tool instructions
+  // 5. Tool instructions
   parts.push(TOOL_USAGE_INSTRUCTIONS);
 
-  // 7. Response format
+  // 6. Response format
   parts.push(RESPONSE_FORMAT_INSTRUCTIONS);
 
   return parts.join("\n\n---\n\n");
@@ -70,11 +64,6 @@ export async function assembleProactiveSystemPrompt(): Promise<string> {
   const milestones = await readVaultFile("memories/milestones.md");
   if (milestones) {
     parts.push("## Relationship History\n" + milestones.content);
-  }
-
-  const calendar = await readVaultFile("calendar/events.md");
-  if (calendar) {
-    parts.push("## Upcoming Events\n" + calendar.content);
   }
 
   parts.push(DATETIME_CONTEXT(new Date()));
