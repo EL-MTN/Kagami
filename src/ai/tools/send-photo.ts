@@ -1,56 +1,74 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { selectPhoto } from "../../media/selector.js";
+import { generateImage } from "../../media/generator.js";
+import { MediaAsset } from "../../db/models/media-asset.js";
 import type { PlatformAdapter } from "../../platform/types.js";
 import { logger } from "../../utils/logger.js";
+import crypto from "node:crypto";
+
+const APPEARANCE_PREFIX =
+  "Photo of a young woman named Mashiro. She has long blonde hair, amber eyes, a slim figure, and a calm neutral expression. ";
+
+function buildImagePrompt(description: string): string {
+  return APPEARANCE_PREFIX + description;
+}
 
 export function createSendPhotoTool(chatId: string, adapter: PlatformAdapter) {
   return tool({
     description:
-      "Send a contextual photo/selfie. Use when the conversation naturally calls for a picture — e.g. talking about an outfit, mood, activity. Don't force it.",
+      "Generate and send a photo/selfie. Use when the conversation naturally calls for a picture. Provide a vivid scene description — the image will be AI-generated to match. Don't force it.",
     parameters: z.object({
-      mood: z
+      description: z
         .string()
-        .optional()
-        .describe("Current mood: happy, cozy, flirty, sleepy, etc."),
-      category: z
-        .string()
-        .optional()
-        .describe("Photo category: selfies, outfits, mood, reactions"),
-      context: z
-        .string()
-        .optional()
-        .describe("What the photo is about, e.g. 'gym selfie', 'cozy night'"),
+        .describe(
+          "Vivid scene description for the photo, e.g. 'selfie at a cozy coffee shop, warm lighting, wearing a cream sweater, latte in hand'",
+        ),
       caption: z
         .string()
         .optional()
         .describe("Caption to send with the photo"),
+      aspectRatio: z
+        .enum(["1:1", "3:4", "4:3", "9:16", "16:9"])
+        .optional()
+        .describe("Photo aspect ratio, defaults to 3:4 portrait"),
     }),
-    execute: async ({ mood, category, context, caption }) => {
-      const photo = await selectPhoto({ mood, category, context });
-      if (!photo) {
-        logger.debug("No matching photo found");
-        return { sent: false, reason: "No matching photo available" };
+    execute: async ({ description, caption, aspectRatio }) => {
+      const prompt = buildImagePrompt(description);
+      const promptHash = crypto
+        .createHash("sha256")
+        .update(prompt)
+        .digest("hex");
+
+      // Check if we have a cached Telegram file_id for this exact prompt
+      const cached = await MediaAsset.findOne({ promptHash, telegramFileId: { $exists: true, $ne: null } });
+      if (cached?.telegramFileId) {
+        logger.debug({ promptHash }, "Sending cached photo via file_id");
+        await adapter.sendPhoto(chatId, { fileId: cached.telegramFileId }, caption);
+        return { sent: true, cached: true, caption };
       }
 
-      const fileId = await adapter.sendPhoto(
-        chatId,
-        photo.telegramFileId
-          ? { fileId: photo.telegramFileId }
-          : { path: photo.filePath },
-        caption,
-      );
+      try {
+        const image = await generateImage({
+          prompt,
+          aspectRatio: aspectRatio || "3:4",
+        });
 
-      // Cache the file ID for future use
-      if (fileId && !photo.telegramFileId) {
-        const { MediaAsset } = await import("../../db/models/media-asset.js");
-        await MediaAsset.updateOne(
-          { _id: photo.id },
-          { telegramFileId: fileId },
-        );
+        const fileId = await adapter.sendPhotoBuffer(chatId, image.buffer, caption);
+
+        // Cache the Telegram file_id for future reuse
+        if (fileId) {
+          await MediaAsset.updateOne(
+            { promptHash },
+            { $set: { telegramFileId: fileId } },
+            { upsert: false },
+          );
+        }
+
+        return { sent: true, cached: false, caption };
+      } catch (err) {
+        logger.error({ err, description }, "Image generation failed");
+        return { sent: false, reason: "Image generation failed" };
       }
-
-      return { sent: true, photoId: photo.id, caption };
     },
   });
 }

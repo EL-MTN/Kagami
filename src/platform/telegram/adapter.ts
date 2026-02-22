@@ -51,4 +51,23 @@ export class TelegramAdapter implements PlatformAdapter {
     }
     return fileId;
   }
+
+  async sendPhotoBuffer(
+    chatId: string,
+    buffer: Buffer,
+    caption?: string,
+  ): Promise<string | undefined> {
+    const input = new InputFile(buffer, "luna.jpg");
+
+    const sent = await this.bot.api.sendPhoto(Number(chatId), input, {
+      caption,
+      parse_mode: "Markdown",
+    });
+
+    const fileId = sent.photo?.at(-1)?.file_id;
+    if (fileId) {
+      logger.debug({ fileId }, "Cached telegram file_id from buffer");
+    }
+    return fileId;
+  }
 }

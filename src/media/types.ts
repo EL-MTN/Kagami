@@ -1,12 +1,11 @@
-export interface PhotoQuery {
-  mood?: string;
-  category?: string;
-  context?: string;
+export interface ImageGenerationRequest {
+  prompt: string;
+  referenceImages?: string[];
+  aspectRatio?: string;
+  resolution?: string;
 }
 
-export interface SelectedPhoto {
-  id: string;
-  filePath: string;
-  telegramFileId?: string;
-  tags: string[];
+export interface GeneratedImage {
+  buffer: Buffer;
+  mimeType: string;
 }

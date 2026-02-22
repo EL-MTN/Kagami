@@ -13,6 +13,8 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   LLM_MODEL: z.string().default("claude-sonnet-4-5"),
 
+  GEMINI_API_KEY: z.string().min(1, "GEMINI_API_KEY is required for image generation"),
+
   MONGODB_URI: z.string().default("mongodb://localhost:27017/aigf"),
 
   VAULT_PATH: z.string().default("./vault"),
