@@ -135,7 +135,16 @@ export async function handleMessage(
   );
 
   if (!photoSent) {
-    await adapter.sendText(incoming.chatId, responseText);
+    const segments = responseText.split("\n\n").filter((s) => s.trim());
+    for (let i = 0; i < segments.length; i++) {
+      if (i > 0) {
+        const words = segments[i].split(/\s+/).length;
+        const baseDelay = (words / 100) * 60_000; // ~100 WPM
+        const delay = Math.min(Math.max(baseDelay * (0.8 + Math.random() * 0.4), 500), 4000);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+      await adapter.sendText(incoming.chatId, segments[i]);
+    }
   } else {
     logger.debug("Skipping sendText — photo with caption already sent");
   }
