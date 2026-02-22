@@ -113,12 +113,16 @@ export async function handleMessage(
   );
 
   // 8. Save assistant response
-  const toolCalls = result.steps
-    .flatMap((step) => step.toolCalls || [])
-    .map((tc) => ({
-      toolName: tc.toolName,
-      args: tc.args as Record<string, unknown>,
-    }));
+  const toolCalls = result.steps.flatMap((step) => {
+    return (step.toolCalls || []).map((tc) => {
+      const tr = step.toolResults?.find((r) => r.toolName === tc.toolName);
+      return {
+        toolName: tc.toolName,
+        args: tc.args as Record<string, unknown>,
+        result: tr ? JSON.stringify(tr.result) : undefined,
+      };
+    });
+  });
 
   await appendMessage(convo, {
     role: "assistant",

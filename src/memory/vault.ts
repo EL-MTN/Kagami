@@ -64,7 +64,7 @@ export async function appendToVaultFile(
       return;
     }
 
-    const updated = existing.content + "\n\n" + newLines.join("\n");
+    const updated = existing.content.trimEnd() + "\n\n" + newLines.join("\n");
     await writeVaultFile(filePath, updated, existing.frontmatter);
   } else {
     await writeVaultFile(filePath, content);

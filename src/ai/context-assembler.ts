@@ -64,10 +64,46 @@ export async function assembleMessages(
     "Message history loaded",
   );
 
-  const messages: CoreMessage[] = history.map((msg) => ({
-    role: msg.role === "user" ? ("user" as const) : ("assistant" as const),
-    content: msg.content,
-  }));
+  const messages: CoreMessage[] = [];
+
+  for (const msg of history) {
+    if (msg.role === "user") {
+      messages.push({ role: "user", content: msg.content });
+    } else {
+      // Reconstruct tool-call / tool-result pairs so the model
+      // can see what tools it used in previous turns
+      if (msg.toolCalls?.length) {
+        const callIdBase = `tc_${messages.length}`;
+        messages.push({
+          role: "assistant",
+          content: msg.toolCalls.map((tc, i) => ({
+            type: "tool-call" as const,
+            toolCallId: `${callIdBase}_${i}`,
+            toolName: tc.toolName,
+            args: tc.args,
+          })),
+        });
+        messages.push({
+          role: "tool",
+          content: msg.toolCalls.map((tc, i) => {
+            let result: unknown = "done";
+            if (tc.result) {
+              try { result = JSON.parse(tc.result); } catch { result = tc.result; }
+            }
+            return {
+              type: "tool-result" as const,
+              toolCallId: `${callIdBase}_${i}`,
+              toolName: tc.toolName,
+              result,
+            };
+          }),
+        });
+      }
+      if (msg.content) {
+        messages.push({ role: "assistant", content: msg.content });
+      }
+    }
+  }
 
   return messages;
 }
