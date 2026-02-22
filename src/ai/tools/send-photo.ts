@@ -7,10 +7,10 @@ import { logger } from "../../utils/logger.js";
 import crypto from "node:crypto";
 
 const APPEARANCE_PREFIX =
-  "Photo of a young woman named Mashiro. She has long blonde hair, amber eyes, a slim figure, and a calm neutral expression. ";
+  "Generate a photo of the same woman shown in the reference images. She has long blonde hair and amber eyes — match her face, hair color, and features exactly to the references. ";
 
 function buildImagePrompt(description: string): string {
-  return APPEARANCE_PREFIX + description;
+  return APPEARANCE_PREFIX + "Scene: " + description;
 }
 
 export function createSendPhotoTool(chatId: string, adapter: PlatformAdapter) {

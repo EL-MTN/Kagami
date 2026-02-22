@@ -27,9 +27,12 @@ export function loadReferenceImages() {
     [".jpg", ".jpeg", ".png", ".webp"].includes(path.extname(f).toLowerCase()),
   );
 
+  logger.info({ allFiles: files, imageFiles }, `Found files in ${refDir}`);
+
   for (const file of imageFiles) {
     const filePath = path.join(refDir, file);
     const data = fs.readFileSync(filePath);
+    const bytes = data.length;
     const ext = path.extname(file).toLowerCase();
     const mimeType =
       ext === ".png" ? "image/png" :
@@ -42,9 +45,11 @@ export function loadReferenceImages() {
         mimeType,
       },
     });
+
+    logger.info({ file, mimeType, bytes }, "Loaded reference image");
   }
 
-  logger.info(`Loaded ${referenceParts.length} reference images from ${refDir}`);
+  logger.info(`Loaded ${referenceParts.length} reference images total`);
 }
 
 function hashPrompt(prompt: string): string {
@@ -82,6 +87,11 @@ export async function generateImage(
 
   contents.push(...refs);
   contents.push(request.prompt);
+
+  logger.info(
+    { referenceCount: refs.length, promptLength: request.prompt.length },
+    "Calling Gemini image generation",
+  );
 
   const response = await ai.models.generateContent({
     model: MODEL,
