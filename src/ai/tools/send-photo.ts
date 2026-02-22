@@ -7,7 +7,7 @@ import { logger } from "../../utils/logger.js";
 import crypto from "node:crypto";
 
 const APPEARANCE_PREFIX =
-  "Generate a realistic smartphone photo of the same woman shown in the reference images. She has long blonde hair and amber eyes — match her face, hair color, and features exactly to the references. The photo must look like it was taken with a phone camera — natural lighting, slight depth of field, realistic perspective. If it's a selfie, show it from a first-person phone-holding angle with one arm slightly visible. If it's a mirror selfie, show the phone in the reflection. No studio lighting, no artificial poses, no illustration style. ";
+  "Generate a realistic smartphone photo of the same woman shown in the reference images. She has long blonde hair and amber eyes — match her face, hair color, and features exactly to the face/identity references. The photo must look like it was taken with a phone camera — natural lighting, slight depth of field, realistic perspective. If it's a selfie, show it from a first-person phone-holding angle with one arm slightly visible. If it's a mirror selfie, show the phone in the reflection. No studio lighting, no artificial poses, no illustration style. ";
 
 function buildImagePrompt(description: string): string {
   return APPEARANCE_PREFIX + "Scene: " + description;
