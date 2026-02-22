@@ -17,7 +17,7 @@ export async function assembleSystemPrompt(): Promise<string> {
     parts.push(personality.content);
   } else {
     logger.warn("Personality card not found at vault/personality/card.md");
-    parts.push("You are Luna, a warm and witty girlfriend.");
+    parts.push("You are Shiina Mashiro, a quiet and eccentric artist girlfriend.");
   }
 
   // 2. User knowledge

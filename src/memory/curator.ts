@@ -57,7 +57,7 @@ async function generateDailySummary(): Promise<void> {
 3. Topics discussed
 4. Any promises, plans, or follow-ups mentioned
 
-Be concise. Use bullet points. Write from the perspective of Luna (the girlfriend AI) remembering the day.`,
+Be concise. Use bullet points. Write from the perspective of Mashiro (the girlfriend AI) remembering the day.`,
     messages: [
       {
         role: "user",
@@ -123,7 +123,7 @@ async function weeklyDeepCuration(): Promise<void> {
 
   const result = await generateText({
     model: getModel(),
-    system: `You are a memory curator. Compress multiple daily summaries into a single weekly summary. Keep the most important facts, memorable moments, and evolving patterns. Remove redundancy. Write from Luna's perspective.`,
+    system: `You are a memory curator. Compress multiple daily summaries into a single weekly summary. Keep the most important facts, memorable moments, and evolving patterns. Remove redundancy. Write from Mashiro's perspective.`,
     messages: [
       {
         role: "user",

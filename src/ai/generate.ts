@@ -56,6 +56,7 @@ export async function handleMessage(
     messages,
     tools: allTools(toolContext),
     maxSteps: 5,
+    temperature: 0.7,
   });
 
   // 5. Debug: log every step
