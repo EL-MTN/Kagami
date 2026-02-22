@@ -2,10 +2,7 @@ import { config } from "./config.js";
 import { logger } from "./utils/logger.js";
 import { connectDB, disconnectDB } from "./db/connection.js";
 import { createBot, startBot } from "./platform/telegram/bot.js";
-import { startCurationSchedule } from "./memory/curator.js";
 import { loadReferenceImages } from "./media/generator.js";
-
-let curationInterval: NodeJS.Timeout | undefined;
 
 async function main() {
   logger.info("Starting AIGF...");
@@ -16,15 +13,11 @@ async function main() {
 
   const bot = createBot(config.TELEGRAM_BOT_TOKEN);
 
-  // Start memory curation schedule
-  curationInterval = startCurationSchedule();
-
   await startBot(bot);
 }
 
 function shutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down...`);
-  if (curationInterval) clearInterval(curationInterval);
   disconnectDB().finally(() => process.exit(0));
 }
 

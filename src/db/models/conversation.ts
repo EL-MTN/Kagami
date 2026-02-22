@@ -88,14 +88,58 @@ export async function appendMessage(
 
 export async function getRecentMessages(
   chatId: string,
-  limit = 50,
+  limit = 40,
 ): Promise<IMessage[]> {
-  const convos = await Conversation.find({ chatId })
-    .sort({ updatedAt: -1 })
-    .limit(3);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  const allMessages = convos.flatMap((c) => c.messages);
-  allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  const convo = await Conversation.findOne({
+    chatId,
+    createdAt: { $gte: today },
+  }).sort({ updatedAt: -1 });
 
-  return allMessages.slice(-limit);
+  if (!convo) return [];
+
+  return convo.messages.slice(-limit);
+}
+
+export interface OverflowResult {
+  conversationId: string;
+  overflow: IMessage[];
+  total: number;
+}
+
+export async function getOverflowMessages(
+  chatId: string,
+  contextLimit = 40,
+): Promise<OverflowResult | null> {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const convo = await Conversation.findOne({
+    chatId,
+    createdAt: { $gte: today },
+  }).sort({ updatedAt: -1 });
+
+  if (!convo || convo.messages.length <= contextLimit) return null;
+
+  const overflowCount = convo.messages.length - contextLimit;
+  return {
+    conversationId: convo._id.toString(),
+    overflow: convo.messages.slice(0, overflowCount),
+    total: convo.messages.length,
+  };
+}
+
+export async function trimConversation(
+  conversationId: string,
+  keep = 40,
+): Promise<void> {
+  const convo = await Conversation.findById(conversationId);
+  if (!convo) return;
+
+  if (convo.messages.length > keep) {
+    convo.messages = convo.messages.slice(-keep);
+    await convo.save();
+  }
 }

@@ -1,54 +1,27 @@
 import { generateText } from "ai";
 import { format, subDays } from "date-fns";
 import { getModel } from "../ai/provider.js";
-import { Conversation } from "../db/models/conversation.js";
+import { getOverflowMessages, trimConversation } from "../db/models/conversation.js";
 import { readVaultFile, writeVaultFile, listVaultFiles } from "./vault.js";
 import { logger } from "../utils/logger.js";
 
-export async function curateMemories(
-  scope: "daily" | "weekly",
-): Promise<void> {
-  if (scope === "daily") {
-    await generateDailySummary();
-  } else {
-    await weeklyDeepCuration();
-  }
-}
+const CONTEXT_LIMIT = 40;
 
-async function generateDailySummary(): Promise<void> {
-  const yesterday = subDays(new Date(), 1);
-  const dateStr = format(yesterday, "yyyy-MM-dd");
-  const summaryPath = `memories/conversations/${dateStr}.md`;
+export async function curateIfNeeded(chatId: string): Promise<void> {
+  const overflow = await getOverflowMessages(chatId, CONTEXT_LIMIT);
+  if (!overflow) return;
 
-  // Skip if already exists
-  const existing = await readVaultFile(summaryPath);
-  if (existing) {
-    logger.debug({ dateStr }, "Daily summary already exists");
-    return;
-  }
+  logger.info(
+    { chatId, overflowCount: overflow.overflow.length, total: overflow.total },
+    "Context overflow detected, curating messages",
+  );
 
-  // Get yesterday's conversations
-  const startOfDay = new Date(yesterday);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(yesterday);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  const convos = await Conversation.find({
-    createdAt: { $gte: startOfDay, $lte: endOfDay },
-  });
-
-  if (convos.length === 0) {
-    logger.debug({ dateStr }, "No conversations to summarize");
-    return;
-  }
-
-  const allMessages = convos.flatMap((c) => c.messages);
-  if (allMessages.length < 3) return;
-
-  const transcript = allMessages
+  // Format overflow as transcript
+  const transcript = overflow.overflow
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
 
+  // Summarize overflow
   const result = await generateText({
     model: getModel(),
     system: `You are a memory curator. Summarize conversations into key points. Extract:
@@ -57,25 +30,38 @@ async function generateDailySummary(): Promise<void> {
 3. Topics discussed
 4. Any promises, plans, or follow-ups mentioned
 
-Be concise. Use bullet points. Write from the perspective of Mashiro (the girlfriend AI) remembering the day.`,
+Be concise. Use bullet points. Write from the perspective of Mashiro (the girlfriend AI) remembering the conversation.`,
     messages: [
       {
         role: "user",
-        content: `Summarize this day's conversation:\n\n${transcript}`,
+        content: `Summarize this conversation segment:\n\n${transcript}`,
       },
     ],
   });
 
-  await writeVaultFile(
-    summaryPath,
-    result.text,
-    { type: "daily-summary", date: dateStr },
-  );
+  // Write summary to vault
+  const timestamp = format(new Date(), "yyyy-MM-dd'T'HH-mm-ss");
+  const summaryPath = `memories/conversations/${timestamp}.md`;
+  await writeVaultFile(summaryPath, result.text, {
+    type: "conversation-summary",
+    chatId,
+    messageCount: overflow.overflow.length,
+    timestamp: new Date().toISOString(),
+  });
 
-  // Also update about-you.md with any new facts
+  // Update about-you.md with new facts
   await updateUserFacts(result.text);
 
-  logger.info({ dateStr }, "Daily summary generated");
+  // Trim conversation to keep only recent messages
+  await trimConversation(overflow.conversationId, CONTEXT_LIMIT);
+
+  logger.info(
+    { summaryPath, trimmedTo: CONTEXT_LIMIT },
+    "Curation complete: summarized overflow and trimmed conversation",
+  );
+
+  // Check if weekly merge is due
+  await checkWeeklyMerge();
 }
 
 async function updateUserFacts(summary: string): Promise<void> {
@@ -88,7 +74,7 @@ async function updateUserFacts(summary: string): Promise<void> {
     messages: [
       {
         role: "user",
-        content: `Existing file:\n${aboutYou.content}\n\nToday's summary:\n${summary}`,
+        content: `Existing file:\n${aboutYou.content}\n\nConversation summary:\n${summary}`,
       },
     ],
   });
@@ -100,26 +86,31 @@ async function updateUserFacts(summary: string): Promise<void> {
   }
 }
 
-async function weeklyDeepCuration(): Promise<void> {
-  // Merge old daily summaries into a single week summary
+async function checkWeeklyMerge(): Promise<void> {
   const files = await listVaultFiles("memories/conversations");
   const oneWeekAgo = format(subDays(new Date(), 7), "yyyy-MM-dd");
 
-  const oldFiles = files.filter((f) => {
+  // Find daily summary files (not weekly rollups) older than 7 days
+  const oldDailyFiles = files.filter((f) => {
+    if (f.includes("week-of-")) return false;
     const dateMatch = f.match(/(\d{4}-\d{2}-\d{2})/);
     return dateMatch && dateMatch[1] < oneWeekAgo;
   });
 
-  if (oldFiles.length < 3) {
-    logger.debug("Not enough old files for weekly curation");
-    return;
+  if (oldDailyFiles.length >= 7) {
+    logger.info({ fileCount: oldDailyFiles.length }, "Triggering weekly merge");
+    await weeklyDeepCuration(oldDailyFiles);
   }
+}
 
+async function weeklyDeepCuration(oldFiles: string[]): Promise<void> {
   const contents: string[] = [];
   for (const file of oldFiles) {
     const data = await readVaultFile(file);
     if (data) contents.push(`## ${file}\n${data.content}`);
   }
+
+  if (contents.length === 0) return;
 
   const result = await generateText({
     model: getModel(),
@@ -140,31 +131,4 @@ async function weeklyDeepCuration(): Promise<void> {
   );
 
   logger.info({ weekOf, mergedFiles: oldFiles.length }, "Weekly curation complete");
-}
-
-export function startCurationSchedule(): NodeJS.Timeout {
-  // Run daily curation at 4am
-  const FOUR_HOURS = 4 * 60 * 60 * 1000;
-
-  const interval = setInterval(async () => {
-    const hour = new Date().getHours();
-    if (hour === 4) {
-      try {
-        await curateMemories("daily");
-      } catch (error) {
-        logger.error({ error }, "Daily curation failed");
-      }
-    }
-    // Weekly on Mondays at 4am
-    if (hour === 4 && new Date().getDay() === 1) {
-      try {
-        await curateMemories("weekly");
-      } catch (error) {
-        logger.error({ error }, "Weekly curation failed");
-      }
-    }
-  }, FOUR_HOURS);
-
-  logger.info("Memory curation schedule started");
-  return interval;
 }

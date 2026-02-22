@@ -1,7 +1,7 @@
 import { readMemory } from "./read-memory.js";
 import { writeMemory } from "./write-memory.js";
 import { searchMemory } from "./search-memory.js";
-import { curateMemory } from "./curate-memory.js";
+import { createCurateMemoryTool } from "./curate-memory.js";
 import { createSendPhotoTool } from "./send-photo.js";
 import { checkCalendar } from "./check-calendar.js";
 import type { PlatformAdapter } from "../../platform/types.js";
@@ -16,7 +16,7 @@ export function allTools(ctx: ToolContext) {
     readMemory,
     writeMemory,
     searchMemory,
-    curateMemory,
+    curateMemory: createCurateMemoryTool(ctx.chatId),
     sendPhoto: createSendPhotoTool(ctx.chatId, ctx.adapter),
     checkCalendar,
   };

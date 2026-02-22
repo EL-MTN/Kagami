@@ -6,6 +6,7 @@ import {
   getOrCreateConversation,
   appendMessage,
 } from "../db/models/conversation.js";
+import { curateIfNeeded } from "../memory/curator.js";
 import type { IncomingMessage, PlatformAdapter } from "../platform/types.js";
 import { logger } from "../utils/logger.js";
 
@@ -26,7 +27,10 @@ export async function handleMessage(
     timestamp: incoming.timestamp,
   });
 
-  // 2. Build system prompt and message history
+  // 2. Curate overflow messages before assembling context
+  await curateIfNeeded(incoming.chatId);
+
+  // 3. Build system prompt and message history
   const [systemPrompt, messages] = await Promise.all([
     assembleSystemPrompt(),
     assembleMessages(incoming.chatId),
@@ -41,13 +45,13 @@ export async function handleMessage(
     "Context assembled",
   );
 
-  // 3. Create tool context
+  // 4. Create tool context
   const toolContext: ToolContext = {
     chatId: incoming.chatId,
     adapter,
   };
 
-  // 4. Generate response with tools
+  // 5. Generate response with tools
   logger.debug("Calling generateText...");
 
   const result = await generateText({
@@ -59,7 +63,7 @@ export async function handleMessage(
     temperature: 0.7,
   });
 
-  // 5. Debug: log every step
+  // 6. Debug: log every step
   for (let i = 0; i < result.steps.length; i++) {
     const step = result.steps[i];
     logger.info(
@@ -75,7 +79,7 @@ export async function handleMessage(
     );
   }
 
-  // 6. Extract response text — check all steps, not just result.text
+  // 7. Extract response text — check all steps, not just result.text
   let responseText = result.text;
   if (!responseText) {
     // Walk steps in reverse to find the last one with text
@@ -108,7 +112,7 @@ export async function handleMessage(
     "Final response",
   );
 
-  // 7. Save assistant response
+  // 8. Save assistant response
   const toolCalls = result.steps
     .flatMap((step) => step.toolCalls || [])
     .map((tc) => ({
@@ -123,6 +127,16 @@ export async function handleMessage(
     timestamp: new Date(),
   });
 
-  // 8. Send response
-  await adapter.sendText(incoming.chatId, responseText);
+  // 9. Send response — skip if sendPhoto already delivered the text as a caption
+  const photoSent = result.steps.some((step) =>
+    step.toolResults?.some(
+      (tr) => tr.toolName === "sendPhoto" && (tr.result as { sent?: boolean })?.sent,
+    ),
+  );
+
+  if (!photoSent) {
+    await adapter.sendText(incoming.chatId, responseText);
+  } else {
+    logger.debug("Skipping sendText — photo with caption already sent");
+  }
 }
