@@ -1,8 +1,11 @@
 import { config } from "./config.js";
 import { logger } from "./utils/logger.js";
 import { connectDB, disconnectDB } from "./db/connection.js";
-import { createBot, startBot } from "./platform/telegram/bot.js";
+import { createBot, startBot, getAdapter } from "./platform/telegram/bot.js";
 import { loadReferenceImages } from "./media/generator.js";
+import { startProactiveScheduler } from "./scheduler/proactive.js";
+
+let stopProactiveScheduler: (() => void) | null = null;
 
 async function main() {
   logger.info("Starting AIGF...");
@@ -14,10 +17,13 @@ async function main() {
   const bot = createBot(config.TELEGRAM_BOT_TOKEN);
 
   await startBot(bot);
+
+  stopProactiveScheduler = startProactiveScheduler(getAdapter());
 }
 
 function shutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down...`);
+  stopProactiveScheduler?.();
   disconnectDB().finally(() => process.exit(0));
 }
 

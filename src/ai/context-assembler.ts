@@ -4,6 +4,7 @@ import {
   TOOL_USAGE_INSTRUCTIONS,
   DATETIME_CONTEXT,
   RESPONSE_FORMAT_INSTRUCTIONS,
+  PROACTIVE_MESSAGE_INSTRUCTIONS,
 } from "./prompts.js";
 import { logger } from "../utils/logger.js";
 import type { CoreMessage } from "ai";
@@ -46,6 +47,39 @@ export async function assembleSystemPrompt(): Promise<string> {
 
   // 7. Response format
   parts.push(RESPONSE_FORMAT_INSTRUCTIONS);
+
+  return parts.join("\n\n---\n\n");
+}
+
+export async function assembleProactiveSystemPrompt(): Promise<string> {
+  const parts: string[] = [];
+
+  const personality = await readVaultFile("personality/card.md");
+  if (personality) {
+    parts.push(personality.content);
+  } else {
+    logger.warn("Personality card not found at vault/personality/card.md");
+    parts.push("You are Shiina Mashiro, a quiet and eccentric artist girlfriend.");
+  }
+
+  const aboutYou = await readVaultFile("memories/about-you.md");
+  if (aboutYou) {
+    parts.push("## What You Know About Him\n" + aboutYou.content);
+  }
+
+  const milestones = await readVaultFile("memories/milestones.md");
+  if (milestones) {
+    parts.push("## Relationship History\n" + milestones.content);
+  }
+
+  const calendar = await readVaultFile("calendar/events.md");
+  if (calendar) {
+    parts.push("## Upcoming Events\n" + calendar.content);
+  }
+
+  parts.push(DATETIME_CONTEXT(new Date()));
+  parts.push(TOOL_USAGE_INSTRUCTIONS);
+  parts.push(PROACTIVE_MESSAGE_INSTRUCTIONS);
 
   return parts.join("\n\n---\n\n");
 }

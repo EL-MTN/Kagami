@@ -3,6 +3,7 @@ import { config } from "../../config.js";
 import { logger } from "../../utils/logger.js";
 import { TelegramAdapter } from "./adapter.js";
 import { handleMessage } from "../../ai/generate.js";
+import { resetTimer } from "../../scheduler/proactive.js";
 
 // Simple in-memory rate limiter
 const rateLimitMap = new Map<string, number[]>();
@@ -18,9 +19,17 @@ function isRateLimited(userId: string): boolean {
   return recent.length > RATE_LIMIT_MAX;
 }
 
+let _adapter: TelegramAdapter | null = null;
+
+export function getAdapter(): TelegramAdapter {
+  if (!_adapter) throw new Error("Bot not created yet");
+  return _adapter;
+}
+
 export function createBot(token: string): Bot {
   const bot = new Bot(token);
   const adapter = new TelegramAdapter(bot);
+  _adapter = adapter;
 
   // Allowlist middleware
   bot.use(async (ctx, next) => {
@@ -53,6 +62,7 @@ export function createBot(token: string): Bot {
     try {
       await ctx.replyWithChatAction("typing");
       await handleMessage(incoming, adapter);
+      resetTimer(incoming.chatId);
     } catch (error) {
       logger.error({ error }, "Error handling message");
       await ctx.reply("sorry something went wrong, give me a sec 💭");
