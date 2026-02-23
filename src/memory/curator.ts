@@ -68,7 +68,12 @@ async function updateUserFacts(summary: string): Promise<void> {
 
   const result = await generateText({
     model: getModel(),
-    system: `You are a memory curator. Given a conversation summary and an existing "About You" file, extract any NEW facts about the user that aren't already in the file. Output only the new bullet points to append, or "NONE" if there's nothing new. Be concise.`,
+    system: `You are a memory curator. Given a conversation summary and an existing "About You" file, extract any NEW facts about the user (not the AI character) that aren't already in the file.
+
+If there are new facts: output ONLY the bullet points, nothing else.
+If there are no new facts: output exactly "NONE" and nothing else.
+
+Do not add commentary or explanations. Do not repeat existing facts.`,
     messages: [
       {
         role: "user",
@@ -77,12 +82,16 @@ async function updateUserFacts(summary: string): Promise<void> {
     ],
   });
 
-  if (result.text.trim() !== "NONE" && result.text.trim().length > 5) {
-    const updated =
-      aboutYou.content + "\n\n## Updated " + format(new Date(), "yyyy-MM-dd") + "\n" + result.text;
-    await writeVaultFile("memories/about-you.md", updated, aboutYou.frontmatter);
-    logger.info("Updated about-you.md with new facts");
+  const newFacts = result.text.trim();
+  if (newFacts === "NONE" || !newFacts.startsWith("- ")) {
+    logger.debug("No new user facts to add");
+    return;
   }
+
+  const updated =
+    aboutYou.content + "\n\n## Updated " + format(new Date(), "yyyy-MM-dd") + "\n" + newFacts;
+  await writeVaultFile("memories/about-you.md", updated, aboutYou.frontmatter);
+  logger.info("Updated about-you.md with new facts");
 }
 
 async function checkWeeklyMerge(): Promise<void> {
