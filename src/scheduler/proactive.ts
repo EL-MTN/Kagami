@@ -11,6 +11,12 @@ import { getNextProactiveAt, setNextProactiveAt } from "../db/models/scheduler-s
 import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
 import type { PlatformAdapter } from "../platform/types.js";
+import {
+  extractResponseText,
+  collectToolCalls,
+  wasPhotoSent,
+  sendSegmented,
+} from "../ai/response.js";
 
 const timers = new Map<string, NodeJS.Timeout>();
 let _adapter: PlatformAdapter | null = null;
@@ -129,15 +135,7 @@ async function generateProactiveMessage(chatId: string, adapter: PlatformAdapter
   });
 
   // Extract response text from steps
-  let responseText = result.text;
-  if (!responseText) {
-    for (let i = result.steps.length - 1; i >= 0; i--) {
-      if (result.steps[i].text) {
-        responseText = result.steps[i].text;
-        break;
-      }
-    }
-  }
+  const responseText = result.text || extractResponseText(result.steps);
 
   if (!responseText) {
     logger.warn({ chatId }, "Proactive generation produced no text");
@@ -148,43 +146,18 @@ async function generateProactiveMessage(chatId: string, adapter: PlatformAdapter
 
   // Save to conversation history
   const conversation = await getOrCreateConversation(chatId, chatId, "telegram");
-
-  const toolCalls = result.steps.flatMap((step) => {
-    return (step.toolCalls || []).map((tc) => {
-      const tr = step.toolResults?.find((r) => r.toolName === tc.toolName);
-      return {
-        toolName: tc.toolName,
-        args: tc.args as Record<string, unknown>,
-        result: tr ? JSON.stringify(tr.result) : undefined,
-      };
-    });
-  });
+  const toolCallData = collectToolCalls(result.steps);
 
   await appendMessage(conversation, {
     role: "assistant",
     content: responseText,
-    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    toolCalls: toolCallData.length > 0 ? toolCallData : undefined,
     timestamp: new Date(),
   });
 
   // Send — skip if sendPhoto already delivered text as caption
-  const photoSent = result.steps.some((step) =>
-    step.toolResults?.some(
-      (tr) => tr.toolName === "sendPhoto" && (tr.result as { sent?: boolean })?.sent,
-    ),
-  );
-
-  if (!photoSent) {
-    const segments = responseText.split("\n\n").filter((s) => s.trim());
-    for (let i = 0; i < segments.length; i++) {
-      if (i > 0) {
-        const words = segments[i].split(/\s+/).length;
-        const baseDelay = (words / 100) * 60_000;
-        const delay = Math.min(Math.max(baseDelay * (0.8 + Math.random() * 0.4), 500), 4000);
-        await new Promise((r) => setTimeout(r, delay));
-      }
-      await adapter.sendText(chatId, segments[i]);
-    }
+  if (!wasPhotoSent(result.steps)) {
+    await sendSegmented(adapter, chatId, responseText);
   }
 }
 

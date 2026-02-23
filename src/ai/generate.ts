@@ -6,6 +6,13 @@ import { getOrCreateConversation, appendMessage } from "../db/models/conversatio
 import { curateIfNeeded } from "../memory/curator.js";
 import type { IncomingMessage, PlatformAdapter } from "../platform/types.js";
 import { logger } from "../utils/logger.js";
+import {
+  extractResponseText,
+  collectToolCalls,
+  wasPhotoSent,
+  sendSegmented,
+  logSteps,
+} from "./response.js";
 
 export async function handleMessage(
   incoming: IncomingMessage,
@@ -57,32 +64,10 @@ export async function handleMessage(
   });
 
   // 6. Debug: log every step
-  for (let i = 0; i < result.steps.length; i++) {
-    const step = result.steps[i];
-    logger.info(
-      {
-        step: i,
-        hasText: !!step.text,
-        textPreview: step.text?.slice(0, 100) || "(empty)",
-        toolCallCount: step.toolCalls?.length ?? 0,
-        toolCalls: step.toolCalls?.map((tc) => tc.toolName),
-        finishReason: step.finishReason,
-      },
-      `LLM step ${i}`,
-    );
-  }
+  logSteps(result.steps);
 
-  // 7. Extract response text — check all steps, not just result.text
-  let responseText = result.text;
-  if (!responseText) {
-    // Walk steps in reverse to find the last one with text
-    for (let i = result.steps.length - 1; i >= 0; i--) {
-      if (result.steps[i].text) {
-        responseText = result.steps[i].text;
-        break;
-      }
-    }
-  }
+  // 7. Extract response text
+  let responseText = result.text || extractResponseText(result.steps);
 
   if (!responseText) {
     logger.warn(
@@ -106,42 +91,18 @@ export async function handleMessage(
   );
 
   // 8. Save assistant response
-  const toolCalls = result.steps.flatMap((step) => {
-    return (step.toolCalls || []).map((tc) => {
-      const tr = step.toolResults?.find((r) => r.toolName === tc.toolName);
-      return {
-        toolName: tc.toolName,
-        args: tc.args as Record<string, unknown>,
-        result: tr ? JSON.stringify(tr.result) : undefined,
-      };
-    });
-  });
+  const toolCallData = collectToolCalls(result.steps);
 
   await appendMessage(convo, {
     role: "assistant",
     content: responseText,
-    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    toolCalls: toolCallData.length > 0 ? toolCallData : undefined,
     timestamp: new Date(),
   });
 
   // 9. Send response — skip if sendPhoto already delivered the text as a caption
-  const photoSent = result.steps.some((step) =>
-    step.toolResults?.some(
-      (tr) => tr.toolName === "sendPhoto" && (tr.result as { sent?: boolean })?.sent,
-    ),
-  );
-
-  if (!photoSent) {
-    const segments = responseText.split("\n\n").filter((s) => s.trim());
-    for (let i = 0; i < segments.length; i++) {
-      if (i > 0) {
-        const words = segments[i].split(/\s+/).length;
-        const baseDelay = (words / 100) * 60_000; // ~100 WPM
-        const delay = Math.min(Math.max(baseDelay * (0.8 + Math.random() * 0.4), 500), 4000);
-        await new Promise((r) => setTimeout(r, delay));
-      }
-      await adapter.sendText(incoming.chatId, segments[i]);
-    }
+  if (!wasPhotoSent(result.steps)) {
+    await sendSegmented(adapter, incoming.chatId, responseText);
   } else {
     logger.debug("Skipping sendText — photo with caption already sent");
   }

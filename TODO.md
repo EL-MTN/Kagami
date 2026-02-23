@@ -15,7 +15,7 @@
 
 ## Architecture & Code Quality
 
-- [ ] **Extract shared response-sending logic** — Deduplicate ~40 lines between `handleMessage` and `generateProactiveMessage` into a `processAndSendResponse()` utility
+- [x] **Extract shared response-sending logic** — Deduplicated into `src/ai/response.ts` (`extractResponseText`, `collectToolCalls`, `wasPhotoSent`, `sendSegmented`, `logSteps`)
 - [ ] **Add a test suite** — Unit tests for `vault.ts`, `markdown.ts`, `context-assembler.ts`, `curator.ts`, and proactive scheduler timing logic
 - [x] **Remove photo cache** — Removed MediaAsset model and all prompt-hash caching (prompts never realistically collide)
 - [ ] **Make curation non-blocking** — Run `curateIfNeeded` in the background so the user doesn't wait for multiple LLM calls before getting a response
