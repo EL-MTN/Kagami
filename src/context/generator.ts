@@ -14,8 +14,13 @@ const MODEL = "gemini-3-pro-image-preview";
 
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 
-const faceRefs: Part[] = [];
-const bodyRefs: Part[] = [];
+interface NamedPart {
+  filename: string;
+  part: Part;
+}
+
+const faceRefs: NamedPart[] = [];
+const bodyRefs: NamedPart[] = [];
 const outfitMap = new Map<string, Part>();
 const settingsMap = new Map<string, string>();
 
@@ -69,11 +74,11 @@ function loadSettings() {
 export function loadContext() {
   const refDir = path.join(config.CONTEXT_PATH, "references");
 
-  for (const { part } of loadDir(path.join(refDir, "face"))) {
-    faceRefs.push(part);
+  for (const ref of loadDir(path.join(refDir, "face"))) {
+    faceRefs.push(ref);
   }
-  for (const { part } of loadDir(path.join(refDir, "body"))) {
-    bodyRefs.push(part);
+  for (const ref of loadDir(path.join(refDir, "body"))) {
+    bodyRefs.push(ref);
   }
   for (const { filename, part } of loadDir(path.join(refDir, "outfits"))) {
     outfitMap.set(filename, part);
@@ -227,12 +232,12 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
       });
     }
   } else {
-    for (const part of faceRefs) {
-      contents.push("Face/identity reference:");
+    for (const { filename, part } of faceRefs) {
+      contents.push(`Face/identity reference (${filename}):`);
       contents.push(part);
     }
-    for (const part of bodyRefs) {
-      contents.push("Body/pose reference:");
+    for (const { filename, part } of bodyRefs) {
+      contents.push(`Body/pose reference (${filename}):`);
       contents.push(part);
     }
 
@@ -255,9 +260,20 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
   const instructions = [outfitInstruction, settingInstruction].filter(Boolean).join("\n\n");
   contents.push(instructions ? `${request.prompt}\n\n${instructions}` : request.prompt);
 
-  const refCount = contents.filter((c) => typeof c !== "string").length;
+  const imageParts = contents.filter((c) => typeof c !== "string");
+  const textParts = contents.filter((c) => typeof c === "string");
   logger.info(
-    { referenceCount: refCount, promptLength: request.prompt.length },
+    {
+      imagePartCount: imageParts.length,
+      textPartCount: textParts.length,
+      faceRefs: faceRefs.length,
+      bodyRefs: bodyRefs.length,
+      outfit: outfitInstruction ? true : false,
+      setting: settingInstruction ? true : false,
+      textLabels: textParts.slice(0, -1),
+      promptLength: request.prompt.length,
+      fullPrompt: textParts[textParts.length - 1],
+    },
     "Calling Gemini image generation",
   );
 
