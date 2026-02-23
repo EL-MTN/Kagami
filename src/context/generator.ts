@@ -1,4 +1,3 @@
-import { GoogleGenAI, type Part } from "@google/genai";
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import fs from "node:fs";
@@ -9,22 +8,19 @@ import { logger } from "../utils/logger.js";
 import { MediaAsset } from "../db/models/media-asset.js";
 import type { ImageGenerationRequest, GeneratedImage } from "./types.js";
 
-const ai = new GoogleGenAI({ apiKey: config.GEMINI_API_KEY });
-const MODEL = "gemini-3-pro-image-preview";
-
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 
-interface NamedPart {
+interface RefImage {
   filename: string;
-  part: Part;
+  dataUri: string; // "data:image/jpeg;base64,..."
 }
 
-const faceRefs: NamedPart[] = [];
-const bodyRefs: NamedPart[] = [];
-const outfitMap = new Map<string, Part>();
+const faceRefs: RefImage[] = [];
+const bodyRefs: RefImage[] = [];
+const outfitMap = new Map<string, RefImage>();
 const settingsMap = new Map<string, string>();
 
-function loadDir(dirPath: string): { filename: string; part: Part }[] {
+function loadDir(dirPath: string): RefImage[] {
   let files: string[];
   try {
     files = fs.readdirSync(dirPath);
@@ -32,16 +28,16 @@ function loadDir(dirPath: string): { filename: string; part: Part }[] {
     return [];
   }
 
-  const results: { filename: string; part: Part }[] = [];
+  const results: RefImage[] = [];
   for (const file of files) {
     const ext = path.extname(file).toLowerCase();
     if (!IMAGE_EXTS.has(ext)) continue;
 
     const data = fs.readFileSync(path.join(dirPath, file));
     const mimeType = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
-    const part: Part = { inlineData: { data: data.toString("base64"), mimeType } };
+    const dataUri = `data:${mimeType};base64,${data.toString("base64")}`;
 
-    results.push({ filename: file, part });
+    results.push({ filename: file, dataUri });
     logger.info(
       { file, mimeType, bytes: data.length, dir: path.basename(dirPath) },
       "Loaded reference image",
@@ -80,8 +76,8 @@ export function loadContext() {
   for (const ref of loadDir(path.join(refDir, "body"))) {
     bodyRefs.push(ref);
   }
-  for (const { filename, part } of loadDir(path.join(refDir, "outfits"))) {
-    outfitMap.set(filename, part);
+  for (const ref of loadDir(path.join(refDir, "outfits"))) {
+    outfitMap.set(ref.filename, ref);
   }
 
   logger.info(
@@ -98,7 +94,7 @@ function hashPrompt(prompt: string): string {
 
 interface OutfitSelection {
   filename: string;
-  part: Part;
+  dataUri: string;
 }
 
 async function selectOutfit(sceneDescription: string): Promise<OutfitSelection | null> {
@@ -106,8 +102,8 @@ async function selectOutfit(sceneDescription: string): Promise<OutfitSelection |
 
   // Single outfit — no need for LLM
   if (outfitMap.size === 1) {
-    const [filename, part] = [...outfitMap.entries()][0];
-    return { filename, part };
+    const [filename, ref] = [...outfitMap.entries()][0];
+    return { filename, dataUri: ref.dataUri };
   }
 
   const filenames = [...outfitMap.keys()];
@@ -136,15 +132,16 @@ Return ONLY the filename, nothing else.`,
         { picked, available: filenames },
         "Outfit selection returned unknown filename — using first outfit",
       );
-      return { filename: filenames[0], part: outfitMap.get(filenames[0])! };
+      const firstRef = outfitMap.get(filenames[0])!;
+      return { filename: filenames[0], dataUri: firstRef.dataUri };
     }
 
     logger.info({ selected: original, total: outfitMap.size }, "Selected outfit for scene");
-    return { filename: original, part: outfitMap.get(original)! };
+    return { filename: original, dataUri: outfitMap.get(original)!.dataUri };
   } catch (error) {
     logger.warn({ error }, "Outfit selection failed — using first outfit");
-    const [filename, part] = [...outfitMap.entries()][0];
-    return { filename, part };
+    const [filename, ref] = [...outfitMap.entries()][0];
+    return { filename, dataUri: ref.dataUri };
   }
 }
 
@@ -201,6 +198,13 @@ Return ONLY the setting name, nothing else.`,
   }
 }
 
+function fileDataUri(filePath: string): string {
+  const data = fs.readFileSync(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeType = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+  return `data:${mimeType};base64,${data.toString("base64")}`;
+}
+
 export async function generateImage(request: ImageGenerationRequest): Promise<GeneratedImage> {
   const promptHash = hashPrompt(request.prompt);
 
@@ -216,35 +220,27 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
 
   const start = Date.now();
 
-  const contents: (string | Part)[] = [];
-
-  // Add reference images grouped by role
+  // Build reference images array (max 3 for xAI)
+  const images: { url: string; type: "image_url" }[] = [];
   let outfitInstruction = "";
+
   if (request.referenceImages) {
     for (const p of request.referenceImages) {
-      const filename = path.basename(p);
-      contents.push(`Reference image (${filename}):`);
-      contents.push({
-        inlineData: {
-          data: fs.readFileSync(p).toString("base64"),
-          mimeType: "image/jpeg" as const,
-        },
-      });
+      images.push({ url: fileDataUri(p), type: "image_url" });
     }
   } else {
-    for (const { filename, part } of faceRefs) {
-      contents.push(`Face/identity reference (${filename}):`);
-      contents.push(part);
+    // Pick 1 face ref (first available)
+    if (faceRefs.length > 0) {
+      images.push({ url: faceRefs[0].dataUri, type: "image_url" });
     }
-    for (const { filename, part } of bodyRefs) {
-      contents.push(`Body/pose reference (${filename}):`);
-      contents.push(part);
+    // Pick 1 body ref (first available)
+    if (bodyRefs.length > 0) {
+      images.push({ url: bodyRefs[0].dataUri, type: "image_url" });
     }
-
+    // Pick 1 outfit (selected by LLM)
     const outfit = await selectOutfit(request.prompt);
     if (outfit) {
-      contents.push(`Outfit reference — match this clothing exactly (${outfit.filename}):`);
-      contents.push(outfit.part);
+      images.push({ url: outfit.dataUri, type: "image_url" });
       outfitInstruction = `IMPORTANT: She must be wearing the exact outfit shown in the outfit reference image "${outfit.filename}" — match the clothing precisely, ignoring clothing visible in face or body references.`;
     }
   }
@@ -258,48 +254,64 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
   }
 
   const instructions = [outfitInstruction, settingInstruction].filter(Boolean).join("\n\n");
-  contents.push(instructions ? `${request.prompt}\n\n${instructions}` : request.prompt);
+  const fullPrompt = instructions ? `${request.prompt}\n\n${instructions}` : request.prompt;
 
-  const imageParts = contents.filter((c) => typeof c !== "string");
-  const textParts = contents.filter((c) => typeof c === "string");
+  // Choose endpoint based on whether we have reference images
+  const hasRefs = images.length > 0;
+  const endpoint = hasRefs
+    ? "https://api.x.ai/v1/images/edits"
+    : "https://api.x.ai/v1/images/generations";
+
+  const body: Record<string, unknown> = {
+    model: "grok-imagine-image-pro",
+    prompt: fullPrompt,
+    response_format: "b64_json",
+  };
+
+  if (request.aspectRatio) {
+    body.aspect_ratio = request.aspectRatio;
+  }
+
+  if (hasRefs) {
+    body.images = images;
+  }
+
   logger.info(
     {
-      imagePartCount: imageParts.length,
-      textPartCount: textParts.length,
-      faceRefs: faceRefs.length,
-      bodyRefs: bodyRefs.length,
+      endpoint,
+      imageCount: images.length,
+      faceRefs: faceRefs.length > 0 ? 1 : 0,
+      bodyRefs: bodyRefs.length > 0 ? 1 : 0,
       outfit: outfitInstruction ? true : false,
       setting: settingInstruction ? true : false,
-      textLabels: textParts.slice(0, -1),
       promptLength: request.prompt.length,
-      fullPrompt: textParts[textParts.length - 1],
+      fullPrompt,
     },
-    "Calling Gemini image generation",
+    "Calling xAI image generation",
   );
 
-  const response = await ai.models.generateContent({
-    model: MODEL,
-    contents,
-    config: {
-      responseModalities: ["IMAGE"],
-      ...(request.aspectRatio && {
-        imageConfig: { aspectRatio: request.aspectRatio },
-      }),
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.XAI_API_KEY}`,
     },
+    body: JSON.stringify(body),
   });
 
-  const parts = response.candidates?.[0]?.content?.parts;
-  if (!parts) {
-    throw new Error("No parts in Gemini image response");
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`xAI API error ${response.status}: ${errorText}`);
   }
 
-  const imagePart = parts.find((p) => p.inlineData);
-  if (!imagePart?.inlineData?.data) {
-    throw new Error("No image data in Gemini response");
+  const json = (await response.json()) as { data?: { b64_json?: string }[] };
+  const b64 = json.data?.[0]?.b64_json;
+  if (!b64) {
+    throw new Error("No image data in xAI response");
   }
 
-  const buffer = Buffer.from(imagePart.inlineData.data, "base64");
-  const mimeType = imagePart.inlineData.mimeType || "image/png";
+  const buffer = Buffer.from(b64, "base64");
+  const mimeType = "image/png";
   const elapsed = Date.now() - start;
 
   logger.info({ elapsed, promptHash, mimeType }, "Generated image");
@@ -310,7 +322,7 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
     {
       promptHash,
       prompt: request.prompt,
-      imageData: imagePart.inlineData.data,
+      imageData: b64,
       mimeType,
       generatedAt: new Date(),
     },
