@@ -1,8 +1,8 @@
 import { generateText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
+import { getModel, ModelTier } from "../ai/provider.js";
 import { logger } from "../utils/logger.js";
 import type { ImageGenerationRequest, GeneratedImage } from "./types.js";
 
@@ -106,7 +106,7 @@ async function selectOutfit(sceneDescription: string): Promise<OutfitSelection |
 
   try {
     const { text } = await generateText({
-      model: anthropic("claude-haiku-4-5-20251001"),
+      model: getModel(ModelTier.Fast),
       temperature: 0,
       prompt: `You are selecting an outfit reference image for AI image generation.
 
@@ -149,7 +149,7 @@ async function selectFaceRef(sceneDescription: string): Promise<RefImage | null>
 
   try {
     const { text } = await generateText({
-      model: anthropic("claude-haiku-4-5-20251001"),
+      model: getModel(ModelTier.Fast),
       temperature: 0,
       prompt: `You are selecting a face reference image for AI image generation.
 
@@ -190,7 +190,7 @@ async function selectBodyRef(sceneDescription: string): Promise<RefImage | null>
 
   try {
     const { text } = await generateText({
-      model: anthropic("claude-haiku-4-5-20251001"),
+      model: getModel(ModelTier.Fast),
       temperature: 0,
       prompt: `You are selecting a body reference image for AI image generation.
 
@@ -240,7 +240,7 @@ async function selectSetting(sceneDescription: string): Promise<SettingSelection
 
   try {
     const { text } = await generateText({
-      model: anthropic("claude-haiku-4-5-20251001"),
+      model: getModel(ModelTier.Fast),
       temperature: 0,
       prompt: `You are selecting a location/setting for AI image generation.
 

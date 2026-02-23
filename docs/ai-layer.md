@@ -8,12 +8,32 @@ Defined in `src/ai/provider.ts`. Uses the Vercel AI SDK (`ai` package).
 
 | Env Variable | Description |
 |---|---|
-| `LLM_PROVIDER` | `"anthropic"` (default) or `"openai"` |
-| `LLM_MODEL` | Model identifier (default: `"claude-sonnet-4-5"`) |
+| `LLM_PROVIDER` | `"anthropic"` (default), `"openai"`, or `"xai"` |
+| `LLM_MODEL` | Model identifier (default: `"claude-sonnet-4-5"`; recommended xAI model: `grok-4-1-fast-non-reasoning`) |
 | `ANTHROPIC_API_KEY` | Required if provider is anthropic |
 | `OPENAI_API_KEY` | Required if provider is openai |
+| `XAI_API_KEY` | Required for image generation; also used for LLM if provider is xai |
 
-`getModel()` returns a `LanguageModelV1` instance from the appropriate SDK (`@ai-sdk/anthropic` or `@ai-sdk/openai`).
+`getModel(tier?)` returns a `LanguageModelV1` instance from the appropriate SDK (`@ai-sdk/anthropic`, `@ai-sdk/openai`, or `@ai-sdk/xai`).
+
+### Model Tiers
+
+The `ModelTier` enum lets call sites declare intent rather than hardcoding model IDs. The provider maps each tier to the right model.
+
+| Tier | Purpose | Anthropic | OpenAI | xAI |
+|------|---------|-----------|--------|-----|
+| `Default` | Conversations, curation | `config.LLM_MODEL` | `config.LLM_MODEL` | `config.LLM_MODEL` |
+| `Fast` | Cheap classification (ref selection) | `claude-haiku-4-5-20251001` | `gpt-4o-mini` | `grok-4-1-fast-non-reasoning` |
+| `Smart` | Maximum reasoning (reserved) | `claude-sonnet-4-5` | `gpt-4o` | `grok-4` |
+
+Usage:
+```typescript
+import { getModel, ModelTier } from "../ai/provider.js";
+
+getModel()                    // Default — uses config.LLM_MODEL
+getModel(ModelTier.Fast)      // Fast — cheap classification tasks
+getModel(ModelTier.Smart)     // Smart — maximum reasoning
+```
 
 ## Context Assembly Pipeline
 
@@ -116,7 +136,7 @@ context/references/
 └── outfits/    → Outfit options (LLM selects best match)
 ```
 
-Images are converted to base64 data URIs. Up to 3 references are sent with each generation request. All three reference types use LLM selection (Haiku) to pick the best match for the scene — considering expression/angle for faces, pose/framing for bodies, and clothing fit for outfits. If only one reference exists in a category it's used directly; selection is skipped.
+Images are converted to base64 data URIs. Up to 3 references are sent with each generation request. All three reference types use `getModel(ModelTier.Fast)` to pick the best match for the scene — considering expression/angle for faces, pose/framing for bodies, and clothing fit for outfits. If only one reference exists in a category it's used directly; selection is skipped.
 
 ### Settings
 
