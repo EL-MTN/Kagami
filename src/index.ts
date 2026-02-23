@@ -12,7 +12,7 @@ async function main() {
 
   await connectDB();
 
-  loadContext();
+  await loadContext();
 
   const bot = createBot(config.TELEGRAM_BOT_TOKEN);
 

@@ -20,7 +20,7 @@
 - [x] **Remove photo cache** — Removed MediaAsset model and all prompt-hash caching (prompts never realistically collide)
 - [ ] **Make curation non-blocking** — Run `curateIfNeeded` in the background so the user doesn't wait for multiple LLM calls before getting a response
 - [ ] **Fix cross-day conversation continuity** — Carry forward last N messages from the previous day's conversation so context isn't lost at midnight
-- [ ] **Use async I/O in `loadContext()`** — Replace `fs.readFileSync`/`fs.readdirSync` with `fs.promises` to avoid blocking the event loop
+- [x] **Use async I/O in `loadContext()`** — Replaced all sync fs calls with `fs/promises` and parallelized directory loading
 - [x] **Clean up dead code** — Removed unused `sendPhotoWithCache` in `helpers.ts`
 - [ ] **Use all reference images** — Apply LLM selection for face/body refs (like outfits) or simplify to single-value variables
 

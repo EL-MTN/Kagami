@@ -1,6 +1,6 @@
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
@@ -18,10 +18,10 @@ const bodyRefs: RefImage[] = [];
 const outfitMap = new Map<string, RefImage>();
 const settingsMap = new Map<string, string>();
 
-function loadDir(dirPath: string): RefImage[] {
+async function loadDir(dirPath: string): Promise<RefImage[]> {
   let files: string[];
   try {
-    files = fs.readdirSync(dirPath);
+    files = await fs.readdir(dirPath);
   } catch {
     return [];
   }
@@ -31,7 +31,7 @@ function loadDir(dirPath: string): RefImage[] {
     const ext = path.extname(file).toLowerCase();
     if (!IMAGE_EXTS.has(ext)) continue;
 
-    const data = fs.readFileSync(path.join(dirPath, file));
+    const data = await fs.readFile(path.join(dirPath, file));
     const mimeType = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
     const dataUri = `data:${mimeType};base64,${data.toString("base64")}`;
 
@@ -44,11 +44,11 @@ function loadDir(dirPath: string): RefImage[] {
   return results;
 }
 
-function loadSettings() {
+async function loadSettings(): Promise<void> {
   const settingsDir = path.join(config.CONTEXT_PATH, "settings");
   let files: string[];
   try {
-    files = fs.readdirSync(settingsDir);
+    files = await fs.readdir(settingsDir);
   } catch {
     return;
   }
@@ -56,7 +56,7 @@ function loadSettings() {
   for (const file of files) {
     if (path.extname(file).toLowerCase() !== ".md") continue;
     const name = path.basename(file, ".md");
-    const content = fs.readFileSync(path.join(settingsDir, file), "utf-8").trim();
+    const content = (await fs.readFile(path.join(settingsDir, file), "utf-8")).trim();
     if (content) {
       settingsMap.set(name, content);
     }
@@ -65,16 +65,18 @@ function loadSettings() {
   logger.info({ settings: settingsMap.size }, "Loaded settings");
 }
 
-export function loadContext() {
+export async function loadContext(): Promise<void> {
   const refDir = path.join(config.CONTEXT_PATH, "references");
 
-  for (const ref of loadDir(path.join(refDir, "face"))) {
-    faceRefs.push(ref);
-  }
-  for (const ref of loadDir(path.join(refDir, "body"))) {
-    bodyRefs.push(ref);
-  }
-  for (const ref of loadDir(path.join(refDir, "outfits"))) {
+  const [face, body, outfits] = await Promise.all([
+    loadDir(path.join(refDir, "face")),
+    loadDir(path.join(refDir, "body")),
+    loadDir(path.join(refDir, "outfits")),
+  ]);
+
+  faceRefs.push(...face);
+  bodyRefs.push(...body);
+  for (const ref of outfits) {
     outfitMap.set(ref.filename, ref);
   }
 
@@ -83,7 +85,7 @@ export function loadContext() {
     "Loaded reference images",
   );
 
-  loadSettings();
+  await loadSettings();
 }
 
 interface OutfitSelection {
@@ -192,8 +194,8 @@ Return ONLY the setting name, nothing else.`,
   }
 }
 
-function fileDataUri(filePath: string): string {
-  const data = fs.readFileSync(filePath);
+async function fileDataUri(filePath: string): Promise<string> {
+  const data = await fs.readFile(filePath);
   const ext = path.extname(filePath).toLowerCase();
   const mimeType = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
   return `data:${mimeType};base64,${data.toString("base64")}`;
@@ -208,7 +210,7 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
 
   if (request.referenceImages) {
     for (const p of request.referenceImages) {
-      images.push({ url: fileDataUri(p), type: "image_url" });
+      images.push({ url: await fileDataUri(p), type: "image_url" });
     }
   } else {
     // Pick 1 face ref (first available)
