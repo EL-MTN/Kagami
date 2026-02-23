@@ -96,12 +96,6 @@ interface OutfitSelection {
 async function selectOutfit(sceneDescription: string): Promise<OutfitSelection | null> {
   if (outfitMap.size === 0) return null;
 
-  // Single outfit — no need for LLM
-  if (outfitMap.size === 1) {
-    const [filename, ref] = [...outfitMap.entries()][0];
-    return { filename, dataUri: ref.dataUri };
-  }
-
   const filenames = [...outfitMap.keys()];
 
   try {
@@ -115,35 +109,35 @@ Scene to generate: "${sceneDescription}"
 Available outfits:
 ${filenames.join("\n")}
 
-Pick the single most appropriate outfit for this scene.
-Return ONLY the filename, nothing else.`,
+Pick the single most appropriate outfit for this scene, or "none" if none of the outfits fit the scenario.
+Return ONLY the filename or "none", nothing else.`,
     });
 
-    const picked = text.trim();
+    const picked = text.trim().toLowerCase();
+
+    if (picked === "none") return null;
+
     const filenameMap = new Map(filenames.map((f) => [f.toLowerCase(), f]));
-    const original = filenameMap.get(picked.toLowerCase());
+    const original = filenameMap.get(picked);
 
     if (!original) {
       logger.warn(
         { picked, available: filenames },
-        "Outfit selection returned unknown filename — using first outfit",
+        "Outfit selection returned unknown filename — skipping",
       );
-      const firstRef = outfitMap.get(filenames[0])!;
-      return { filename: filenames[0], dataUri: firstRef.dataUri };
+      return null;
     }
 
     logger.info({ selected: original, total: outfitMap.size }, "Selected outfit for scene");
     return { filename: original, dataUri: outfitMap.get(original)!.dataUri };
   } catch (error) {
-    logger.warn({ error }, "Outfit selection failed — using first outfit");
-    const [filename, ref] = [...outfitMap.entries()][0];
-    return { filename, dataUri: ref.dataUri };
+    logger.warn({ error }, "Outfit selection failed — skipping");
+    return null;
   }
 }
 
 async function selectFaceRef(sceneDescription: string): Promise<RefImage | null> {
   if (faceRefs.length === 0) return null;
-  if (faceRefs.length === 1) return faceRefs[0];
 
   const filenames = faceRefs.map((r) => r.filename);
 
@@ -158,33 +152,35 @@ Scene to generate: "${sceneDescription}"
 Available face references:
 ${filenames.join("\n")}
 
-Pick the single most appropriate face reference for this scene — consider expression (smiling vs neutral), angle, and mood.
-Return ONLY the filename, nothing else.`,
+Pick the single most appropriate face reference for this scene — consider expression (smiling vs neutral), angle, and mood. Say "none" if none of the references fit the scenario.
+Return ONLY the filename or "none", nothing else.`,
     });
 
-    const picked = text.trim();
+    const picked = text.trim().toLowerCase();
+
+    if (picked === "none") return null;
+
     const filenameMap = new Map(filenames.map((f) => [f.toLowerCase(), f]));
-    const original = filenameMap.get(picked.toLowerCase());
+    const original = filenameMap.get(picked);
 
     if (!original) {
       logger.warn(
         { picked, available: filenames },
-        "Face ref selection returned unknown filename — using first",
+        "Face ref selection returned unknown filename — skipping",
       );
-      return faceRefs[0];
+      return null;
     }
 
     logger.info({ selected: original, total: faceRefs.length }, "Selected face ref for scene");
     return faceRefs.find((r) => r.filename === original)!;
   } catch (error) {
-    logger.warn({ error }, "Face ref selection failed — using first");
-    return faceRefs[0];
+    logger.warn({ error }, "Face ref selection failed — skipping");
+    return null;
   }
 }
 
 async function selectBodyRef(sceneDescription: string): Promise<RefImage | null> {
   if (bodyRefs.length === 0) return null;
-  if (bodyRefs.length === 1) return bodyRefs[0];
 
   const filenames = bodyRefs.map((r) => r.filename);
 
@@ -199,27 +195,30 @@ Scene to generate: "${sceneDescription}"
 Available body references:
 ${filenames.join("\n")}
 
-Pick the single most appropriate body reference for this scene — consider pose, framing, and body language.
-Return ONLY the filename, nothing else.`,
+Pick the single most appropriate body reference for this scene — consider pose, framing, and body language. Say "none" if none of the references fit the scenario.
+Return ONLY the filename or "none", nothing else.`,
     });
 
-    const picked = text.trim();
+    const picked = text.trim().toLowerCase();
+
+    if (picked === "none") return null;
+
     const filenameMap = new Map(filenames.map((f) => [f.toLowerCase(), f]));
-    const original = filenameMap.get(picked.toLowerCase());
+    const original = filenameMap.get(picked);
 
     if (!original) {
       logger.warn(
         { picked, available: filenames },
-        "Body ref selection returned unknown filename — using first",
+        "Body ref selection returned unknown filename — skipping",
       );
-      return bodyRefs[0];
+      return null;
     }
 
     logger.info({ selected: original, total: bodyRefs.length }, "Selected body ref for scene");
     return bodyRefs.find((r) => r.filename === original)!;
   } catch (error) {
-    logger.warn({ error }, "Body ref selection failed — using first");
-    return bodyRefs[0];
+    logger.warn({ error }, "Body ref selection failed — skipping");
+    return null;
   }
 }
 
