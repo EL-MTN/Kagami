@@ -8,7 +8,7 @@ const envSchema = z.object({
     .default("")
     .transform((s) => (s ? s.split(",").map(Number) : [])),
 
-  LLM_PROVIDER: z.enum(["anthropic", "openai"]).default("anthropic"),
+  LLM_PROVIDER: z.enum(["anthropic", "openai", "xai"]).default("anthropic"),
   ANTHROPIC_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   LLM_MODEL: z.string().default("claude-sonnet-4-5"),
