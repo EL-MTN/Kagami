@@ -3,6 +3,8 @@ import mongoose, { Schema, type Document } from "mongoose";
 export interface IMessage {
   role: "user" | "assistant" | "system" | "tool";
   content: string;
+  imageBase64?: string;
+  imageMimeType?: string;
   toolCalls?: Array<{
     toolName: string;
     args: Record<string, unknown>;
@@ -24,6 +26,8 @@ const messageSchema = new Schema<IMessage>(
   {
     role: { type: String, enum: ["user", "assistant", "system", "tool"], required: true },
     content: { type: String, required: true },
+    imageBase64: { type: String },
+    imageMimeType: { type: String },
     toolCalls: [
       {
         toolName: String,

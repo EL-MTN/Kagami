@@ -23,6 +23,47 @@ export class TelegramAdapter implements PlatformAdapter {
     };
   }
 
+  async normalizePhoto(ctx: Context): Promise<IncomingMessage | null> {
+    const msg = ctx.message;
+    if (!msg || !msg.photo?.length) return null;
+
+    const largest = msg.photo[msg.photo.length - 1];
+
+    try {
+      const file = await ctx.api.getFile(largest.file_id);
+      const url = `https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        logger.error(
+          { status: res.status, fileId: largest.file_id },
+          "Failed to download photo from Telegram",
+        );
+        return null;
+      }
+
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const base64 = buffer.toString("base64");
+      const mimeType = file.file_path?.endsWith(".png") ? "image/png" : "image/jpeg";
+
+      return {
+        platform: "telegram",
+        chatId: String(msg.chat.id),
+        userId: String(msg.from.id),
+        userName: msg.from.first_name || "Unknown",
+        text: msg.caption || "[photo]",
+        imageBase64: base64,
+        imageMimeType: mimeType,
+        timestamp: new Date(msg.date * 1000),
+        replyToMessageId: msg.reply_to_message
+          ? String(msg.reply_to_message.message_id)
+          : undefined,
+      };
+    } catch (error) {
+      logger.error({ error, fileId: largest.file_id }, "Error downloading photo");
+      return null;
+    }
+  }
+
   async sendText(chatId: string, text: string): Promise<void> {
     await this.bot.api.sendMessage(Number(chatId), text, {
       parse_mode: "Markdown",

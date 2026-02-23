@@ -7,7 +7,7 @@ import {
   PROACTIVE_MESSAGE_INSTRUCTIONS,
 } from "./prompts.js";
 import { logger } from "../utils/logger.js";
-import type { CoreMessage } from "ai";
+import type { CoreMessage, UserContent } from "ai";
 
 export async function assembleSystemPrompt(): Promise<string> {
   const parts: string[] = [];
@@ -89,7 +89,14 @@ export async function assembleMessages(chatId: string): Promise<CoreMessage[]> {
 
   for (const msg of history) {
     if (msg.role === "user") {
-      messages.push({ role: "user", content: msg.content });
+      let content: UserContent = msg.content;
+      if (msg.imageBase64) {
+        content = [
+          { type: "image", image: msg.imageBase64, mimeType: msg.imageMimeType },
+          { type: "text", text: msg.content },
+        ];
+      }
+      messages.push({ role: "user", content });
     } else {
       // Reconstruct tool-call / tool-result pairs so the model
       // can see what tools it used in previous turns

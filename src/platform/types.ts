@@ -4,6 +4,8 @@ export interface IncomingMessage {
   userId: string;
   userName: string;
   text: string;
+  imageBase64?: string;
+  imageMimeType?: string;
   timestamp: Date;
   replyToMessageId?: string;
 }

@@ -43,6 +43,28 @@ export function createBot(token: string): Bot {
     logger.warn({ userId }, "Unauthorized user blocked");
   });
 
+  bot.on("message:photo", async (ctx) => {
+    const incoming = await adapter.normalizePhoto(ctx);
+    if (!incoming) return;
+
+    if (isRateLimited(incoming.userId)) {
+      logger.warn({ userId: incoming.userId }, "Rate limited");
+      await ctx.reply("slow down babe, i can't keep up lol");
+      return;
+    }
+
+    logger.info({ userId: incoming.userId, hasCaption: !!ctx.message?.caption }, "Incoming photo");
+
+    try {
+      await ctx.replyWithChatAction("typing");
+      await handleMessage(incoming, adapter);
+      resetTimer(incoming.chatId);
+    } catch (error) {
+      logger.error({ error }, "Error handling photo message");
+      await ctx.reply("sorry something went wrong, give me a sec 💭");
+    }
+  });
+
   bot.on("message:text", async (ctx) => {
     const incoming = adapter.normalize(ctx);
     if (!incoming) return;

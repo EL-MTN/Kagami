@@ -5,7 +5,7 @@
 - [ ] **Voice Messages** — Add speech synthesis (ElevenLabs, OpenAI TTS) so Mashiro can send Telegram voice notes, especially for proactive or emotional moments
 - [ ] **Voice Input Understanding** — Accept and transcribe incoming voice messages (Whisper API) instead of silently ignoring `message:voice`
 - [ ] **Mood / Emotional State Tracking** — Maintain a persistent mood state that evolves based on conversation tone, time since last interaction, and events; influences response style, selfie expressions, and proactive frequency
-- [ ] **Photo Reactions & Image Understanding** — Handle incoming photos with a vision model to respond contextually (food, places, selfies, etc.)
+- [x] **Photo Reactions & Image Understanding** — Handle incoming photos with a vision model to respond contextually (food, places, selfies, etc.)
 - [ ] **Calendar Awareness & Date Memory** — Use the existing unused `calendar/` directory to track important dates and proactively reference them
 - [ ] **Sticker / GIF Responses** — Curate anime stickers/GIFs that Mashiro sends contextually via Telegram's sticker support
 - [ ] **Location-Aware Context** — React to shared locations with weather/time-of-day comments via a weather API

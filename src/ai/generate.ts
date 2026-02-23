@@ -24,6 +24,8 @@ export async function handleMessage(
   await appendMessage(convo, {
     role: "user",
     content: incoming.text,
+    imageBase64: incoming.imageBase64,
+    imageMimeType: incoming.imageMimeType,
     timestamp: incoming.timestamp,
   });
 
