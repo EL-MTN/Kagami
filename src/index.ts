@@ -2,7 +2,7 @@ import { config } from "./config.js";
 import { logger } from "./utils/logger.js";
 import { connectDB, disconnectDB } from "./db/connection.js";
 import { createBot, startBot, getAdapter } from "./platform/telegram/bot.js";
-import { loadReferenceImages } from "./media/generator.js";
+import { loadContext } from "./context/generator.js";
 import { startProactiveScheduler } from "./scheduler/proactive.js";
 
 let stopProactiveScheduler: (() => void) | null = null;
@@ -12,7 +12,7 @@ async function main() {
 
   await connectDB();
 
-  loadReferenceImages();
+  loadContext();
 
   const bot = createBot(config.TELEGRAM_BOT_TOKEN);
 

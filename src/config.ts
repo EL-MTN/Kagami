@@ -18,7 +18,7 @@ const envSchema = z.object({
   MONGODB_URI: z.string().default("mongodb://localhost:27017/aigf"),
 
   VAULT_PATH: z.string().default("./vault"),
-  MEDIA_PATH: z.string().default("./media"),
+  CONTEXT_PATH: z.string().default("./context"),
 
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),

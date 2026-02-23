@@ -1,13 +1,13 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { generateImage } from "../../media/generator.js";
+import { generateImage } from "../../context/generator.js";
 import { MediaAsset } from "../../db/models/media-asset.js";
 import type { PlatformAdapter } from "../../platform/types.js";
 import { logger } from "../../utils/logger.js";
 import crypto from "node:crypto";
 
 const APPEARANCE_PREFIX =
-  "Generate a realistic smartphone photo of the same woman shown in the reference images. She has long blonde hair and amber eyes — match her face, hair color, and features exactly to the face/identity references. The photo must look like it was taken with a phone camera — natural lighting, slight depth of field, realistic perspective. If it's a selfie, show it from a first-person phone-holding angle with one arm slightly visible. If it's a mirror selfie, show the phone in the reflection. No studio lighting, no artificial poses, no illustration style. ";
+  "Generate a realistic smartphone photo of the same woman shown in the reference images. She has long blonde hair and amber eyes — match her face, hair color, and features exactly to the face/identity references. The photo must look like it was taken with a phone camera — natural lighting, slight depth of field, realistic perspective. No studio lighting, no artificial poses, no illustration style. CAMERA LOGIC: For selfies, one arm extends toward the camera (holding the phone that is taking the photo) — the phone itself is behind the camera and NOT visible in the frame. Only the extended arm/hand is seen, cropped at the edge. The other hand is free for posing or holding scene-relevant items. For mirror selfies, the phone is visible in the reflection only. For non-selfie shots, both hands are free. Never show a phone screen or a second phone anywhere in the image. ";
 
 function buildImagePrompt(description: string): string {
   return APPEARANCE_PREFIX + "Scene: " + description;
