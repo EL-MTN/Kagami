@@ -1,0 +1,36 @@
+# AIGF — TODO
+
+## New Features
+
+- [ ] **Voice Messages** — Add speech synthesis (ElevenLabs, OpenAI TTS) so Mashiro can send Telegram voice notes, especially for proactive or emotional moments
+- [ ] **Voice Input Understanding** — Accept and transcribe incoming voice messages (Whisper API) instead of silently ignoring `message:voice`
+- [ ] **Mood / Emotional State Tracking** — Maintain a persistent mood state that evolves based on conversation tone, time since last interaction, and events; influences response style, selfie expressions, and proactive frequency
+- [ ] **Photo Reactions & Image Understanding** — Handle incoming photos with a vision model to respond contextually (food, places, selfies, etc.)
+- [ ] **Calendar Awareness & Date Memory** — Use the existing unused `calendar/` directory to track important dates and proactively reference them
+- [ ] **Sticker / GIF Responses** — Curate anime stickers/GIFs that Mashiro sends contextually via Telegram's sticker support
+- [ ] **Location-Aware Context** — React to shared locations with weather/time-of-day comments via a weather API
+- [ ] **Multi-Platform Support (Discord)** — Implement a Discord adapter using the existing `PlatformAdapter` interface
+- [ ] **Conversation Recap Command** — A `/recap` command that summarizes recent conversations from vault summaries
+- [ ] **Dynamic Personality Evolution** — Evolve the personality card over time based on relationship milestones
+
+## Architecture & Code Quality
+
+- [ ] **Extract shared response-sending logic** — Deduplicate ~40 lines between `handleMessage` and `generateProactiveMessage` into a `processAndSendResponse()` utility
+- [ ] **Add a test suite** — Unit tests for `vault.ts`, `markdown.ts`, `context-assembler.ts`, `curator.ts`, and proactive scheduler timing logic
+- [x] **Remove photo cache** — Removed MediaAsset model and all prompt-hash caching (prompts never realistically collide)
+- [ ] **Make curation non-blocking** — Run `curateIfNeeded` in the background so the user doesn't wait for multiple LLM calls before getting a response
+- [ ] **Fix cross-day conversation continuity** — Carry forward last N messages from the previous day's conversation so context isn't lost at midnight
+- [ ] **Use async I/O in `loadContext()`** — Replace `fs.readFileSync`/`fs.readdirSync` with `fs.promises` to avoid blocking the event loop
+- [x] **Clean up dead code** — Removed unused `sendPhotoWithCache` in `helpers.ts`
+- [ ] **Use all reference images** — Apply LLM selection for face/body refs (like outfits) or simplify to single-value variables
+
+## Reliability & Ops
+
+- [ ] **Add health checks / monitoring** — Lightweight HTTP health endpoint or periodic heartbeat logging
+- [ ] **Add CI/CD** — GitHub Actions pipeline for `typecheck` + `lint` on PRs and auto-deploy on main push
+- [ ] **Improve image generation error context** — Return error messages from xAI failures so the LLM can explain why a photo can't be sent
+- [ ] **Persist rate limiting** — Move the in-memory rate limiter to MongoDB or Redis so it survives restarts
+
+## Security
+
+- [ ] **Move "MGK" testing override** — Relocate the all-bypass keyword from the committed personality card to an uncommitted `.env` variable or gitignored file

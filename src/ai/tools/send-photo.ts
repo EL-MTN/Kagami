@@ -1,10 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { generateImage } from "../../context/generator.js";
-import { MediaAsset } from "../../db/models/media-asset.js";
 import type { PlatformAdapter } from "../../platform/types.js";
 import { logger } from "../../utils/logger.js";
-import crypto from "node:crypto";
 
 const APPEARANCE_PREFIX =
   "Generate a realistic smartphone photo of the same woman shown in the reference images. She has long blonde hair and amber eyes — match her face, hair color, and features exactly to the face/identity references. The photo must look like it was taken with a phone camera — natural lighting, slight depth of field, realistic perspective. No studio lighting, no artificial poses, no illustration style. CAMERA LOGIC: For selfies, one arm extends toward the camera (holding the phone that is taking the photo) — the phone itself is behind the camera and NOT visible in the frame. Only the extended arm/hand is seen, cropped at the edge. The other hand is free for posing or holding scene-relevant items. For mirror selfies, the phone is visible in the reflection only. For non-selfie shots, both hands are free. Never show a phone screen or a second phone anywhere in the image. ";
@@ -31,18 +29,6 @@ export function createSendPhotoTool(chatId: string, adapter: PlatformAdapter) {
     }),
     execute: async ({ description, caption, aspectRatio }) => {
       const prompt = buildImagePrompt(description);
-      const promptHash = crypto.createHash("sha256").update(prompt).digest("hex");
-
-      // Check if we have a cached Telegram file_id for this exact prompt
-      const cached = await MediaAsset.findOne({
-        promptHash,
-        telegramFileId: { $exists: true, $ne: null },
-      });
-      if (cached?.telegramFileId) {
-        logger.debug({ promptHash }, "Sending cached photo via file_id");
-        await adapter.sendPhoto(chatId, { fileId: cached.telegramFileId }, caption);
-        return { sent: true, cached: true, caption };
-      }
 
       try {
         const image = await generateImage({
@@ -50,18 +36,9 @@ export function createSendPhotoTool(chatId: string, adapter: PlatformAdapter) {
           aspectRatio: aspectRatio || "3:4",
         });
 
-        const fileId = await adapter.sendPhotoBuffer(chatId, image.buffer, caption);
+        await adapter.sendPhotoBuffer(chatId, image.buffer, caption);
 
-        // Cache the Telegram file_id for future reuse
-        if (fileId) {
-          await MediaAsset.updateOne(
-            { promptHash },
-            { $set: { telegramFileId: fileId } },
-            { upsert: false },
-          );
-        }
-
-        return { sent: true, cached: false, caption };
+        return { sent: true, caption };
       } catch (err) {
         logger.error({ err, description }, "Image generation failed");
         return { sent: false, reason: "Image generation failed" };

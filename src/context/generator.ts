@@ -2,10 +2,8 @@ import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
-import { MediaAsset } from "../db/models/media-asset.js";
 import type { ImageGenerationRequest, GeneratedImage } from "./types.js";
 
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
@@ -86,10 +84,6 @@ export function loadContext() {
   );
 
   loadSettings();
-}
-
-function hashPrompt(prompt: string): string {
-  return crypto.createHash("sha256").update(prompt).digest("hex");
 }
 
 interface OutfitSelection {
@@ -206,18 +200,6 @@ function fileDataUri(filePath: string): string {
 }
 
 export async function generateImage(request: ImageGenerationRequest): Promise<GeneratedImage> {
-  const promptHash = hashPrompt(request.prompt);
-
-  // Check cache first
-  const cached = await MediaAsset.findOne({ promptHash });
-  if (cached?.imageData) {
-    logger.debug({ promptHash }, "Returning cached generated image");
-    return {
-      buffer: Buffer.from(cached.imageData, "base64"),
-      mimeType: cached.mimeType || "image/png",
-    };
-  }
-
   const start = Date.now();
 
   // Build reference images array (max 3 for xAI)
@@ -314,20 +296,7 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
   const mimeType = "image/png";
   const elapsed = Date.now() - start;
 
-  logger.info({ elapsed, promptHash, mimeType }, "Generated image");
-
-  // Cache in MongoDB
-  await MediaAsset.updateOne(
-    { promptHash },
-    {
-      promptHash,
-      prompt: request.prompt,
-      imageData: b64,
-      mimeType,
-      generatedAt: new Date(),
-    },
-    { upsert: true },
-  );
+  logger.info({ elapsed, mimeType }, "Generated image");
 
   return { buffer, mimeType };
 }
