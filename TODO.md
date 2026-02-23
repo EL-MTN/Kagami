@@ -22,7 +22,7 @@
 - [ ] **Fix cross-day conversation continuity** — Carry forward last N messages from the previous day's conversation so context isn't lost at midnight
 - [x] **Use async I/O in `loadContext()`** — Replaced all sync fs calls with `fs/promises` and parallelized directory loading
 - [x] **Clean up dead code** — Removed unused `sendPhotoWithCache` in `helpers.ts`
-- [ ] **Use all reference images** — Apply LLM selection for face/body refs (like outfits) or simplify to single-value variables
+- [x] **Use all reference images** — Apply LLM selection for face/body refs (like outfits) or simplify to single-value variables
 
 ## Reliability & Ops
 

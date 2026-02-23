@@ -55,7 +55,7 @@ AIGF is a layered conversational AI system. Messages flow from a platform adapte
 │                          │
 │ reference loader         │
 │  ─► outfit/setting pick  │
-│  ─► xAI Grok Imagine Pro │
+│  ─► xAI Grok Imagine     │
 │  ─► buffer ─► send       │
 └──────────────────────────┘
 ```

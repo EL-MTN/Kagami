@@ -141,6 +141,88 @@ Return ONLY the filename, nothing else.`,
   }
 }
 
+async function selectFaceRef(sceneDescription: string): Promise<RefImage | null> {
+  if (faceRefs.length === 0) return null;
+  if (faceRefs.length === 1) return faceRefs[0];
+
+  const filenames = faceRefs.map((r) => r.filename);
+
+  try {
+    const { text } = await generateText({
+      model: anthropic("claude-haiku-4-5-20251001"),
+      temperature: 0,
+      prompt: `You are selecting a face reference image for AI image generation.
+
+Scene to generate: "${sceneDescription}"
+
+Available face references:
+${filenames.join("\n")}
+
+Pick the single most appropriate face reference for this scene — consider expression (smiling vs neutral), angle, and mood.
+Return ONLY the filename, nothing else.`,
+    });
+
+    const picked = text.trim();
+    const filenameMap = new Map(filenames.map((f) => [f.toLowerCase(), f]));
+    const original = filenameMap.get(picked.toLowerCase());
+
+    if (!original) {
+      logger.warn(
+        { picked, available: filenames },
+        "Face ref selection returned unknown filename — using first",
+      );
+      return faceRefs[0];
+    }
+
+    logger.info({ selected: original, total: faceRefs.length }, "Selected face ref for scene");
+    return faceRefs.find((r) => r.filename === original)!;
+  } catch (error) {
+    logger.warn({ error }, "Face ref selection failed — using first");
+    return faceRefs[0];
+  }
+}
+
+async function selectBodyRef(sceneDescription: string): Promise<RefImage | null> {
+  if (bodyRefs.length === 0) return null;
+  if (bodyRefs.length === 1) return bodyRefs[0];
+
+  const filenames = bodyRefs.map((r) => r.filename);
+
+  try {
+    const { text } = await generateText({
+      model: anthropic("claude-haiku-4-5-20251001"),
+      temperature: 0,
+      prompt: `You are selecting a body reference image for AI image generation.
+
+Scene to generate: "${sceneDescription}"
+
+Available body references:
+${filenames.join("\n")}
+
+Pick the single most appropriate body reference for this scene — consider pose, framing, and body language.
+Return ONLY the filename, nothing else.`,
+    });
+
+    const picked = text.trim();
+    const filenameMap = new Map(filenames.map((f) => [f.toLowerCase(), f]));
+    const original = filenameMap.get(picked.toLowerCase());
+
+    if (!original) {
+      logger.warn(
+        { picked, available: filenames },
+        "Body ref selection returned unknown filename — using first",
+      );
+      return bodyRefs[0];
+    }
+
+    logger.info({ selected: original, total: bodyRefs.length }, "Selected body ref for scene");
+    return bodyRefs.find((r) => r.filename === original)!;
+  } catch (error) {
+    logger.warn({ error }, "Body ref selection failed — using first");
+    return bodyRefs[0];
+  }
+}
+
 interface SettingSelection {
   name: string;
   description: string;
@@ -204,7 +286,7 @@ async function fileDataUri(filePath: string): Promise<string> {
 export async function generateImage(request: ImageGenerationRequest): Promise<GeneratedImage> {
   const start = Date.now();
 
-  // Build reference images array (max 3 for xAI)
+  // Build reference images array (up to 3 for grok-imagine-image edits)
   const images: { url: string; type: "image_url" }[] = [];
   let outfitInstruction = "";
 
@@ -213,16 +295,19 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
       images.push({ url: await fileDataUri(p), type: "image_url" });
     }
   } else {
-    // Pick 1 face ref (first available)
-    if (faceRefs.length > 0) {
-      images.push({ url: faceRefs[0].dataUri, type: "image_url" });
+    // Select face, body, and outfit refs in parallel (all use LLM selection)
+    const [face, body, outfit] = await Promise.all([
+      selectFaceRef(request.prompt),
+      selectBodyRef(request.prompt),
+      selectOutfit(request.prompt),
+    ]);
+
+    if (face) {
+      images.push({ url: face.dataUri, type: "image_url" });
     }
-    // Pick 1 body ref (first available)
-    if (bodyRefs.length > 0) {
-      images.push({ url: bodyRefs[0].dataUri, type: "image_url" });
+    if (body) {
+      images.push({ url: body.dataUri, type: "image_url" });
     }
-    // Pick 1 outfit (selected by LLM)
-    const outfit = await selectOutfit(request.prompt);
     if (outfit) {
       images.push({ url: outfit.dataUri, type: "image_url" });
       outfitInstruction = `IMPORTANT: She must be wearing the exact outfit shown in the outfit reference image "${outfit.filename}" — match the clothing precisely, ignoring clothing visible in face or body references.`;
@@ -247,7 +332,7 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
     : "https://api.x.ai/v1/images/generations";
 
   const body: Record<string, unknown> = {
-    model: "grok-imagine-image-pro",
+    model: "grok-imagine-image",
     prompt: fullPrompt,
     response_format: "b64_json",
   };

@@ -103,7 +103,7 @@ allTools(ctx) → { readMemory, writeMemory, searchMemory, curateMemory, sendPho
 
 ## Image Generation
 
-Implemented in `src/context/generator.ts`. Uses xAI Grok Imagine Pro.
+Implemented in `src/context/generator.ts`. Uses xAI Grok Imagine (`grok-imagine-image`).
 
 ### Reference Images
 
@@ -111,12 +111,12 @@ Loaded at startup from `context/references/`:
 
 ```
 context/references/
-├── face/       → Face reference photos
-├── body/       → Body reference photos
+├── face/       → Face reference photos (LLM selects best match)
+├── body/       → Body reference photos (LLM selects best match)
 └── outfits/    → Outfit options (LLM selects best match)
 ```
 
-Images are converted to base64 data URIs. Up to 3 references are sent with each generation request (face + body + selected outfit).
+Images are converted to base64 data URIs. Up to 3 references are sent with each generation request. All three reference types use LLM selection (Haiku) to pick the best match for the scene — considering expression/angle for faces, pose/framing for bodies, and clothing fit for outfits. If only one reference exists in a category it's used directly; selection is skipped.
 
 ### Settings
 
@@ -130,15 +130,15 @@ sendPhoto tool invoked with description
     ├─ 1. Build prompt with APPEARANCE_PREFIX
     │      (realistic phone photo, match face/hair/features from references)
     │
-    ├─ 2. Select references:
-    │      ├─ Face reference (always included)
-    │      ├─ Body reference (always included)
+    ├─ 2. Select references (all via LLM, in parallel):
+    │      ├─ Face reference (LLM picks best expression/angle)
+    │      ├─ Body reference (LLM picks best pose/framing)
     │      └─ Outfit (LLM picks best match from available options)
     │
     ├─ 3. LLM selects setting/location if relevant
     │
     ├─ 4. POST to xAI API:
-    │      ├─ Model: grok-imagine-image-pro
+    │      ├─ Model: grok-imagine-image
     │      ├─ Endpoint: /v1/images/edits (with refs) or /v1/images/generations (without)
     │      ├─ response_format: b64_json
     │      └─ aspect_ratio from tool parameters
