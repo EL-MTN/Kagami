@@ -10,12 +10,6 @@ export interface IncomingMessage {
   replyToMessageId?: string;
 }
 
-export interface OutgoingMessage {
-  text: string;
-  photoPath?: string;
-  photoFileId?: string;
-}
-
 export interface PlatformAdapter {
   readonly platform: string;
   sendText(chatId: string, text: string): Promise<void>;

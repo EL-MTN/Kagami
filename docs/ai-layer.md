@@ -10,9 +10,9 @@ Defined in `src/ai/provider.ts`. Uses the Vercel AI SDK (`ai` package).
 |---|---|
 | `LLM_PROVIDER` | `"anthropic"` (default), `"openai"`, or `"xai"` |
 | `LLM_MODEL` | Model identifier (default: `"claude-sonnet-4-5"`; recommended xAI model: `grok-4-1-fast-non-reasoning`) |
-| `ANTHROPIC_API_KEY` | Required if provider is anthropic |
-| `OPENAI_API_KEY` | Required if provider is openai |
-| `XAI_API_KEY` | Required for image generation; also used for LLM if provider is xai |
+| `ANTHROPIC_API_KEY` | Required if provider is `anthropic` (validated at startup) |
+| `OPENAI_API_KEY` | Required if provider is `openai` (validated at startup) |
+| `XAI_API_KEY` | Required if provider is `xai` (validated at startup). Also required at runtime for image generation regardless of provider. |
 
 `getModel(tier?)` returns a `LanguageModelV1` instance from the appropriate SDK (`@ai-sdk/anthropic`, `@ai-sdk/openai`, or `@ai-sdk/xai`).
 
@@ -175,7 +175,7 @@ Implemented in `src/ai/response.ts`.
 ### Response Extraction
 
 - `extractResponseText(steps)` — walks LLM steps backward to find the last step with text output
-- `collectToolCalls(steps)` — flattens all tool calls + results across all steps into `{ toolName, args, result }[]`
+- `collectToolCalls(steps)` — flattens all tool calls + results across all steps into `{ toolName, args, result }[]`. Results are matched by `toolCallId` for correct correlation when the same tool is called multiple times.
 - `wasPhotoSent(steps)` — checks if any step's sendPhoto tool returned `sent: true`
 
 ### Segmented Sending
@@ -188,7 +188,7 @@ Implemented in `src/ai/response.ts`.
 
 ### Step Logging
 
-`logSteps(steps)` logs each generation step with tool names, text preview, and finish reason for debugging.
+`logSteps(steps)` logs each generation step at DEBUG level with tool names, text preview, and finish reason.
 
 ## Generation Parameters
 

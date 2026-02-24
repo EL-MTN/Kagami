@@ -283,6 +283,10 @@ async function fileDataUri(filePath: string): Promise<string> {
 }
 
 export async function generateImage(request: ImageGenerationRequest): Promise<GeneratedImage> {
+  if (!config.XAI_API_KEY) {
+    throw new Error("XAI_API_KEY is required for image generation");
+  }
+
   const start = Date.now();
 
   // Build reference images array (up to 3 for grok-imagine-image edits)
@@ -352,8 +356,8 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
       bodyRefs: bodyRefs.length > 0 ? 1 : 0,
       outfit: outfitInstruction ? true : false,
       setting: settingInstruction ? true : false,
-      promptLength: request.prompt.length,
-      fullPrompt,
+      promptLength: fullPrompt.length,
+      promptPreview: fullPrompt.slice(0, 200),
     },
     "Calling xAI image generation",
   );

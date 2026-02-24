@@ -2,7 +2,7 @@ import { generateText } from "ai";
 import { format, subDays } from "date-fns";
 import { getModel } from "../ai/provider.js";
 import { getOverflowMessages, trimConversation } from "../db/models/conversation.js";
-import { readVaultFile, writeVaultFile, listVaultFiles } from "./vault.js";
+import { readVaultFile, writeVaultFile, listVaultFiles, deleteVaultFile } from "./vault.js";
 import { logger } from "../utils/logger.js";
 
 const CONTEXT_LIMIT = 40;
@@ -136,6 +136,13 @@ async function weeklyDeepCuration(oldFiles: string[]): Promise<void> {
     type: "weekly-summary",
     weekOf,
   });
+
+  // Delete merged daily files to prevent re-merging
+  for (const file of oldFiles) {
+    await deleteVaultFile(file).catch((error) => {
+      logger.warn({ error, file }, "Failed to delete merged daily file");
+    });
+  }
 
   logger.info({ weekOf, mergedFiles: oldFiles.length }, "Weekly curation complete");
 }

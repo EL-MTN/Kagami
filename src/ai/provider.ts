@@ -10,19 +10,18 @@ export enum ModelTier {
   Smart = "smart",
 }
 
-const TIER_MODELS: Record<string, Record<ModelTier, string>> = {
+type NonDefaultTier = Exclude<ModelTier, ModelTier.Default>;
+
+const TIER_MODELS: Record<string, Record<NonDefaultTier, string>> = {
   anthropic: {
-    [ModelTier.Default]: "",
     [ModelTier.Fast]: "claude-haiku-4-5-20251001",
     [ModelTier.Smart]: "claude-sonnet-4-5",
   },
   openai: {
-    [ModelTier.Default]: "",
     [ModelTier.Fast]: "gpt-4o-mini",
     [ModelTier.Smart]: "gpt-4o",
   },
   xai: {
-    [ModelTier.Default]: "",
     [ModelTier.Fast]: "grok-4-1-fast-non-reasoning",
     [ModelTier.Smart]: "grok-4",
   },
@@ -30,7 +29,8 @@ const TIER_MODELS: Record<string, Record<ModelTier, string>> = {
 
 export function getModel(tier: ModelTier = ModelTier.Default): LanguageModelV1 {
   const provider = config.LLM_PROVIDER;
-  const modelId = tier === ModelTier.Default ? config.LLM_MODEL : TIER_MODELS[provider][tier];
+  const modelId =
+    tier === ModelTier.Default ? config.LLM_MODEL : TIER_MODELS[provider][tier as NonDefaultTier];
 
   if (provider === "anthropic") {
     return anthropic(modelId);

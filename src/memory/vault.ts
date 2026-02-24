@@ -6,7 +6,12 @@ import { logger } from "../utils/logger.js";
 import type { VaultFile, SearchResult } from "./types.js";
 
 function vaultPath(...segments: string[]): string {
-  return path.resolve(config.VAULT_PATH, ...segments);
+  const root = path.resolve(config.VAULT_PATH);
+  const resolved = path.resolve(root, ...segments);
+  if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+    throw new Error(`Path traversal blocked: ${segments.join("/")}`);
+  }
+  return resolved;
 }
 
 export async function readVaultFile(filePath: string): Promise<VaultFile | null> {
@@ -31,6 +36,12 @@ export async function writeVaultFile(
   const raw = toMarkdown(frontmatter, content);
   await fs.writeFile(fullPath, raw, "utf-8");
   logger.debug({ path: filePath }, "Wrote vault file");
+}
+
+export async function deleteVaultFile(filePath: string): Promise<void> {
+  const fullPath = vaultPath(filePath);
+  await fs.unlink(fullPath);
+  logger.debug({ path: filePath }, "Deleted vault file");
 }
 
 export async function appendToVaultFile(filePath: string, content: string): Promise<void> {

@@ -19,6 +19,16 @@ function isRateLimited(userId: string): boolean {
   return recent.length > RATE_LIMIT_MAX;
 }
 
+// Periodic eviction of stale rate limit entries
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, timestamps] of rateLimitMap) {
+    if (timestamps.every((t) => now - t >= RATE_LIMIT_WINDOW)) {
+      rateLimitMap.delete(userId);
+    }
+  }
+}, RATE_LIMIT_WINDOW).unref();
+
 let _adapter: TelegramAdapter | null = null;
 
 export function getAdapter(): TelegramAdapter {
@@ -95,8 +105,11 @@ export function createBot(token: string): Bot {
   return bot;
 }
 
-export async function startBot(bot: Bot): Promise<void> {
+export function startBot(bot: Bot): void {
   logger.info("Starting Telegram bot...");
-  bot.start();
-  logger.info("Telegram bot started");
+  bot.start().catch((error) => {
+    logger.fatal({ error }, "Bot polling failed");
+    process.exit(1);
+  });
+  logger.info("Telegram bot polling initiated");
 }

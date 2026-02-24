@@ -80,9 +80,12 @@ Implemented in `src/memory/vault.ts`:
 |---|---|
 | `readVaultFile(path)` | Read file, parse frontmatter + content. Returns `null` on missing file. |
 | `writeVaultFile(path, content, frontmatter)` | Write file with frontmatter. Creates parent dirs. |
+| `deleteVaultFile(path)` | Delete a vault file. Used by weekly merge to clean up merged daily files. |
 | `appendToVaultFile(path, content)` | Append with line-level deduplication (case-insensitive). Preserves headers. |
 | `listVaultFiles(dir)` | Recursive walk, returns all `.md` file paths. |
 | `searchVault(query)` | Case-insensitive line matching across all files. Top 5 excerpts per file, sorted by match count. |
+
+All vault paths are resolved relative to `VAULT_PATH` and include a path traversal guard — any attempt to resolve a path outside the vault directory is blocked.
 
 The LLM accesses these operations through the `readMemory`, `writeMemory`, and `searchMemory` tools.
 
@@ -121,6 +124,7 @@ curateIfNeeded(chatId)
               └─ Read all old daily summaries
               └─ LLM compresses into single weekly summary
               └─ Write → week-of-{DATE}.md
+              └─ Delete merged daily files to prevent re-merging
 ```
 
 ## System Prompt Assembly

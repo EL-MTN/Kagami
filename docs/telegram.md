@@ -29,12 +29,6 @@ interface IncomingMessage {
   timestamp: Date;
   replyToMessageId?: string;
 }
-
-interface OutgoingMessage {
-  text: string;
-  photoPath?: string;
-  photoFileId?: string;
-}
 ```
 
 ## TelegramAdapter
@@ -47,7 +41,7 @@ Implemented in `src/platform/telegram/adapter.ts`. Singleton accessed via `getAd
 |---|---|
 | `normalize(ctx)` | Extract text message from Grammy context → `IncomingMessage` |
 | `normalizePhoto(ctx)` | Download photo from Telegram API, convert to base64, detect MIME type → `IncomingMessage` |
-| `sendText(chatId, text)` | Send message with Markdown parse mode |
+| `sendText(chatId, text)` | Send plain text message |
 | `sendPhoto(chatId, photo, caption)` | Send photo by file path or file_id. Returns file_id for caching. |
 | `sendPhotoBuffer(chatId, buffer, caption)` | Send photo from memory buffer. Returns file_id. |
 
@@ -93,7 +87,7 @@ When `ALLOWED_USER_IDS` is configured in env:
 
 - **Window**: 1 minute (sliding)
 - **Limit**: 15 messages per user per minute
-- **Storage**: in-memory `Map<userId, timestamp[]>` (resets on restart)
+- **Storage**: in-memory `Map<userId, timestamp[]>` (resets on restart, stale entries evicted periodically)
 - Exceeding the limit returns an error reply to the user
 
 ### Error Handling

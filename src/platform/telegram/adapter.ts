@@ -10,7 +10,7 @@ export class TelegramAdapter implements PlatformAdapter {
 
   normalize(ctx: Context): IncomingMessage | null {
     const msg = ctx.message;
-    if (!msg || !msg.text) return null;
+    if (!msg || !msg.text || !msg.from) return null;
 
     return {
       platform: "telegram",
@@ -25,14 +25,15 @@ export class TelegramAdapter implements PlatformAdapter {
 
   async normalizePhoto(ctx: Context): Promise<IncomingMessage | null> {
     const msg = ctx.message;
-    if (!msg || !msg.photo?.length) return null;
+    if (!msg || !msg.photo?.length || !msg.from) return null;
 
     const largest = msg.photo[msg.photo.length - 1];
 
     try {
       const file = await ctx.api.getFile(largest.file_id);
-      const url = `https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`;
-      const res = await fetch(url);
+      const res = await fetch(
+        `https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`,
+      );
       if (!res.ok) {
         logger.error(
           { status: res.status, fileId: largest.file_id },
@@ -65,9 +66,7 @@ export class TelegramAdapter implements PlatformAdapter {
   }
 
   async sendText(chatId: string, text: string): Promise<void> {
-    await this.bot.api.sendMessage(Number(chatId), text, {
-      parse_mode: "Markdown",
-    });
+    await this.bot.api.sendMessage(Number(chatId), text);
   }
 
   async sendPhoto(

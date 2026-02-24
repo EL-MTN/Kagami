@@ -22,7 +22,7 @@ export function extractResponseText(steps: Step[]): string | undefined {
 export function collectToolCalls(steps: Step[]) {
   return steps.flatMap((step) => {
     return (step.toolCalls || []).map((tc) => {
-      const tr = step.toolResults?.find((r) => r.toolName === tc.toolName);
+      const tr = step.toolResults?.find((r) => r.toolCallId === tc.toolCallId);
       return {
         toolName: tc.toolName,
         args: tc.args as Record<string, unknown>,
@@ -69,7 +69,7 @@ export async function sendSegmented(
 export function logSteps(steps: Step[]): void {
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
-    logger.info(
+    logger.debug(
       {
         step: i,
         hasText: !!step.text,

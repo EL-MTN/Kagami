@@ -1,28 +1,44 @@
 import "dotenv/config";
 import { z } from "zod";
 
-const envSchema = z.object({
-  TELEGRAM_BOT_TOKEN: z.string().min(1),
-  ALLOWED_USER_IDS: z
-    .string()
-    .default("")
-    .transform((s) => (s ? s.split(",").map(Number) : [])),
+const envSchema = z
+  .object({
+    TELEGRAM_BOT_TOKEN: z.string().min(1),
+    ALLOWED_USER_IDS: z
+      .string()
+      .default("")
+      .transform((s) => (s ? s.split(",").map(Number) : [])),
 
-  LLM_PROVIDER: z.enum(["anthropic", "openai", "xai"]).default("anthropic"),
-  ANTHROPIC_API_KEY: z.string().optional(),
-  OPENAI_API_KEY: z.string().optional(),
-  LLM_MODEL: z.string().default("claude-sonnet-4-5"),
+    LLM_PROVIDER: z.enum(["anthropic", "openai", "xai"]).default("anthropic"),
+    ANTHROPIC_API_KEY: z.string().optional(),
+    OPENAI_API_KEY: z.string().optional(),
+    LLM_MODEL: z.string().default("claude-sonnet-4-5"),
 
-  XAI_API_KEY: z.string().min(1, "XAI_API_KEY is required for image generation"),
+    XAI_API_KEY: z.string().optional(),
 
-  MONGODB_URI: z.string().default("mongodb://localhost:27017/aigf"),
+    MONGODB_URI: z.string().default("mongodb://localhost:27017/aigf"),
 
-  VAULT_PATH: z.string().default("./vault"),
-  CONTEXT_PATH: z.string().default("./context"),
+    VAULT_PATH: z.string().default("./vault"),
+    CONTEXT_PATH: z.string().default("./context"),
 
-  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
-  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-});
+    LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+    NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  })
+  .superRefine((data, ctx) => {
+    const keyMap: Record<string, string> = {
+      anthropic: "ANTHROPIC_API_KEY",
+      openai: "OPENAI_API_KEY",
+      xai: "XAI_API_KEY",
+    };
+    const required = keyMap[data.LLM_PROVIDER];
+    if (required && !data[required as keyof typeof data]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${required} is required when LLM_PROVIDER is "${data.LLM_PROVIDER}"`,
+        path: [required],
+      });
+    }
+  });
 
 const parsed = envSchema.safeParse(process.env);
 

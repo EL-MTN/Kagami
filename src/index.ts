@@ -16,7 +16,7 @@ async function main() {
 
   const bot = createBot(config.TELEGRAM_BOT_TOKEN);
 
-  await startBot(bot);
+  startBot(bot);
 
   stopProactiveScheduler = startProactiveScheduler(getAdapter());
 }
@@ -35,6 +35,7 @@ process.on("uncaughtException", (error) => {
 });
 process.on("unhandledRejection", (reason) => {
   logger.fatal({ reason }, "Unhandled rejection");
+  shutdown("unhandledRejection");
 });
 
 main().catch((error) => {

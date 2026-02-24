@@ -119,7 +119,7 @@ When firing, the scheduler assembles a proactive system prompt (personality + pr
 | `src/ai/` | LLM integration, prompt assembly, tool orchestration | `generate.ts`, `context-assembler.ts`, `prompts.ts`, `provider.ts`, `response.ts` |
 | `src/ai/tools/` | Tool implementations available to the LLM | `index.ts`, `read-memory.ts`, `write-memory.ts`, `search-memory.ts`, `curate-memory.ts`, `send-photo.ts` |
 | `src/platform/` | Platform-agnostic message types | `types.ts` |
-| `src/platform/telegram/` | Telegram adapter + bot setup | `adapter.ts`, `bot.ts`, `helpers.ts` |
+| `src/platform/telegram/` | Telegram adapter + bot setup | `adapter.ts`, `bot.ts` |
 | `src/memory/` | Vault file operations + curation pipeline | `vault.ts`, `curator.ts`, `types.ts` |
 | `src/db/` | MongoDB connection + data models | `connection.ts`, `models/conversation.ts`, `models/scheduler-state.ts` |
 | `src/scheduler/` | Proactive message scheduling | `proactive.ts` |
@@ -138,7 +138,7 @@ When firing, the scheduler assembles a proactive system prompt (personality + pr
 4. Start bot (long-polling)
 5. Start proactive scheduler (restore timers from DB)
 
-Graceful shutdown on SIGINT/SIGTERM: stop scheduler, disconnect DB.
+Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop scheduler, disconnect DB.
 
 ## Key Design Decisions
 
