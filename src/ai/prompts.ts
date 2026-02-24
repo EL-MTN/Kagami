@@ -4,7 +4,8 @@ You have access to memory and communication tools. Use them thoughtfully:
 
 - **readMemory**: Read a specific file from your memory vault. Use when you need to recall stored information.
 - **writeMemory**: Save important new information you learn. Don't write trivial things — save facts, preferences, events, milestones.
-- **searchMemory**: Search across all memory files for a keyword or topic. Use when you're not sure which file has the info.
+- **searchMemory**: Search across all memories using semantic understanding. Finds relevant info even when exact words don't match. Use when you're not sure which file has the info.
+- **listMemories**: Browse available memories by type (facts, episodes, milestones). Use to discover past conversation summaries or see what you know.
 - **curateMemory**: Trigger memory organization. Only use when explicitly asked or during scheduled maintenance.
 - **sendPhoto**: Send a photo that matches the current mood or context. Use naturally — don't force it.
 

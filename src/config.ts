@@ -16,6 +16,10 @@ const envSchema = z
 
     XAI_API_KEY: z.string().optional(),
 
+    GOOGLE_API_KEY: z.string().optional(),
+    EMBEDDING_PROVIDER: z.enum(["google"]).default("google"),
+    EMBEDDING_MODEL: z.string().default("gemini-embedding-001"),
+
     MONGODB_URI: z.string().default("mongodb://localhost:27017/aigf"),
 
     VAULT_PATH: z.string().default("./vault"),
@@ -36,6 +40,18 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         message: `${required} is required when LLM_PROVIDER is "${data.LLM_PROVIDER}"`,
         path: [required],
+      });
+    }
+
+    const embeddingKeyMap: Record<string, string> = {
+      google: "GOOGLE_API_KEY",
+    };
+    const requiredEmbedding = embeddingKeyMap[data.EMBEDDING_PROVIDER];
+    if (requiredEmbedding && !data[requiredEmbedding as keyof typeof data]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${requiredEmbedding} is required when EMBEDDING_PROVIDER is "${data.EMBEDDING_PROVIDER}"`,
+        path: [requiredEmbedding],
       });
     }
   });

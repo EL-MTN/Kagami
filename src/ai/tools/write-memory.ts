@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { readVaultFile, writeVaultFile, appendToVaultFile } from "../../memory/vault.js";
+import * as engine from "../../memory/engine.js";
 import { logger } from "../../utils/logger.js";
 
 export const writeMemory = tool({
@@ -25,6 +26,14 @@ export const writeMemory = tool({
       await writeVaultFile(path, content);
     } else {
       await appendToVaultFile(path, content);
+    }
+
+    // Dual-write: also store facts in Memory collection for semantic search
+    if (path.includes("about-you") || path.includes("milestones")) {
+      const type = path.includes("milestones") ? ("milestone" as const) : ("fact" as const);
+      await engine.remember(content, type, "tool", { vaultPath: path }).catch((error) => {
+        logger.warn({ error, path }, "Failed to dual-write to Memory collection");
+      });
     }
 
     // Return current state so the LLM sees what's stored

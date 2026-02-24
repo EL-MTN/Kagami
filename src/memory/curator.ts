@@ -1,15 +1,30 @@
 import { generateText } from "ai";
 import { format, subDays } from "date-fns";
-import { getModel } from "../ai/provider.js";
+import { getModel, ModelTier } from "../ai/provider.js";
 import { getOverflowMessages, trimConversation } from "../db/models/conversation.js";
 import { readVaultFile, writeVaultFile, listVaultFiles, deleteVaultFile } from "./vault.js";
+import * as engine from "./engine.js";
 import { logger } from "../utils/logger.js";
 
 const CONTEXT_LIMIT = 40;
+const DEBOUNCE_THRESHOLD = 5;
+
+// Track last curation message count per chat for debouncing
+const lastCurationCount = new Map<string, number>();
 
 export async function curateIfNeeded(chatId: string): Promise<void> {
   const overflow = await getOverflowMessages(chatId, CONTEXT_LIMIT);
   if (!overflow) return;
+
+  // Debounce: after first curation, wait until 5+ messages overflow
+  const lastCount = lastCurationCount.get(chatId) ?? 0;
+  if (lastCount > 0 && overflow.overflow.length < DEBOUNCE_THRESHOLD) {
+    logger.debug(
+      { chatId, overflowCount: overflow.overflow.length, threshold: DEBOUNCE_THRESHOLD },
+      "Skipping curation — below debounce threshold",
+    );
+    return;
+  }
 
   logger.info(
     { chatId, overflowCount: overflow.overflow.length, total: overflow.total },
@@ -19,7 +34,7 @@ export async function curateIfNeeded(chatId: string): Promise<void> {
   // Format overflow as transcript
   const transcript = overflow.overflow.map((m) => `${m.role}: ${m.content}`).join("\n");
 
-  // Summarize overflow
+  // Summarize overflow with structured metadata extraction
   const result = await generateText({
     model: getModel(),
     system: `You are a memory curator. Summarize conversations into key points. Extract:
@@ -28,7 +43,16 @@ export async function curateIfNeeded(chatId: string): Promise<void> {
 3. Topics discussed
 4. Any promises, plans, or follow-ups mentioned
 
-Be concise. Use bullet points. Write from the perspective of Mashiro (the girlfriend AI) remembering the conversation.`,
+Be concise. Use bullet points. Write from the perspective of Mashiro (the girlfriend AI) remembering the conversation.
+
+After the summary, output a YAML metadata block on its own line starting with "---METADATA---":
+---METADATA---
+emotionalTone: <1-10, where 1=very negative, 10=very positive>
+importance: <1-10, where 10=life-changing event>
+followUps: ["<action item 1>", "<action item 2>"]
+---END---
+
+Always include the metadata block, even if followUps is empty.`,
     messages: [
       {
         role: "user",
@@ -37,21 +61,39 @@ Be concise. Use bullet points. Write from the perspective of Mashiro (the girlfr
     ],
   });
 
-  // Write summary to vault
+  // Parse metadata from response
+  const { summary, metadata } = parseCurationResponse(result.text);
+
+  // Write summary to vault with structured frontmatter
   const timestamp = format(new Date(), "yyyy-MM-dd'T'HH-mm-ss");
   const summaryPath = `memories/conversations/${timestamp}.md`;
-  await writeVaultFile(summaryPath, result.text, {
+  await writeVaultFile(summaryPath, summary, {
     type: "conversation-summary",
     chatId,
     messageCount: overflow.overflow.length,
     timestamp: new Date().toISOString(),
+    emotionalTone: metadata.emotionalTone,
+    importance: metadata.importance,
+    followUps: metadata.followUps,
   });
 
-  // Update about-you.md with new facts
-  await updateUserFacts(result.text);
+  // Dual-write: store episode in Memory collection
+  await engine.remember(summary, "episode", "curation", {
+    chatId,
+    emotionalTone: metadata.emotionalTone,
+    importance: metadata.importance,
+    followUps: metadata.followUps,
+    vaultPath: summaryPath,
+  });
+
+  // Update about-you.md with ADD/UPDATE/DELETE fact management
+  await updateUserFacts(summary);
 
   // Trim conversation to keep only recent messages
   await trimConversation(overflow.conversationId, CONTEXT_LIMIT);
+
+  // Track for debouncing
+  lastCurationCount.set(chatId, overflow.overflow.length);
 
   logger.info(
     { summaryPath, trimmedTo: CONTEXT_LIMIT },
@@ -62,36 +104,139 @@ Be concise. Use bullet points. Write from the perspective of Mashiro (the girlfr
   await checkWeeklyMerge();
 }
 
+interface CurationMetadata {
+  emotionalTone: number;
+  importance: number;
+  followUps: string[];
+}
+
+function parseCurationResponse(text: string): { summary: string; metadata: CurationMetadata } {
+  const defaults: CurationMetadata = { emotionalTone: 5, importance: 5, followUps: [] };
+
+  const metadataMatch = text.match(/---METADATA---\s*([\s\S]*?)\s*---END---/);
+  if (!metadataMatch) {
+    return { summary: text.trim(), metadata: defaults };
+  }
+
+  const summary = text.slice(0, text.indexOf("---METADATA---")).trim();
+  const metaBlock = metadataMatch[1];
+
+  const toneMatch = metaBlock.match(/emotionalTone:\s*(\d+)/);
+  const importanceMatch = metaBlock.match(/importance:\s*(\d+)/);
+  const followUpsMatch = metaBlock.match(/followUps:\s*\[(.*?)\]/s);
+
+  const emotionalTone = toneMatch ? Math.min(10, Math.max(1, parseInt(toneMatch[1]))) : 5;
+  const importance = importanceMatch ? Math.min(10, Math.max(1, parseInt(importanceMatch[1]))) : 5;
+
+  let followUps: string[] = [];
+  if (followUpsMatch) {
+    followUps = followUpsMatch[1]
+      .split(",")
+      .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+      .filter(Boolean);
+  }
+
+  return { summary, metadata: { emotionalTone, importance, followUps } };
+}
+
+interface FactOperation {
+  action: "ADD" | "UPDATE" | "DELETE" | "NOOP";
+  content: string;
+  existingId?: string;
+}
+
 async function updateUserFacts(summary: string): Promise<void> {
-  const aboutYou = await readVaultFile("memories/about-you.md");
-  if (!aboutYou) return;
+  const existingFacts = await engine.getAllFacts();
+
+  const factsContext =
+    existingFacts.length > 0
+      ? existingFacts.map((f) => `[id:${f._id}] ${f.content}`).join("\n")
+      : "(no existing facts)";
 
   const result = await generateText({
-    model: getModel(),
-    system: `You are a memory curator. Given a conversation summary and an existing "About You" file, extract any NEW facts about the user (not the AI character) that aren't already in the file.
+    model: getModel(ModelTier.Fast),
+    system: `You are a memory curator. Given a conversation summary and a list of existing facts about the user, classify what changes need to be made.
 
-If there are new facts: output ONLY the bullet points, nothing else.
-If there are no new facts: output exactly "NONE" and nothing else.
+For each relevant fact from the conversation, output a JSON operation:
+- ADD: new fact not covered by any existing fact
+- UPDATE: an existing fact needs correction or updating (include existingId)
+- DELETE: an existing fact is now known to be wrong or outdated (include existingId)
+- NOOP: fact already exists and is current (skip these)
 
-Do not add commentary or explanations. Do not repeat existing facts.`,
+Output ONLY a JSON array of operations. No commentary. Example:
+[
+  {"action": "ADD", "content": "Works as a software engineer at TechCorp"},
+  {"action": "UPDATE", "content": "Now lives in Tokyo (moved from Osaka)", "existingId": "abc123"},
+  {"action": "DELETE", "content": "No longer at previous job", "existingId": "def456"}
+]
+
+If there are no changes needed, output: []`,
     messages: [
       {
         role: "user",
-        content: `Existing file:\n${aboutYou.content}\n\nConversation summary:\n${summary}`,
+        content: `Existing facts:\n${factsContext}\n\nConversation summary:\n${summary}`,
       },
     ],
   });
 
-  const newFacts = result.text.trim();
-  if (newFacts === "NONE" || !newFacts.startsWith("- ")) {
-    logger.debug("No new user facts to add");
+  let operations: FactOperation[];
+  try {
+    // Extract JSON from response (handle markdown code blocks)
+    const jsonMatch = result.text.match(/\[[\s\S]*\]/);
+    operations = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+  } catch {
+    logger.warn({ response: result.text.slice(0, 200) }, "Failed to parse fact operations");
     return;
   }
 
-  const updated =
-    aboutYou.content + "\n\n## Updated " + format(new Date(), "yyyy-MM-dd") + "\n" + newFacts;
-  await writeVaultFile("memories/about-you.md", updated, aboutYou.frontmatter);
-  logger.info("Updated about-you.md with new facts");
+  if (operations.length === 0) {
+    logger.debug("No fact operations needed");
+    return;
+  }
+
+  let added = 0;
+  let updated = 0;
+  let deleted = 0;
+
+  for (const op of operations) {
+    switch (op.action) {
+      case "ADD":
+        await engine.remember(op.content, "fact", "curation");
+        added++;
+        break;
+      case "UPDATE":
+        if (op.existingId) {
+          await engine.forget(op.existingId);
+        }
+        await engine.remember(op.content, "fact", "curation");
+        updated++;
+        break;
+      case "DELETE":
+        if (op.existingId) {
+          await engine.forget(op.existingId);
+          deleted++;
+        }
+        break;
+    }
+  }
+
+  logger.info({ added, updated, deleted }, "Fact operations applied");
+
+  // Regenerate about-you.md from all current facts
+  await regenerateAboutYou();
+}
+
+async function regenerateAboutYou(): Promise<void> {
+  const allFacts = await engine.getAllFacts();
+  if (allFacts.length === 0) return;
+
+  const content = allFacts.map((f) => `- ${f.content}`).join("\n");
+  await writeVaultFile("memories/about-you.md", content, {
+    type: "user-facts",
+    factCount: allFacts.length,
+    lastUpdated: new Date().toISOString(),
+  });
+  logger.info({ factCount: allFacts.length }, "Regenerated about-you.md from Memory collection");
 }
 
 async function checkWeeklyMerge(): Promise<void> {

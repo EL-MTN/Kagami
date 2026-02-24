@@ -1,6 +1,9 @@
 # Vault & Memory System
 
-The vault is a file-based memory store using Markdown files with YAML frontmatter. It holds the AI's personality definition, learned user facts, relationship milestones, and conversation summaries. Files are human-readable and editable.
+The memory system has two storage layers that stay in sync:
+
+- **Vault** — file-based Markdown store with YAML frontmatter. Human-readable and editable. Holds personality definition, user facts, relationship milestones, and conversation summaries.
+- **Memory Engine** — MongoDB-backed collection with vector embeddings. Enables semantic search, auto-injection of recent context, and structured fact management (ADD/UPDATE/DELETE).
 
 ## Directory Layout
 
@@ -38,11 +41,12 @@ Body contains the full character definition: appearance, identity, personality t
 ```yaml
 ---
 type: "user-facts"
-updated: <ISO8601 timestamp>
+factCount: <number>
+lastUpdated: <ISO8601 timestamp>
 ---
 ```
 
-Body contains categorized facts about the user (preferences, routines, dates, etc.). Auto-updated by the curation pipeline when new facts are learned.
+Body contains categorized facts about the user (preferences, routines, dates, etc.). Regenerated from the Memory collection on each curation cycle — always reflects the current set of facts after ADD/UPDATE/DELETE operations.
 
 ### memories/milestones.md
 
@@ -56,10 +60,13 @@ type: "conversation-summary"
 chatId: <string>
 messageCount: <number>
 timestamp: <ISO8601 string>
+emotionalTone: <1-10>
+importance: <1-10>
+followUps: ["<action item>", ...]
 ---
 ```
 
-Body contains bullet-point summaries: facts learned, emotional highlights, topics discussed, promises or follow-ups, and curator notes.
+Body contains bullet-point summaries: facts learned, emotional highlights, topics discussed, promises or follow-ups. Each summary is also stored in the MongoDB Memory collection (dual-write) for semantic search and auto-injection into the system prompt.
 
 ### memories/conversations/week-of-{date}.md
 
@@ -89,6 +96,53 @@ All vault paths are resolved relative to `VAULT_PATH` and include a path travers
 
 The LLM accesses these operations through the `readMemory`, `writeMemory`, and `searchMemory` tools.
 
+## Memory Engine
+
+The Memory Engine (`src/memory/engine.ts`) provides a semantic memory layer backed by MongoDB and Google Gemini embeddings.
+
+### Embedding Service
+
+Implemented in `src/memory/embedding.ts`. Uses Google Gemini `gemini-embedding-001` (3072 dimensions) via `@ai-sdk/google`.
+
+| Function | Description |
+|---|---|
+| `generateEmbedding(text)` | Embed a single text string. Returns `number[3072]`. |
+| `generateEmbeddings(texts)` | Batch embed multiple texts. Returns `number[][3072]`. |
+| `cosineSimilarity(a, b)` | Re-exported from `ai` package. Returns `-1` to `1`. |
+
+### Memory Model
+
+Defined in `src/db/models/memory.ts`. Each document stores:
+
+| Field | Type | Description |
+|---|---|---|
+| `content` | `string` | The actual text content |
+| `type` | `"fact" \| "episode" \| "milestone"` | Memory category |
+| `source` | `string` | Origin: `"curation"`, `"tool"`, `"manual"` |
+| `embedding` | `number[]` | 3072-dim vector from gemini-embedding-001 |
+| `metadata.chatId` | `string?` | Associated chat |
+| `metadata.emotionalTone` | `number?` | 1-10 scale |
+| `metadata.importance` | `number?` | 1-10 scale |
+| `metadata.followUps` | `string[]?` | Unresolved action items |
+| `metadata.createdAt` | `Date` | When the memory was created |
+| `metadata.updatedAt` | `Date` | When the memory was last modified |
+| `metadata.vaultPath` | `string?` | Links back to vault file if applicable |
+
+Indexed on `type`, `metadata.chatId`, and `metadata.createdAt`.
+
+### Engine API
+
+Implemented in `src/memory/engine.ts`:
+
+| Function | Description |
+|---|---|
+| `remember(content, type, source, opts?)` | Embed content, store in MongoDB. Returns the created document. |
+| `recall(query, opts?)` | Embed query, cosine similarity search. Options: `type`, `limit` (default 10), `minScore` (default 0.3). |
+| `forget(memoryId)` | Delete a memory by ID. Vault file left intact as archive. |
+| `getRecentEpisodes(limit?)` | Fetch last N episode-type memories by date. Used by context assembly. |
+| `getAllFacts()` | Fetch all fact-type memories. Used by curation for classify-then-act. |
+| `getActiveFollowUps()` | Collect unresolved follow-up items from recent memories. Used by context assembly. |
+
 ## Curation Pipeline
 
 Implemented in `src/memory/curator.ts`. Triggered automatically when a conversation exceeds 40 messages.
@@ -98,23 +152,25 @@ curateIfNeeded(chatId)
     │
     ├─ 1. Detect overflow (messages > 40)
     │
+    ├─ 1.5 Debounce check — skip if < 5 messages since last curation
+    │
     ├─ 2. Extract overflow messages (everything before the 40-msg cutoff)
     │
     ├─ 3. Format as transcript (role: content)
     │
-    ├─ 4. LLM summarizes → bullet points:
-    │      • Facts learned
-    │      • Emotional highlights
-    │      • Topics discussed
-    │      • Promises / follow-ups
-    │      • Curator's note
+    ├─ 4. LLM summarizes → bullet points + structured metadata:
+    │      • Facts learned, emotional highlights, topics discussed
+    │      • emotionalTone (1-10), importance (1-10), followUps []
     │
-    ├─ 5. Write summary → vault/memories/conversations/{ISO_TIMESTAMP}.md
+    ├─ 5. Dual-write summary:
+    │      • vault/memories/conversations/{ISO_TIMESTAMP}.md (with metadata frontmatter)
+    │      • Memory collection as "episode" type (with embedding)
     │
-    ├─ 6. updateUserFacts(summary)
-    │      • Read current about-you.md
-    │      • LLM extracts NEW facts not already present
-    │      • Append new facts with date header (or "NONE")
+    ├─ 6. updateUserFacts(summary) — Mem0-style classify-then-act:
+    │      • Load all existing facts from Memory collection
+    │      • LLM classifies each fact as ADD / UPDATE / DELETE / NOOP
+    │      • Execute operations against Memory collection
+    │      • Regenerate about-you.md from all current facts (clean overwrite)
     │
     ├─ 7. Trim conversation to last 40 messages
     │
@@ -138,13 +194,15 @@ Loads and concatenates (separated by `---`):
 1. **Personality card** — `vault/personality/card.md` content
 2. **User knowledge** — `vault/memories/about-you.md` content
 3. **Milestones** — `vault/memories/milestones.md` content
-4. **Datetime context** — current time + time-of-day category (late night, morning, afternoon, evening, night)
-5. **Tool usage instructions** — when/how to use each tool
-6. **Response format instructions** — message length, splitting, style
+4. **Recent episodes** — last 2-3 conversation summaries from Memory Engine (auto-loaded)
+5. **Follow-ups** — unresolved follow-up items from Memory Engine (auto-loaded)
+6. **Datetime context** — current time + time-of-day category (late night, morning, afternoon, evening, night)
+7. **Tool usage instructions** — when/how to use each tool
+8. **Response format instructions** — message length, splitting, style
 
 ### Proactive prompt (`assembleProactiveSystemPrompt`)
 
-Same as standard but replaces response format with proactive message instructions (initiate naturally, single short message, text about what's on your mind).
+Same as standard (including recent episodes + follow-ups) but replaces response format with proactive message instructions. The memory context enables proactive messages that reference recent conversations and follow up on unresolved items.
 
 ### Message history (`assembleMessages`)
 

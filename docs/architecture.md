@@ -23,8 +23,8 @@ AIGF is a layered conversational AI system. Messages flow from a platform adapte
 │  ┌──────┴───────┐  ┌──────┴───────┐                 │
 │  │    tools/     │  │   prompts    │                 │
 │  │ read/write/   │  │  (system +   │                 │
-│  │ search/curate │  │   format)    │                 │
-│  │ sendPhoto     │  └──────────────┘                 │
+│  │ search/list/  │  │   format)    │                 │
+│  │ curate/photo  │  └──────────────┘                 │
 │  └──────┬───────┘                                    │
 └─────────┼────────────────────────────────────────────┘
           │
@@ -37,9 +37,21 @@ AIGF is a layered conversational AI system. Messages flow from a platform adapte
 │        │  │ Conversation│
 │ person │  │ Scheduler   │
 │ ality/ │  │ State       │
-│ memori │  └─────────────┘
-│ es/    │
+│ memori │  │ Memory      │
+│ es/    │  └─────────────┘
 └────────┘
+    ▲            ▲
+    └─────┬──────┘
+          │
+┌─────────────────────────┐
+│    Memory Engine         │
+│                          │
+│ embedding (Google Gemini)│
+│  ─► cosine similarity    │
+│  ─► remember / recall    │
+│  ─► dual-write vault+DB  │
+│  ─► fact ADD/UPDATE/DEL  │
+└──────────────────────────┘
 
 ┌──────────────────────────┐
 │   Proactive Scheduler    │
@@ -76,14 +88,16 @@ AIGF is a layered conversational AI system. Messages flow from a platform adapte
        │
 6. appendMessage(conversation, userMsg)
        │
-7. curateIfNeeded(chatId) — if messages > 40:
-       │   ├─ summarize overflow → vault/memories/conversations/{ts}.md
-       │   ├─ extract new user facts → vault/memories/about-you.md
+7. curateIfNeeded(chatId) — if messages > 40 (debounced: 5+ overflow):
+       │   ├─ summarize overflow → vault + Memory collection (dual-write)
+       │   ├─ extract structured metadata (emotionalTone, importance, followUps)
+       │   ├─ classify facts as ADD/UPDATE/DELETE via LLM → Memory collection
+       │   ├─ regenerate about-you.md from all current facts
        │   ├─ trim conversation to 40 messages
        │   └─ check weekly merge (7+ old daily files → weekly rollup)
        │
 8. Parallel: assembleSystemPrompt() + assembleMessages(chatId)
-       │   ├─ System: personality + user facts + milestones + datetime + tools + format
+       │   ├─ System: personality + user facts + milestones + recent episodes + follow-ups + datetime + tools + format
        │   └─ Messages: last 40 msgs reconstructed with tool-call pairs
        │
 9. generateText({ model, system, messages, tools, maxSteps: 5, temperature: 0.7 })
@@ -117,11 +131,11 @@ When firing, the scheduler assembles a proactive system prompt (personality + pr
 | Directory | Purpose | Key Files |
 |---|---|---|
 | `src/ai/` | LLM integration, prompt assembly, tool orchestration | `generate.ts`, `context-assembler.ts`, `prompts.ts`, `provider.ts`, `response.ts` |
-| `src/ai/tools/` | Tool implementations available to the LLM | `index.ts`, `read-memory.ts`, `write-memory.ts`, `search-memory.ts`, `curate-memory.ts`, `send-photo.ts` |
+| `src/ai/tools/` | Tool implementations available to the LLM | `index.ts`, `read-memory.ts`, `write-memory.ts`, `search-memory.ts`, `list-memories.ts`, `curate-memory.ts`, `send-photo.ts` |
 | `src/platform/` | Platform-agnostic message types | `types.ts` |
 | `src/platform/telegram/` | Telegram adapter + bot setup | `adapter.ts`, `bot.ts` |
-| `src/memory/` | Vault file operations + curation pipeline | `vault.ts`, `curator.ts`, `types.ts` |
-| `src/db/` | MongoDB connection + data models | `connection.ts`, `models/conversation.ts`, `models/scheduler-state.ts` |
+| `src/memory/` | Vault file operations, curation pipeline, Memory Engine | `vault.ts`, `curator.ts`, `engine.ts`, `embedding.ts`, `types.ts` |
+| `src/db/` | MongoDB connection + data models | `connection.ts`, `models/conversation.ts`, `models/scheduler-state.ts`, `models/memory.ts` |
 | `src/scheduler/` | Proactive message scheduling | `proactive.ts` |
 | `src/context/` | Image reference loading + generation | `generator.ts`, `types.ts` |
 | `src/utils/` | Logger, markdown/frontmatter parsing | `logger.ts`, `markdown.ts` |
@@ -145,6 +159,8 @@ Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop s
 - **Daily conversation scoping** — conversations reset at midnight, keeping context fresh
 - **40-message context window** — overflow is summarized into vault files, not lost
 - **Tool-augmented LLM** — the model reads/writes its own memory via tools, not hardcoded logic
-- **File-based vault** — `.md` files with YAML frontmatter, human-readable and editable
+- **Dual storage** — vault files (.md) for human-readable archive, MongoDB Memory collection for semantic search
+- **Semantic memory** — Google Gemini embeddings + cosine similarity for meaning-based retrieval
+- **Smart fact management** — ADD/UPDATE/DELETE operations prevent stale fact accumulation
 - **Platform abstraction** — `PlatformAdapter` interface enables future platform support
 - **Segmented sending** — responses split on `\n\n` with typing delays for natural pacing

@@ -13,6 +13,8 @@ Defined in `src/ai/provider.ts`. Uses the Vercel AI SDK (`ai` package).
 | `ANTHROPIC_API_KEY` | Required if provider is `anthropic` (validated at startup) |
 | `OPENAI_API_KEY` | Required if provider is `openai` (validated at startup) |
 | `XAI_API_KEY` | Required if provider is `xai` (validated at startup). Also required at runtime for image generation regardless of provider. |
+| `GOOGLE_API_KEY` | Required for embedding generation (Google Gemini `gemini-embedding-001`) |
+| `EMBEDDING_MODEL` | Embedding model name (default: `"gemini-embedding-001"`) |
 
 `getModel(tier?)` returns a `LanguageModelV1` instance from the appropriate SDK (`@ai-sdk/anthropic`, `@ai-sdk/openai`, or `@ai-sdk/xai`).
 
@@ -45,12 +47,16 @@ assembleSystemPrompt()
     ├─ 1. Personality card       ← vault/personality/card.md
     ├─ 2. User knowledge         ← vault/memories/about-you.md
     ├─ 3. Milestones             ← vault/memories/milestones.md
+    ├─ 3.5 Recent episodes       ← last 2-3 conversation summaries from Memory Engine
+    ├─ 3.6 Follow-ups            ← unresolved follow-up items from Memory Engine
     ├─ 4. Datetime context       ← current time + time-of-day label
     ├─ 5. Tool usage instructions← hardcoded guidance in prompts.ts
     └─ 6. Response format        ← message style rules in prompts.ts
 
     All parts joined with "---" separator
 ```
+
+The recent episodes and follow-ups are loaded via `assembleMemoryContext()`, which queries the Memory Engine. This eliminates the "midnight amnesia" problem — the AI sees what happened in recent conversations even when starting a new day.
 
 ### Datetime Context
 
@@ -80,7 +86,7 @@ interface ToolContext {
   adapter: PlatformAdapter;
 }
 
-allTools(ctx) → { readMemory, writeMemory, searchMemory, curateMemory, sendPhoto }
+allTools(ctx) → { readMemory, writeMemory, searchMemory, listMemories, curateMemory, sendPhoto }
 ```
 
 ### readMemory
@@ -92,20 +98,28 @@ allTools(ctx) → { readMemory, writeMemory, searchMemory, curateMemory, sendPho
 
 ### writeMemory
 
-- **Purpose**: Save information to the vault
+- **Purpose**: Save information to the vault (with dual-write to Memory collection)
 - **Parameters**: `{ path: string, content: string, mode: "append" | "overwrite" }`
 - **Returns**: `{ success: true, path, mode, currentContent }`
 - **Behavior**:
   - Append mode: line-level deduplication (case-insensitive), preserves existing headers
   - Overwrite mode: replaces entire file content
+  - Dual-write: facts written to `about-you.md` or `milestones.md` are also stored in the Memory collection for semantic search
   - Always returns current file state so the LLM sees what's stored
 
 ### searchMemory
 
-- **Purpose**: Search across all vault files
+- **Purpose**: Hybrid semantic + keyword search across all memories
 - **Parameters**: `{ query: string }`
-- **Returns**: `{ found: boolean, results: [{ path, matchCount, excerpts }] }`
-- **Behavior**: Case-insensitive line matching, top 5 excerpts per file, sorted by relevance
+- **Returns**: `{ found: boolean, results: [{ source, content, score, matchType }] }`
+- **Behavior**: Runs semantic search (via Memory Engine embeddings) and keyword search (via vault) in parallel, merges and deduplicates results, returns top 10 ranked by relevance
+
+### listMemories
+
+- **Purpose**: Discover available memories by type
+- **Parameters**: `{ type?: "fact" | "episode" | "milestone", limit?: number }`
+- **Returns**: `{ found: boolean, count, memories: [{ id, type, date, preview, importance }] }`
+- **Behavior**: Queries the Memory collection, returns recent memories sorted by date
 
 ### curateMemory
 
