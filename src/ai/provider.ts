@@ -14,8 +14,8 @@ type NonDefaultTier = Exclude<ModelTier, ModelTier.Default>;
 
 const TIER_MODELS: Record<string, Record<NonDefaultTier, string>> = {
   anthropic: {
-    [ModelTier.Fast]: "claude-haiku-4-5-20251001",
-    [ModelTier.Smart]: "claude-sonnet-4-5",
+    [ModelTier.Fast]: "claude-haiku-4-5",
+    [ModelTier.Smart]: "claude-sonnet-4-6",
   },
   openai: {
     [ModelTier.Fast]: "gpt-4o-mini",

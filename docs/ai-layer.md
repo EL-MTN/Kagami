@@ -9,7 +9,7 @@ Defined in `src/ai/provider.ts`. Uses the Vercel AI SDK (`ai` package).
 | Env Variable | Description |
 |---|---|
 | `LLM_PROVIDER` | `"anthropic"` (default), `"openai"`, or `"xai"` |
-| `LLM_MODEL` | Model identifier (default: `"claude-sonnet-4-5"`; recommended xAI model: `grok-4-1-fast-non-reasoning`) |
+| `LLM_MODEL` | Model identifier (default: `"claude-sonnet-4-6"`; recommended xAI model: `grok-4-1-fast-non-reasoning`) |
 | `ANTHROPIC_API_KEY` | Required if provider is `anthropic` (validated at startup) |
 | `OPENAI_API_KEY` | Required if provider is `openai` (validated at startup) |
 | `XAI_API_KEY` | Required if provider is `xai` (validated at startup). Also required at runtime for image generation regardless of provider. |
@@ -25,8 +25,8 @@ The `ModelTier` enum lets call sites declare intent rather than hardcoding model
 | Tier | Purpose | Anthropic | OpenAI | xAI |
 |------|---------|-----------|--------|-----|
 | `Default` | Conversations, curation | `config.LLM_MODEL` | `config.LLM_MODEL` | `config.LLM_MODEL` |
-| `Fast` | Cheap classification (ref selection) | `claude-haiku-4-5-20251001` | `gpt-4o-mini` | `grok-4-1-fast-non-reasoning` |
-| `Smart` | Maximum reasoning (reserved) | `claude-sonnet-4-5` | `gpt-4o` | `grok-4` |
+| `Fast` | Cheap classification (ref selection) | `claude-haiku-4-5` | `gpt-4o-mini` | `grok-4-1-fast-non-reasoning` |
+| `Smart` | Maximum reasoning (reserved) | `claude-sonnet-4-6` | `gpt-4o` | `grok-4` |
 
 Usage:
 ```typescript

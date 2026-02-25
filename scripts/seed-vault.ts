@@ -6,7 +6,6 @@ const VAULT_PATH = "./vault";
 const structure = [
   "personality",
   "memories",
-  "calendar",
 ];
 
 async function seed() {

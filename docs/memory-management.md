@@ -50,8 +50,8 @@ User sends message
 generateText() with tools
   - LLM may search [WARM] via searchMemory (hybrid semantic + keyword)
   - LLM may browse [WARM] via listMemories
-  - LLM may read [COLD] via readMemory
-  - LLM may write [COLD + WARM] via writeMemory (dual-write)
+  - LLM may read [STATIC] via readMemory
+  - LLM may write [STATIC + WARM] via writeMemory (dual-write)
 ```
 
 ### What the LLM Sees at Generation Time

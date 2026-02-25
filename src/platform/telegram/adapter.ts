@@ -93,7 +93,7 @@ export class TelegramAdapter implements PlatformAdapter {
     buffer: Buffer,
     caption?: string,
   ): Promise<string | undefined> {
-    const input = new InputFile(buffer, "luna.jpg");
+    const input = new InputFile(buffer, "mashiro.jpg");
 
     const sent = await this.bot.api.sendPhoto(Number(chatId), input, {
       caption,
