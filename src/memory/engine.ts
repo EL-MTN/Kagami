@@ -7,7 +7,6 @@ export interface RememberOptions {
   emotionalTone?: number;
   importance?: number;
   followUps?: string[];
-  vaultPath?: string;
 }
 
 export interface RecallOptions {
@@ -43,7 +42,6 @@ export async function remember(
       emotionalTone: options.emotionalTone,
       importance: options.importance,
       followUps: options.followUps,
-      vaultPath: options.vaultPath,
       createdAt: now,
       updatedAt: now,
     },
@@ -74,6 +72,20 @@ export async function forget(memoryId: string): Promise<boolean> {
 
 export async function getRecentEpisodes(limit = 3): Promise<IMemory[]> {
   return Memory.find({ type: "episode" }).sort({ "metadata.createdAt": -1 }).limit(limit).exec();
+}
+
+export async function getEpisodesBefore(
+  olderThan: Date,
+  excludeSources?: string[],
+): Promise<IMemory[]> {
+  const filter: Record<string, unknown> = {
+    type: "episode",
+    "metadata.createdAt": { $lt: olderThan },
+  };
+  if (excludeSources?.length) {
+    filter.source = { $nin: excludeSources };
+  }
+  return Memory.find(filter).sort({ "metadata.createdAt": -1 }).exec();
 }
 
 export async function getAllFacts(): Promise<IMemory[]> {

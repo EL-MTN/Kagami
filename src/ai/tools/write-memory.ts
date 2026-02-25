@@ -31,7 +31,7 @@ export const writeMemory = tool({
     // Dual-write: also store facts in Memory collection for semantic search
     if (path.includes("about-you") || path.includes("milestones")) {
       const type = path.includes("milestones") ? ("milestone" as const) : ("fact" as const);
-      await engine.remember(content, type, "tool", { vaultPath: path }).catch((error) => {
+      await engine.remember(content, type, "tool").catch((error) => {
         logger.warn({ error, path }, "Failed to dual-write to Memory collection");
       });
     }

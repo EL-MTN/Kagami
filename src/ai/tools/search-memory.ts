@@ -38,7 +38,7 @@ export const searchMemory = tool({
       seen.add(key);
       merged.push({
         content: result.content.slice(0, 500),
-        source: result.metadata.vaultPath ?? `memory:${result.type}`,
+        source: `memory:${result.type}`,
         score: result.score,
         type: "semantic",
       });

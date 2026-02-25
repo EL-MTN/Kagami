@@ -2,15 +2,12 @@ import { generateText } from "ai";
 import { format, subDays, subMonths } from "date-fns";
 import { getModel, ModelTier } from "../ai/provider.js";
 import { getOverflowMessages, trimConversation, type IMessage } from "../db/models/conversation.js";
-import { readVaultFile, writeVaultFile, listVaultFiles, deleteVaultFile } from "./vault.js";
+import { writeVaultFile } from "./vault.js";
 import * as engine from "./engine.js";
 import { logger } from "../utils/logger.js";
 
-const CONTEXT_LIMIT = 40;
-const DEBOUNCE_THRESHOLD = 5;
-
-// Track last curation message count per chat for debouncing
-const lastCurationCount = new Map<string, number>();
+const CONTEXT_WINDOW = 40;
+const CURATION_BATCH = 40;
 
 function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string {
   switch (tc.toolName) {
@@ -55,18 +52,13 @@ function formatMessageForTranscript(m: IMessage): string {
 }
 
 export async function curateIfNeeded(chatId: string): Promise<void> {
-  const overflow = await getOverflowMessages(chatId, CONTEXT_LIMIT);
+  const overflow = await getOverflowMessages(chatId, CONTEXT_WINDOW);
   if (!overflow) return;
 
-  // Debounce: after first curation, wait until 5+ messages overflow
-  const lastCount = lastCurationCount.get(chatId) ?? 0;
-  if (lastCount > 0 && overflow.overflow.length < DEBOUNCE_THRESHOLD) {
-    logger.debug(
-      { chatId, overflowCount: overflow.overflow.length, threshold: DEBOUNCE_THRESHOLD },
-      "Skipping curation — below debounce threshold",
-    );
-    return;
-  }
+  // Wait for a full batch before curating — avoids wasting LLM calls
+  // on tiny 1-5 message summaries. The AI only sees the last CONTEXT_WINDOW
+  // messages via assembleMessages, so the unsummarized overflow is harmless.
+  if (overflow.overflow.length < CURATION_BATCH) return;
 
   logger.info(
     { chatId, overflowCount: overflow.overflow.length, total: overflow.total },
@@ -106,39 +98,22 @@ Always include the metadata block, even if followUps is empty.`,
   // Parse metadata from response
   const { summary, metadata } = parseCurationResponse(result.text);
 
-  // Write summary to vault with structured frontmatter
-  const timestamp = format(new Date(), "yyyy-MM-dd'T'HH-mm-ss");
-  const summaryPath = `memories/conversations/${timestamp}.md`;
-  await writeVaultFile(summaryPath, summary, {
-    type: "conversation-summary",
-    chatId,
-    messageCount: overflow.overflow.length,
-    timestamp: new Date().toISOString(),
-    emotionalTone: metadata.emotionalTone,
-    importance: metadata.importance,
-    followUps: metadata.followUps,
-  });
-
-  // Dual-write: store episode in Memory collection
+  // Store episode in Memory collection (single source of truth for conversations)
   await engine.remember(summary, "episode", "curation", {
     chatId,
     emotionalTone: metadata.emotionalTone,
     importance: metadata.importance,
     followUps: metadata.followUps,
-    vaultPath: summaryPath,
   });
 
   // Update about-you.md with ADD/UPDATE/DELETE fact management
   await updateUserFacts(summary);
 
   // Trim conversation to keep only recent messages
-  await trimConversation(overflow.conversationId, CONTEXT_LIMIT);
-
-  // Track for debouncing
-  lastCurationCount.set(chatId, overflow.overflow.length);
+  await trimConversation(overflow.conversationId, CONTEXT_WINDOW);
 
   logger.info(
-    { summaryPath, trimmedTo: CONTEXT_LIMIT },
+    { chatId, trimmedTo: CONTEXT_WINDOW },
     "Curation complete: summarized overflow and trimmed conversation",
   );
 
@@ -295,30 +270,24 @@ export function checkWeeklyMerge(): Promise<void> {
 }
 
 async function _checkWeeklyMerge(): Promise<void> {
-  const files = await listVaultFiles("memories/conversations");
-  const oneWeekAgo = format(subDays(new Date(), 7), "yyyy-MM-dd");
+  const oneWeekAgo = subDays(new Date(), 7);
+  // Find curation episodes older than 7 days (exclude weekly-merge rollups)
+  const oldEpisodes = await engine.getEpisodesBefore(oneWeekAgo, ["weekly-merge"]);
 
-  // Find daily summary files (not weekly/monthly rollups) older than 7 days
-  const oldDailyFiles = files.filter((f) => {
-    if (f.includes("week-of-") || f.includes("month-of-")) return false;
-    const dateMatch = f.match(/(\d{4}-\d{2}-\d{2})/);
-    return dateMatch && dateMatch[1] < oneWeekAgo;
-  });
-
-  if (oldDailyFiles.length >= 4) {
-    logger.info({ fileCount: oldDailyFiles.length }, "Triggering weekly merge");
-    await weeklyDeepCuration(oldDailyFiles);
+  if (oldEpisodes.length >= 4) {
+    logger.info({ episodeCount: oldEpisodes.length }, "Triggering weekly merge");
+    await weeklyDeepCuration(oldEpisodes);
   }
 }
 
-async function weeklyDeepCuration(oldFiles: string[]): Promise<void> {
-  const contents: string[] = [];
-  for (const file of oldFiles) {
-    const data = await readVaultFile(file);
-    if (data) contents.push(`## ${file}\n${data.content}`);
-  }
+async function weeklyDeepCuration(
+  episodes: Awaited<ReturnType<typeof engine.getEpisodesBefore>>,
+): Promise<void> {
+  if (episodes.length === 0) return;
 
-  if (contents.length === 0) return;
+  const contents = episodes.map(
+    (ep) => `## ${format(ep.metadata.createdAt, "yyyy-MM-dd")}\n${ep.content}`,
+  );
 
   const result = await generateText({
     model: getModel(),
@@ -331,20 +300,18 @@ async function weeklyDeepCuration(oldFiles: string[]): Promise<void> {
     ],
   });
 
-  const weekOf = format(subDays(new Date(), 7), "yyyy-MM-dd");
-  await writeVaultFile(`memories/conversations/week-of-${weekOf}.md`, result.text, {
-    type: "weekly-summary",
-    weekOf,
-  });
+  // Store weekly summary as a new episode in MongoDB
+  await engine.remember(result.text, "episode", "weekly-merge", { importance: 6 });
 
-  // Delete merged daily files to prevent re-merging
-  for (const file of oldFiles) {
-    await deleteVaultFile(file).catch((error) => {
-      logger.warn({ error, file }, "Failed to delete merged daily file");
+  // Delete merged daily episodes to prevent re-merging
+  for (const ep of episodes) {
+    await engine.forget(ep._id.toString()).catch((error) => {
+      logger.warn({ error, episodeId: ep._id }, "Failed to delete merged episode");
     });
   }
 
-  logger.info({ weekOf, mergedFiles: oldFiles.length }, "Weekly curation complete");
+  const weekOf = format(subDays(new Date(), 7), "yyyy-MM-dd");
+  logger.info({ weekOf, mergedEpisodes: episodes.length }, "Weekly curation complete");
 }
 
 export function checkMonthlyConsolidation(): Promise<void> {
@@ -356,30 +323,25 @@ export function checkMonthlyConsolidation(): Promise<void> {
 }
 
 async function _checkMonthlyConsolidation(): Promise<void> {
-  const files = await listVaultFiles("memories/conversations");
-  const oneMonthAgo = format(subMonths(new Date(), 1), "yyyy-MM-dd");
+  const oneMonthAgo = subMonths(new Date(), 1);
+  // Find weekly-merge episodes older than 30 days
+  const oldWeeklyEpisodes = await engine.getEpisodesBefore(oneMonthAgo);
+  const weeklyMerges = oldWeeklyEpisodes.filter((ep) => ep.source === "weekly-merge");
 
-  // Find weekly summaries older than 30 days
-  const oldWeeklyFiles = files.filter((f) => {
-    if (!f.includes("week-of-")) return false;
-    const dateMatch = f.match(/(\d{4}-\d{2}-\d{2})/);
-    return dateMatch && dateMatch[1] < oneMonthAgo;
-  });
-
-  if (oldWeeklyFiles.length >= 3) {
-    logger.info({ fileCount: oldWeeklyFiles.length }, "Triggering monthly consolidation");
-    await monthlyDeepConsolidation(oldWeeklyFiles);
+  if (weeklyMerges.length >= 3) {
+    logger.info({ episodeCount: weeklyMerges.length }, "Triggering monthly consolidation");
+    await monthlyDeepConsolidation(weeklyMerges);
   }
 }
 
-async function monthlyDeepConsolidation(oldFiles: string[]): Promise<void> {
-  const contents: string[] = [];
-  for (const file of oldFiles) {
-    const data = await readVaultFile(file);
-    if (data) contents.push(`## ${file}\n${data.content}`);
-  }
+async function monthlyDeepConsolidation(
+  episodes: Awaited<ReturnType<typeof engine.getEpisodesBefore>>,
+): Promise<void> {
+  if (episodes.length === 0) return;
 
-  if (contents.length === 0) return;
+  const contents = episodes.map(
+    (ep) => `## ${format(ep.metadata.createdAt, "yyyy-MM-dd")}\n${ep.content}`,
+  );
 
   const result = await generateText({
     model: getModel(),
@@ -401,30 +363,16 @@ Write from Mashiro's perspective as long-term relationship insights, not a chron
     ],
   });
 
+  // Store full text as milestone in MongoDB (no truncation needed)
   const monthOf = format(subMonths(new Date(), 1), "yyyy-MM");
-  const monthPath = `memories/conversations/month-of-${monthOf}.md`;
+  await engine.remember(result.text, "milestone", "monthly-consolidation", { importance: 7 });
 
-  await writeVaultFile(monthPath, result.text, {
-    type: "monthly-summary",
-    monthOf,
-    mergedWeeklyFiles: oldFiles.length,
-  });
-
-  // Store truncated excerpt as milestone — full text lives in vault file
-  const MILESTONE_EXCERPT_LIMIT = 1200;
-  await engine.remember(
-    result.text.slice(0, MILESTONE_EXCERPT_LIMIT),
-    "milestone",
-    "monthly-consolidation",
-    { vaultPath: monthPath, importance: 7 },
-  );
-
-  // Delete merged weekly files
-  for (const file of oldFiles) {
-    await deleteVaultFile(file).catch((error) => {
-      logger.warn({ error, file }, "Failed to delete merged weekly file");
+  // Delete merged weekly episodes
+  for (const ep of episodes) {
+    await engine.forget(ep._id.toString()).catch((error) => {
+      logger.warn({ error, episodeId: ep._id }, "Failed to delete merged weekly episode");
     });
   }
 
-  logger.info({ monthOf, mergedFiles: oldFiles.length }, "Monthly consolidation complete");
+  logger.info({ monthOf, mergedEpisodes: episodes.length }, "Monthly consolidation complete");
 }

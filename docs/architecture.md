@@ -49,7 +49,6 @@ AIGF is a layered conversational AI system. Messages flow from a platform adapte
 │ embedding (Google Gemini)│
 │  ─► cosine similarity    │
 │  ─► remember / recall    │
-│  ─► dual-write vault+DB  │
 │  ─► fact ADD/UPDATE/DEL  │
 └──────────────────────────┘
 
@@ -88,14 +87,14 @@ AIGF is a layered conversational AI system. Messages flow from a platform adapte
        │
 6. appendMessage(conversation, userMsg)
        │
-7. curateIfNeeded(chatId) — if messages > 40 (debounced: 5+ overflow):
-       │   ├─ summarize overflow → vault + Memory collection (dual-write)
+7. curateIfNeeded(chatId) — if overflow >= 40 messages (batch curation):
+       │   ├─ summarize overflow → Memory collection episode (MongoDB only)
        │   ├─ extract structured metadata (emotionalTone, importance, followUps)
        │   ├─ classify facts as ADD/UPDATE/DELETE via LLM → Memory collection
        │   ├─ regenerate about-you.md from all current facts
        │   ├─ trim conversation to 40 messages
-       │   ├─ check weekly merge (4+ old daily files → weekly rollup)
-       │   └─ check monthly consolidation (3+ old weekly files → monthly insights)
+       │   ├─ check weekly merge (4+ old episodes → weekly-merge episode)
+       │   └─ check monthly consolidation (3+ old weekly episodes → milestone)
        │
 8. Parallel: assembleSystemPrompt() + assembleMessages(chatId)
        │   ├─ System: personality + user facts + milestones + recent episodes + follow-ups + datetime + tools + format
@@ -143,7 +142,7 @@ When firing, the scheduler assembles a proactive system prompt (personality + pr
 | `src/utils/` | Logger, markdown/frontmatter parsing | `logger.ts`, `markdown.ts` |
 | `src/config.ts` | Zod-validated environment config | — |
 | `src/index.ts` | App entry point, boot sequence | — |
-| `vault/` | User-editable memory files (personality, facts, summaries) | `personality/card.md`, `memories/about-you.md`, `memories/milestones.md` |
+| `vault/` | User-editable memory files (personality, facts, milestones) | `personality/card.md`, `memories/about-you.md`, `memories/milestones.md` |
 | `context/` | Image generation assets (references, settings) | `references/face/`, `references/body/`, `references/outfits/`, `settings/` |
 
 ## Boot Sequence
@@ -159,9 +158,9 @@ Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop s
 ## Key Design Decisions
 
 - **Daily conversation scoping** — conversations reset at midnight, keeping context fresh
-- **40-message context window** — overflow is summarized into vault files, not lost
+- **40-message context window** — overflow is summarized into MongoDB episodes, not lost
 - **Tool-augmented LLM** — the model reads/writes its own memory via tools, not hardcoded logic
-- **Dual storage** — vault files (.md) for human-readable archive, MongoDB Memory collection for semantic search
+- **MongoDB as single source of truth** — conversations stored exclusively in Memory collection; vault files reserved for static content (personality, facts, milestones)
 - **Semantic memory** — Google Gemini embeddings + cosine similarity for meaning-based retrieval
 - **Smart fact management** — ADD/UPDATE/DELETE operations prevent stale fact accumulation
 - **Platform abstraction** — `PlatformAdapter` interface enables future platform support

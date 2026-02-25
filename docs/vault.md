@@ -1,9 +1,9 @@
 # Vault & Memory System
 
-The memory system has two storage layers that stay in sync:
+The memory system has two storage layers:
 
-- **Vault** — file-based Markdown store with YAML frontmatter. Human-readable and editable. Holds personality definition, user facts, relationship milestones, and conversation summaries.
-- **Memory Engine** — MongoDB-backed collection with vector embeddings. Enables semantic search, auto-injection of recent context, and structured fact management (ADD/UPDATE/DELETE).
+- **Vault** — file-based Markdown store with YAML frontmatter. Human-readable and editable. Holds personality definition, user facts, and relationship milestones. Static content only.
+- **Memory Engine** — MongoDB-backed collection with vector embeddings. Single source of truth for conversation episodes, facts, and milestones. Enables semantic search, auto-injection of recent context, and structured fact management (ADD/UPDATE/DELETE).
 
 ## Directory Layout
 
@@ -13,13 +13,10 @@ vault/
 │   └── card.md                          # Character definition (loaded at startup)
 └── memories/
     ├── about-you.md                     # User facts (auto-updated by curator)
-    ├── milestones.md                    # Relationship milestones
-    └── conversations/
-        ├── 2026-02-22T17-19-40.md       # Daily conversation summaries
-        ├── 2026-02-22T17-39-58.md
-        ├── week-of-2026-02-15.md        # Weekly rollups
-        └── month-of-2026-01.md          # Monthly consolidation
+    └── milestones.md                    # Relationship milestones
 ```
+
+Conversation summaries are stored exclusively in MongoDB (Memory collection) as episodes, weekly merges, and milestones. No vault files are created for conversations.
 
 ## Frontmatter Schema
 
@@ -53,45 +50,6 @@ Body contains categorized facts about the user (preferences, routines, dates, et
 
 No required frontmatter. Body contains dated relationship milestones, memorable moments, and inside jokes.
 
-### memories/conversations/{timestamp}.md
-
-```yaml
----
-type: "conversation-summary"
-chatId: <string>
-messageCount: <number>
-timestamp: <ISO8601 string>
-emotionalTone: <1-10>
-importance: <1-10>
-followUps: ["<action item>", ...]
----
-```
-
-Body contains bullet-point summaries: facts learned, emotional highlights, topics discussed, promises or follow-ups. Each summary is also stored in the MongoDB Memory collection (dual-write) for semantic search and auto-injection into the system prompt.
-
-### memories/conversations/week-of-{date}.md
-
-```yaml
----
-type: "weekly-summary"
-weekOf: <date string>
----
-```
-
-Body contains a compressed summary of multiple daily summaries from that week.
-
-### memories/conversations/month-of-{YYYY-MM}.md
-
-```yaml
----
-type: "monthly-summary"
-monthOf: <YYYY-MM string>
-mergedWeeklyFiles: <number>
----
-```
-
-Body contains relationship patterns, long-term observations, and emotional trends distilled from weekly summaries. Also stored as a milestone in the Memory collection for semantic retrieval.
-
 ## Vault Operations
 
 Implemented in `src/memory/vault.ts`:
@@ -100,7 +58,7 @@ Implemented in `src/memory/vault.ts`:
 |---|---|
 | `readVaultFile(path)` | Read file, parse frontmatter + content. Returns `null` on missing file. |
 | `writeVaultFile(path, content, frontmatter)` | Write file with frontmatter. Creates parent dirs. |
-| `deleteVaultFile(path)` | Delete a vault file. Used by weekly merge to clean up merged daily files. |
+| `deleteVaultFile(path)` | Delete a vault file. |
 | `appendToVaultFile(path, content)` | Append with line-level deduplication (case-insensitive). Preserves headers. |
 | `listVaultFiles(dir)` | Recursive walk, returns all `.md` file paths. |
 | `searchVault(query)` | Case-insensitive line matching across all files. Top 5 excerpts per file, sorted by match count. |
@@ -139,7 +97,6 @@ Defined in `src/db/models/memory.ts`. Each document stores:
 | `metadata.followUps` | `string[]?` | Unresolved action items |
 | `metadata.createdAt` | `Date` | When the memory was created |
 | `metadata.updatedAt` | `Date` | When the memory was last modified |
-| `metadata.vaultPath` | `string?` | Links back to vault file if applicable |
 
 Indexed on `type`, `metadata.chatId`, and `metadata.createdAt`.
 
@@ -151,22 +108,21 @@ Implemented in `src/memory/engine.ts`:
 |---|---|
 | `remember(content, type, source, opts?)` | Embed content, store in MongoDB. Returns the created document. |
 | `recall(query, opts?)` | Embed query, composite scoring search. Options: `type`, `limit` (default 10), `minScore` (default 0.3, applied as relevance floor). Score = 0.50×relevance + 0.25×recency + 0.15×importance + 0.10×emotional. |
-| `forget(memoryId)` | Delete a memory by ID. Vault file left intact as archive. |
+| `forget(memoryId)` | Delete a memory by ID. |
 | `getRecentEpisodes(limit?)` | Fetch last N episode-type memories by date. Used by context assembly. |
+| `getEpisodesBefore(olderThan, excludeSources?)` | Fetch episodes older than a date, optionally excluding certain sources. Used by weekly/monthly merge. |
 | `getAllFacts()` | Fetch all fact-type memories. Used by curation for classify-then-act. |
 | `getActiveFollowUps()` | Collect unresolved follow-up items from recent memories. Used by context assembly. |
 | `getEmotionalBaseline(windowSize?)` | Compute rolling emotional trend from recent episodes. Returns average, trend (rising/falling/stable), and recent scores. Null if < 3 data points. |
 
 ## Curation Pipeline
 
-Implemented in `src/memory/curator.ts`. Triggered automatically when a conversation exceeds 40 messages.
+Implemented in `src/memory/curator.ts`. Triggered when a conversation reaches 80 messages (40-message context window + 40-message curation batch). The AI only sees the last 40 messages via `assembleMessages`, so overflow messages are invisible until curated.
 
 ```
 curateIfNeeded(chatId)
     │
-    ├─ 1. Detect overflow (messages > 40)
-    │
-    ├─ 1.5 Debounce check — skip if < 5 messages since last curation
+    ├─ 1. Detect overflow (messages > 40) and batch check (overflow >= 40)
     │
     ├─ 2. Extract overflow messages (everything before the 40-msg cutoff)
     │
@@ -179,9 +135,8 @@ curateIfNeeded(chatId)
     │      • Facts learned, emotional highlights, topics discussed
     │      • emotionalTone (1-10), importance (1-10), followUps []
     │
-    ├─ 5. Dual-write summary:
-    │      • vault/memories/conversations/{ISO_TIMESTAMP}.md (with metadata frontmatter)
-    │      • Memory collection as "episode" type (with embedding)
+    ├─ 5. Store episode in Memory collection (with embedding)
+    │      MongoDB is the single source of truth — no vault file created
     │
     ├─ 6. updateUserFacts(summary) — Mem0-style classify-then-act:
     │      • Load all existing facts from Memory collection
@@ -192,21 +147,18 @@ curateIfNeeded(chatId)
     ├─ 7. Trim conversation to last 40 messages
     │
     ├─ 8. checkWeeklyMerge()
-    │      • Find conversation files older than 7 days
-    │      • If 4+ files: weeklyDeepCuration()
-    │         └─ Read all old daily summaries
+    │      • Query episodes older than 7 days (excluding weekly-merge source)
+    │      • If 4+ episodes: weeklyDeepCuration()
     │         └─ LLM compresses into single weekly summary
-    │         └─ Write → week-of-{DATE}.md
-    │         └─ Delete merged daily files to prevent re-merging
+    │         └─ Store as episode with source "weekly-merge"
+    │         └─ Delete merged daily episodes
     │
     └─ 9. checkMonthlyConsolidation()
-           • Find weekly summaries older than 30 days
-           • If 3+ files: monthlyDeepConsolidation()
-              └─ Read all old weekly summaries
+           • Query weekly-merge episodes older than 30 days
+           • If 3+ episodes: monthlyDeepConsolidation()
               └─ LLM extracts relationship patterns + long-term observations
-              └─ Write → month-of-{YYYY-MM}.md
               └─ Store as milestone in Memory collection
-              └─ Delete merged weekly files
+              └─ Delete merged weekly episodes
 ```
 
 ## System Prompt Assembly

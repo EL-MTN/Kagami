@@ -7,7 +7,6 @@ export interface IMemoryMetadata {
   followUps?: string[];
   createdAt: Date;
   updatedAt: Date;
-  vaultPath?: string;
 }
 
 export interface IMemory extends Document {
@@ -31,7 +30,6 @@ const memorySchema = new Schema<IMemory>(
       followUps: { type: [String] },
       createdAt: { type: Date, default: Date.now },
       updatedAt: { type: Date, default: Date.now },
-      vaultPath: { type: String },
     },
   },
   { timestamps: false },

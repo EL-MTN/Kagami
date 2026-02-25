@@ -6,7 +6,6 @@ const VAULT_PATH = "./vault";
 const structure = [
   "personality",
   "memories",
-  "memories/conversations",
   "calendar",
 ];
 

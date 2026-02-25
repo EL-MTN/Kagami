@@ -95,7 +95,7 @@ allTools(ctx) → { readMemory, writeMemory, searchMemory, listMemories, curateM
 - **Purpose**: Read a specific file from the vault
 - **Parameters**: `{ path: string }` (relative to vault root)
 - **Returns**: `{ found: boolean, content?: string }`
-- **Use case**: Recall stored personality, facts, or conversation summaries
+- **Use case**: Recall stored personality, facts about the user, or milestones
 
 ### writeMemory
 

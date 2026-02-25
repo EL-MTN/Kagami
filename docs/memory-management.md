@@ -8,7 +8,6 @@ Mashiro's memory operates in four tiers:
 |------|---------|-------|-------------|
 | **Hot** | MongoDB `conversations` | Today's 40 messages | Raw messages, images, tool calls |
 | **Warm** | MongoDB `memories` collection | All curated memories | Embeddings, structured metadata, facts/episodes/milestones |
-| **Cold** | `vault/memories/conversations/*.md` | Daily/weekly summaries | Human-readable summaries with YAML frontmatter |
 | **Static** | `vault/memories/about-you.md`, `milestones.md` | Regenerated facts | Clean fact list regenerated from Warm tier each curation cycle |
 
 The personality card (`vault/personality/card.md`) sits outside this hierarchy as a static, hand-edited identity definition.
@@ -23,24 +22,21 @@ User sends message
   - appendMessage (user)
   - getOrCreateConversation (daily scoped)
        |
-       v (if messages > 40, debounced: 5+ overflow)
+       v (if overflow >= 40 messages beyond context window)
 [CURATION TRIGGER]
   - getOverflowMessages -> messages[0..N-40]
   - LLM summarizes overflow transcript + extracts structured metadata
-  - Dual-write summary:
-      -> [COLD] vault/memories/conversations/{timestamp}.md (with frontmatter)
-      -> [WARM] Memory collection as "episode" (with embedding)
+  - Store as [WARM] Memory collection episode (with embedding) — single source of truth
   - LLM classifies facts as ADD/UPDATE/DELETE/NOOP against existing facts
   - Execute operations against [WARM] Memory collection
   - Regenerate [STATIC] about-you.md from all current facts
   - trimConversation -> MongoDB kept at 40
-  - checkWeeklyMerge -> if 4+ old daily files:
-      - weeklyDeepCuration -> [COLD] conversations/week-of-{date}.md
-      - delete merged [COLD] files
-  - checkMonthlyConsolidation -> if 3+ old weekly files:
-      - monthlyDeepConsolidation -> [COLD] conversations/month-of-{YYYY-MM}.md
-      - store as [WARM] milestone
-      - delete merged [COLD] weekly files
+  - checkWeeklyMerge -> if 4+ old curation episodes (>7 days):
+      - weeklyDeepCuration -> [WARM] episode with source "weekly-merge"
+      - delete merged daily episodes
+  - checkMonthlyConsolidation -> if 3+ old weekly-merge episodes (>30 days):
+      - monthlyDeepConsolidation -> [WARM] milestone
+      - delete merged weekly episodes
        |
        v
 [ASSEMBLY] assembleSystemPrompt()
@@ -77,16 +73,16 @@ generateText() with tools
 **On-demand (via tools, within 5 maxSteps):**
 - Semantic + keyword hybrid search results (searchMemory)
 - Memory discovery by type/date (listMemories)
-- Specific vault file by path (readMemory)
+- Specific vault file by path (readMemory) — personality, about-you, milestones
 - Write to vault + Memory collection (writeMemory)
 
 ### Memory Write Paths
 
-**1. Automatic Curation (overflow-triggered, debounced)**
-- Fires when today's conversation exceeds 40 messages (skipped if < 5 messages since last curation)
+**1. Automatic Curation (batch-triggered)**
+- Fires when 40+ messages overflow beyond the 40-message context window (i.e., at 80 total messages)
 - Formats overflow as rich transcript (images as `[sent a photo]`, tool calls as human-readable descriptions)
 - LLM summarizes into bullet points + structured metadata (emotionalTone, importance, followUps)
-- Dual-writes: vault file with frontmatter + Memory collection episode with embedding
+- Stores episode in Memory collection with embedding (MongoDB only — no vault file)
 - LLM classifies facts as ADD/UPDATE/DELETE against existing Memory collection facts
 - Regenerates `about-you.md` from all current facts (clean overwrite)
 - Trims MongoDB conversation to 40 messages
@@ -99,17 +95,18 @@ generateText() with tools
 - Returns current file state after write for verification
 
 **3. Weekly deep curation (merge)**
-- Triggers when 4+ daily summary files are older than 7 days
+- Triggers when 4+ curation episodes are older than 7 days
 - Also fires from proactive scheduler (not just curation)
 - LLM compresses all old dailies into single weekly summary
-- Merged daily files are deleted
+- Stored as episode with source `"weekly-merge"` in Memory collection
+- Merged daily episodes are deleted from MongoDB
 
 **4. Monthly consolidation**
-- Triggers when 3+ weekly summary files are older than 30 days
+- Triggers when 3+ weekly-merge episodes are older than 30 days
 - Also fires from proactive scheduler
 - LLM extracts relationship patterns and long-term observations
-- Writes `month-of-{YYYY-MM}.md` and stores as milestone in Memory collection
-- Merged weekly files are deleted
+- Stored as milestone in Memory collection (full text, no truncation)
+- Merged weekly episodes are deleted from MongoDB
 
 ### Memory Read Paths
 
@@ -157,7 +154,7 @@ generateText() with tools
 | 8. No emotional trajectory | `getEmotionalBaseline()` with trend injection into system prompt when mood is rising/falling |
 | 9. No temporal awareness | Composite retrieval scoring: 0.50×relevance + 0.25×recency + 0.15×importance + 0.10×emotional |
 | 10. Weekly merge threshold fragile | Lowered to 4+ files, fires from both curation and proactive scheduler |
-| 11. Per-message curation waste | Debounced at 5+ messages since last curation |
+| 11. Per-message curation waste | Batch curation: 40-message minimum before summarizing |
 | 12. Proactive messages blind | Follow-ups + recent episodes injected into proactive prompt |
 
 ---
@@ -209,7 +206,7 @@ During curation, extract named entities (people, places, events) into structured
 |  Curation (40-msg overflow -> summarize -> extract facts) [done]|
 |  Rich transcripts (images, tool calls, role names)        [done]|
 |  Fact management (ADD/UPDATE/DELETE, not just append)      [done]|
-|  Curation debounce (5+ messages threshold)                [done]|
+|  Batch curation (40-message minimum overflow)             [done]|
 |  Weekly consolidation (daily -> weekly, threshold 4+)     [done]|
 |  Monthly consolidation (weekly -> relationship patterns)  [done]|
 |  Proactive consolidation (merge checks on timer fire)     [done]|

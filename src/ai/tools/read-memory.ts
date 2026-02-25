@@ -5,12 +5,12 @@ import { logger } from "../../utils/logger.js";
 
 export const readMemory = tool({
   description:
-    "Read a specific file from the memory vault. Use to recall stored information like facts about him, milestones, or past conversation summaries.",
+    "Read a specific file from the memory vault. Use to recall stored information like personality, facts about him, or milestones.",
   parameters: z.object({
     path: z
       .string()
       .describe(
-        "Path relative to vault root, e.g. 'memories/about-you.md' or 'memories/conversations/2026-02-20.md'",
+        "Path relative to vault root, e.g. 'memories/about-you.md' or 'memories/milestones.md'",
       ),
   }),
   execute: async ({ path }) => {
