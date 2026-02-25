@@ -137,7 +137,7 @@ Implemented in `src/memory/engine.ts`:
 | Function | Description |
 |---|---|
 | `remember(content, type, source, opts?)` | Embed content, store in MongoDB. Returns the created document. |
-| `recall(query, opts?)` | Embed query, cosine similarity search. Options: `type`, `limit` (default 10), `minScore` (default 0.3). |
+| `recall(query, opts?)` | Embed query, composite scoring search. Options: `type`, `limit` (default 10), `minScore` (default 0.3, applied as relevance floor). Score = 0.50×relevance + 0.25×recency + 0.15×importance + 0.10×emotional. |
 | `forget(memoryId)` | Delete a memory by ID. Vault file left intact as archive. |
 | `getRecentEpisodes(limit?)` | Fetch last N episode-type memories by date. Used by context assembly. |
 | `getAllFacts()` | Fetch all fact-type memories. Used by curation for classify-then-act. |

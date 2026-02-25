@@ -97,6 +97,32 @@ export async function getActiveFollowUps(): Promise<string[]> {
   return followUps;
 }
 
+// Generative Agents composite scoring weights
+const WEIGHT_RELEVANCE = 0.5;
+const WEIGHT_RECENCY = 0.25;
+const WEIGHT_IMPORTANCE = 0.15;
+const WEIGHT_EMOTIONAL = 0.1;
+const RECENCY_HALF_LIFE_DAYS = 30;
+
+function computeCompositeScore(
+  relevance: number,
+  createdAt: Date,
+  importance?: number,
+  emotionalTone?: number,
+): number {
+  const ageDays = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
+  const recency = Math.pow(2, -ageDays / RECENCY_HALF_LIFE_DAYS);
+  const importanceNorm = (importance ?? 5) / 10;
+  const emotionalWeight = Math.abs((emotionalTone ?? 5) - 5) / 5;
+
+  return (
+    WEIGHT_RELEVANCE * relevance +
+    WEIGHT_RECENCY * recency +
+    WEIGHT_IMPORTANCE * importanceNorm +
+    WEIGHT_EMOTIONAL * emotionalWeight
+  );
+}
+
 async function _similaritySearch(
   queryEmbedding: number[],
   opts: { type?: string; limit: number; minScore: number },
@@ -109,16 +135,24 @@ async function _similaritySearch(
   const scored: RecallResult[] = [];
   for (const candidate of candidates) {
     if (!candidate.embedding?.length) continue;
-    const score = cosineSimilarity(queryEmbedding, candidate.embedding);
-    if (score >= opts.minScore) {
-      scored.push({
-        id: candidate._id.toString(),
-        content: candidate.content,
-        type: candidate.type,
-        score,
-        metadata: candidate.metadata,
-      });
-    }
+    const relevance = cosineSimilarity(queryEmbedding, candidate.embedding);
+    // minScore still applies as a relevance floor
+    if (relevance < opts.minScore) continue;
+
+    const score = computeCompositeScore(
+      relevance,
+      candidate.metadata.createdAt,
+      candidate.metadata.importance,
+      candidate.metadata.emotionalTone,
+    );
+
+    scored.push({
+      id: candidate._id.toString(),
+      content: candidate.content,
+      type: candidate.type,
+      score,
+      metadata: candidate.metadata,
+    });
   }
 
   scored.sort((a, b) => b.score - a.score);
