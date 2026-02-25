@@ -79,6 +79,18 @@ weekOf: <date string>
 
 Body contains a compressed summary of multiple daily summaries from that week.
 
+### memories/conversations/month-of-{YYYY-MM}.md
+
+```yaml
+---
+type: "monthly-summary"
+monthOf: <YYYY-MM string>
+mergedWeeklyFiles: <number>
+---
+```
+
+Body contains relationship patterns, long-term observations, and emotional trends distilled from weekly summaries. Also stored as a milestone in the Memory collection for semantic retrieval.
+
 ## Vault Operations
 
 Implemented in `src/memory/vault.ts`:
@@ -178,13 +190,22 @@ curateIfNeeded(chatId)
     │
     ├─ 7. Trim conversation to last 40 messages
     │
-    └─ 8. checkWeeklyMerge()
-           • Find conversation files older than 7 days
-           • If 7+ files: weeklyDeepCuration()
-              └─ Read all old daily summaries
-              └─ LLM compresses into single weekly summary
-              └─ Write → week-of-{DATE}.md
-              └─ Delete merged daily files to prevent re-merging
+    ├─ 8. checkWeeklyMerge()
+    │      • Find conversation files older than 7 days
+    │      • If 4+ files: weeklyDeepCuration()
+    │         └─ Read all old daily summaries
+    │         └─ LLM compresses into single weekly summary
+    │         └─ Write → week-of-{DATE}.md
+    │         └─ Delete merged daily files to prevent re-merging
+    │
+    └─ 9. checkMonthlyConsolidation()
+           • Find weekly summaries older than 30 days
+           • If 3+ files: monthlyDeepConsolidation()
+              └─ Read all old weekly summaries
+              └─ LLM extracts relationship patterns + long-term observations
+              └─ Write → month-of-{YYYY-MM}.md
+              └─ Store as milestone in Memory collection
+              └─ Delete merged weekly files
 ```
 
 ## System Prompt Assembly

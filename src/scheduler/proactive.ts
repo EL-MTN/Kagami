@@ -1,6 +1,7 @@
 import { generateText } from "ai";
 import { getModel } from "../ai/provider.js";
 import { assembleProactiveSystemPrompt, assembleMessages } from "../ai/context-assembler.js";
+import { checkWeeklyMerge, checkMonthlyConsolidation } from "../memory/curator.js";
 import { allTools, type ToolContext } from "../ai/tools/index.js";
 import {
   getOrCreateConversation,
@@ -106,6 +107,14 @@ async function fireProactive(chatId: string): Promise<void> {
 
   // Schedule next
   scheduleNext(chatId);
+
+  // Fire-and-forget memory consolidation checks
+  checkWeeklyMerge().catch((error) => {
+    logger.warn({ error }, "Weekly merge check failed during proactive cycle");
+  });
+  checkMonthlyConsolidation().catch((error) => {
+    logger.warn({ error }, "Monthly consolidation check failed during proactive cycle");
+  });
 }
 
 async function generateProactiveMessage(chatId: string, adapter: PlatformAdapter): Promise<void> {

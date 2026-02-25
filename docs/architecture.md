@@ -94,7 +94,8 @@ AIGF is a layered conversational AI system. Messages flow from a platform adapte
        │   ├─ classify facts as ADD/UPDATE/DELETE via LLM → Memory collection
        │   ├─ regenerate about-you.md from all current facts
        │   ├─ trim conversation to 40 messages
-       │   └─ check weekly merge (7+ old daily files → weekly rollup)
+       │   ├─ check weekly merge (4+ old daily files → weekly rollup)
+       │   └─ check monthly consolidation (3+ old weekly files → monthly insights)
        │
 8. Parallel: assembleSystemPrompt() + assembleMessages(chatId)
        │   ├─ System: personality + user facts + milestones + recent episodes + follow-ups + datetime + tools + format
@@ -123,6 +124,7 @@ The scheduler sends unprompted messages to maintain engagement:
 - **Startup**: 30–60 minute delay after boot
 - **Persistence**: next-fire timestamps saved to MongoDB (survives restarts)
 - **Reset**: any user message reschedules the next proactive to 1.5–2.5h out
+- **Memory consolidation**: after each proactive fire, checks weekly merge and monthly consolidation (fire-and-forget)
 
 When firing, the scheduler assembles a proactive system prompt (personality + proactive instructions) and injects a synthetic nudge if no recent user message exists.
 

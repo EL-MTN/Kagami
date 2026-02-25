@@ -1,5 +1,5 @@
 import { generateText } from "ai";
-import { format, subDays } from "date-fns";
+import { format, subDays, subMonths } from "date-fns";
 import { getModel, ModelTier } from "../ai/provider.js";
 import { getOverflowMessages, trimConversation, type IMessage } from "../db/models/conversation.js";
 import { readVaultFile, writeVaultFile, listVaultFiles, deleteVaultFile } from "./vault.js";
@@ -142,8 +142,9 @@ Always include the metadata block, even if followUps is empty.`,
     "Curation complete: summarized overflow and trimmed conversation",
   );
 
-  // Check if weekly merge is due
+  // Check if weekly merge is due, then monthly consolidation
   await checkWeeklyMerge();
+  await checkMonthlyConsolidation();
 }
 
 interface CurationMetadata {
@@ -281,18 +282,18 @@ async function regenerateAboutYou(): Promise<void> {
   logger.info({ factCount: allFacts.length }, "Regenerated about-you.md from Memory collection");
 }
 
-async function checkWeeklyMerge(): Promise<void> {
+export async function checkWeeklyMerge(): Promise<void> {
   const files = await listVaultFiles("memories/conversations");
   const oneWeekAgo = format(subDays(new Date(), 7), "yyyy-MM-dd");
 
-  // Find daily summary files (not weekly rollups) older than 7 days
+  // Find daily summary files (not weekly/monthly rollups) older than 7 days
   const oldDailyFiles = files.filter((f) => {
-    if (f.includes("week-of-")) return false;
+    if (f.includes("week-of-") || f.includes("month-of-")) return false;
     const dateMatch = f.match(/(\d{4}-\d{2}-\d{2})/);
     return dateMatch && dateMatch[1] < oneWeekAgo;
   });
 
-  if (oldDailyFiles.length >= 7) {
+  if (oldDailyFiles.length >= 4) {
     logger.info({ fileCount: oldDailyFiles.length }, "Triggering weekly merge");
     await weeklyDeepCuration(oldDailyFiles);
   }
@@ -332,4 +333,75 @@ async function weeklyDeepCuration(oldFiles: string[]): Promise<void> {
   }
 
   logger.info({ weekOf, mergedFiles: oldFiles.length }, "Weekly curation complete");
+}
+
+export async function checkMonthlyConsolidation(): Promise<void> {
+  const files = await listVaultFiles("memories/conversations");
+  const oneMonthAgo = format(subMonths(new Date(), 1), "yyyy-MM-dd");
+
+  // Find weekly summaries older than 30 days
+  const oldWeeklyFiles = files.filter((f) => {
+    if (!f.includes("week-of-")) return false;
+    const dateMatch = f.match(/(\d{4}-\d{2}-\d{2})/);
+    return dateMatch && dateMatch[1] < oneMonthAgo;
+  });
+
+  if (oldWeeklyFiles.length >= 3) {
+    logger.info({ fileCount: oldWeeklyFiles.length }, "Triggering monthly consolidation");
+    await monthlyDeepConsolidation(oldWeeklyFiles);
+  }
+}
+
+async function monthlyDeepConsolidation(oldFiles: string[]): Promise<void> {
+  const contents: string[] = [];
+  for (const file of oldFiles) {
+    const data = await readVaultFile(file);
+    if (data) contents.push(`## ${file}\n${data.content}`);
+  }
+
+  if (contents.length === 0) return;
+
+  const result = await generateText({
+    model: getModel(),
+    system: `You are a memory curator. Compress multiple weekly summaries into a single monthly summary focused on relationship patterns and long-term observations.
+
+Extract:
+1. Recurring themes and topics
+2. How the relationship dynamic evolved over the month
+3. Key emotional patterns (what makes him happy, what worries him)
+4. Important milestones or turning points
+5. Long-term observations about his personality and preferences
+
+Write from Mashiro's perspective as long-term relationship insights, not a chronological recap.`,
+    messages: [
+      {
+        role: "user",
+        content: `Consolidate these weekly summaries into monthly relationship insights:\n\n${contents.join("\n\n")}`,
+      },
+    ],
+  });
+
+  const monthOf = format(subMonths(new Date(), 1), "yyyy-MM");
+  const monthPath = `memories/conversations/month-of-${monthOf}.md`;
+
+  await writeVaultFile(monthPath, result.text, {
+    type: "monthly-summary",
+    monthOf,
+    mergedWeeklyFiles: oldFiles.length,
+  });
+
+  // Store as milestone in Memory collection for long-term retrieval
+  await engine.remember(result.text, "milestone", "monthly-consolidation", {
+    vaultPath: monthPath,
+    importance: 7,
+  });
+
+  // Delete merged weekly files
+  for (const file of oldFiles) {
+    await deleteVaultFile(file).catch((error) => {
+      logger.warn({ error, file }, "Failed to delete merged weekly file");
+    });
+  }
+
+  logger.info({ monthOf, mergedFiles: oldFiles.length }, "Monthly consolidation complete");
 }
