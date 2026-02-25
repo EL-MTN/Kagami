@@ -62,6 +62,9 @@ createBot(adapter, handleMessage, resetTimer)
     │
     ├─ Allowlist middleware (if ALLOWED_USER_IDS configured)
     │
+    ├─ /clear command
+    │   └─ Deletes today's conversation → replies "Context cleared"
+    │
     ├─ message:text handler
     │   ├─ normalize(ctx) → IncomingMessage
     │   ├─ Rate limit check

@@ -126,6 +126,13 @@ export async function getOverflowMessages(
   };
 }
 
+export async function clearConversation(chatId: string): Promise<void> {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  await Conversation.deleteMany({ chatId, createdAt: { $gte: today } });
+}
+
 export async function trimConversation(conversationId: string, keep = 40): Promise<void> {
   const convo = await Conversation.findById(conversationId);
   if (!convo) return;

@@ -4,6 +4,7 @@ import { logger } from "../../utils/logger.js";
 import { TelegramAdapter } from "./adapter.js";
 import { handleMessage } from "../../ai/generate.js";
 import { resetTimer } from "../../scheduler/proactive.js";
+import { clearConversation } from "../../db/models/conversation.js";
 
 // Simple in-memory rate limiter
 const rateLimitMap = new Map<string, number[]>();
@@ -51,6 +52,13 @@ export function createBot(token: string): Bot {
       return next();
     }
     logger.warn({ userId }, "Unauthorized user blocked");
+  });
+
+  bot.command("clear", async (ctx) => {
+    const chatId = String(ctx.chat.id);
+    await clearConversation(chatId);
+    logger.info({ chatId }, "Conversation cleared via /clear command");
+    await ctx.reply("Context cleared — starting fresh.");
   });
 
   bot.on("message:photo", async (ctx) => {
