@@ -34,8 +34,8 @@ function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string 
 function formatMessageForTranscript(m: IMessage): string {
   const role = m.role === "assistant" ? "Mashiro" : m.role;
 
-  // Handle image messages — never include base64
-  if (m.imageBase64) {
+  // Handle image messages — never include raw image data
+  if (m.imageRef) {
     const photoLabel = m.content ? `[sent a photo with caption: "${m.content}"]` : "[sent a photo]";
     return `${role}: ${photoLabel}`;
   }

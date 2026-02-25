@@ -49,6 +49,7 @@ Implemented in `src/platform/telegram/adapter.ts`. Singleton accessed via `getAd
 
 - Photos are downloaded via Telegram's `getFile` API
 - MIME type detected from extension (`.png` → `image/png`, else `image/jpeg`)
+- Downloaded images are passed as base64 in `IncomingMessage`; the AI layer writes them to MongoDB GridFS and stores only an `imageRef` key in the conversation document
 - Returned `file_id` values can be reused to avoid re-uploading
 
 ## Bot Setup

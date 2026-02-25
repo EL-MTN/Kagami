@@ -183,4 +183,4 @@ Same as standard (including recent episodes + follow-ups) but replaces response 
 
 ### Message history (`assembleMessages`)
 
-Loads last 40 messages from the conversation. Reconstructs tool-call/tool-result pairs so the model sees its own prior tool usage. User messages with images become multi-part content (image + text).
+Loads last 40 messages from the conversation. Reconstructs tool-call/tool-result pairs so the model sees its own prior tool usage. User messages with images are loaded from GridFS on demand (via `imageRef`) and converted to multi-part content (image + text).

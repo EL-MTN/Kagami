@@ -1,9 +1,10 @@
 import mongoose, { Schema, type Document } from "mongoose";
+import { removeImages } from "../gridfs.js";
 
 export interface IMessage {
   role: "user" | "assistant" | "system" | "tool";
   content: string;
-  imageBase64?: string;
+  imageRef?: string;
   imageMimeType?: string;
   toolCalls?: Array<{
     toolName: string;
@@ -26,7 +27,7 @@ const messageSchema = new Schema<IMessage>(
   {
     role: { type: String, enum: ["user", "assistant", "system", "tool"], required: true },
     content: { type: String, required: true },
-    imageBase64: { type: String },
+    imageRef: { type: String },
     imageMimeType: { type: String },
     toolCalls: [
       {
@@ -130,6 +131,11 @@ export async function clearConversation(chatId: string): Promise<void> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  const convos = await Conversation.find({ chatId, createdAt: { $gte: today } });
+  const imageKeys = convos.flatMap((c) =>
+    c.messages.filter((m) => m.imageRef).map((m) => m.imageRef!),
+  );
+  await removeImages(imageKeys);
   await Conversation.deleteMany({ chatId, createdAt: { $gte: today } });
 }
 
@@ -138,6 +144,9 @@ export async function trimConversation(conversationId: string, keep = 40): Promi
   if (!convo) return;
 
   if (convo.messages.length > keep) {
+    const trimmed = convo.messages.slice(0, -keep);
+    const imageKeys = trimmed.filter((m) => m.imageRef).map((m) => m.imageRef!);
+    await removeImages(imageKeys);
     convo.messages = convo.messages.slice(-keep);
     await convo.save();
   }

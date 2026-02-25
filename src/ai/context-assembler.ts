@@ -1,6 +1,7 @@
 import { format } from "date-fns";
 import { readVaultFile } from "../memory/vault.js";
 import { getRecentMessages } from "../db/models/conversation.js";
+import { readImage } from "../db/gridfs.js";
 import * as engine from "../memory/engine.js";
 import {
   TOOL_USAGE_INSTRUCTIONS,
@@ -121,11 +122,14 @@ export async function assembleMessages(chatId: string): Promise<CoreMessage[]> {
   for (const msg of history) {
     if (msg.role === "user") {
       let content: UserContent = msg.content;
-      if (msg.imageBase64) {
-        content = [
-          { type: "image", image: msg.imageBase64, mimeType: msg.imageMimeType },
-          { type: "text", text: msg.content },
-        ];
+      if (msg.imageRef) {
+        const img = await readImage(msg.imageRef);
+        if (img) {
+          content = [
+            { type: "image", image: img.data.toString("base64"), mimeType: img.mimeType },
+            { type: "text", text: msg.content },
+          ];
+        }
       }
       messages.push({ role: "user", content });
     } else {

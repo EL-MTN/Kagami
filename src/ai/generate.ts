@@ -3,6 +3,7 @@ import { getModel } from "./provider.js";
 import { assembleSystemPrompt, assembleMessages } from "./context-assembler.js";
 import { allTools, type ToolContext } from "./tools/index.js";
 import { getOrCreateConversation, appendMessage } from "../db/models/conversation.js";
+import { writeImage, generateImageKey } from "../db/gridfs.js";
 import { curateIfNeeded } from "../memory/curator.js";
 import type { IncomingMessage, PlatformAdapter } from "../platform/types.js";
 import { logger } from "../utils/logger.js";
@@ -23,11 +24,22 @@ export async function handleMessage(
   // 1. Get/create conversation and save user message
   const convo = await getOrCreateConversation(incoming.chatId, incoming.userId, incoming.platform);
 
+  // Store image in GridFS if present, keep only a reference in the conversation doc
+  let imageRef: string | undefined;
+  if (incoming.imageBase64) {
+    imageRef = generateImageKey();
+    await writeImage(
+      imageRef,
+      Buffer.from(incoming.imageBase64, "base64"),
+      incoming.imageMimeType ?? "image/jpeg",
+    );
+  }
+
   await appendMessage(convo, {
     role: "user",
     content: incoming.text,
-    imageBase64: incoming.imageBase64,
-    imageMimeType: incoming.imageMimeType,
+    imageRef,
+    imageMimeType: incoming.imageBase64 ? incoming.imageMimeType : undefined,
     timestamp: incoming.timestamp,
   });
 

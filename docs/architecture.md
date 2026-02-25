@@ -85,32 +85,34 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
        │
 5. getOrCreateConversation(chatId) — daily scoped
        │
-6. appendMessage(conversation, userMsg)
+6. If image: write to GridFS → get imageRef key
        │
-7. curateIfNeeded(chatId) — if overflow >= 40 messages (batch curation):
+7. appendMessage(conversation, userMsg with imageRef)
+       │
+8. curateIfNeeded(chatId) — if overflow >= 40 messages (batch curation):
        │   ├─ summarize overflow → Memory collection episode (MongoDB only)
        │   ├─ extract structured metadata (emotionalTone, importance, followUps)
        │   ├─ classify facts as ADD/UPDATE/DELETE via LLM → Memory collection
        │   ├─ regenerate about-you.md from all current facts
-       │   ├─ trim conversation to 40 messages
+       │   ├─ trim conversation to 40 messages (delete orphaned GridFS images)
        │   ├─ check weekly merge (4+ old episodes → weekly-merge episode)
        │   └─ check monthly consolidation (3+ old weekly episodes → milestone)
        │
-8. Parallel: assembleSystemPrompt() + assembleMessages(chatId)
+9. Parallel: assembleSystemPrompt() + assembleMessages(chatId)
        │   ├─ System: personality + user facts + milestones + recent episodes + follow-ups + datetime + tools + format
-       │   └─ Messages: last 40 msgs reconstructed with tool-call pairs
+       │   └─ Messages: last 40 msgs, images loaded from GridFS on demand, tool-call pairs reconstructed
        │
-9. generateText({ model, system, messages, tools, maxSteps: 5, temperature: 0.7 })
+10. generateText({ model, system, messages, tools, maxSteps: 5, temperature: 0.7 })
        │   └─ LLM may call tools (readMemory, writeMemory, searchMemory, sendPhoto, etc.)
        │
-10. extractResponseText(steps) + collectToolCalls(steps)
+11. extractResponseText(steps) + collectToolCalls(steps)
        │
-11. appendMessage(conversation, assistantMsg with toolCalls)
+12. appendMessage(conversation, assistantMsg with toolCalls)
        │
-12. sendSegmented(adapter, chatId, text) — split on \n\n, typing delays
+13. sendSegmented(adapter, chatId, text) — split on \n\n, typing delays
        │   (skipped if sendPhoto already delivered a photo)
        │
-13. resetTimer(chatId) — reschedule proactive message
+14. resetTimer(chatId) — reschedule proactive message
 ```
 
 ## Proactive Scheduler
@@ -136,7 +138,7 @@ When firing, the scheduler assembles a proactive system prompt (personality + pr
 | `src/platform/` | Platform-agnostic message types | `types.ts` |
 | `src/platform/telegram/` | Telegram adapter + bot setup | `adapter.ts`, `bot.ts` |
 | `src/memory/` | Vault file operations, curation pipeline, Memory Engine | `vault.ts`, `curator.ts`, `engine.ts`, `embedding.ts`, `types.ts` |
-| `src/db/` | MongoDB connection + data models | `connection.ts`, `models/conversation.ts`, `models/scheduler-state.ts`, `models/memory.ts` |
+| `src/db/` | MongoDB connection, data models, GridFS image store | `connection.ts`, `gridfs.ts`, `models/conversation.ts`, `models/scheduler-state.ts`, `models/memory.ts` |
 | `src/scheduler/` | Proactive message scheduling | `proactive.ts` |
 | `src/context/` | Image reference loading + generation | `generator.ts`, `types.ts` |
 | `src/utils/` | Logger, markdown/frontmatter parsing | `logger.ts`, `markdown.ts` |
@@ -161,6 +163,7 @@ Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop s
 - **40-message context window** — overflow is summarized into MongoDB episodes, not lost
 - **Tool-augmented LLM** — the model reads/writes its own memory via tools, not hardcoded logic
 - **MongoDB as single source of truth** — conversations stored exclusively in Memory collection; vault files reserved for static content (personality, facts, milestones)
+- **GridFS image storage** — user-sent photos stored in MongoDB GridFS (`images` bucket) instead of inline base64, keeping conversation documents lean and avoiding the 16MB BSON limit
 - **Semantic memory** — Google Gemini embeddings + cosine similarity for meaning-based retrieval
 - **Smart fact management** — ADD/UPDATE/DELETE operations prevent stale fact accumulation
 - **Platform abstraction** — `PlatformAdapter` interface enables future platform support
