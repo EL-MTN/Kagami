@@ -1,7 +1,7 @@
 import { generateText } from "ai";
 import { format, subDays } from "date-fns";
 import { getModel, ModelTier } from "../ai/provider.js";
-import { getOverflowMessages, trimConversation } from "../db/models/conversation.js";
+import { getOverflowMessages, trimConversation, type IMessage } from "../db/models/conversation.js";
 import { readVaultFile, writeVaultFile, listVaultFiles, deleteVaultFile } from "./vault.js";
 import * as engine from "./engine.js";
 import { logger } from "../utils/logger.js";
@@ -11,6 +11,48 @@ const DEBOUNCE_THRESHOLD = 5;
 
 // Track last curation message count per chat for debouncing
 const lastCurationCount = new Map<string, number>();
+
+function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string {
+  switch (tc.toolName) {
+    case "searchMemory":
+      return `Mashiro searched memories for "${tc.args.query ?? ""}"`;
+    case "readMemory":
+      return `Mashiro read ${tc.args.path ?? "a memory file"}`;
+    case "writeMemory":
+      return `Mashiro wrote to ${tc.args.path ?? "a memory file"}`;
+    case "listMemories":
+      return `Mashiro browsed her ${tc.args.type ?? ""} memories`;
+    case "curateMemory":
+      return "Mashiro organized her memories";
+    case "sendPhoto":
+      return `Mashiro sent a photo: ${tc.args.description ?? ""}`;
+    default:
+      return `Mashiro used ${tc.toolName}`;
+  }
+}
+
+function formatMessageForTranscript(m: IMessage): string {
+  const role = m.role === "assistant" ? "Mashiro" : m.role;
+
+  // Handle image messages — never include base64
+  if (m.imageBase64) {
+    const photoLabel = m.content ? `[sent a photo with caption: "${m.content}"]` : "[sent a photo]";
+    return `${role}: ${photoLabel}`;
+  }
+
+  // Handle tool call messages
+  if (m.role === "assistant" && m.toolCalls?.length) {
+    const toolLines = m.toolCalls.map(formatToolCall);
+    const parts = [...toolLines];
+    if (m.content) parts.push(m.content);
+    return parts.map((p) => `Mashiro: ${p}`).join("\n");
+  }
+
+  // Skip raw tool results — they're captured via the assistant's tool call descriptions
+  if (m.role === "tool") return "";
+
+  return `${role}: ${m.content}`;
+}
 
 export async function curateIfNeeded(chatId: string): Promise<void> {
   const overflow = await getOverflowMessages(chatId, CONTEXT_LIMIT);
@@ -31,8 +73,8 @@ export async function curateIfNeeded(chatId: string): Promise<void> {
     "Context overflow detected, curating messages",
   );
 
-  // Format overflow as transcript
-  const transcript = overflow.overflow.map((m) => `${m.role}: ${m.content}`).join("\n");
+  // Format overflow as rich transcript
+  const transcript = overflow.overflow.map(formatMessageForTranscript).filter(Boolean).join("\n");
 
   // Summarize overflow with structured metadata extraction
   const result = await generateText({

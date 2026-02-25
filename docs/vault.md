@@ -156,7 +156,10 @@ curateIfNeeded(chatId)
     │
     ├─ 2. Extract overflow messages (everything before the 40-msg cutoff)
     │
-    ├─ 3. Format as transcript (role: content)
+    ├─ 3. Format as rich transcript:
+    │      • Images: [sent a photo] or [sent a photo with caption: "..."]
+    │      • Tool calls: human-readable descriptions (e.g. "Mashiro searched memories for X")
+    │      • Assistant role shown as "Mashiro", raw tool results skipped
     │
     ├─ 4. LLM summarizes → bullet points + structured metadata:
     │      • Facts learned, emotional highlights, topics discussed
