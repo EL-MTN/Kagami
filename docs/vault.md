@@ -142,6 +142,7 @@ Implemented in `src/memory/engine.ts`:
 | `getRecentEpisodes(limit?)` | Fetch last N episode-type memories by date. Used by context assembly. |
 | `getAllFacts()` | Fetch all fact-type memories. Used by curation for classify-then-act. |
 | `getActiveFollowUps()` | Collect unresolved follow-up items from recent memories. Used by context assembly. |
+| `getEmotionalBaseline(windowSize?)` | Compute rolling emotional trend from recent episodes. Returns average, trend (rising/falling/stable), and recent scores. Null if < 3 data points. |
 
 ## Curation Pipeline
 
@@ -199,7 +200,8 @@ Loads and concatenates (separated by `---`):
 3. **Milestones** — `vault/memories/milestones.md` content
 4. **Recent episodes** — last 2-3 conversation summaries from Memory Engine (auto-loaded)
 5. **Follow-ups** — unresolved follow-up items from Memory Engine (auto-loaded)
-6. **Datetime context** — current time + time-of-day category (late night, morning, afternoon, evening, night)
+6. **Emotional note** — injected when emotional trend is rising or falling (not when stable). Shows trend direction and average score.
+7. **Datetime context** — current time + time-of-day category (late night, morning, afternoon, evening, night)
 7. **Tool usage instructions** — when/how to use each tool
 8. **Response format instructions** — message length, splitting, style
 

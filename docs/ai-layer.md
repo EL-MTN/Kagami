@@ -49,6 +49,7 @@ assembleSystemPrompt()
     ├─ 3. Milestones             ← vault/memories/milestones.md
     ├─ 3.5 Recent episodes       ← last 2-3 conversation summaries from Memory Engine
     ├─ 3.6 Follow-ups            ← unresolved follow-up items from Memory Engine
+    ├─ 3.7 Emotional note        ← injected when mood trend is rising or falling (not stable)
     ├─ 4. Datetime context       ← current time + time-of-day label
     ├─ 5. Tool usage instructions← hardcoded guidance in prompts.ts
     └─ 6. Response format        ← message style rules in prompts.ts

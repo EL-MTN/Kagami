@@ -97,6 +97,48 @@ export async function getActiveFollowUps(): Promise<string[]> {
   return followUps;
 }
 
+export interface EmotionalBaseline {
+  average: number;
+  trend: "rising" | "falling" | "stable";
+  recentScores: number[];
+}
+
+const TREND_THRESHOLD = 1.0;
+const MIN_BASELINE_POINTS = 3;
+
+export async function getEmotionalBaseline(windowSize = 10): Promise<EmotionalBaseline | null> {
+  const episodes = await Memory.find({
+    type: "episode",
+    "metadata.emotionalTone": { $exists: true },
+  })
+    .sort({ "metadata.createdAt": -1 })
+    .limit(windowSize)
+    .exec();
+
+  const scores = episodes
+    .map((e) => e.metadata.emotionalTone)
+    .filter((t): t is number => t != null);
+
+  if (scores.length < MIN_BASELINE_POINTS) return null;
+
+  const average = scores.reduce((a, b) => a + b, 0) / scores.length;
+
+  // Compare recent half vs older half to detect trend
+  const mid = Math.floor(scores.length / 2);
+  const recentHalf = scores.slice(0, mid);
+  const olderHalf = scores.slice(mid);
+
+  const recentAvg = recentHalf.reduce((a, b) => a + b, 0) / recentHalf.length;
+  const olderAvg = olderHalf.reduce((a, b) => a + b, 0) / olderHalf.length;
+  const diff = recentAvg - olderAvg;
+
+  let trend: "rising" | "falling" | "stable" = "stable";
+  if (diff >= TREND_THRESHOLD) trend = "rising";
+  else if (diff <= -TREND_THRESHOLD) trend = "falling";
+
+  return { average, trend, recentScores: scores };
+}
+
 // Generative Agents composite scoring weights
 const WEIGHT_RELEVANCE = 0.5;
 const WEIGHT_RECENCY = 0.25;

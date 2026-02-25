@@ -37,6 +37,21 @@ async function assembleMemoryContext(): Promise<string[]> {
     logger.warn({ error }, "Failed to load follow-ups for context");
   }
 
+  // Emotional trajectory — only inject when trend is notable
+  try {
+    const baseline = await engine.getEmotionalBaseline();
+    if (baseline && baseline.trend !== "stable") {
+      const avg = baseline.average.toFixed(1);
+      const note =
+        baseline.trend === "rising"
+          ? `Things have been feeling better lately (mood trending up, avg ${avg}/10)`
+          : `He seems to have been down recently (mood trending lower, avg ${avg}/10)`;
+      parts.push("## Emotional Note\n" + note);
+    }
+  } catch (error) {
+    logger.warn({ error }, "Failed to load emotional baseline for context");
+  }
+
   return parts;
 }
 
