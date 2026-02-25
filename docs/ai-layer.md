@@ -217,3 +217,4 @@ The main `generateText()` call in `src/ai/generate.ts` uses:
 | `tools` | `allTools(ctx)` |
 | `maxSteps` | 5 |
 | `temperature` | 0.7 |
+| `abortSignal` | `AbortSignal.timeout(120_000)` — 2 minute timeout (30s for Fast tier classification calls) |

@@ -81,9 +81,9 @@ generateText() with tools
 **1. Automatic Curation (batch-triggered)**
 - Fires when 40+ messages overflow beyond the 40-message context window (i.e., at 80 total messages)
 - Formats overflow as rich transcript (images as `[sent a photo]`, tool calls as human-readable descriptions)
-- LLM summarizes into bullet points + structured metadata (emotionalTone, importance, followUps)
+- LLM summarizes via `generateObject()` with Zod schema → structured output (summary, emotionalTone, importance, followUps)
 - Stores episode in Memory collection with embedding (MongoDB only — no vault file)
-- LLM classifies facts as ADD/UPDATE/DELETE against existing Memory collection facts
+- LLM classifies facts via `generateObject()` as ADD/UPDATE/DELETE against existing Memory collection facts
 - Regenerates `about-you.md` from all current facts (clean overwrite)
 - Trims MongoDB conversation to 40 messages
 

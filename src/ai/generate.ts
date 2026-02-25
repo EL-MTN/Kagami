@@ -14,6 +14,8 @@ import {
   logSteps,
 } from "./response.js";
 
+const LLM_TIMEOUT_MS = 120_000; // 2 minutes
+
 export async function handleMessage(
   incoming: IncomingMessage,
   adapter: PlatformAdapter,
@@ -63,6 +65,7 @@ export async function handleMessage(
     tools: allTools(toolContext),
     maxSteps: 5,
     temperature: 0.7,
+    abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
   // 6. Debug: log every step

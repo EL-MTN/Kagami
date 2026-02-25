@@ -1,10 +1,13 @@
-import { generateText } from "ai";
+import { generateText, generateObject } from "ai";
+import { z } from "zod";
 import { format, subDays, subMonths } from "date-fns";
 import { getModel, ModelTier } from "../ai/provider.js";
 import { getOverflowMessages, trimConversation, type IMessage } from "../db/models/conversation.js";
 import { writeVaultFile } from "./vault.js";
 import * as engine from "./engine.js";
 import { logger } from "../utils/logger.js";
+
+const LLM_TIMEOUT_MS = 120_000; // 2 minutes
 
 const CONTEXT_WINDOW = 40;
 const CURATION_BATCH = 40;
@@ -69,34 +72,46 @@ export async function curateIfNeeded(chatId: string): Promise<void> {
   const transcript = overflow.overflow.map(formatMessageForTranscript).filter(Boolean).join("\n");
 
   // Summarize overflow with structured metadata extraction
-  const result = await generateText({
+  const { object: curation } = await generateObject({
     model: getModel(),
-    system: `You are a memory curator. Summarize conversations into key points. Extract:
-1. Important facts learned about the user
-2. Emotional highlights (good moments, concerns)
-3. Topics discussed
-4. Any promises, plans, or follow-ups mentioned
-
-Be concise. Use bullet points. Write from the perspective of Mashiro (the girlfriend AI) remembering the conversation.
-
-After the summary, output a YAML metadata block on its own line starting with "---METADATA---":
----METADATA---
-emotionalTone: <1-10, where 1=very negative, 10=very positive>
-importance: <1-10, where 10=life-changing event>
-followUps: ["<action item 1>", "<action item 2>"]
----END---
-
-Always include the metadata block, even if followUps is empty.`,
+    schema: z.object({
+      summary: z
+        .string()
+        .describe(
+          "Bullet-point summary of the conversation. Include important facts learned, emotional highlights, topics discussed, and any promises or follow-ups. Write from Mashiro's perspective.",
+        ),
+      emotionalTone: z
+        .number()
+        .int()
+        .min(1)
+        .max(10)
+        .describe("Overall emotional tone: 1=very negative, 10=very positive"),
+      importance: z
+        .number()
+        .int()
+        .min(1)
+        .max(10)
+        .describe("Importance of this conversation: 1=mundane small talk, 10=life-changing event"),
+      followUps: z
+        .array(z.string())
+        .describe("Action items, promises, or things to follow up on. Empty array if none."),
+    }),
+    system: `You are a memory curator. Summarize conversations into key points. Be concise. Use bullet points. Write from the perspective of Mashiro (the girlfriend AI) remembering the conversation.`,
     messages: [
       {
         role: "user",
         content: `Summarize this conversation segment:\n\n${transcript}`,
       },
     ],
+    abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
-  // Parse metadata from response
-  const { summary, metadata } = parseCurationResponse(result.text);
+  const summary = curation.summary;
+  const metadata: CurationMetadata = {
+    emotionalTone: curation.emotionalTone,
+    importance: curation.importance,
+    followUps: curation.followUps,
+  };
 
   // Store episode in Memory collection (single source of truth for conversations)
   await engine.remember(summary, "episode", "curation", {
@@ -128,40 +143,15 @@ interface CurationMetadata {
   followUps: string[];
 }
 
-function parseCurationResponse(text: string): { summary: string; metadata: CurationMetadata } {
-  const defaults: CurationMetadata = { emotionalTone: 5, importance: 5, followUps: [] };
-
-  const metadataMatch = text.match(/---METADATA---\s*([\s\S]*?)\s*---END---/);
-  if (!metadataMatch) {
-    return { summary: text.trim(), metadata: defaults };
-  }
-
-  const summary = text.slice(0, text.indexOf("---METADATA---")).trim();
-  const metaBlock = metadataMatch[1];
-
-  const toneMatch = metaBlock.match(/emotionalTone:\s*(\d+)/);
-  const importanceMatch = metaBlock.match(/importance:\s*(\d+)/);
-  const followUpsMatch = metaBlock.match(/followUps:\s*\[(.*?)\]/s);
-
-  const emotionalTone = toneMatch ? Math.min(10, Math.max(1, parseInt(toneMatch[1]))) : 5;
-  const importance = importanceMatch ? Math.min(10, Math.max(1, parseInt(importanceMatch[1]))) : 5;
-
-  let followUps: string[] = [];
-  if (followUpsMatch) {
-    followUps = followUpsMatch[1]
-      .split(",")
-      .map((s) => s.trim().replace(/^["']|["']$/g, ""))
-      .filter(Boolean);
-  }
-
-  return { summary, metadata: { emotionalTone, importance, followUps } };
-}
-
-interface FactOperation {
-  action: "ADD" | "UPDATE" | "DELETE" | "NOOP";
-  content: string;
-  existingId?: string;
-}
+const FactOperationSchema = z.object({
+  operations: z.array(
+    z.object({
+      action: z.enum(["ADD", "UPDATE", "DELETE", "NOOP"]),
+      content: z.string().describe("The fact content"),
+      existingId: z.string().optional().describe("ID of the existing fact to update or delete"),
+    }),
+  ),
+});
 
 async function updateUserFacts(summary: string): Promise<void> {
   const existingFacts = await engine.getAllFacts();
@@ -171,41 +161,28 @@ async function updateUserFacts(summary: string): Promise<void> {
       ? existingFacts.map((f) => `[id:${f._id}] ${f.content}`).join("\n")
       : "(no existing facts)";
 
-  const result = await generateText({
+  const { object: result } = await generateObject({
     model: getModel(ModelTier.Fast),
+    schema: FactOperationSchema,
     system: `You are a memory curator. Given a conversation summary and a list of existing facts about the user, classify what changes need to be made.
 
-For each relevant fact from the conversation, output a JSON operation:
+For each relevant fact from the conversation, output an operation:
 - ADD: new fact not covered by any existing fact
 - UPDATE: an existing fact needs correction or updating (include existingId)
 - DELETE: an existing fact is now known to be wrong or outdated (include existingId)
 - NOOP: fact already exists and is current (skip these)
 
-Output ONLY a JSON array of operations. No commentary. Example:
-[
-  {"action": "ADD", "content": "Works as a software engineer at TechCorp"},
-  {"action": "UPDATE", "content": "Now lives in Tokyo (moved from Osaka)", "existingId": "abc123"},
-  {"action": "DELETE", "content": "No longer at previous job", "existingId": "def456"}
-]
-
-If there are no changes needed, output: []`,
+If there are no changes needed, output an empty operations array.`,
     messages: [
       {
         role: "user",
         content: `Existing facts:\n${factsContext}\n\nConversation summary:\n${summary}`,
       },
     ],
+    abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
-  let operations: FactOperation[];
-  try {
-    // Extract JSON from response (handle markdown code blocks)
-    const jsonMatch = result.text.match(/\[[\s\S]*\]/);
-    operations = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
-  } catch {
-    logger.warn({ response: result.text.slice(0, 200) }, "Failed to parse fact operations");
-    return;
-  }
+  const operations = result.operations;
 
   if (operations.length === 0) {
     logger.debug("No fact operations needed");
@@ -298,6 +275,7 @@ async function weeklyDeepCuration(
         content: `Compress these daily summaries:\n\n${contents.join("\n\n")}`,
       },
     ],
+    abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
   // Store weekly summary as a new episode in MongoDB
@@ -361,6 +339,7 @@ Write from Mashiro's perspective as long-term relationship insights, not a chron
         content: `Consolidate these weekly summaries into monthly relationship insights:\n\n${contents.join("\n\n")}`,
       },
     ],
+    abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
   // Store full text as milestone in MongoDB (no truncation needed)

@@ -130,17 +130,16 @@ curateIfNeeded(chatId)
     │      • Tool calls: human-readable descriptions (e.g. "Mashiro searched memories for X")
     │      • Assistant role shown as "Mashiro", raw tool results skipped
     │
-    ├─ 4. LLM summarizes → bullet points + structured metadata:
-    │      • Facts learned, emotional highlights, topics discussed
-    │      • emotionalTone (1-10), importance (1-10), followUps []
+    ├─ 4. LLM summarizes via `generateObject()` → Zod-validated structured output:
+    │      • summary (bullet points), emotionalTone (1-10), importance (1-10), followUps []
     │
     ├─ 5. Store episode in Memory collection (with embedding)
     │      MongoDB is the single source of truth — no vault file created
     │
     ├─ 6. updateUserFacts(summary) — Mem0-style classify-then-act:
     │      • Load all existing facts from Memory collection
-    │      • LLM classifies each fact as ADD / UPDATE / DELETE / NOOP
-    │      • Execute operations against Memory collection
+    │      • LLM classifies facts via `generateObject()` → Zod-validated operations
+    │      • Execute ADD / UPDATE / DELETE operations against Memory collection
     │      • Regenerate about-you.md from all current facts (clean overwrite)
     │
     ├─ 7. Trim conversation to last 40 messages

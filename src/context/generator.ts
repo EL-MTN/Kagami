@@ -6,6 +6,8 @@ import { getModel, ModelTier } from "../ai/provider.js";
 import { logger } from "../utils/logger.js";
 import type { ImageGenerationRequest, GeneratedImage } from "./types.js";
 
+const FAST_LLM_TIMEOUT_MS = 30_000; // 30 seconds for classification calls
+
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 
 interface RefImage {
@@ -102,6 +104,7 @@ async function selectOutfit(sceneDescription: string): Promise<OutfitSelection |
     const { text } = await generateText({
       model: getModel(ModelTier.Fast),
       temperature: 0,
+      abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
       prompt: `You are selecting an outfit reference image for AI image generation.
 
 Scene to generate: "${sceneDescription}"
@@ -145,6 +148,7 @@ async function selectFaceRef(sceneDescription: string): Promise<RefImage | null>
     const { text } = await generateText({
       model: getModel(ModelTier.Fast),
       temperature: 0,
+      abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
       prompt: `You are selecting a face reference image for AI image generation.
 
 Scene to generate: "${sceneDescription}"
@@ -188,6 +192,7 @@ async function selectBodyRef(sceneDescription: string): Promise<RefImage | null>
     const { text } = await generateText({
       model: getModel(ModelTier.Fast),
       temperature: 0,
+      abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
       prompt: `You are selecting a body reference image for AI image generation.
 
 Scene to generate: "${sceneDescription}"
@@ -241,6 +246,7 @@ async function selectSetting(sceneDescription: string): Promise<SettingSelection
     const { text } = await generateText({
       model: getModel(ModelTier.Fast),
       temperature: 0,
+      abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
       prompt: `You are selecting a location/setting for AI image generation.
 
 Scene to generate: "${sceneDescription}"

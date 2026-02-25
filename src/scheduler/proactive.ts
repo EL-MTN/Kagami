@@ -19,6 +19,8 @@ import {
   sendSegmented,
 } from "../ai/response.js";
 
+const LLM_TIMEOUT_MS = 120_000; // 2 minutes
+
 const timers = new Map<string, NodeJS.Timeout>();
 let _adapter: PlatformAdapter | null = null;
 
@@ -141,6 +143,7 @@ async function generateProactiveMessage(chatId: string, adapter: PlatformAdapter
     tools: allTools(toolContext),
     maxSteps: 5,
     temperature: 0.7,
+    abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
   // Extract response text from steps
