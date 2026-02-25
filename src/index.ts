@@ -8,7 +8,7 @@ import { startProactiveScheduler } from "./scheduler/proactive.js";
 let stopProactiveScheduler: (() => void) | null = null;
 
 async function main() {
-  logger.info("Starting AIGF...");
+  logger.info("Starting Mashiro...");
 
   await connectDB();
 

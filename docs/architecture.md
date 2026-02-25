@@ -2,7 +2,7 @@
 
 ## System Overview
 
-AIGF is a layered conversational AI system. Messages flow from a platform adapter through normalization, storage, context assembly, LLM generation, and back out as responses.
+Mashiro is a layered conversational AI system. Messages flow from a platform adapter through normalization, storage, context assembly, LLM generation, and back out as responses.
 
 ```
 ┌─────────────────────────────────────────────────────┐

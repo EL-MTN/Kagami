@@ -2,7 +2,7 @@
 
 ## Project
 
-AIGF (AI Girlfriend Framework) — a Telegram-based conversational AI that maintains persistent personality, memories, and proactive engagement. Built with TypeScript, Vercel AI SDK, MongoDB, and the Grammy Telegram framework.
+Mashiro — a Telegram-based conversational AI that maintains persistent personality, memories, and proactive engagement. Built with TypeScript, Vercel AI SDK, MongoDB, and the Grammy Telegram framework.
 
 ## Commands
 

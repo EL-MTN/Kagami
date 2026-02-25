@@ -20,7 +20,7 @@ const envSchema = z
     EMBEDDING_PROVIDER: z.enum(["google"]).default("google"),
     EMBEDDING_MODEL: z.string().default("gemini-embedding-001"),
 
-    MONGODB_URI: z.string().default("mongodb://localhost:27017/aigf"),
+    MONGODB_URI: z.string().default("mongodb://localhost:27017/mashiro"),
 
     VAULT_PATH: z.string().default("./vault"),
     CONTEXT_PATH: z.string().default("./context"),
