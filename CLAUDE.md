@@ -36,3 +36,4 @@ See `/docs` for:
 - [vault.md](docs/vault.md) — memory system, curation pipeline, frontmatter schema
 - [telegram.md](docs/telegram.md) — platform adapter, bot handlers, rate limiting
 - [ai-layer.md](docs/ai-layer.md) — LLM integration, tools, image generation, context assembly
+- [memory-management.md](docs/memory-management.md) — deep dive into memory tiers, data flow, gaps, and roadmap
