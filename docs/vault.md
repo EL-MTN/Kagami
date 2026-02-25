@@ -58,7 +58,6 @@ Implemented in `src/memory/vault.ts`:
 |---|---|
 | `readVaultFile(path)` | Read file, parse frontmatter + content. Returns `null` on missing file. |
 | `writeVaultFile(path, content, frontmatter)` | Write file with frontmatter. Creates parent dirs. |
-| `deleteVaultFile(path)` | Delete a vault file. |
 | `appendToVaultFile(path, content)` | Append with line-level deduplication (case-insensitive). Preserves headers. |
 | `listVaultFiles(dir)` | Recursive walk, returns all `.md` file paths. |
 | `searchVault(query)` | Case-insensitive line matching across all files. Top 5 excerpts per file, sorted by match count. |

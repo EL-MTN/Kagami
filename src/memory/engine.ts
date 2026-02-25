@@ -185,7 +185,7 @@ async function _similaritySearch(
   const filter: Record<string, unknown> = {};
   if (opts.type) filter.type = opts.type;
 
-  const candidates = await Memory.find(filter).lean().exec();
+  const candidates = await Memory.find(filter).select("-source").lean().exec();
 
   const scored: RecallResult[] = [];
   for (const candidate of candidates) {

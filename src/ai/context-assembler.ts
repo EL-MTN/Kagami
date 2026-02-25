@@ -55,7 +55,7 @@ async function assembleMemoryContext(): Promise<string[]> {
   return parts;
 }
 
-export async function assembleSystemPrompt(): Promise<string> {
+async function assembleBasePrompt(): Promise<string[]> {
   const parts: string[] = [];
 
   // 1. Personality card
@@ -79,51 +79,28 @@ export async function assembleSystemPrompt(): Promise<string> {
     parts.push("## Relationship History\n" + milestones.content);
   }
 
-  // 3.5. Recent episode context + follow-ups
+  // 4. Recent episode context + follow-ups
   const memoryContext = await assembleMemoryContext();
   parts.push(...memoryContext);
 
-  // 4. Date/time
+  // 5. Date/time
   parts.push(DATETIME_CONTEXT(new Date()));
 
-  // 5. Tool instructions
+  // 6. Tool instructions
   parts.push(TOOL_USAGE_INSTRUCTIONS);
 
-  // 6. Response format
-  parts.push(RESPONSE_FORMAT_INSTRUCTIONS);
+  return parts;
+}
 
+export async function assembleSystemPrompt(): Promise<string> {
+  const parts = await assembleBasePrompt();
+  parts.push(RESPONSE_FORMAT_INSTRUCTIONS);
   return parts.join("\n\n---\n\n");
 }
 
 export async function assembleProactiveSystemPrompt(): Promise<string> {
-  const parts: string[] = [];
-
-  const personality = await readVaultFile("personality/card.md");
-  if (personality) {
-    parts.push(personality.content);
-  } else {
-    logger.warn("Personality card not found at vault/personality/card.md");
-    parts.push("You are Shiina Mashiro, a quiet and eccentric artist girlfriend.");
-  }
-
-  const aboutYou = await readVaultFile("memories/about-you.md");
-  if (aboutYou) {
-    parts.push("## What You Know About Him\n" + aboutYou.content);
-  }
-
-  const milestones = await readVaultFile("memories/milestones.md");
-  if (milestones) {
-    parts.push("## Relationship History\n" + milestones.content);
-  }
-
-  // Recent episode context + follow-ups
-  const memoryContext = await assembleMemoryContext();
-  parts.push(...memoryContext);
-
-  parts.push(DATETIME_CONTEXT(new Date()));
-  parts.push(TOOL_USAGE_INSTRUCTIONS);
+  const parts = await assembleBasePrompt();
   parts.push(PROACTIVE_MESSAGE_INSTRUCTIONS);
-
   return parts.join("\n\n---\n\n");
 }
 

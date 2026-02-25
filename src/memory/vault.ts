@@ -38,12 +38,6 @@ export async function writeVaultFile(
   logger.debug({ path: filePath }, "Wrote vault file");
 }
 
-export async function deleteVaultFile(filePath: string): Promise<void> {
-  const fullPath = vaultPath(filePath);
-  await fs.unlink(fullPath);
-  logger.debug({ path: filePath }, "Deleted vault file");
-}
-
 export async function appendToVaultFile(filePath: string, content: string): Promise<void> {
   const existing = await readVaultFile(filePath);
   if (existing) {
