@@ -15,19 +15,19 @@ const lastCurationCount = new Map<string, number>();
 function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string {
   switch (tc.toolName) {
     case "searchMemory":
-      return `Mashiro searched memories for "${tc.args.query ?? ""}"`;
+      return `searched memories for "${tc.args.query ?? ""}"`;
     case "readMemory":
-      return `Mashiro read ${tc.args.path ?? "a memory file"}`;
+      return `read ${tc.args.path ?? "a memory file"}`;
     case "writeMemory":
-      return `Mashiro wrote to ${tc.args.path ?? "a memory file"}`;
+      return `wrote to ${tc.args.path ?? "a memory file"}`;
     case "listMemories":
-      return `Mashiro browsed her ${tc.args.type ?? ""} memories`;
+      return `browsed her ${tc.args.type ?? ""} memories`;
     case "curateMemory":
-      return "Mashiro organized her memories";
+      return "organized her memories";
     case "sendPhoto":
-      return `Mashiro sent a photo: ${tc.args.description ?? ""}`;
+      return `sent a photo: ${tc.args.description ?? ""}`;
     default:
-      return `Mashiro used ${tc.toolName}`;
+      return `used ${tc.toolName}`;
   }
 }
 
@@ -282,7 +282,19 @@ async function regenerateAboutYou(): Promise<void> {
   logger.info({ factCount: allFacts.length }, "Regenerated about-you.md from Memory collection");
 }
 
-export async function checkWeeklyMerge(): Promise<void> {
+// In-flight guards to prevent concurrent consolidation runs
+let weeklyMergeInFlight: Promise<void> | null = null;
+let monthlyConsolidationInFlight: Promise<void> | null = null;
+
+export function checkWeeklyMerge(): Promise<void> {
+  if (weeklyMergeInFlight) return weeklyMergeInFlight;
+  weeklyMergeInFlight = _checkWeeklyMerge().finally(() => {
+    weeklyMergeInFlight = null;
+  });
+  return weeklyMergeInFlight;
+}
+
+async function _checkWeeklyMerge(): Promise<void> {
   const files = await listVaultFiles("memories/conversations");
   const oneWeekAgo = format(subDays(new Date(), 7), "yyyy-MM-dd");
 
@@ -335,7 +347,15 @@ async function weeklyDeepCuration(oldFiles: string[]): Promise<void> {
   logger.info({ weekOf, mergedFiles: oldFiles.length }, "Weekly curation complete");
 }
 
-export async function checkMonthlyConsolidation(): Promise<void> {
+export function checkMonthlyConsolidation(): Promise<void> {
+  if (monthlyConsolidationInFlight) return monthlyConsolidationInFlight;
+  monthlyConsolidationInFlight = _checkMonthlyConsolidation().finally(() => {
+    monthlyConsolidationInFlight = null;
+  });
+  return monthlyConsolidationInFlight;
+}
+
+async function _checkMonthlyConsolidation(): Promise<void> {
   const files = await listVaultFiles("memories/conversations");
   const oneMonthAgo = format(subMonths(new Date(), 1), "yyyy-MM-dd");
 
@@ -390,11 +410,14 @@ Write from Mashiro's perspective as long-term relationship insights, not a chron
     mergedWeeklyFiles: oldFiles.length,
   });
 
-  // Store as milestone in Memory collection for long-term retrieval
-  await engine.remember(result.text, "milestone", "monthly-consolidation", {
-    vaultPath: monthPath,
-    importance: 7,
-  });
+  // Store truncated excerpt as milestone — full text lives in vault file
+  const MILESTONE_EXCERPT_LIMIT = 1200;
+  await engine.remember(
+    result.text.slice(0, MILESTONE_EXCERPT_LIMIT),
+    "milestone",
+    "monthly-consolidation",
+    { vaultPath: monthPath, importance: 7 },
+  );
 
   // Delete merged weekly files
   for (const file of oldFiles) {

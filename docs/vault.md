@@ -17,7 +17,8 @@ vault/
     └── conversations/
         ├── 2026-02-22T17-19-40.md       # Daily conversation summaries
         ├── 2026-02-22T17-39-58.md
-        └── week-of-2026-02-15.md        # Weekly rollups
+        ├── week-of-2026-02-15.md        # Weekly rollups
+        └── month-of-2026-01.md          # Monthly consolidation
 ```
 
 ## Frontmatter Schema

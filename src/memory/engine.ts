@@ -124,7 +124,8 @@ export async function getEmotionalBaseline(windowSize = 10): Promise<EmotionalBa
   const average = scores.reduce((a, b) => a + b, 0) / scores.length;
 
   // Compare recent half vs older half to detect trend
-  const mid = Math.floor(scores.length / 2);
+  // ceil gives the recent half the extra point on odd n
+  const mid = Math.ceil(scores.length / 2);
   const recentHalf = scores.slice(0, mid);
   const olderHalf = scores.slice(mid);
 
@@ -172,7 +173,7 @@ async function _similaritySearch(
   const filter: Record<string, unknown> = {};
   if (opts.type) filter.type = opts.type;
 
-  const candidates = await Memory.find(filter).exec();
+  const candidates = await Memory.find(filter).lean().exec();
 
   const scored: RecallResult[] = [];
   for (const candidate of candidates) {
