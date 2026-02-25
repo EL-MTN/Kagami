@@ -34,9 +34,13 @@ User sends message
   - Execute operations against [WARM] Memory collection
   - Regenerate [STATIC] about-you.md from all current facts
   - trimConversation -> MongoDB kept at 40
-  - checkWeeklyMerge -> if 7+ old files:
+  - checkWeeklyMerge -> if 4+ old daily files:
       - weeklyDeepCuration -> [COLD] conversations/week-of-{date}.md
       - delete merged [COLD] files
+  - checkMonthlyConsolidation -> if 3+ old weekly files:
+      - monthlyDeepConsolidation -> [COLD] conversations/month-of-{YYYY-MM}.md
+      - store as [WARM] milestone
+      - delete merged [COLD] weekly files
        |
        v
 [ASSEMBLY] assembleSystemPrompt()
@@ -62,6 +66,7 @@ generateText() with tools
 - Relationship milestones (milestones.md)
 - Last 2-3 conversation summaries from Memory Engine (auto-injected)
 - Active follow-up items from Memory Engine (auto-injected)
+- Emotional trend note (when mood is rising or falling, not when stable)
 - Current date/time with time-of-day label
 - Tool usage instructions
 - Response format instructions
@@ -79,7 +84,7 @@ generateText() with tools
 
 **1. Automatic Curation (overflow-triggered, debounced)**
 - Fires when today's conversation exceeds 40 messages (skipped if < 5 messages since last curation)
-- Formats overflow as `role: content` transcript
+- Formats overflow as rich transcript (images as `[sent a photo]`, tool calls as human-readable descriptions)
 - LLM summarizes into bullet points + structured metadata (emotionalTone, importance, followUps)
 - Dual-writes: vault file with frontmatter + Memory collection episode with embedding
 - LLM classifies facts as ADD/UPDATE/DELETE against existing Memory collection facts
@@ -94,9 +99,17 @@ generateText() with tools
 - Returns current file state after write for verification
 
 **3. Weekly deep curation (merge)**
-- Triggers when 7+ daily summary files are older than 7 days
+- Triggers when 4+ daily summary files are older than 7 days
+- Also fires from proactive scheduler (not just curation)
 - LLM compresses all old dailies into single weekly summary
 - Merged daily files are deleted
+
+**4. Monthly consolidation**
+- Triggers when 3+ weekly summary files are older than 30 days
+- Also fires from proactive scheduler
+- LLM extracts relationship patterns and long-term observations
+- Writes `month-of-{YYYY-MM}.md` and stores as milestone in Memory collection
+- Merged weekly files are deleted
 
 ### Memory Read Paths
 
@@ -110,8 +123,9 @@ generateText() with tools
 - Returns last 40 messages with reconstructed tool-call pairs
 
 **3. searchMemory tool (LLM-initiated, hybrid)**
-- Runs semantic search (cosine similarity on embeddings) and keyword search (vault substring) in parallel
-- Merges and deduplicates results, returns top 10 ranked by relevance
+- Runs semantic search (composite scoring on embeddings) and keyword search (vault substring) in parallel
+- Composite score: 0.50×relevance + 0.25×recency + 0.15×importance + 0.10×emotional
+- Merges and deduplicates results, returns top 10 ranked by composite score
 
 **4. listMemories tool (LLM-initiated)**
 - Queries Memory collection by type (fact/episode/milestone)
@@ -127,20 +141,8 @@ generateText() with tools
 
 ### Open Gaps
 
-**5. Curation discards image content and tool call details.**
-The transcript is `${m.role}: ${m.content}`. Photos become `"user: [photo]"`. Tool call metadata (what Mashiro searched, what she wrote, what photos she generated) is stripped. Visual and tool-usage context is permanently lost.
-
 **6. Line-level dedup in vault is semantically blind.**
 `appendToVaultFile` deduplicates via exact string matching (case-insensitive). "Likes pizza" blocks "likes pizza" but not "enjoys pizza" or "pizza fan". This is mitigated by the fact management system (ADD/UPDATE/DELETE operates at the semantic level via LLM classification), but the vault append function itself remains substring-only.
-
-**8. No emotional trajectory tracking.**
-Structured emotional metadata (emotionalTone 1-10) is now stored per episode, but there's no rolling sentiment baseline or trend analysis. The data exists for future use.
-
-**9. No temporal awareness of memory age.**
-Facts have `createdAt`/`updatedAt` timestamps in the Memory collection, but retrieval doesn't weight by recency. Old facts are ranked equally to new ones in similarity search.
-
-**10. Weekly merge threshold is fragile.**
-Requires exactly 7+ files older than 7 days. If curation runs infrequently (6 files never merge). Weekly merge only fires from `curateIfNeeded`, which only runs on user messages — never on proactive paths.
 
 ### Resolved Gaps
 
@@ -150,7 +152,11 @@ Requires exactly 7+ files older than 7 days. If curation runs infrequently (6 fi
 | 2. Hard amnesia at midnight | Recent episodes bridge the day boundary automatically |
 | 3. No discovery mechanism | `listMemories` tool lets Mashiro browse memories by type/date |
 | 4. Search is substring-only | Hybrid semantic + keyword search via Memory Engine |
+| 5. Curation discards images/tools | Rich transcript formatting: images as `[sent a photo]`, tool calls as human-readable descriptions |
 | 7. Facts only append | Mem0-style ADD/UPDATE/DELETE classification, clean regeneration |
+| 8. No emotional trajectory | `getEmotionalBaseline()` with trend injection into system prompt when mood is rising/falling |
+| 9. No temporal awareness | Composite retrieval scoring: 0.50×relevance + 0.25×recency + 0.15×importance + 0.10×emotional |
+| 10. Weekly merge threshold fragile | Lowered to 4+ files, fires from both curation and proactive scheduler |
 | 11. Per-message curation waste | Debounced at 5+ messages since last curation |
 | 12. Proactive messages blind | Follow-ups + recent episodes injected into proactive prompt |
 
@@ -170,32 +176,11 @@ Largely addressed by auto-loading recent episodes. A targeted improvement would 
 
 The basic version is done (follow-ups + episodes in proactive prompt). The deeper version would query for upcoming dates/events, time-of-day behavioral patterns, and do targeted memory retrieval before generating proactive messages.
 
-### Priority 8: Monthly consolidation tier
-
-**Impact:** Lower | **Effort:** Low
-
-Add a monthly pass that reads all weekly summaries and extracts evolving patterns: "relationship dynamic shifted from X to Y," "recurring topics," "emotional baseline." This becomes the seed for procedural memory.
-
-### Priority 9: Entity extraction and tracking
+### Priority 8: Entity extraction and tracking
 
 **Impact:** Lower | **Effort:** Higher
 
 During curation, extract named entities (people, places, events) into structured MongoDB documents. Track relationships ("Mom" -> user's mother), first mention dates, and event statuses (upcoming/past).
-
-### Priority 10: Memory importance scoring for retrieval
-
-**Impact:** Lower | **Effort:** Medium
-
-Implement the Generative Agents scoring formula:
-
-```
-score = 0.50 * semantic_relevance
-      + 0.25 * recency (exponential decay, 30-day half-life)
-      + 0.15 * importance (LLM-assigned 1-10)
-      + 0.10 * emotional_weight
-```
-
-The metadata (importance, emotionalTone, createdAt) is already stored — this is purely a retrieval scoring change in `engine.ts`.
 
 ---
 
@@ -207,13 +192,13 @@ The metadata (importance, emotionalTone, createdAt) is already stored — this i
 |  Top user facts            (from DB, regenerated)         [done]|
 |  Milestones                (file, LLM-maintained)               |
 |  Recent episode context    (last 2-3 summaries, auto)     [done]|
-|  Emotional baseline        (rolling sentiment average)          |
+|  Emotional baseline        (trend when rising/falling)    [done]|
 |  Active follow-ups         (from curation metadata)       [done]|
 |  Datetime + time-of-day                                         |
 +-----------------------------------------------------------------+
                               +
 +---------------------- On-Demand via Tools ----------------------+
-|  Semantic search     (vector similarity + keyword hybrid) [done]|
+|  Composite search    (relevance+recency+importance+emo)   [done]|
 |  Memory browsing     (list by type/date)                  [done]|
 |  Temporal search     (date-filtered retrieval)                  |
 |  Entity lookup       (structured people/places/events)          |
@@ -222,11 +207,12 @@ The metadata (importance, emotionalTone, createdAt) is already stored — this i
                               +
 +---------------------- Background Pipeline ----------------------+
 |  Curation (40-msg overflow -> summarize -> extract facts) [done]|
+|  Rich transcripts (images, tool calls, role names)        [done]|
 |  Fact management (ADD/UPDATE/DELETE, not just append)      [done]|
 |  Curation debounce (5+ messages threshold)                [done]|
-|  Weekly consolidation (daily -> weekly rollups)            [done]|
-|  Monthly consolidation (weekly -> relationship patterns)        |
-|  Importance decay (score adjustment over time)                  |
+|  Weekly consolidation (daily -> weekly, threshold 4+)     [done]|
+|  Monthly consolidation (weekly -> relationship patterns)  [done]|
+|  Proactive consolidation (merge checks on timer fire)     [done]|
 +-----------------------------------------------------------------+
 ```
 
