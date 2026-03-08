@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { google } from "googleapis";
 import * as readline from "readline";
 
