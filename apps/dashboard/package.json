@@ -12,20 +12,26 @@
   },
   "dependencies": {
     "@mashiro/db": "*",
-    "@mashiro/memory": "*",
     "@mashiro/shared": "*",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.468.0",
     "next": "^15.0.0",
+    "radix-ui": "^1.4.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
     "@mashiro/eslint-config": "*",
     "@mashiro/typescript-config": "*",
     "@next/eslint-plugin-next": "^16.1.6",
+    "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^10.0.1",
+    "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0"
   }
 }

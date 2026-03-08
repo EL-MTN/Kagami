@@ -20,7 +20,9 @@ const reminderSchema = new Schema<IReminder>(
 
 reminderSchema.index({ fired: 1, fireAt: 1 });
 
-export const Reminder = mongoose.model<IReminder>("Reminder", reminderSchema);
+export const Reminder =
+  (mongoose.models.Reminder as mongoose.Model<IReminder>) ??
+  mongoose.model<IReminder>("Reminder", reminderSchema);
 
 export async function createReminder(
   chatId: string,

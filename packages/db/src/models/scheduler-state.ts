@@ -13,10 +13,9 @@ const schedulerStateSchema = new Schema<ISchedulerState>(
   { timestamps: true },
 );
 
-export const SchedulerState = mongoose.model<ISchedulerState>(
-  "SchedulerState",
-  schedulerStateSchema,
-);
+export const SchedulerState =
+  (mongoose.models.SchedulerState as mongoose.Model<ISchedulerState>) ??
+  mongoose.model<ISchedulerState>("SchedulerState", schedulerStateSchema);
 
 export async function getNextProactiveAt(chatId: string): Promise<Date | null> {
   const state = await SchedulerState.findOne({ chatId });

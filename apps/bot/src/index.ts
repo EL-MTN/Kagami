@@ -1,4 +1,6 @@
-import { config, logger } from "@mashiro/shared";
+import { config, logger, validateConfig } from "@mashiro/shared";
+
+validateConfig();
 import { connectDB, disconnectDB } from "@mashiro/db";
 import { createBot, startBot, getAdapter } from "./platform/telegram/bot.js";
 import { loadContext } from "./context/generator.js";

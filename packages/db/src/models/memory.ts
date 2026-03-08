@@ -50,4 +50,6 @@ memorySchema.index({ type: 1, "metadata.archivedAt": 1 });
 memorySchema.index({ type: 1, source: 1, "metadata.createdAt": -1 });
 memorySchema.index({ "metadata.expiresAt": 1 }, { expireAfterSeconds: 0 });
 
-export const Memory = mongoose.model<IMemory>("Memory", memorySchema);
+export const Memory =
+  (mongoose.models.Memory as mongoose.Model<IMemory>) ??
+  mongoose.model<IMemory>("Memory", memorySchema);

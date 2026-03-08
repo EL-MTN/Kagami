@@ -61,7 +61,9 @@ const conversationSchema = new Schema<IConversation>(
 conversationSchema.index({ chatId: 1, updatedAt: -1 });
 conversationSchema.index({ chatId: 1, status: 1, updatedAt: -1 });
 
-export const Conversation = mongoose.model<IConversation>("Conversation", conversationSchema);
+export const Conversation =
+  (mongoose.models.Conversation as mongoose.Model<IConversation>) ??
+  mongoose.model<IConversation>("Conversation", conversationSchema);
 
 const IDLE_THRESHOLD_MS = 1 * 60 * 60 * 1000; // 1 hour
 

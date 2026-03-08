@@ -20,7 +20,7 @@ mashiro/                          # npm workspaces + Turborepo
 │   │   │   └── scheduler/        # proactive, reminders
 │   │   ├── vault/                # personality card (data)
 │   │   └── context/              # reference images/settings (data)
-│   └── dashboard/                # Next.js placeholder
+│   └── dashboard/                # Next.js dashboard (read-only data viewer)
 ├── packages/
 │   ├── typescript-config/        # shared tsconfig bases (JSON only)
 │   ├── eslint-config/            # shared ESLint flat config
@@ -211,7 +211,7 @@ When firing, the scheduler uses `getOrCreateSession` to get the active session, 
 | `@mashiro/db` | MongoDB connection, all models, GridFS | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `readImage`, `writeImage`, all model CRUD functions |
 | `@mashiro/memory` | Memory engine, embeddings, vault files | `remember`, `recall`, `forget`, `readVaultFile`, `writeVaultFile`, `generateEmbedding`, episode/fact/milestone retrieval |
 | `@mashiro/bot` | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages |
-| `@mashiro/dashboard` | Next.js dashboard (placeholder) | — |
+| `@mashiro/dashboard` | Next.js dashboard (read-only data viewer) | Overview, conversations, memories, reminders pages |
 
 ### Bot-Internal Modules
 
@@ -242,7 +242,8 @@ Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop p
 - **Internal packages pattern** — npm workspaces + Turborepo. Library packages (`shared`, `db`, `memory`) export raw TypeScript source via `exports: { ".": "./src/index.ts" }`. No build step for libraries; consumers resolve source directly. Only `bot` and `dashboard` have build scripts (tsup and Next.js respectively). The bot's tsup config uses `noExternal: [/^@mashiro\//]` to inline all workspace packages into a single bundle.
 - **Session-based conversations** — sessions close after 1 hour of inactivity, replacing daily scoping. Eliminates cross-midnight amnesia.
 - **Curator stays in bot** — `curator.ts` imports `getModel` and `generateObject` from the AI layer. Dashboard only reads data, never curates.
-- **Config stays unified** — single config module in `@mashiro/shared`. Bot-specific vars (TELEGRAM_BOT_TOKEN) are optional at schema level, validated at bot startup.
+- **Config stays unified** — single config module in `@mashiro/shared`. Base parse always succeeds (defaults for everything). `validateConfig()` must be called explicitly by apps that need LLM/embedding keys (the bot). The dashboard only needs `MONGODB_URI`.
+- **Dashboard is read-only** — imports `@mashiro/db` models directly, never `@mashiro/memory` (avoids Google AI SDK dependency). All pages are React Server Components.
 - **Non-blocking curation** — curation runs as fire-and-forget with per-chat mutex, so users don't wait for LLM calls
 - **40-message context window** — overflow is summarized into MongoDB episodes, not lost
 - **Separated episode types** — daily episodes, weekly merges, and monthly consolidations are queried separately to prevent conflation
