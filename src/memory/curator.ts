@@ -26,6 +26,12 @@ function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string 
       return "organized her memories";
     case "sendPhoto":
       return `sent a photo: ${tc.args.description ?? ""}`;
+    case "checkEmail":
+      return "checked Goshujin-sama's email";
+    case "manageCalendar":
+      return `managed calendar (${tc.args.action ?? "unknown"})`;
+    case "manageReminders":
+      return `managed reminders (${tc.args.action ?? "unknown"})`;
     default:
       return `used ${tc.toolName}`;
   }

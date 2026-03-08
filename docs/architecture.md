@@ -24,7 +24,9 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
 │  │    tools/     │  │   prompts    │                 │
 │  │ read/write/   │  │  (system +   │                 │
 │  │ search/list/  │  │   format)    │                 │
-│  │ curate/photo  │  └──────────────┘                 │
+│  │ curate/photo/ │  └──────────────┘                 │
+│  │ email/cal/    │                                    │
+│  │ reminders     │                                    │
 │  └──────┬───────┘                                    │
 └─────────┼────────────────────────────────────────────┘
           │
@@ -38,7 +40,8 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
 │ person │  │ Scheduler   │
 │ ality/ │  │ State       │
 │ memori │  │ Memory      │
-│ es/    │  └─────────────┘
+│ es/    │  │ Reminder    │
+│        │  └─────────────┘
 └────────┘
     ▲            ▲
     └─────┬──────┘
@@ -59,6 +62,24 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
 │        ─► active hours   │
 │        ─► generate msg   │
 │        ─► persist state  │
+└──────────────────────────┘
+
+┌──────────────────────────┐
+│   Reminder Scheduler     │
+│                          │
+│ poll 60s ─► pending?     │
+│           ─► send text   │
+│           ─► mark fired  │
+│ startup recovery         │
+└──────────────────────────┘
+
+┌──────────────────────────┐
+│   Google Services        │
+│                          │
+│ OAuth2 singleton         │
+│  ─► Gmail (read-only)    │
+│  ─► Calendar (CRUD)      │
+│  (conditional on config) │
 └──────────────────────────┘
 
 ┌──────────────────────────┐
@@ -134,12 +155,13 @@ When firing, the scheduler assembles a proactive system prompt (personality + pr
 | Directory | Purpose | Key Files |
 |---|---|---|
 | `src/ai/` | LLM integration, prompt assembly, tool orchestration | `generate.ts`, `context-assembler.ts`, `prompts.ts`, `provider.ts`, `response.ts` |
-| `src/ai/tools/` | Tool implementations available to the LLM | `index.ts`, `read-memory.ts`, `write-memory.ts`, `search-memory.ts`, `list-memories.ts`, `curate-memory.ts`, `send-photo.ts` |
+| `src/ai/tools/` | Tool implementations available to the LLM | `index.ts`, `read-memory.ts`, `write-memory.ts`, `search-memory.ts`, `list-memories.ts`, `curate-memory.ts`, `send-photo.ts`, `check-email.ts`, `manage-calendar.ts`, `manage-reminders.ts` |
 | `src/platform/` | Platform-agnostic message types | `types.ts` |
 | `src/platform/telegram/` | Telegram adapter + bot setup | `adapter.ts`, `bot.ts` |
 | `src/memory/` | Vault file operations, curation pipeline, Memory Engine | `vault.ts`, `curator.ts`, `engine.ts`, `embedding.ts`, `types.ts` |
 | `src/db/` | MongoDB connection, data models, GridFS image store | `connection.ts`, `gridfs.ts`, `models/conversation.ts`, `models/scheduler-state.ts`, `models/memory.ts` |
-| `src/scheduler/` | Proactive message scheduling | `proactive.ts` |
+| `src/services/` | External service integrations (Google OAuth, Gmail, Calendar) | `google-auth.ts`, `gmail.ts`, `google-calendar.ts` |
+| `src/scheduler/` | Proactive message & reminder scheduling | `proactive.ts`, `reminders.ts` |
 | `src/context/` | Image reference loading + generation | `generator.ts`, `types.ts` |
 | `src/utils/` | Logger, markdown/frontmatter parsing | `logger.ts`, `markdown.ts` |
 | `src/config.ts` | Zod-validated environment config | — |
@@ -154,8 +176,9 @@ When firing, the scheduler assembles a proactive system prompt (personality + pr
 3. Create Telegram bot with handlers (allowlist → rate limit → message handlers)
 4. Start bot (long-polling)
 5. Start proactive scheduler (restore timers from DB)
+6. Start reminder scheduler (polls every 60s, fires pending reminders)
 
-Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop scheduler, disconnect DB.
+Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, disconnect DB.
 
 ## Key Design Decisions
 

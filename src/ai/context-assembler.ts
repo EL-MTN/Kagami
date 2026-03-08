@@ -5,10 +5,12 @@ import { readImage } from "../db/gridfs.js";
 import * as engine from "../memory/engine.js";
 import {
   TOOL_USAGE_INSTRUCTIONS,
+  MAID_SERVICE_INSTRUCTIONS,
   DATETIME_CONTEXT,
   RESPONSE_FORMAT_INSTRUCTIONS,
   PROACTIVE_MESSAGE_INSTRUCTIONS,
 } from "./prompts.js";
+import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
 import type { CoreMessage, UserContent } from "ai";
 
@@ -89,6 +91,11 @@ async function assembleBasePrompt(): Promise<string[]> {
 
   // 6. Tool instructions
   parts.push(TOOL_USAGE_INSTRUCTIONS);
+
+  // 7. Maid service instructions (only when Google credentials are configured)
+  if (config.GOOGLE_OAUTH_CLIENT_ID) {
+    parts.push(MAID_SERVICE_INSTRUCTIONS);
+  }
 
   return parts;
 }

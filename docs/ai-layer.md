@@ -52,7 +52,8 @@ assembleSystemPrompt()
     ├─ 3.7 Emotional note        ← injected when mood trend is rising or falling (not stable)
     ├─ 4. Datetime context       ← current time + time-of-day label
     ├─ 5. Tool usage instructions← hardcoded guidance in prompts.ts
-    └─ 6. Response format        ← message style rules in prompts.ts
+    ├─ 6. Maid service instructions← conditional on Google OAuth config (prompts.ts)
+    └─ 7. Response format        ← message style rules in prompts.ts
 
     All parts joined with "---" separator
 ```
@@ -87,7 +88,7 @@ interface ToolContext {
   adapter: PlatformAdapter;
 }
 
-allTools(ctx) → { readMemory, writeMemory, searchMemory, listMemories, curateMemory, sendPhoto }
+allTools(ctx) → { readMemory, writeMemory, searchMemory, listMemories, curateMemory, sendPhoto, checkEmail?, manageCalendar?, manageReminders? }
 ```
 
 ### readMemory
@@ -135,6 +136,27 @@ allTools(ctx) → { readMemory, writeMemory, searchMemory, listMemories, curateM
 - **Parameters**: `{ description: string, caption?: string, aspectRatio?: "1:1" | "3:4" | "4:3" | "9:16" | "16:9" }`
 - **Returns**: `{ sent: true, caption } | { sent: false, reason }`
 - **Behavior**: Builds prompt with appearance prefix, calls image generation, sends via adapter
+
+### checkEmail (conditional — requires Google OAuth)
+
+- **Purpose**: Check Goshujin-sama's email
+- **Parameters**: `{ maxResults?: number, emailId?: string }`
+- **Returns**: `{ success, count?, emails? }` or `{ success, email }` or `{ success: false, reason }`
+- **Behavior**: Lists unread emails or retrieves a specific email by ID. Only registered when `GOOGLE_OAUTH_CLIENT_ID` is configured.
+
+### manageCalendar (conditional — requires Google OAuth)
+
+- **Purpose**: Manage Google Calendar events
+- **Parameters**: `{ action: "list"|"create"|"update"|"delete", daysAhead?, maxResults?, eventId?, summary?, description?, start?, end?, location? }`
+- **Returns**: `{ success, event? }` or `{ success, events? }` or `{ success: false, reason }`
+- **Behavior**: Dispatches to the appropriate calendar service function based on `action`. Date fields use ISO 8601 format.
+
+### manageReminders (conditional — requires Google OAuth)
+
+- **Purpose**: Manage reminders scoped to the current chat
+- **Parameters**: `{ action: "create"|"list"|"delete", message?, fireAt?, reminderId? }`
+- **Returns**: `{ success, reminderId? }` or `{ success, reminders? }` or `{ success: false, reason }`
+- **Behavior**: Creates, lists, or deletes reminders. The LLM composes the reminder message at creation time — it's sent as-is when fired by the reminder scheduler.
 
 ## Image Generation
 

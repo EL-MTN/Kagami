@@ -22,6 +22,10 @@ const envSchema = z
 
     MONGODB_URI: z.string().default("mongodb://localhost:27017/mashiro"),
 
+    GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+    GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+    GOOGLE_OAUTH_REFRESH_TOKEN: z.string().optional(),
+
     VAULT_PATH: z.string().default("./vault"),
     CONTEXT_PATH: z.string().default("./context"),
 
@@ -53,6 +57,24 @@ const envSchema = z
         message: `${requiredEmbedding} is required when EMBEDDING_PROVIDER is "${data.EMBEDDING_PROVIDER}"`,
         path: [requiredEmbedding],
       });
+    }
+
+    // If any Google OAuth var is set, all three are required
+    const googleOAuthFields = [
+      "GOOGLE_OAUTH_CLIENT_ID",
+      "GOOGLE_OAUTH_CLIENT_SECRET",
+      "GOOGLE_OAUTH_REFRESH_TOKEN",
+    ] as const;
+    const setFields = googleOAuthFields.filter((f) => data[f]);
+    if (setFields.length > 0 && setFields.length < 3) {
+      const missing = googleOAuthFields.filter((f) => !data[f]);
+      for (const field of missing) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${field} is required when any Google OAuth variable is set`,
+          path: [field],
+        });
+      }
     }
   });
 

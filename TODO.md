@@ -6,7 +6,9 @@
 - [ ] **Voice Input Understanding** — Accept and transcribe incoming voice messages (Whisper API) instead of silently ignoring `message:voice`
 - [ ] **Mood / Emotional State Tracking** — Maintain a persistent mood state that evolves based on conversation tone, time since last interaction, and events; influences response style, selfie expressions, and proactive frequency
 - [x] **Photo Reactions & Image Understanding** — Handle incoming photos with a vision model to respond contextually (food, places, selfies, etc.)
-- [ ] **Calendar Awareness & Date Memory** — Use the existing unused `calendar/` directory to track important dates and proactively reference them
+- [x] **Calendar Awareness & Date Memory** — Google Calendar integration with full CRUD via LLM tool
+- [x] **Gmail Integration** — Read-only email access with unread listing and full body retrieval via LLM tool
+- [x] **Reminder System** — MongoDB-backed reminders with polling scheduler, scoped per chat, LLM-composed messages
 - [ ] **Sticker / GIF Responses** — Curate anime stickers/GIFs that Mashiro sends contextually via Telegram's sticker support
 - [ ] **Location-Aware Context** — React to shared locations with weather/time-of-day comments via a weather API
 - [ ] **Multi-Platform Support (Discord)** — Implement a Discord adapter using the existing `PlatformAdapter` interface

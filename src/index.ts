@@ -4,8 +4,10 @@ import { connectDB, disconnectDB } from "./db/connection.js";
 import { createBot, startBot, getAdapter } from "./platform/telegram/bot.js";
 import { loadContext } from "./context/generator.js";
 import { startProactiveScheduler } from "./scheduler/proactive.js";
+import { startReminderScheduler } from "./scheduler/reminders.js";
 
 let stopProactiveScheduler: (() => void) | null = null;
+let stopReminderScheduler: (() => void) | null = null;
 
 async function main() {
   logger.info("Starting Mashiro...");
@@ -19,11 +21,13 @@ async function main() {
   startBot(bot);
 
   stopProactiveScheduler = startProactiveScheduler(getAdapter());
+  stopReminderScheduler = startReminderScheduler(getAdapter());
 }
 
 function shutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down...`);
   stopProactiveScheduler?.();
+  stopReminderScheduler?.();
   disconnectDB().finally(() => process.exit(0));
 }
 
