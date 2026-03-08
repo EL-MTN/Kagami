@@ -14,23 +14,48 @@ import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
 import type { CoreMessage, UserContent } from "ai";
 
-async function assembleMemoryContext(): Promise<string[]> {
+async function assembleMemoryContext(sessionId?: string): Promise<string[]> {
   const parts: string[] = [];
 
-  // Recent episode context (last 2-3 conversation summaries)
+  // Separated episode types (fixes conflation bug)
   try {
-    const recentEpisodes = await engine.getRecentEpisodes(3);
-    if (recentEpisodes.length > 0) {
-      const episodeText = recentEpisodes
+    const dailyEpisodes = await engine.getRecentDailyEpisodes(3);
+    if (dailyEpisodes.length > 0) {
+      const episodeText = dailyEpisodes
         .map((e) => `[${format(e.metadata.createdAt, "MMM d")}] ${e.content}`)
         .join("\n\n");
-      parts.push("## Recent Memories\n" + episodeText);
+      parts.push("## Recent Conversations\n" + episodeText);
     }
   } catch (error) {
-    logger.warn({ error }, "Failed to load recent episodes for context");
+    logger.warn({ error }, "Failed to load recent daily episodes for context");
   }
 
-  // Active follow-ups
+  try {
+    const weeklyEpisodes = await engine.getRecentWeeklyEpisodes(2);
+    if (weeklyEpisodes.length > 0) {
+      const weeklyText = weeklyEpisodes
+        .map((e) => `[${format(e.metadata.createdAt, "MMM d")}] ${e.content}`)
+        .join("\n\n");
+      parts.push("## Recent Weeks\n" + weeklyText);
+    }
+  } catch (error) {
+    logger.warn({ error }, "Failed to load weekly episodes for context");
+  }
+
+  // Working memory (session-scoped)
+  if (sessionId) {
+    try {
+      const workingMems = await engine.getWorkingMemories(sessionId);
+      if (workingMems.length > 0) {
+        const notes = workingMems.map((m) => `- ${m.content}`).join("\n");
+        parts.push("## Currently Tracking\n" + notes);
+      }
+    } catch (error) {
+      logger.warn({ error }, "Failed to load working memories for context");
+    }
+  }
+
+  // Active follow-ups (with age filter + dedup)
   try {
     const followUps = await engine.getActiveFollowUps();
     if (followUps.length > 0) {
@@ -58,10 +83,10 @@ async function assembleMemoryContext(): Promise<string[]> {
   return parts;
 }
 
-async function assembleBasePrompt(): Promise<string[]> {
+async function assembleBasePrompt(sessionId?: string): Promise<string[]> {
   const parts: string[] = [];
 
-  // 1. Personality card
+  // 1. Personality card (still from vault — hand-edited)
   const personality = await readVaultFile("personality/card.md");
   if (personality) {
     parts.push(personality.content);
@@ -70,20 +95,32 @@ async function assembleBasePrompt(): Promise<string[]> {
     parts.push("You are Shiina Mashiro, a quiet and eccentric artist girlfriend.");
   }
 
-  // 2. User knowledge
-  const aboutYou = await readVaultFile("memories/about-you.md");
-  if (aboutYou) {
-    parts.push("## What You Know About Him\n" + aboutYou.content);
+  // 2. User knowledge (from MongoDB, not vault)
+  try {
+    const facts = await engine.getTopFacts(30);
+    if (facts.length > 0) {
+      const factList = facts.map((f) => `- ${f.content}`).join("\n");
+      parts.push("## What You Know About Him\n" + factList);
+    }
+  } catch (error) {
+    logger.warn({ error }, "Failed to load facts for context");
   }
 
-  // 3. Milestones
-  const milestones = await readVaultFile("memories/milestones.md");
-  if (milestones) {
-    parts.push("## Relationship History\n" + milestones.content);
+  // 3. Milestones (from MongoDB, not vault)
+  try {
+    const milestones = await engine.getRecentMilestones(5);
+    if (milestones.length > 0) {
+      const milestoneList = milestones
+        .map((m) => `[${format(m.metadata.createdAt, "MMM yyyy")}] ${m.content}`)
+        .join("\n\n");
+      parts.push("## Relationship History\n" + milestoneList);
+    }
+  } catch (error) {
+    logger.warn({ error }, "Failed to load milestones for context");
   }
 
-  // 4. Recent episode context + follow-ups
-  const memoryContext = await assembleMemoryContext();
+  // 4. Recent episode context + follow-ups + working memory
+  const memoryContext = await assembleMemoryContext(sessionId);
   parts.push(...memoryContext);
 
   // 5. Date/time
@@ -100,14 +137,14 @@ async function assembleBasePrompt(): Promise<string[]> {
   return parts;
 }
 
-export async function assembleSystemPrompt(): Promise<string> {
-  const parts = await assembleBasePrompt();
+export async function assembleSystemPrompt(sessionId?: string): Promise<string> {
+  const parts = await assembleBasePrompt(sessionId);
   parts.push(RESPONSE_FORMAT_INSTRUCTIONS);
   return parts.join("\n\n---\n\n");
 }
 
-export async function assembleProactiveSystemPrompt(): Promise<string> {
-  const parts = await assembleBasePrompt();
+export async function assembleProactiveSystemPrompt(sessionId?: string): Promise<string> {
+  const parts = await assembleBasePrompt(sessionId);
   parts.push(PROACTIVE_MESSAGE_INSTRUCTIONS);
   return parts.join("\n\n---\n\n");
 }

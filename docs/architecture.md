@@ -22,11 +22,12 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
 │         │                 │                          │
 │  ┌──────┴───────┐  ┌──────┴───────┐                 │
 │  │    tools/     │  │   prompts    │                 │
-│  │ read/write/   │  │  (system +   │                 │
-│  │ search/list/  │  │   format)    │                 │
-│  │ curate/photo/ │  └──────────────┘                 │
-│  │ email/cal/    │                                    │
-│  │ reminders     │                                    │
+│  │ remember-fact/│  │  (system +   │                 │
+│  │ note-to-self/ │  │   format)    │                 │
+│  │ read/search/  │  └──────────────┘                 │
+│  │ list/curate/  │                                    │
+│  │ photo/email/  │                                    │
+│  │ cal/reminders │                                    │
 │  └──────┬───────┘                                    │
 └─────────┼────────────────────────────────────────────┘
           │
@@ -39,10 +40,9 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
 │        │  │ Conversation│
 │ person │  │ Scheduler   │
 │ ality/ │  │ State       │
-│ memori │  │ Memory      │
-│ es/    │  │ Reminder    │
-│        │  └─────────────┘
-└────────┘
+│ card   │  │ Memory      │
+│        │  │ Reminder    │
+└────────┘  └─────────────┘
     ▲            ▲
     └─────┬──────┘
           │
@@ -53,6 +53,8 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
 │  ─► cosine similarity    │
 │  ─► remember / recall    │
 │  ─► fact ADD/UPDATE/DEL  │
+│  ─► working memory (TTL) │
+│  ─► soft archival        │
 └──────────────────────────┘
 
 ┌──────────────────────────┐
@@ -62,6 +64,8 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
 │        ─► active hours   │
 │        ─► generate msg   │
 │        ─► persist state  │
+│        ─► weekly/monthly │
+│        ─► daily cleanup  │
 └──────────────────────────┘
 
 ┌──────────────────────────┐
@@ -104,27 +108,29 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
 4. adapter.normalize(ctx) → IncomingMessage
        │  (for photos: download file, convert to base64)
        │
-5. getOrCreateConversation(chatId) — daily scoped
+5. getOrCreateSession(chatId) — idle-based (1h threshold)
+       │  ├─ If stale session found: close it, queue background curation
+       │  └─ Return active session with sessionId
        │
 6. If image: write to GridFS → get imageRef key
        │
 7. appendMessage(conversation, userMsg with imageRef)
        │
-8. curateIfNeeded(chatId) — if overflow >= 40 messages (batch curation):
+8. curateIfNeeded(chatId) — fire-and-forget (non-blocking):
+       │   ├─ Per-chat mutex prevents concurrent curation
        │   ├─ summarize overflow → Memory collection episode (MongoDB only)
        │   ├─ extract structured metadata (emotionalTone, importance, followUps)
-       │   ├─ classify facts as ADD/UPDATE/DELETE via LLM → Memory collection
-       │   ├─ regenerate about-you.md from all current facts
-       │   ├─ trim conversation to 40 messages (delete orphaned GridFS images)
-       │   ├─ check weekly merge (4+ old episodes → weekly-merge episode)
-       │   └─ check monthly consolidation (3+ old weekly episodes → milestone)
+       │   ├─ classify facts as ADD/UPDATE/DELETE (bounded: 30 most relevant facts)
+       │   └─ trim conversation to 40 messages (delete orphaned GridFS images)
        │
-9. Parallel: assembleSystemPrompt() + assembleMessages(chatId)
-       │   ├─ System: personality + user facts + milestones + recent episodes + follow-ups + datetime + tools + format
-       │   └─ Messages: last 40 msgs, images loaded from GridFS on demand, tool-call pairs reconstructed
+9. Parallel: assembleSystemPrompt(sessionId) + assembleMessages(chatId)
+       │   ├─ System: personality + facts (top 30) + milestones (last 5)
+       │   │         + daily episodes (3) + weekly episodes (2)
+       │   │         + working memory + follow-ups + datetime + tools + format
+       │   └─ Messages: last 40 msgs from active session, images from GridFS, tool-call pairs
        │
 10. generateText({ model, system, messages, tools, maxSteps: 5, temperature: 0.7 })
-       │   └─ LLM may call tools (readMemory, writeMemory, searchMemory, sendPhoto, etc.)
+       │   └─ LLM may call tools (rememberFact, noteToSelf, readMemory, searchMemory, sendPhoto, etc.)
        │
 11. extractResponseText(steps) + collectToolCalls(steps)
        │
@@ -147,26 +153,27 @@ The scheduler sends unprompted messages to maintain engagement:
 - **Persistence**: next-fire timestamps saved to MongoDB (survives restarts)
 - **Reset**: any user message reschedules the next proactive to 1.5–2.5h out
 - **Memory consolidation**: after each proactive fire, checks weekly merge and monthly consolidation (fire-and-forget)
+- **Daily cleanup**: removes fired reminders (>30 days) and closed conversations (>90 days)
 
-When firing, the scheduler assembles a proactive system prompt (personality + proactive instructions) and injects a synthetic nudge if no recent user message exists.
+When firing, the scheduler uses `getOrCreateSession` to get the active session, assembles a proactive system prompt with sessionId, and injects a synthetic nudge if no recent user message exists.
 
 ## Module Boundaries
 
 | Directory | Purpose | Key Files |
 |---|---|---|
 | `src/ai/` | LLM integration, prompt assembly, tool orchestration | `generate.ts`, `context-assembler.ts`, `prompts.ts`, `provider.ts`, `response.ts` |
-| `src/ai/tools/` | Tool implementations available to the LLM | `index.ts`, `read-memory.ts`, `write-memory.ts`, `search-memory.ts`, `list-memories.ts`, `curate-memory.ts`, `send-photo.ts`, `check-email.ts`, `manage-calendar.ts`, `manage-reminders.ts` |
+| `src/ai/tools/` | Tool implementations available to the LLM | `index.ts`, `remember-fact.ts`, `note-to-self.ts`, `read-memory.ts`, `search-memory.ts`, `list-memories.ts`, `curate-memory.ts`, `send-photo.ts`, `check-email.ts`, `manage-calendar.ts`, `manage-reminders.ts` |
 | `src/platform/` | Platform-agnostic message types | `types.ts` |
 | `src/platform/telegram/` | Telegram adapter + bot setup | `adapter.ts`, `bot.ts` |
 | `src/memory/` | Vault file operations, curation pipeline, Memory Engine | `vault.ts`, `curator.ts`, `engine.ts`, `embedding.ts`, `types.ts` |
-| `src/db/` | MongoDB connection, data models, GridFS image store | `connection.ts`, `gridfs.ts`, `models/conversation.ts`, `models/scheduler-state.ts`, `models/memory.ts` |
+| `src/db/` | MongoDB connection, data models, GridFS image store | `connection.ts`, `gridfs.ts`, `models/conversation.ts`, `models/scheduler-state.ts`, `models/memory.ts`, `models/reminder.ts` |
 | `src/services/` | External service integrations (Google OAuth, Gmail, Calendar) | `google-auth.ts`, `gmail.ts`, `google-calendar.ts` |
 | `src/scheduler/` | Proactive message & reminder scheduling | `proactive.ts`, `reminders.ts` |
 | `src/context/` | Image reference loading + generation | `generator.ts`, `types.ts` |
 | `src/utils/` | Logger, markdown/frontmatter parsing | `logger.ts`, `markdown.ts` |
 | `src/config.ts` | Zod-validated environment config | — |
 | `src/index.ts` | App entry point, boot sequence | — |
-| `vault/` | User-editable memory files (personality, facts, milestones) | `personality/card.md`, `memories/about-you.md`, `memories/milestones.md` |
+| `vault/` | Personality card (hand-edited) | `personality/card.md` |
 | `context/` | Image generation assets (references, settings) | `references/face/`, `references/body/`, `references/outfits/`, `settings/` |
 
 ## Boot Sequence
@@ -175,19 +182,24 @@ When firing, the scheduler assembles a proactive system prompt (personality + pr
 2. Load image context (reference images + setting descriptions)
 3. Create Telegram bot with handlers (allowlist → rate limit → message handlers)
 4. Start bot (long-polling)
-5. Start proactive scheduler (restore timers from DB)
+5. Start proactive scheduler (restore timers from DB, start daily cleanup)
 6. Start reminder scheduler (polls every 60s, fires pending reminders)
 
 Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, disconnect DB.
 
 ## Key Design Decisions
 
-- **Daily conversation scoping** — conversations reset at midnight, keeping context fresh
+- **Session-based conversations** — sessions close after 1 hour of inactivity, replacing daily scoping. Eliminates cross-midnight amnesia.
+- **Non-blocking curation** — curation runs as fire-and-forget with per-chat mutex, so users don't wait for LLM calls
 - **40-message context window** — overflow is summarized into MongoDB episodes, not lost
+- **Separated episode types** — daily episodes, weekly merges, and monthly consolidations are queried separately to prevent conflation
+- **Bounded fact retrieval** — only 30 most relevant facts sent to LLM for classification, not the entire collection
+- **Non-destructive merges** — weekly/monthly merges soft-archive originals instead of deleting them
+- **Working memory** — session-scoped temporary notes with 24h TTL, auto-cleaned by MongoDB
 - **Tool-augmented LLM** — the model reads/writes its own memory via tools, not hardcoded logic
-- **MongoDB as single source of truth** — conversations stored exclusively in Memory collection; vault files reserved for static content (personality, facts, milestones)
-- **GridFS image storage** — user-sent photos stored in MongoDB GridFS (`images` bucket) instead of inline base64, keeping conversation documents lean and avoiding the 16MB BSON limit
-- **Semantic memory** — Google Gemini embeddings + cosine similarity for meaning-based retrieval
+- **MongoDB as single source of truth** — vault reserved only for the hand-edited personality card
+- **GridFS image storage** — user-sent photos stored in MongoDB GridFS (`images` bucket) instead of inline base64
+- **Semantic memory** — Google Gemini embeddings + cosine similarity for meaning-based retrieval with 200-candidate cap
 - **Smart fact management** — ADD/UPDATE/DELETE operations prevent stale fact accumulation
 - **Platform abstraction** — `PlatformAdapter` interface enables future platform support
 - **Segmented sending** — responses split on `\n\n` with typing delays for natural pacing

@@ -4,10 +4,12 @@ import { assembleProactiveSystemPrompt, assembleMessages } from "../ai/context-a
 import { checkWeeklyMerge, checkMonthlyConsolidation } from "../memory/curator.js";
 import { allTools, type ToolContext } from "../ai/tools/index.js";
 import {
-  getOrCreateConversation,
+  getOrCreateSession,
   appendMessage,
   getRecentMessages,
+  cleanupOldConversations,
 } from "../db/models/conversation.js";
+import { cleanupFiredReminders } from "../db/models/reminder.js";
 import { getNextProactiveAt, setNextProactiveAt } from "../db/models/scheduler-state.js";
 import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
@@ -33,6 +35,9 @@ const MAX_INTERVAL = 2.5 * 60 * 60_000; // 2.5 hours
 const MIN_IDLE = 60 * 60_000; // 1 hour
 const STARTUP_MIN = 30 * 60_000; // 30 min
 const STARTUP_MAX = 60 * 60_000; // 1 hour
+const CLEANUP_INTERVAL = 24 * 60 * 60_000; // 24 hours
+
+let cleanupTimer: NodeJS.Timeout | null = null;
 
 function isActiveHour(): boolean {
   const hour = new Date().getHours();
@@ -122,8 +127,11 @@ async function fireProactive(chatId: string): Promise<void> {
 async function generateProactiveMessage(chatId: string, adapter: PlatformAdapter): Promise<void> {
   logger.info({ chatId }, "Generating proactive message");
 
+  const { conversation } = await getOrCreateSession(chatId, chatId, "telegram");
+  const sessionId = conversation.sessionId;
+
   const [systemPrompt, messages] = await Promise.all([
-    assembleProactiveSystemPrompt(),
+    assembleProactiveSystemPrompt(sessionId),
     assembleMessages(chatId),
   ]);
 
@@ -134,7 +142,7 @@ async function generateProactiveMessage(chatId: string, adapter: PlatformAdapter
     messages.push({ role: "user", content: "[Time has passed. Text him if you feel like it.]" });
   }
 
-  const toolContext: ToolContext = { chatId, adapter };
+  const toolContext: ToolContext = { chatId, adapter, sessionId };
 
   const result = await generateText({
     model: getModel(),
@@ -157,7 +165,6 @@ async function generateProactiveMessage(chatId: string, adapter: PlatformAdapter
   logger.info({ chatId, preview: responseText.slice(0, 120) }, "Proactive message generated");
 
   // Save to conversation history
-  const conversation = await getOrCreateConversation(chatId, chatId, "telegram");
   const toolCallData = collectToolCalls(result.steps);
 
   await appendMessage(conversation, {
@@ -170,6 +177,20 @@ async function generateProactiveMessage(chatId: string, adapter: PlatformAdapter
   // Send — skip if sendPhoto already delivered text as caption
   if (!wasPhotoSent(result.steps)) {
     await sendSegmented(adapter, chatId, responseText);
+  }
+}
+
+async function runDailyCleanup(): Promise<void> {
+  try {
+    const [deletedReminders, deletedConvos] = await Promise.all([
+      cleanupFiredReminders(30),
+      cleanupOldConversations(90),
+    ]);
+    if (deletedReminders > 0 || deletedConvos > 0) {
+      logger.info({ deletedReminders, deletedConvos }, "Daily cleanup complete");
+    }
+  } catch (error) {
+    logger.error({ error }, "Daily cleanup failed");
   }
 }
 
@@ -217,6 +238,20 @@ export function startProactiveScheduler(adapter: PlatformAdapter): () => void {
       });
   }
 
+  // Schedule daily cleanup
+  cleanupTimer = setInterval(() => {
+    runDailyCleanup().catch((error) => {
+      logger.error({ error }, "Cleanup interval failed");
+    });
+  }, CLEANUP_INTERVAL);
+
+  // Run cleanup once on startup (after a short delay)
+  setTimeout(() => {
+    runDailyCleanup().catch((error) => {
+      logger.error({ error }, "Startup cleanup failed");
+    });
+  }, 60_000);
+
   logger.info({ chats: config.ALLOWED_USER_IDS.length }, "Proactive scheduler started");
 
   return () => {
@@ -224,6 +259,10 @@ export function startProactiveScheduler(adapter: PlatformAdapter): () => void {
       clearTimeout(timeout);
     }
     timers.clear();
+    if (cleanupTimer) {
+      clearInterval(cleanupTimer);
+      cleanupTimer = null;
+    }
     _adapter = null;
     logger.info("Proactive scheduler stopped");
   };

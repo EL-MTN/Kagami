@@ -1,16 +1,18 @@
-# Mashiro's Memory: Deep Dive & Improvement Roadmap
+# Mashiro's Memory: Architecture & Design
 
-## Current Architecture
+## Architecture
 
-Mashiro's memory operates in four tiers:
+Mashiro's memory operates in five tiers:
 
 | Tier | Storage | Scope | What's in it |
 |------|---------|-------|-------------|
-| **Hot** | MongoDB `conversations` | Today's 40 messages | Raw messages, images, tool calls |
+| **Hot** | MongoDB `conversations` | Active session messages | Raw messages, images, tool calls |
+| **Working** | MongoDB `memories` (type: `"working"`) | Session-scoped, 24h TTL | Temporary notes (auto-deleted by MongoDB TTL index) |
 | **Warm** | MongoDB `memories` collection | All curated memories | Embeddings, structured metadata, facts/episodes/milestones |
-| **Static** | `vault/memories/about-you.md`, `milestones.md` | Regenerated facts | Clean fact list regenerated from Warm tier each curation cycle |
+| **Archive** | MongoDB `memories` (with `archivedAt`) | Soft-archived originals | Preserved after merge; excluded from search/context |
+| **Static** | `vault/personality/card.md` | Hand-edited | Character definition only |
 
-The personality card (`vault/personality/card.md`) sits outside this hierarchy as a static, hand-edited identity definition.
+The personality card (`vault/personality/card.md`) is the only vault file — all facts, milestones, and episodes live exclusively in MongoDB.
 
 ### Data Flow Between Tiers
 
@@ -18,199 +20,189 @@ The personality card (`vault/personality/card.md`) sits outside this hierarchy a
 User sends message
        |
        v
-[HOT] MongoDB Conversation
+[HOT] MongoDB Conversation (session-based)
+  - getOrCreateSession (idle-based: 1h threshold)
+  - If stale session detected → close old, curate in background, create new
   - appendMessage (user)
-  - getOrCreateConversation (daily scoped)
        |
        v (if overflow >= 40 messages beyond context window)
-[CURATION TRIGGER]
+[CURATION TRIGGER] (fire-and-forget, non-blocking)
   - getOverflowMessages -> messages[0..N-40]
   - LLM summarizes overflow transcript + extracts structured metadata
-  - Store as [WARM] Memory collection episode (with embedding) — single source of truth
-  - LLM classifies facts as ADD/UPDATE/DELETE/NOOP against existing facts
+  - Store as [WARM] Memory collection episode (with embedding)
+  - LLM classifies facts as ADD/UPDATE/DELETE against 30 most relevant facts
   - Execute operations against [WARM] Memory collection
-  - Regenerate [STATIC] about-you.md from all current facts
   - trimConversation -> MongoDB kept at 40
-  - checkWeeklyMerge -> if 4+ old curation episodes (>7 days):
-      - weeklyDeepCuration -> [WARM] episode with source "weekly-merge"
-      - delete merged daily episodes
-  - checkMonthlyConsolidation -> if 3+ old weekly-merge episodes (>30 days):
-      - monthlyDeepConsolidation -> [WARM] milestone
-      - delete merged weekly episodes
+       |
+       v (on proactive scheduler only)
+[MERGE] Weekly + Monthly consolidation
+  - Weekly: 4+ old daily episodes → merged weekly summary
+  - Monthly: 3+ old weekly episodes → relationship insights milestone
+  - Originals soft-archived (metadata.archivedAt), not deleted
        |
        v
-[ASSEMBLY] assembleSystemPrompt()
-  - [STATIC] personality/card.md    --+
-  - [STATIC] about-you.md            |
-  - [STATIC] milestones.md           +-- Always in system prompt
-  - [WARM] recent episodes (last 3)  |
-  - [WARM] active follow-ups        --+
+[ASSEMBLY] assembleSystemPrompt(sessionId?)
+  - [STATIC] personality/card.md         --+
+  - [WARM] top 30 facts (by importance)    |
+  - [WARM] recent milestones (last 5)      |
+  - [WARM] daily episodes (last 3)         +-- Always in system prompt
+  - [WARM] weekly episodes (last 2)        |
+  - [WORKING] session notes (if any)       |
+  - [WARM] active follow-ups (30d, dedup) --+
        |
        v
 generateText() with tools
-  - LLM may search [WARM] via searchMemory (hybrid semantic + keyword)
-  - LLM may browse [WARM] via listMemories
-  - LLM may read [STATIC] via readMemory
-  - LLM may write [STATIC + WARM] via writeMemory (dual-write)
+  - LLM may search [WARM] via searchMemory (semantic, type-filterable)
+  - LLM may browse [WARM] via listMemories (excludes archived)
+  - LLM may read [STATIC] via readMemory (personality card)
+  - LLM may read [WARM] via readMemory (by memory ID)
+  - LLM may store [WARM] via rememberFact (direct-to-MongoDB)
+  - LLM may store [WORKING] via noteToSelf (session-scoped, 24h TTL)
 ```
 
 ### What the LLM Sees at Generation Time
 
 **Always (system prompt):**
 - Full character definition (personality/card.md)
-- All known facts about the user (about-you.md, regenerated from Memory collection)
-- Relationship milestones (milestones.md)
-- Last 2-3 conversation summaries from Memory Engine (auto-injected)
-- Active follow-up items from Memory Engine (auto-injected)
+- Top 30 facts about the user (from MongoDB, sorted by importance)
+- Recent milestones (last 5, from MongoDB)
+- Last 3 daily conversation summaries (from MongoDB, excludes weekly/monthly merges)
+- Last 2 weekly summaries (from MongoDB)
+- Working memory notes for this session (if any)
+- Active follow-up items (30-day age limit, deduplicated)
 - Emotional trend note (when mood is rising or falling, not when stable)
 - Current date/time with time-of-day label
 - Tool usage instructions
 - Response format instructions
 
 **Always (message history):**
-- Up to 40 messages from today's conversation, including reconstructed tool calls
+- Up to 40 messages from the active session, including reconstructed tool calls
 
 **On-demand (via tools, within 5 maxSteps):**
-- Semantic + keyword hybrid search results (searchMemory)
-- Memory discovery by type/date (listMemories)
-- Specific vault file by path (readMemory) — personality, about-you, milestones
-- Write to vault + Memory collection (writeMemory)
+- Semantic search results with optional type filter (searchMemory)
+- Memory discovery by type/date, excluding archived (listMemories)
+- Specific vault file or memory by ID (readMemory)
+- Direct fact/milestone storage (rememberFact)
+- Session-scoped temporary notes (noteToSelf)
+
+### Session Lifecycle
+
+Conversations use idle-based sessions instead of daily scoping:
+
+1. **getOrCreateSession(chatId)** — finds the most recent `status: "active"` conversation
+2. If found and idle < 1 hour → return it (same session continues)
+3. If found and idle >= 1 hour → close it, queue background curation, create new session
+4. If not found → create new session
+
+This eliminates "cross-midnight amnesia" — sessions naturally span day boundaries. A session only closes after 1 hour of inactivity.
 
 ### Memory Write Paths
 
-**1. Automatic Curation (batch-triggered)**
-- Fires when 40+ messages overflow beyond the 40-message context window (i.e., at 80 total messages)
+**1. Automatic Curation (batch-triggered, non-blocking)**
+- Fires as fire-and-forget when 40+ messages overflow beyond the 40-message context window
+- Per-chat mutex prevents concurrent curation runs
 - Formats overflow as rich transcript (images as `[sent a photo]`, tool calls as human-readable descriptions)
-- LLM summarizes via `generateObject()` with Zod schema → structured output (summary, emotionalTone, importance, followUps)
-- Stores episode in Memory collection with embedding (MongoDB only — no vault file)
-- LLM classifies facts via `generateObject()` as ADD/UPDATE/DELETE against existing Memory collection facts
-- Regenerates `about-you.md` from all current facts (clean overwrite)
+- LLM summarizes via `generateObject()` → structured output (summary, emotionalTone, importance, followUps)
+- Stores episode in Memory collection with embedding
+- LLM classifies facts via bounded retrieval: 30 most relevant facts (not all facts)
 - Trims MongoDB conversation to 40 messages
 
-**2. LLM-triggered writeMemory tool (dual-write)**
-- Mashiro can write to any vault path via `writeMemory`
-- Append mode: line-level deduplication (case-insensitive exact match)
-- Overwrite mode: replaces entire file
-- Writes to `about-you.md` or `milestones.md` also store in Memory collection for semantic search
-- Returns current file state after write for verification
+**2. Session-end curation (background)**
+- Triggered when `getOrCreateSession` detects and closes a stale session
+- Short sessions (< 5 messages) → lightweight summary with importance 3
+- Longer sessions → full summarization + fact extraction
 
-**3. Weekly deep curation (merge)**
+**3. LLM-triggered rememberFact tool (direct-to-MongoDB)**
+- Stores facts or milestones directly in the Memory collection
+- Parameters: content, type (fact/milestone), importance (1-10)
+- No vault involvement
+
+**4. LLM-triggered noteToSelf tool (working memory)**
+- Stores session-scoped temporary notes
+- Auto-expires after 21 hour (MongoDB TTL index)
+
+**5. Weekly deep curation (non-destructive merge)**
 - Triggers when 4+ curation episodes are older than 7 days
-- Also fires from proactive scheduler (not just curation)
+- Fires from proactive scheduler only (decoupled from curation)
 - LLM compresses all old dailies into single weekly summary
-- Stored as episode with source `"weekly-merge"` in Memory collection
-- Merged daily episodes are deleted from MongoDB
+- Stored as episode with source `"weekly-merge"`
+- Original daily episodes soft-archived (`metadata.archivedAt` set)
 
-**4. Monthly consolidation**
+**6. Monthly consolidation (non-destructive merge)**
 - Triggers when 3+ weekly-merge episodes are older than 30 days
-- Also fires from proactive scheduler
+- Fires from proactive scheduler only
 - LLM extracts relationship patterns and long-term observations
-- Stored as milestone in Memory collection (full text, no truncation)
-- Merged weekly episodes are deleted from MongoDB
+- Stored as milestone in Memory collection
+- Original weekly episodes soft-archived
 
 ### Memory Read Paths
 
 **1. System prompt assembly (automatic, every generation)**
-- Reads personality/card.md, about-you.md, milestones.md from vault
-- Loads last 2-3 episodes from Memory Engine (recent conversation summaries)
-- Loads active follow-ups from Memory Engine
+- Loads top 30 facts from MongoDB (sorted by importance desc)
+- Loads last 5 milestones from MongoDB
+- Loads separated episode types: 3 daily + 2 weekly
+- Loads working memory for current session
+- Loads active follow-ups (30-day age limit, deduplicated)
+- Reads personality/card.md from vault
 
 **2. Message history assembly (automatic, every generation)**
-- Queries MongoDB for today's conversation only
+- Queries active session's conversation
 - Returns last 40 messages with reconstructed tool-call pairs
 
-**3. searchMemory tool (LLM-initiated, hybrid)**
-- Runs semantic search (composite scoring on embeddings) and keyword search (vault substring) in parallel
+**3. searchMemory tool (LLM-initiated, semantic)**
+- All search goes through Memory Engine's `recall()` function
+- Tiered search: 90 days first, widens to 365 if insufficient results
 - Composite score: 0.50×relevance + 0.25×recency + 0.15×importance + 0.10×emotional
-- Merges and deduplicates results, returns top 10 ranked by composite score
+- Hard cap: 200 candidates loaded per search (sorted by recency)
+- Excludes archived memories and working memory
+- Optional type filter parameter
 
 **4. listMemories tool (LLM-initiated)**
 - Queries Memory collection by type (fact/episode/milestone)
+- Excludes archived memories by default
 - Returns date, preview, importance, and follow-up status
 
 **5. readMemory tool (LLM-initiated)**
-- Reads a specific vault file by path
-- Returns content only (frontmatter discarded from return value)
+- Reads a specific vault file by path (personality card)
+- OR reads a specific memory by ID from MongoDB
+
+### Archival Model
+
+Merges use soft-archival instead of hard deletion:
+- `metadata.archivedAt` — timestamp when archived
+- `metadata.mergedInto` — ObjectId of the merge target
+- Archived memories excluded from all searches and context assembly
+- Can be retrieved for deep investigation if needed
+
+### Follow-up Lifecycle
+
+- Follow-ups extracted during curation and stored in memory metadata
+- Age filter: only follow-ups from the last 30 days appear in the system prompt
+- Deduplication: lowercased text matching prevents repeated items
+- Resolution: `resolveFollowUp(memoryId, text)` removes a specific follow-up
+
+### Cleanup
+
+- **Working memory**: MongoDB TTL index auto-deletes expired entries
+- **Fired reminders**: Cleaned up daily (older than 30 days)
+- **Closed conversations**: Cleaned up daily (older than 90 days)
 
 ---
 
-## Remaining Memory Gaps
-
-### Open Gaps
-
-**6. Line-level dedup in vault is semantically blind.**
-`appendToVaultFile` deduplicates via exact string matching (case-insensitive). "Likes pizza" blocks "likes pizza" but not "enjoys pizza" or "pizza fan". This is mitigated by the fact management system (ADD/UPDATE/DELETE operates at the semantic level via LLM classification), but the vault append function itself remains substring-only.
-
-### Resolved Gaps
-
-| Gap | Resolution |
-|-----|-----------|
-| 1. Summaries never auto-loaded | `assembleMemoryContext()` injects last 2-3 episodes into system prompt |
-| 2. Hard amnesia at midnight | Recent episodes bridge the day boundary automatically |
-| 3. No discovery mechanism | `listMemories` tool lets Mashiro browse memories by type/date |
-| 4. Search is substring-only | Hybrid semantic + keyword search via Memory Engine |
-| 5. Curation discards images/tools | Rich transcript formatting: images as `[sent a photo]`, tool calls as human-readable descriptions |
-| 7. Facts only append | Mem0-style ADD/UPDATE/DELETE classification, clean regeneration |
-| 8. No emotional trajectory | `getEmotionalBaseline()` with trend injection into system prompt when mood is rising/falling |
-| 9. No temporal awareness | Composite retrieval scoring: 0.50×relevance + 0.25×recency + 0.15×importance + 0.10×emotional |
-| 10. Weekly merge threshold fragile | Lowered to 4+ files, fires from both curation and proactive scheduler |
-| 11. Per-message curation waste | Batch curation: 40-message minimum before summarizing |
-| 12. Proactive messages blind | Follow-ups + recent episodes injected into proactive prompt |
-
----
-
-## Future Improvements
-
-### Priority 5: Cross-day context bridge
-
-**Impact:** Medium | **Effort:** Low
-
-Largely addressed by auto-loading recent episodes. A targeted improvement would be injecting the *tail end* of yesterday's last summary specifically — capturing how the last session ended, final mood, unresolved threads.
-
-### Priority 6: Memory-aware proactive messaging (deep)
-
-**Impact:** Medium | **Effort:** Medium
-
-The basic version is done (follow-ups + episodes in proactive prompt). The deeper version would query for upcoming dates/events, time-of-day behavioral patterns, and do targeted memory retrieval before generating proactive messages.
-
-### Priority 8: Entity extraction and tracking
-
-**Impact:** Lower | **Effort:** Higher
-
-During curation, extract named entities (people, places, events) into structured MongoDB documents. Track relationships ("Mom" -> user's mother), first mention dates, and event statuses (upcoming/past).
-
----
-
-## Architecture Vision
+## Indexes
 
 ```
-+----------------------- Always In Prompt ------------------------+
-|  Personality card          (file, static)                       |
-|  Top user facts            (from DB, regenerated)         [done]|
-|  Milestones                (file, LLM-maintained)               |
-|  Recent episode context    (last 2-3 summaries, auto)     [done]|
-|  Emotional baseline        (trend when rising/falling)    [done]|
-|  Active follow-ups         (from curation metadata)       [done]|
-|  Datetime + time-of-day                                         |
-+-----------------------------------------------------------------+
-                              +
-+---------------------- On-Demand via Tools ----------------------+
-|  Composite search    (relevance+recency+importance+emo)   [done]|
-|  Memory browsing     (list by type/date)                  [done]|
-|  Temporal search     (date-filtered retrieval)                  |
-|  Entity lookup       (structured people/places/events)          |
-|  Episode deep-read   (full summary file by path)          [done]|
-+-----------------------------------------------------------------+
-                              +
-+---------------------- Background Pipeline ----------------------+
-|  Curation (40-msg overflow -> summarize -> extract facts) [done]|
-|  Rich transcripts (images, tool calls, role names)        [done]|
-|  Fact management (ADD/UPDATE/DELETE, not just append)      [done]|
-|  Batch curation (40-message minimum overflow)             [done]|
-|  Weekly consolidation (daily -> weekly, threshold 4+)     [done]|
-|  Monthly consolidation (weekly -> relationship patterns)  [done]|
-|  Proactive consolidation (merge checks on timer fire)     [done]|
-+-----------------------------------------------------------------+
+Memory collection:
+  { type: 1 }                                           — type filtering
+  { "metadata.chatId": 1 }                              — chat-scoped queries
+  { "metadata.createdAt": -1 }                          — recency sorting
+  { type: 1, "metadata.archivedAt": 1 }                 — active vs archived
+  { type: 1, source: 1, "metadata.createdAt": -1 }      — separated episode types
+  { "metadata.expiresAt": 1 } (TTL, expireAfterSeconds: 0) — working memory auto-cleanup
+
+Conversation collection:
+  { chatId: 1, updatedAt: -1 }                          — recent conversation lookup
+  { chatId: 1, status: 1, updatedAt: -1 }               — session lifecycle
 ```
 
 ---

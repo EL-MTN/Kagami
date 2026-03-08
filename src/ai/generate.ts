@@ -2,9 +2,9 @@ import { generateText } from "ai";
 import { getModel } from "./provider.js";
 import { assembleSystemPrompt, assembleMessages } from "./context-assembler.js";
 import { allTools, type ToolContext } from "./tools/index.js";
-import { getOrCreateConversation, appendMessage } from "../db/models/conversation.js";
+import { getOrCreateSession, appendMessage } from "../db/models/conversation.js";
 import { writeImage, generateImageKey } from "../db/gridfs.js";
-import { curateIfNeeded } from "../memory/curator.js";
+import { curateIfNeeded, curateClosedSession } from "../memory/curator.js";
 import type { IncomingMessage, PlatformAdapter } from "../platform/types.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -21,8 +21,21 @@ export async function handleMessage(
   incoming: IncomingMessage,
   adapter: PlatformAdapter,
 ): Promise<void> {
-  // 1. Get/create conversation and save user message
-  const convo = await getOrCreateConversation(incoming.chatId, incoming.userId, incoming.platform);
+  // 1. Get/create session (replaces daily conversation scoping)
+  const { conversation: convo, previouslyClosed } = await getOrCreateSession(
+    incoming.chatId,
+    incoming.userId,
+    incoming.platform,
+  );
+
+  const sessionId = convo.sessionId;
+
+  // Curate the previous session in background if it was just closed
+  if (previouslyClosed) {
+    curateClosedSession(previouslyClosed).catch((err) => {
+      logger.error({ err, chatId: incoming.chatId }, "Background session curation failed");
+    });
+  }
 
   // Store image in GridFS if present, keep only a reference in the conversation doc
   let imageRef: string | undefined;
@@ -43,12 +56,14 @@ export async function handleMessage(
     timestamp: incoming.timestamp,
   });
 
-  // 2. Curate overflow messages before assembling context
-  await curateIfNeeded(incoming.chatId);
+  // 2. Fire-and-forget curation (non-blocking)
+  curateIfNeeded(incoming.chatId).catch((err) => {
+    logger.error({ err, chatId: incoming.chatId }, "Background curation failed");
+  });
 
   // 3. Build system prompt and message history
   const [systemPrompt, messages] = await Promise.all([
-    assembleSystemPrompt(),
+    assembleSystemPrompt(sessionId),
     assembleMessages(incoming.chatId),
   ]);
 
@@ -61,10 +76,11 @@ export async function handleMessage(
     "Context assembled",
   );
 
-  // 4. Create tool context
+  // 4. Create tool context with sessionId
   const toolContext: ToolContext = {
     chatId: incoming.chatId,
     adapter,
+    sessionId,
   };
 
   // 5. Generate response with tools

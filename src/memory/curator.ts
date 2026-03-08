@@ -2,8 +2,12 @@ import { generateText, generateObject } from "ai";
 import { z } from "zod";
 import { format, subDays, subMonths } from "date-fns";
 import { getModel, ModelTier } from "../ai/provider.js";
-import { getOverflowMessages, trimConversation, type IMessage } from "../db/models/conversation.js";
-import { writeVaultFile } from "./vault.js";
+import {
+  getOverflowMessages,
+  trimConversation,
+  type IMessage,
+  type IConversation,
+} from "../db/models/conversation.js";
 import * as engine from "./engine.js";
 import { logger } from "../utils/logger.js";
 
@@ -12,14 +16,19 @@ const LLM_TIMEOUT_MS = 120_000; // 2 minutes
 const CONTEXT_WINDOW = 40;
 const CURATION_BATCH = 40;
 
+// Per-chat mutex to prevent concurrent curation
+const curationLocks = new Map<string, Promise<void>>();
+
 function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string {
   switch (tc.toolName) {
     case "searchMemory":
       return `searched memories for "${tc.args.query ?? ""}"`;
     case "readMemory":
       return `read ${tc.args.path ?? "a memory file"}`;
-    case "writeMemory":
-      return `wrote to ${tc.args.path ?? "a memory file"}`;
+    case "rememberFact":
+      return `remembered: ${tc.args.content ?? "something"}`;
+    case "noteToSelf":
+      return `noted: ${tc.args.note ?? "something"}`;
     case "listMemories":
       return `browsed her ${tc.args.type ?? ""} memories`;
     case "curateMemory":
@@ -61,12 +70,25 @@ function formatMessageForTranscript(m: IMessage): string {
 }
 
 export async function curateIfNeeded(chatId: string): Promise<void> {
+  // Per-chat mutex — skip if curation already in flight for this chat
+  const existing = curationLocks.get(chatId);
+  if (existing) {
+    logger.debug({ chatId }, "Curation already in flight, skipping");
+    return;
+  }
+
+  const promise = _curateIfNeeded(chatId).finally(() => {
+    curationLocks.delete(chatId);
+  });
+  curationLocks.set(chatId, promise);
+  return promise;
+}
+
+async function _curateIfNeeded(chatId: string): Promise<void> {
   const overflow = await getOverflowMessages(chatId, CONTEXT_WINDOW);
   if (!overflow) return;
 
-  // Wait for a full batch before curating — avoids wasting LLM calls
-  // on tiny 1-5 message summaries. The AI only sees the last CONTEXT_WINDOW
-  // messages via assembleMessages, so the unsummarized overflow is harmless.
+  // Wait for a full batch before curating
   if (overflow.overflow.length < CURATION_BATCH) return;
 
   logger.info(
@@ -74,10 +96,8 @@ export async function curateIfNeeded(chatId: string): Promise<void> {
     "Context overflow detected, curating messages",
   );
 
-  // Format overflow as rich transcript
   const transcript = overflow.overflow.map(formatMessageForTranscript).filter(Boolean).join("\n");
 
-  // Summarize overflow with structured metadata extraction
   const { object: curation } = await generateObject({
     model: getModel(),
     schema: z.object({
@@ -112,23 +132,16 @@ export async function curateIfNeeded(chatId: string): Promise<void> {
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
-  const summary = curation.summary;
-  const metadata: CurationMetadata = {
+  // Store episode in Memory collection
+  await engine.remember(curation.summary, "episode", "curation", {
+    chatId,
     emotionalTone: curation.emotionalTone,
     importance: curation.importance,
     followUps: curation.followUps,
-  };
-
-  // Store episode in Memory collection (single source of truth for conversations)
-  await engine.remember(summary, "episode", "curation", {
-    chatId,
-    emotionalTone: metadata.emotionalTone,
-    importance: metadata.importance,
-    followUps: metadata.followUps,
   });
 
-  // Update about-you.md with ADD/UPDATE/DELETE fact management
-  await updateUserFacts(summary);
+  // Update facts with bounded retrieval
+  await updateUserFacts(curation.summary);
 
   // Trim conversation to keep only recent messages
   await trimConversation(overflow.conversationId, CONTEXT_WINDOW);
@@ -138,15 +151,96 @@ export async function curateIfNeeded(chatId: string): Promise<void> {
     "Curation complete: summarized overflow and trimmed conversation",
   );
 
-  // Check if weekly merge is due, then monthly consolidation
-  await checkWeeklyMerge();
-  await checkMonthlyConsolidation();
+  // NOTE: Weekly/monthly merges are decoupled — they run on the proactive scheduler only
 }
 
-interface CurationMetadata {
-  emotionalTone: number;
-  importance: number;
-  followUps: string[];
+/**
+ * Curate a closed session. Triggered when getOrCreateSession detects a stale session.
+ * Short sessions get a lightweight summary; longer ones get full curation.
+ */
+export async function curateClosedSession(conversation: IConversation): Promise<void> {
+  const messages = conversation.messages;
+  if (messages.length === 0) return;
+
+  const chatId = conversation.chatId;
+
+  // Per-chat mutex
+  const existing = curationLocks.get(chatId);
+  if (existing) {
+    await existing;
+  }
+
+  const promise = _curateClosedSession(conversation).finally(() => {
+    curationLocks.delete(chatId);
+  });
+  curationLocks.set(chatId, promise);
+  return promise;
+}
+
+async function _curateClosedSession(conversation: IConversation): Promise<void> {
+  const messages = conversation.messages;
+  const chatId = conversation.chatId;
+
+  logger.info(
+    { chatId, messageCount: messages.length, sessionId: conversation.sessionId },
+    "Curating closed session",
+  );
+
+  const transcript = messages.map(formatMessageForTranscript).filter(Boolean).join("\n");
+
+  if (messages.length < 5) {
+    // Lightweight summary for short sessions
+    await engine.remember(
+      `Brief session: ${transcript.slice(0, 500)}`,
+      "episode",
+      "session-curation",
+      {
+        chatId,
+        importance: 3,
+        sessionId: conversation.sessionId,
+      },
+    );
+    logger.info({ chatId, messageCount: messages.length }, "Short session curated (lightweight)");
+    return;
+  }
+
+  // Full curation for longer sessions
+  const { object: curation } = await generateObject({
+    model: getModel(),
+    schema: z.object({
+      summary: z
+        .string()
+        .describe(
+          "Bullet-point summary of the conversation. Include important facts, emotional highlights, topics, and follow-ups. Write from Mashiro's perspective.",
+        ),
+      emotionalTone: z.number().int().min(1).max(10),
+      importance: z.number().int().min(1).max(10),
+      followUps: z.array(z.string()),
+    }),
+    system: `You are a memory curator. Summarize conversations into key points. Be concise. Use bullet points. Write from the perspective of Mashiro (the girlfriend AI) remembering the conversation.`,
+    messages: [
+      {
+        role: "user",
+        content: `Summarize this conversation session:\n\n${transcript}`,
+      },
+    ],
+    abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+  });
+
+  await engine.remember(curation.summary, "episode", "session-curation", {
+    chatId,
+    emotionalTone: curation.emotionalTone,
+    importance: curation.importance,
+    followUps: curation.followUps,
+    sessionId: conversation.sessionId,
+  });
+
+  await updateUserFacts(curation.summary);
+
+  logger.info(
+    { chatId, messageCount: messages.length, sessionId: conversation.sessionId },
+    "Closed session fully curated",
+  );
 }
 
 const FactOperationSchema = z.object({
@@ -160,12 +254,19 @@ const FactOperationSchema = z.object({
 });
 
 async function updateUserFacts(summary: string): Promise<void> {
-  const existingFacts = await engine.getAllFacts();
+  // Bounded: only fetch the 30 most relevant facts for classification
+  const relevantFacts = await engine.getFactsByRelevance(summary, 30);
+  const totalFacts = await engine.getFactCount();
 
   const factsContext =
-    existingFacts.length > 0
-      ? existingFacts.map((f) => `[id:${f._id}] ${f.content}`).join("\n")
+    relevantFacts.length > 0
+      ? relevantFacts.map((f) => `[id:${f._id}] ${f.content}`).join("\n")
       : "(no existing facts)";
+
+  const totalNote =
+    totalFacts > relevantFacts.length
+      ? `\n\nNote: Showing ${relevantFacts.length} most relevant facts out of ${totalFacts} total. Only classify against facts shown above.`
+      : "";
 
   const { object: result } = await generateObject({
     model: getModel(ModelTier.Fast),
@@ -182,7 +283,7 @@ If there are no changes needed, output an empty operations array.`,
     messages: [
       {
         role: "user",
-        content: `Existing facts:\n${factsContext}\n\nConversation summary:\n${summary}`,
+        content: `Existing facts:\n${factsContext}${totalNote}\n\nConversation summary:\n${summary}`,
       },
     ],
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
@@ -222,22 +323,6 @@ If there are no changes needed, output an empty operations array.`,
   }
 
   logger.info({ added, updated, deleted }, "Fact operations applied");
-
-  // Regenerate about-you.md from all current facts
-  await regenerateAboutYou();
-}
-
-async function regenerateAboutYou(): Promise<void> {
-  const allFacts = await engine.getAllFacts();
-  if (allFacts.length === 0) return;
-
-  const content = allFacts.map((f) => `- ${f.content}`).join("\n");
-  await writeVaultFile("memories/about-you.md", content, {
-    type: "user-facts",
-    factCount: allFacts.length,
-    lastUpdated: new Date().toISOString(),
-  });
-  logger.info({ factCount: allFacts.length }, "Regenerated about-you.md from Memory collection");
 }
 
 // In-flight guards to prevent concurrent consolidation runs
@@ -254,7 +339,6 @@ export function checkWeeklyMerge(): Promise<void> {
 
 async function _checkWeeklyMerge(): Promise<void> {
   const oneWeekAgo = subDays(new Date(), 7);
-  // Find curation episodes older than 7 days (exclude weekly-merge rollups)
   const oldEpisodes = await engine.getEpisodesBefore(oneWeekAgo, ["weekly-merge"]);
 
   if (oldEpisodes.length >= 4) {
@@ -284,15 +368,12 @@ async function weeklyDeepCuration(
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
-  // Store weekly summary as a new episode in MongoDB
-  await engine.remember(result.text, "episode", "weekly-merge", { importance: 6 });
+  // Store weekly summary
+  const merged = await engine.remember(result.text, "episode", "weekly-merge", { importance: 6 });
 
-  // Delete merged daily episodes to prevent re-merging
-  for (const ep of episodes) {
-    await engine.forget(ep._id.toString()).catch((error) => {
-      logger.warn({ error, episodeId: ep._id }, "Failed to delete merged episode");
-    });
-  }
+  // Non-destructive archival (replaces sequential forget)
+  const ids = episodes.map((ep) => ep._id.toString());
+  await engine.archiveMany(ids, merged._id.toString());
 
   const weekOf = format(subDays(new Date(), 7), "yyyy-MM-dd");
   logger.info({ weekOf, mergedEpisodes: episodes.length }, "Weekly curation complete");
@@ -308,7 +389,6 @@ export function checkMonthlyConsolidation(): Promise<void> {
 
 async function _checkMonthlyConsolidation(): Promise<void> {
   const oneMonthAgo = subMonths(new Date(), 1);
-  // Find weekly-merge episodes older than 30 days
   const oldWeeklyEpisodes = await engine.getEpisodesBefore(oneMonthAgo);
   const weeklyMerges = oldWeeklyEpisodes.filter((ep) => ep.source === "weekly-merge");
 
@@ -348,16 +428,15 @@ Write from Mashiro's perspective as long-term relationship insights, not a chron
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
-  // Store full text as milestone in MongoDB (no truncation needed)
+  // Store as milestone
   const monthOf = format(subMonths(new Date(), 1), "yyyy-MM");
-  await engine.remember(result.text, "milestone", "monthly-consolidation", { importance: 7 });
+  const merged = await engine.remember(result.text, "milestone", "monthly-consolidation", {
+    importance: 7,
+  });
 
-  // Delete merged weekly episodes
-  for (const ep of episodes) {
-    await engine.forget(ep._id.toString()).catch((error) => {
-      logger.warn({ error, episodeId: ep._id }, "Failed to delete merged weekly episode");
-    });
-  }
+  // Non-destructive archival
+  const ids = episodes.map((ep) => ep._id.toString());
+  await engine.archiveMany(ids, merged._id.toString());
 
   logger.info({ monthOf, mergedEpisodes: episodes.length }, "Monthly consolidation complete");
 }

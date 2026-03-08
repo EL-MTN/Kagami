@@ -1,5 +1,6 @@
 import { readMemory } from "./read-memory.js";
-import { writeMemory } from "./write-memory.js";
+import { rememberFact } from "./remember-fact.js";
+import { createNoteToSelfTool } from "./note-to-self.js";
 import { searchMemory } from "./search-memory.js";
 import { listMemories } from "./list-memories.js";
 import { createCurateMemoryTool } from "./curate-memory.js";
@@ -14,12 +15,14 @@ import type { PlatformAdapter } from "../../platform/types.js";
 export interface ToolContext {
   chatId: string;
   adapter: PlatformAdapter;
+  sessionId: string;
 }
 
 export function allTools(ctx: ToolContext) {
   const tools: Record<string, CoreTool> = {
     readMemory,
-    writeMemory,
+    rememberFact,
+    noteToSelf: createNoteToSelfTool(ctx.sessionId),
     searchMemory,
     listMemories,
     curateMemory: createCurateMemoryTool(ctx.chatId),

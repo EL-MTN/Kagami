@@ -46,3 +46,12 @@ export async function deleteReminder(reminderId: string): Promise<boolean> {
   const result = await Reminder.findByIdAndDelete(reminderId);
   return result !== null;
 }
+
+export async function cleanupFiredReminders(olderThanDays = 30): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
+  const result = await Reminder.deleteMany({
+    fired: true,
+    fireAt: { $lt: cutoff },
+  });
+  return result.deletedCount;
+}

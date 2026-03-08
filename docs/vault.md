@@ -1,22 +1,14 @@
-# Vault & Memory System
+# Vault
 
-The memory system has two storage layers:
-
-- **Vault** — file-based Markdown store with YAML frontmatter. Human-readable and editable. Holds personality definition, user facts, and relationship milestones. Static content only.
-- **Memory Engine** — MongoDB-backed collection with vector embeddings. Single source of truth for conversation episodes, facts, and milestones. Enables semantic search, auto-injection of recent context, and structured fact management (ADD/UPDATE/DELETE).
+The vault is a file-based Markdown store reserved for the **personality card only**. All dynamic memory (facts, milestones, episodes) is stored exclusively in MongoDB via the Memory Engine.
 
 ## Directory Layout
 
 ```
 vault/
-├── personality/
-│   └── card.md                          # Character definition (loaded at startup)
-└── memories/
-    ├── about-you.md                     # User facts (auto-updated by curator)
-    └── milestones.md                    # Relationship milestones
+└── personality/
+    └── card.md          # Character definition (loaded at startup)
 ```
-
-Conversation summaries are stored exclusively in MongoDB (Memory collection) as episodes, weekly merges, and milestones. No vault files are created for conversations.
 
 ## Frontmatter Schema
 
@@ -34,22 +26,6 @@ updated: <date>
 
 Body contains the full character definition: appearance, identity, personality traits, communication style, interests, emotional range, relationship dynamic, boundaries, and tool usage guidelines.
 
-### memories/about-you.md
-
-```yaml
----
-type: "user-facts"
-factCount: <number>
-lastUpdated: <ISO8601 timestamp>
----
-```
-
-Body contains categorized facts about the user (preferences, routines, dates, etc.). Regenerated from the Memory collection on each curation cycle — always reflects the current set of facts after ADD/UPDATE/DELETE operations.
-
-### memories/milestones.md
-
-No required frontmatter. Body contains dated relationship milestones, memorable moments, and inside jokes.
-
 ## Vault Operations
 
 Implemented in `src/memory/vault.ts`:
@@ -58,17 +34,14 @@ Implemented in `src/memory/vault.ts`:
 |---|---|
 | `readVaultFile(path)` | Read file, parse frontmatter + content. Returns `null` on missing file. |
 | `writeVaultFile(path, content, frontmatter)` | Write file with frontmatter. Creates parent dirs. |
-| `appendToVaultFile(path, content)` | Append with line-level deduplication (case-insensitive). Preserves headers. |
-| `listVaultFiles(dir)` | Recursive walk, returns all `.md` file paths. |
-| `searchVault(query)` | Case-insensitive line matching across all files. Top 5 excerpts per file, sorted by match count. |
 
 All vault paths are resolved relative to `VAULT_PATH` and include a path traversal guard — any attempt to resolve a path outside the vault directory is blocked.
 
-The LLM accesses these operations through the `readMemory`, `writeMemory`, and `searchMemory` tools.
+The LLM accesses the personality card through the `readMemory` tool (with `path` parameter).
 
 ## Memory Engine
 
-The Memory Engine (`src/memory/engine.ts`) provides a semantic memory layer backed by MongoDB and Google Gemini embeddings.
+All dynamic memory operations (facts, episodes, milestones, working memory) are handled by the Memory Engine (`src/memory/engine.ts`) backed by MongoDB. See [memory-management.md](memory-management.md) for full details.
 
 ### Embedding Service
 
@@ -87,17 +60,19 @@ Defined in `src/db/models/memory.ts`. Each document stores:
 | Field | Type | Description |
 |---|---|---|
 | `content` | `string` | The actual text content |
-| `type` | `"fact" \| "episode" \| "milestone"` | Memory category |
-| `source` | `string` | Origin: `"curation"`, `"tool"`, `"manual"` |
-| `embedding` | `number[]` | 3072-dim vector from gemini-embedding-001 |
+| `type` | `"fact" \| "episode" \| "milestone" \| "working"` | Memory category |
+| `source` | `string` | Origin: `"curation"`, `"session-curation"`, `"tool"`, `"weekly-merge"`, `"monthly-consolidation"` |
+| `embedding` | `number[]` | 3072-dim vector (empty for working memory) |
 | `metadata.chatId` | `string?` | Associated chat |
 | `metadata.emotionalTone` | `number?` | 1-10 scale |
 | `metadata.importance` | `number?` | 1-10 scale |
 | `metadata.followUps` | `string[]?` | Unresolved action items |
 | `metadata.createdAt` | `Date` | When the memory was created |
 | `metadata.updatedAt` | `Date` | When the memory was last modified |
-
-Indexed on `type`, `metadata.chatId`, and `metadata.createdAt`.
+| `metadata.archivedAt` | `Date?` | Soft-archive timestamp (excluded from search) |
+| `metadata.mergedInto` | `string?` | ObjectId of merge target |
+| `metadata.sessionId` | `string?` | Links to the session that created it |
+| `metadata.expiresAt` | `Date?` | TTL for working memory (MongoDB auto-deletes) |
 
 ### Engine API
 
@@ -106,81 +81,40 @@ Implemented in `src/memory/engine.ts`:
 | Function | Description |
 |---|---|
 | `remember(content, type, source, opts?)` | Embed content, store in MongoDB. Returns the created document. |
-| `recall(query, opts?)` | Embed query, composite scoring search. Options: `type`, `limit` (default 10), `minScore` (default 0.3, applied as relevance floor). Score = 0.50×relevance + 0.25×recency + 0.15×importance + 0.10×emotional. |
-| `forget(memoryId)` | Delete a memory by ID. |
-| `getRecentEpisodes(limit?)` | Fetch last N episode-type memories by date. Used by context assembly. |
-| `getEpisodesBefore(olderThan, excludeSources?)` | Fetch episodes older than a date, optionally excluding certain sources. Used by weekly/monthly merge. |
-| `getAllFacts()` | Fetch all fact-type memories. Used by curation for classify-then-act. |
-| `getActiveFollowUps()` | Collect unresolved follow-up items from recent memories. Used by context assembly. |
-| `getEmotionalBaseline(windowSize?)` | Compute rolling emotional trend from recent episodes. Returns average, trend (rising/falling/stable), and recent scores. Null if < 3 data points. |
+| `recall(query, opts?)` | Tiered semantic search (90d then 365d). Composite scoring with 200-candidate cap. |
+| `forget(memoryId)` | Hard delete a memory by ID. Used for fact UPDATE/DELETE. |
+| `getRecentDailyEpisodes(limit?)` | Daily episodes only (excludes weekly/monthly merges, archived). |
+| `getRecentWeeklyEpisodes(limit?)` | Weekly merge episodes only (excludes archived). |
+| `getEpisodesBefore(olderThan, excludeSources?)` | Episodes older than a date (excludes archived). |
+| `getTopFacts(limit?)` | Top N facts by importance (excludes archived). |
+| `getFactsByRelevance(query, limit?)` | Semantic search scoped to facts (excludes archived). |
+| `getFactCount()` | Count of active (non-archived) facts. |
+| `getRecentMilestones(limit?)` | Recent milestones (excludes archived). |
+| `getActiveFollowUps(limit?, maxAgeDays?)` | Follow-ups with 30-day age limit and dedup. |
+| `resolveFollowUp(memoryId, text)` | Remove a specific follow-up from a memory. |
+| `setWorkingMemory(content, sessionId, ttlHours?)` | Store session-scoped note with TTL. |
+| `getWorkingMemories(sessionId)` | Get all working memories for a session. |
+| `clearWorkingMemories(sessionId)` | Delete all working memories for a session. |
+| `archiveMemory(memoryId, mergedIntoId?)` | Soft-archive a single memory. |
+| `archiveMany(memoryIds, mergedIntoId?)` | Soft-archive multiple memories (batch). |
+| `getEmotionalBaseline(windowSize?)` | Rolling emotional trend from non-archived episodes. |
 
 ## Curation Pipeline
 
-Implemented in `src/memory/curator.ts`. Triggered when a conversation reaches 80 messages (40-message context window + 40-message curation batch). The AI only sees the last 40 messages via `assembleMessages`, so overflow messages are invisible until curated.
+Implemented in `src/memory/curator.ts`. The pipeline is **non-blocking** — curation runs as fire-and-forget with per-chat mutex protection.
 
-```
-curateIfNeeded(chatId)
-    │
-    ├─ 1. Detect overflow (messages > 40) and batch check (overflow >= 40)
-    │
-    ├─ 2. Extract overflow messages (everything before the 40-msg cutoff)
-    │
-    ├─ 3. Format as rich transcript:
-    │      • Images: [sent a photo] or [sent a photo with caption: "..."]
-    │      • Tool calls: human-readable descriptions (e.g. "Mashiro searched memories for X")
-    │      • Assistant role shown as "Mashiro", raw tool results skipped
-    │
-    ├─ 4. LLM summarizes via `generateObject()` → Zod-validated structured output:
-    │      • summary (bullet points), emotionalTone (1-10), importance (1-10), followUps []
-    │
-    ├─ 5. Store episode in Memory collection (with embedding)
-    │      MongoDB is the single source of truth — no vault file created
-    │
-    ├─ 6. updateUserFacts(summary) — Mem0-style classify-then-act:
-    │      • Load all existing facts from Memory collection
-    │      • LLM classifies facts via `generateObject()` → Zod-validated operations
-    │      • Execute ADD / UPDATE / DELETE operations against Memory collection
-    │      • Regenerate about-you.md from all current facts (clean overwrite)
-    │
-    ├─ 7. Trim conversation to last 40 messages
-    │
-    ├─ 8. checkWeeklyMerge()
-    │      • Query episodes older than 7 days (excluding weekly-merge source)
-    │      • If 4+ episodes: weeklyDeepCuration()
-    │         └─ LLM compresses into single weekly summary
-    │         └─ Store as episode with source "weekly-merge"
-    │         └─ Delete merged daily episodes
-    │
-    └─ 9. checkMonthlyConsolidation()
-           • Query weekly-merge episodes older than 30 days
-           • If 3+ episodes: monthlyDeepConsolidation()
-              └─ LLM extracts relationship patterns + long-term observations
-              └─ Store as milestone in Memory collection
-              └─ Delete merged weekly episodes
-```
+### Overflow curation
+Triggered when a conversation reaches 80 messages (40-message context window + 40-message curation batch).
+
+### Session-end curation
+Triggered when `getOrCreateSession` detects and closes a stale session (>1h idle). Short sessions (<5 messages) get a lightweight summary.
+
+### Fact management
+Uses bounded retrieval: only the 30 most relevant facts (by semantic similarity) are sent to the LLM for ADD/UPDATE/DELETE classification, with a note about total count if there are more.
+
+### Merges (decoupled)
+Weekly and monthly merges run on the proactive scheduler only (decoupled from curation). They use non-destructive archival instead of hard deletion.
 
 ## System Prompt Assembly
 
-Implemented in `src/ai/context-assembler.ts`. The system prompt is assembled from vault files at generation time.
-
-### Standard prompt (`assembleSystemPrompt`)
-
-Loads and concatenates (separated by `---`):
-
-1. **Personality card** — `vault/personality/card.md` content
-2. **User knowledge** — `vault/memories/about-you.md` content
-3. **Milestones** — `vault/memories/milestones.md` content
-4. **Recent episodes** — last 2-3 conversation summaries from Memory Engine (auto-loaded)
-5. **Follow-ups** — unresolved follow-up items from Memory Engine (auto-loaded)
-6. **Emotional note** — injected when emotional trend is rising or falling (not when stable). Shows trend direction and average score.
-7. **Datetime context** — current time + time-of-day category (late night, morning, afternoon, evening, night)
-7. **Tool usage instructions** — when/how to use each tool
-8. **Response format instructions** — message length, splitting, style
-
-### Proactive prompt (`assembleProactiveSystemPrompt`)
-
-Same as standard (including recent episodes + follow-ups) but replaces response format with proactive message instructions. The memory context enables proactive messages that reference recent conversations and follow up on unresolved items.
-
-### Message history (`assembleMessages`)
-
-Loads last 40 messages from the conversation. Reconstructs tool-call/tool-result pairs so the model sees its own prior tool usage. User messages with images are loaded from GridFS on demand (via `imageRef`) and converted to multi-part content (image + text).
+See [ai-layer.md](ai-layer.md) for the context assembly pipeline.

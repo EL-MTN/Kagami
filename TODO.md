@@ -20,8 +20,8 @@
 - [x] **Extract shared response-sending logic** — Deduplicated into `src/ai/response.ts` (`extractResponseText`, `collectToolCalls`, `wasPhotoSent`, `sendSegmented`, `logSteps`)
 - [ ] **Add a test suite** — Unit tests for `vault.ts`, `markdown.ts`, `context-assembler.ts`, `curator.ts`, and proactive scheduler timing logic
 - [x] **Remove photo cache** — Removed MediaAsset model and all prompt-hash caching (prompts never realistically collide)
-- [ ] **Make curation non-blocking** — Run `curateIfNeeded` in the background so the user doesn't wait for multiple LLM calls before getting a response
-- [ ] **Fix cross-day conversation continuity** — Carry forward last N messages from the previous day's conversation so context isn't lost at midnight
+- [x] **Make curation non-blocking** — Curation runs as fire-and-forget with per-chat mutex
+- [x] **Fix cross-day conversation continuity** — Replaced daily scoping with idle-based sessions (4h threshold)
 - [x] **Use async I/O in `loadContext()`** — Replaced all sync fs calls with `fs/promises` and parallelized directory loading
 - [x] **Clean up dead code** — Removed unused `sendPhotoWithCache` in `helpers.ts`
 - [x] **Use all reference images** — Apply LLM selection for face/body refs (like outfits) or simplify to single-value variables

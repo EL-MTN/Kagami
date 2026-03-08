@@ -19,8 +19,15 @@ export const listMemories = tool({
   execute: async ({ type, limit }) => {
     logger.info({ type, limit }, "Tool: listMemories");
 
-    const filter: Record<string, unknown> = {};
-    if (type) filter.type = type;
+    const filter: Record<string, unknown> = {
+      "metadata.archivedAt": { $exists: false },
+    };
+    if (type) {
+      filter.type = type;
+    } else {
+      // Exclude working memory from general listing
+      filter.type = { $ne: "working" };
+    }
 
     const memories = await Memory.find(filter)
       .sort({ "metadata.createdAt": -1 })

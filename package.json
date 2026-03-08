@@ -8,6 +8,7 @@
     "start": "node dist/index.js",
     "seed:vault": "tsx scripts/seed-vault.ts",
     "auth:google": "tsx scripts/authorize-google.ts",
+    "migrate:memory": "tsx scripts/migrate-memory-v2.ts",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",

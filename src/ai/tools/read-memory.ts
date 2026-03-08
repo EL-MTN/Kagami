@@ -1,26 +1,46 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { readVaultFile } from "../../memory/vault.js";
+import { Memory } from "../../db/models/memory.js";
 import { logger } from "../../utils/logger.js";
 
 export const readMemory = tool({
   description:
-    "Read a specific file from the memory vault. Use to recall stored information like personality, facts about him, or milestones.",
+    "Read from your memory. Use 'path' to read a vault file (e.g. personality card), or 'memoryId' to read a specific memory by its ID from the database.",
   parameters: z.object({
-    path: z
-      .string()
-      .describe(
-        "Path relative to vault root, e.g. 'memories/about-you.md' or 'memories/milestones.md'",
-      ),
+    path: z.string().optional().describe("Path relative to vault root, e.g. 'personality/card.md'"),
+    memoryId: z.string().optional().describe("ID of a specific memory to read from the database"),
   }),
-  execute: async ({ path }) => {
-    logger.info({ path }, "Tool: readMemory");
-    const file = await readVaultFile(path);
-    if (!file) {
-      logger.debug({ path }, "readMemory: file not found");
-      return { found: false, error: `File not found: ${path}` };
+  execute: async ({ path, memoryId }) => {
+    // Read a specific memory by ID
+    if (memoryId) {
+      logger.info({ memoryId }, "Tool: readMemory (by ID)");
+      const memory = await Memory.findById(memoryId);
+      if (!memory) {
+        return { found: false, error: `Memory not found: ${memoryId}` };
+      }
+      return {
+        found: true,
+        id: memory._id.toString(),
+        type: memory.type,
+        content: memory.content,
+        createdAt: memory.metadata.createdAt,
+        importance: memory.metadata.importance,
+      };
     }
-    logger.debug({ path, contentLength: file.content.length }, "readMemory: success");
-    return { found: true, path: file.path, content: file.content };
+
+    // Read a vault file by path
+    if (path) {
+      logger.info({ path }, "Tool: readMemory (vault)");
+      const file = await readVaultFile(path);
+      if (!file) {
+        logger.debug({ path }, "readMemory: file not found");
+        return { found: false, error: `File not found: ${path}` };
+      }
+      logger.debug({ path, contentLength: file.content.length }, "readMemory: success");
+      return { found: true, path: file.path, content: file.content };
+    }
+
+    return { found: false, error: "Provide either 'path' or 'memoryId'" };
   },
 });
