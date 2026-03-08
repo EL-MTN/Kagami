@@ -93,12 +93,17 @@ export async function sendEmail(
 ): Promise<SendEmailResult> {
   const gmail = getGmail();
 
+  const encodedSubject = `=?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`;
+  const encodedBody = Buffer.from(body).toString("base64");
+
   const messageParts = [
+    "MIME-Version: 1.0",
     `To: ${to}`,
-    `Subject: ${subject}`,
+    `Subject: ${encodedSubject}`,
     "Content-Type: text/plain; charset=utf-8",
+    "Content-Transfer-Encoding: base64",
     "",
-    body,
+    encodedBody,
   ];
   const raw = Buffer.from(messageParts.join("\r\n")).toString("base64url");
 
