@@ -6,6 +6,7 @@ import { listMemories } from "./list-memories.js";
 import { createCurateMemoryTool } from "./curate-memory.js";
 import { createSendPhotoTool } from "./send-photo.js";
 import { createCheckEmailTool } from "./check-email.js";
+import { createSendEmailTool } from "./send-email.js";
 import { createManageCalendarTool } from "./manage-calendar.js";
 import { createManageRemindersTool } from "./manage-reminders.js";
 import { config } from "@mashiro/shared";
@@ -31,6 +32,7 @@ export function allTools(ctx: ToolContext) {
 
   if (config.GOOGLE_OAUTH_CLIENT_ID) {
     tools.checkEmail = createCheckEmailTool();
+    tools.sendEmail = createSendEmailTool();
     tools.manageCalendar = createManageCalendarTool();
     tools.manageReminders = createManageRemindersTool(ctx.chatId);
   }

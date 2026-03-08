@@ -81,6 +81,40 @@ function extractPlainText(payload: {
   return "";
 }
 
+export interface SendEmailResult {
+  id: string;
+  threadId: string;
+}
+
+export async function sendEmail(
+  to: string,
+  subject: string,
+  body: string,
+): Promise<SendEmailResult> {
+  const gmail = getGmail();
+
+  const messageParts = [
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    body,
+  ];
+  const raw = Buffer.from(messageParts.join("\r\n")).toString("base64url");
+
+  const res = await gmail.users.messages.send({
+    userId: "me",
+    requestBody: { raw },
+  });
+
+  logger.info({ to, subject, id: res.data.id }, "Email sent");
+
+  return {
+    id: res.data.id!,
+    threadId: res.data.threadId!,
+  };
+}
+
 export async function getEmailById(messageId: string): Promise<EmailDetail | null> {
   const gmail = getGmail();
 

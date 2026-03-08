@@ -38,6 +38,8 @@ function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string 
       return `sent a photo: ${a.description ?? ""}`;
     case "checkEmail":
       return "checked Goshujin-sama's email";
+    case "sendEmail":
+      return `sent an email to ${a.to ?? "someone"}`;
     case "manageCalendar":
       return `managed calendar (${a.action ?? "unknown"})`;
     case "manageReminders":
