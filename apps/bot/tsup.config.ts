@@ -8,5 +8,5 @@ export default defineConfig({
   clean: true,
   splitting: false,
   sourcemap: true,
-  external: [/^@mashiro\//],
+  noExternal: [/^@mashiro\//],
 });
