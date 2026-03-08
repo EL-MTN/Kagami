@@ -1,0 +1,58 @@
+import { config, logger } from "@mashiro/shared";
+import { connectDB, disconnectDB } from "@mashiro/db";
+import { createBot, startBot, getAdapter } from "./platform/telegram/bot.js";
+import { loadContext } from "./context/generator.js";
+import { startProactiveScheduler } from "./scheduler/proactive.js";
+import { startReminderScheduler } from "./scheduler/reminders.js";
+
+// Bot-specific validation: TELEGRAM_BOT_TOKEN is required
+function requireToken(): string {
+  const token = config.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    console.error("TELEGRAM_BOT_TOKEN is required for the bot app");
+    process.exit(1);
+  }
+  return token;
+}
+const TELEGRAM_BOT_TOKEN = requireToken();
+
+let stopProactiveScheduler: (() => void) | null = null;
+let stopReminderScheduler: (() => void) | null = null;
+
+async function main() {
+  logger.info("Starting Mashiro...");
+
+  await connectDB();
+
+  await loadContext();
+
+  const bot = createBot(TELEGRAM_BOT_TOKEN);
+
+  startBot(bot);
+
+  stopProactiveScheduler = startProactiveScheduler(getAdapter());
+  stopReminderScheduler = startReminderScheduler(getAdapter());
+}
+
+function shutdown(signal: string) {
+  logger.info(`Received ${signal}, shutting down...`);
+  stopProactiveScheduler?.();
+  stopReminderScheduler?.();
+  disconnectDB().finally(() => process.exit(0));
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("uncaughtException", (error) => {
+  logger.fatal({ error }, "Uncaught exception");
+  shutdown("uncaughtException");
+});
+process.on("unhandledRejection", (reason) => {
+  logger.fatal({ reason }, "Unhandled rejection");
+  shutdown("unhandledRejection");
+});
+
+main().catch((error) => {
+  logger.fatal({ error }, "Unhandled error in main");
+  process.exit(1);
+});

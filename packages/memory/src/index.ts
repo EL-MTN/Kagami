@@ -1,0 +1,28 @@
+export {
+  remember,
+  recall,
+  forget,
+  getRecentDailyEpisodes,
+  getRecentWeeklyEpisodes,
+  getRecentEpisodes,
+  getEpisodesBefore,
+  getTopFacts,
+  getFactsByRelevance,
+  getFactCount,
+  getAllFacts,
+  getRecentMilestones,
+  getActiveFollowUps,
+  resolveFollowUp,
+  setWorkingMemory,
+  getWorkingMemories,
+  clearWorkingMemories,
+  archiveMemory,
+  archiveMany,
+  getEmotionalBaseline,
+  type RememberOptions,
+  type RecallOptions,
+  type RecallResult,
+  type EmotionalBaseline,
+} from "./engine.js";
+export { generateEmbedding, generateEmbeddings, cosineSimilarity } from "./embedding.js";
+export { readVaultFile, writeVaultFile } from "./vault.js";

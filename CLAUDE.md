@@ -2,30 +2,72 @@
 
 ## Project
 
-Mashiro — a Telegram-based conversational AI that maintains persistent personality, memories, and proactive engagement. Built with TypeScript, Vercel AI SDK, MongoDB, and the Grammy Telegram framework.
+Mashiro — a Telegram-based conversational AI that maintains persistent personality, memories, and proactive engagement. Built as a monorepo with TypeScript, Vercel AI SDK, MongoDB, and the Grammy Telegram framework. Includes a Next.js dashboard (placeholder).
+
+## Monorepo Structure
+
+```
+mashiro/
+├── apps/
+│   ├── bot/          # Telegram bot (Grammy, AI tools, schedulers)
+│   └── dashboard/    # Next.js dashboard (placeholder)
+├── packages/
+│   ├── typescript-config/  # Shared tsconfig bases (JSON only)
+│   ├── eslint-config/      # Shared ESLint flat config
+│   ├── shared/             # config, logger, markdown, types
+│   ├── db/                 # MongoDB connection, models, GridFS
+│   └── memory/             # engine, embedding, vault
+├── scripts/          # Migration, seed, auth scripts
+├── vault/            # Persistent memory store (data)
+├── context/          # Character reference images/settings
+└── docs/
+```
+
+**Stack**: npm workspaces + Turborepo + tsup (compiled packages)
 
 ## Commands
 
 ```bash
-npm run dev          # Start dev server (tsx watch)
-npm run build        # Production build (tsup)
-npm run start        # Run compiled app
-npm run typecheck    # tsc --noEmit
-npm run lint         # eslint src/
-npm run lint:fix     # eslint src/ --fix
-npm run format       # prettier --write src/
+npm run build        # turbo run build (all packages + apps)
+npm run dev          # turbo run dev (starts bot with tsx watch)
+npm run typecheck    # turbo run typecheck (all packages)
+npm run lint         # turbo run lint (all packages)
+npm run lint:fix     # turbo run lint:fix
+npm run format       # prettier --write all files
 npm run seed:vault   # Initialize vault directory
+npm run auth:google  # Google OAuth setup
+npm run migrate:memory # Memory system migration
+```
+
+## Dependency Graph
+
+```
+@mashiro/typescript-config  ← leaf
+@mashiro/eslint-config      ← leaf
+       ↑
+@mashiro/shared  ← config, logger, markdown, types
+       ↑
+@mashiro/db      ← mongoose, models, GridFS
+       ↑
+@mashiro/memory  ← engine, embedding, vault
+       ↑
+@mashiro/bot     ← AI layer, tools, platform adapter, schedulers
+@mashiro/dashboard ← Next.js (placeholder)
 ```
 
 ## Conventions
 
-- **TypeScript + ESM** — strict mode, ES2022 target, ESNext modules
+- **TypeScript + ESM** — strict mode, ES2022 target, ESNext modules, `verbatimModuleSyntax`
 - **Async everywhere** — all I/O is async/await, no callbacks
-- **Zod for config** — environment variables validated at startup via `src/config.ts`
+- **Zod for config** — environment variables validated at startup via `@mashiro/shared` config
 - **Pino logging** — structured logs, use `logger.info({ context }, "message")` pattern
 - **Vercel AI SDK** — `generateText()` from `ai` package for all LLM calls
 - **No classes for services** — prefer standalone exported functions
-- **Platform-agnostic types** — `IncomingMessage`/`OutgoingMessage` in `src/platform/types.ts`; adapters implement `PlatformAdapter`
+- **Platform-agnostic types** — `IncomingMessage`/`PlatformAdapter` in `@mashiro/shared`
+- **Cross-package imports** — use `@mashiro/shared`, `@mashiro/db`, `@mashiro/memory` (not relative paths)
+- **Within-package imports** — use relative paths with `.js` extension
+- **Compiled packages** — libraries build to `dist/` via tsup; Turborepo handles build ordering
+- **`.env` location** — `apps/bot/.env` (not root)
 
 ## Doc Maintenance
 

@@ -1,0 +1,29 @@
+{
+  "name": "@mashiro/db",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix"
+  },
+  "dependencies": {
+    "@mashiro/shared": "*",
+    "mongoose": "^8.9.0"
+  },
+  "devDependencies": {
+    "@mashiro/typescript-config": "*",
+    "@mashiro/eslint-config": "*",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.0.1",
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -10,7 +10,9 @@
  * Usage: npm run migrate:memory
  */
 
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ path: "apps/bot/.env" });
+
 import mongoose from "mongoose";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -91,7 +93,9 @@ async function main() {
       });
       imported++;
     }
-    console.log(`  Found ${lines.length} facts in vault: ${imported} imported, ${skipped} already exist`);
+    console.log(
+      `  Found ${lines.length} facts in vault: ${imported} imported, ${skipped} already exist`,
+    );
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       console.log("  about-you.md not found, skipping");
@@ -112,9 +116,7 @@ async function main() {
       .filter(Boolean);
 
     const existingMilestones = await memories.find({ type: "milestone" }).toArray();
-    const existingContents = new Set(
-      existingMilestones.map((m) => m.content.toLowerCase().trim()),
-    );
+    const existingContents = new Set(existingMilestones.map((m) => m.content.toLowerCase().trim()));
 
     let imported = 0;
     let skipped = 0;
@@ -177,7 +179,9 @@ async function main() {
 
   console.log("\n=== Migration Complete ===");
   console.log(`  Conversations: ${totalConvos}`);
-  console.log(`  Memories: ${totalMemories} (${factCount} facts, ${episodeCount} episodes, ${milestoneCount} milestones)`);
+  console.log(
+    `  Memories: ${totalMemories} (${factCount} facts, ${episodeCount} episodes, ${milestoneCount} milestones)`,
+  );
 
   await mongoose.disconnect();
 }

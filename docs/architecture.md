@@ -2,18 +2,64 @@
 
 ## System Overview
 
-Mashiro is a layered conversational AI system. Messages flow from a platform adapter through normalization, storage, context assembly, LLM generation, and back out as responses.
+Mashiro is a layered conversational AI system organized as a monorepo. Messages flow from a platform adapter through normalization, storage, context assembly, LLM generation, and back out as responses.
+
+### Monorepo Layout
+
+```
+mashiro/                          # npm workspaces + Turborepo
+├── apps/
+│   ├── bot/                      # Telegram bot app
+│   │   ├── src/
+│   │   │   ├── ai/               # provider, prompts, response, context-assembler, generate
+│   │   │   │   └── tools/        # all tool files
+│   │   │   ├── context/          # image generation (generator.ts, types.ts)
+│   │   │   ├── memory/           # curator.ts (tightly coupled to AI layer)
+│   │   │   ├── platform/telegram/
+│   │   │   ├── services/         # google-auth, gmail, google-calendar
+│   │   │   └── scheduler/        # proactive, reminders
+│   │   ├── vault/                # personality card (data)
+│   │   └── context/              # reference images/settings (data)
+│   └── dashboard/                # Next.js placeholder
+├── packages/
+│   ├── typescript-config/        # shared tsconfig bases (JSON only)
+│   ├── eslint-config/            # shared ESLint flat config
+│   ├── shared/                   # config, logger, markdown, types
+│   ├── db/                       # MongoDB connection, models, GridFS
+│   └── memory/                   # engine, embedding, vault
+├── scripts/                      # migrate, seed, auth
+└── docs/
+```
+
+### Dependency Graph
+
+```
+@mashiro/typescript-config  ← leaf (no deps)
+@mashiro/eslint-config      ← leaf
+       ↑
+@mashiro/shared  ← config, logger, markdown, types (dotenv, zod, pino, gray-matter)
+       ↑
+@mashiro/db      ← MongoDB connection, models, GridFS (mongoose)
+       ↑
+@mashiro/memory  ← engine, embedding, vault (@ai-sdk/google, ai)
+       ↑
+@mashiro/bot     ← AI layer, tools, platform, schedulers
+@mashiro/dashboard ← Next.js (placeholder)
+```
+
+## Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    Telegram Bot                      │
-│              (Grammy / bot.ts)                        │
+│          (Grammy / apps/bot/src/platform/)           │
 │         allowlist ─► rate limit ─► handlers          │
 └──────────────┬──────────────────────┬────────────────┘
                │ IncomingMessage      │ sendText/sendPhoto
                ▼                      ▲
 ┌──────────────────────────────────────────────────────┐
 │                   AI Layer                            │
+│              (apps/bot/src/ai/)                       │
 │                                                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ │
 │  │   generate    │  │   context    │  │  response   │ │
@@ -35,7 +81,7 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
     ▼            ▼
 ┌────────┐  ┌────────────┐
 │ Memory │  │  Database   │
-│ Vault  │  │  (MongoDB)  │
+│ Vault  │  │  (MongoDB)  │    ← packages/memory + packages/db
 │ (.md)  │  │             │
 │        │  │ Conversation│
 │ person │  │ Scheduler   │
@@ -47,7 +93,7 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
     └─────┬──────┘
           │
 ┌─────────────────────────┐
-│    Memory Engine         │
+│    Memory Engine         │    ← packages/memory
 │                          │
 │ embedding (Google Gemini)│
 │  ─► cosine similarity    │
@@ -58,7 +104,7 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
 └──────────────────────────┘
 
 ┌──────────────────────────┐
-│   Proactive Scheduler    │
+│   Proactive Scheduler    │    ← apps/bot/src/scheduler/
 │                          │
 │ timers ─► idle check     │
 │        ─► active hours   │
@@ -78,7 +124,7 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
 └──────────────────────────┘
 
 ┌──────────────────────────┐
-│   Google Services        │
+│   Google Services        │    ← apps/bot/src/services/
 │                          │
 │ OAuth2 singleton         │
 │  ─► Gmail (read-only)    │
@@ -87,7 +133,7 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
 └──────────────────────────┘
 
 ┌──────────────────────────┐
-│   Image Generation       │
+│   Image Generation       │    ← apps/bot/src/context/
 │                          │
 │ reference loader         │
 │  ─► outfit/setting pick  │
@@ -136,7 +182,7 @@ Mashiro is a layered conversational AI system. Messages flow from a platform ada
        │
 12. appendMessage(conversation, assistantMsg with toolCalls)
        │
-13. sendSegmented(adapter, chatId, text) — split on \n\n, typing delays
+13. sendSegmented(adapter, chatId, text) — split on \n\n
        │   (skipped if sendPhoto already delivered a photo)
        │
 14. resetTimer(chatId) — reschedule proactive message
@@ -157,39 +203,46 @@ The scheduler sends unprompted messages to maintain engagement:
 
 When firing, the scheduler uses `getOrCreateSession` to get the active session, assembles a proactive system prompt with sessionId, and injects a synthetic nudge if no recent user message exists.
 
-## Module Boundaries
+## Package Boundaries
 
-| Directory | Purpose | Key Files |
+| Package | Purpose | Key Exports |
 |---|---|---|
-| `src/ai/` | LLM integration, prompt assembly, tool orchestration | `generate.ts`, `context-assembler.ts`, `prompts.ts`, `provider.ts`, `response.ts` |
-| `src/ai/tools/` | Tool implementations available to the LLM | `index.ts`, `remember-fact.ts`, `note-to-self.ts`, `read-memory.ts`, `search-memory.ts`, `list-memories.ts`, `curate-memory.ts`, `send-photo.ts`, `check-email.ts`, `manage-calendar.ts`, `manage-reminders.ts` |
-| `src/platform/` | Platform-agnostic message types | `types.ts` |
-| `src/platform/telegram/` | Telegram adapter + bot setup | `adapter.ts`, `bot.ts` |
-| `src/memory/` | Vault file operations, curation pipeline, Memory Engine | `vault.ts`, `curator.ts`, `engine.ts`, `embedding.ts`, `types.ts` |
-| `src/db/` | MongoDB connection, data models, GridFS image store | `connection.ts`, `gridfs.ts`, `models/conversation.ts`, `models/scheduler-state.ts`, `models/memory.ts`, `models/reminder.ts` |
-| `src/services/` | External service integrations (Google OAuth, Gmail, Calendar) | `google-auth.ts`, `gmail.ts`, `google-calendar.ts` |
-| `src/scheduler/` | Proactive message & reminder scheduling | `proactive.ts`, `reminders.ts` |
-| `src/context/` | Image reference loading + generation | `generator.ts`, `types.ts` |
-| `src/utils/` | Logger, markdown/frontmatter parsing | `logger.ts`, `markdown.ts` |
-| `src/config.ts` | Zod-validated environment config | — |
-| `src/index.ts` | App entry point, boot sequence | — |
-| `vault/` | Personality card (hand-edited) | `personality/card.md` |
-| `context/` | Image generation assets (references, settings) | `references/face/`, `references/body/`, `references/outfits/`, `settings/` |
+| `@mashiro/shared` | Config, logging, markdown, platform types | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, `VaultFile` |
+| `@mashiro/db` | MongoDB connection, all models, GridFS | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `readImage`, `writeImage`, all model CRUD functions |
+| `@mashiro/memory` | Memory engine, embeddings, vault files | `remember`, `recall`, `forget`, `readVaultFile`, `writeVaultFile`, `generateEmbedding`, episode/fact/milestone retrieval |
+| `@mashiro/bot` | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages |
+| `@mashiro/dashboard` | Next.js dashboard (placeholder) | — |
+
+### Bot-Internal Modules
+
+| Directory | Purpose |
+|---|---|
+| `apps/bot/src/ai/` | LLM integration, prompt assembly, tool orchestration |
+| `apps/bot/src/ai/tools/` | Tool implementations available to the LLM |
+| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup |
+| `apps/bot/src/memory/` | Curator (tightly coupled to AI layer) |
+| `apps/bot/src/services/` | Google OAuth, Gmail, Calendar |
+| `apps/bot/src/scheduler/` | Proactive + reminder scheduling |
+| `apps/bot/src/context/` | Image reference loading + generation |
 
 ## Boot Sequence
 
-1. Connect to MongoDB
-2. Load image context (reference images + setting descriptions)
-3. Create Telegram bot with handlers (allowlist → rate limit → message handlers)
-4. Start bot (long-polling)
-5. Start proactive scheduler (restore timers from DB, start daily cleanup)
-6. Start reminder scheduler (polls every 60s, fires pending reminders)
+1. Validate TELEGRAM_BOT_TOKEN
+2. Connect to MongoDB
+3. Load image context (reference images + setting descriptions)
+4. Create Telegram bot with handlers (allowlist → rate limit → message handlers)
+5. Start bot (long-polling)
+6. Start proactive scheduler (restore timers from DB, start daily cleanup)
+7. Start reminder scheduler (polls every 60s, fires pending reminders)
 
 Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, disconnect DB.
 
 ## Key Design Decisions
 
+- **Monorepo with compiled packages** — npm workspaces + Turborepo + tsup. Libraries build to `dist/` for caching. No TypeScript project references; Turborepo handles ordering via `^build`.
 - **Session-based conversations** — sessions close after 1 hour of inactivity, replacing daily scoping. Eliminates cross-midnight amnesia.
+- **Curator stays in bot** — `curator.ts` imports `getModel` and `generateObject` from the AI layer. Dashboard only reads data, never curates.
+- **Config stays unified** — single config module in `@mashiro/shared`. Bot-specific vars (TELEGRAM_BOT_TOKEN) are optional at schema level, validated at bot startup.
 - **Non-blocking curation** — curation runs as fire-and-forget with per-chat mutex, so users don't wait for LLM calls
 - **40-message context window** — overflow is summarized into MongoDB episodes, not lost
 - **Separated episode types** — daily episodes, weekly merges, and monthly consolidations are queried separately to prevent conflation
@@ -202,4 +255,4 @@ Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop p
 - **Semantic memory** — Google Gemini embeddings + cosine similarity for meaning-based retrieval with 200-candidate cap
 - **Smart fact management** — ADD/UPDATE/DELETE operations prevent stale fact accumulation
 - **Platform abstraction** — `PlatformAdapter` interface enables future platform support
-- **Segmented sending** — responses split on `\n\n` with typing delays for natural pacing
+- **Segmented sending** — responses split on `\n\n` for natural pacing

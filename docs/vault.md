@@ -5,10 +5,12 @@ The vault is a file-based Markdown store reserved for the **personality card onl
 ## Directory Layout
 
 ```
-vault/
+apps/bot/vault/
 └── personality/
     └── card.md          # Character definition (loaded at startup)
 ```
+
+`VAULT_PATH` defaults to `./vault` (relative to cwd, which is `apps/bot/` when running via turbo).
 
 ## Frontmatter Schema
 
@@ -28,7 +30,7 @@ Body contains the full character definition: appearance, identity, personality t
 
 ## Vault Operations
 
-Implemented in `src/memory/vault.ts`:
+Implemented in `packages/memory/src/vault.ts`:
 
 | Function | Description |
 |---|---|
@@ -41,11 +43,11 @@ The LLM accesses the personality card through the `readMemory` tool (with `path`
 
 ## Memory Engine
 
-All dynamic memory operations (facts, episodes, milestones, working memory) are handled by the Memory Engine (`src/memory/engine.ts`) backed by MongoDB. See [memory-management.md](memory-management.md) for full details.
+All dynamic memory operations (facts, episodes, milestones, working memory) are handled by the Memory Engine (`packages/memory/src/engine.ts`) backed by MongoDB. See [memory-management.md](memory-management.md) for full details.
 
 ### Embedding Service
 
-Implemented in `src/memory/embedding.ts`. Uses Google Gemini `gemini-embedding-001` (3072 dimensions) via `@ai-sdk/google`.
+Implemented in `packages/memory/src/embedding.ts`. Uses Google Gemini `gemini-embedding-001` (3072 dimensions) via `@ai-sdk/google`.
 
 | Function | Description |
 |---|---|
@@ -55,7 +57,7 @@ Implemented in `src/memory/embedding.ts`. Uses Google Gemini `gemini-embedding-0
 
 ### Memory Model
 
-Defined in `src/db/models/memory.ts`. Each document stores:
+Defined in `packages/db/src/models/memory.ts`. Each document stores:
 
 | Field | Type | Description |
 |---|---|---|
@@ -76,7 +78,7 @@ Defined in `src/db/models/memory.ts`. Each document stores:
 
 ### Engine API
 
-Implemented in `src/memory/engine.ts`:
+Implemented in `packages/memory/src/engine.ts`:
 
 | Function | Description |
 |---|---|
@@ -101,7 +103,7 @@ Implemented in `src/memory/engine.ts`:
 
 ## Curation Pipeline
 
-Implemented in `src/memory/curator.ts`. The pipeline is **non-blocking** — curation runs as fire-and-forget with per-chat mutex protection.
+Implemented in `apps/bot/src/memory/curator.ts`. The pipeline is **non-blocking** — curation runs as fire-and-forget with per-chat mutex protection.
 
 ### Overflow curation
 Triggered when a conversation reaches 80 messages (40-message context window + 40-message curation batch).

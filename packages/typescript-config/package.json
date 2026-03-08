@@ -1,0 +1,10 @@
+{
+  "name": "@mashiro/typescript-config",
+  "private": true,
+  "exports": {
+    "./base.json": "./base.json",
+    "./library.json": "./library.json",
+    "./bot.json": "./bot.json",
+    "./nextjs.json": "./nextjs.json"
+  }
+}

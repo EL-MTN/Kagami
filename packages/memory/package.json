@@ -1,0 +1,31 @@
+{
+  "name": "@mashiro/memory",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix"
+  },
+  "dependencies": {
+    "@mashiro/shared": "*",
+    "@mashiro/db": "*",
+    "@ai-sdk/google": "^3.0.30",
+    "ai": "^4.3.0"
+  },
+  "devDependencies": {
+    "@mashiro/typescript-config": "*",
+    "@mashiro/eslint-config": "*",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.0.1",
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0"
+  }
+}

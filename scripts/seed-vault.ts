@@ -1,12 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const VAULT_PATH = "./vault";
+const VAULT_PATH = "./apps/bot/vault";
 
-const structure = [
-  "personality",
-  "memories",
-];
+const structure = ["personality"];
 
 async function seed() {
   for (const dir of structure) {

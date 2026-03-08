@@ -1,0 +1,8 @@
+{
+  "extends": "@mashiro/typescript-config/bot.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"]
+}

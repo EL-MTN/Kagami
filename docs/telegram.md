@@ -4,7 +4,7 @@ The platform layer abstracts messaging services behind a common interface. Curre
 
 ## PlatformAdapter Interface
 
-Defined in `src/platform/types.ts`:
+Defined in `packages/shared/src/types.ts`:
 
 ```typescript
 interface PlatformAdapter {
@@ -33,7 +33,7 @@ interface IncomingMessage {
 
 ## TelegramAdapter
 
-Implemented in `src/platform/telegram/adapter.ts`. Singleton accessed via `getAdapter()`.
+Implemented in `apps/bot/src/platform/telegram/adapter.ts`. Singleton accessed via `getAdapter()`.
 
 ### Methods
 
@@ -54,7 +54,7 @@ Implemented in `src/platform/telegram/adapter.ts`. Singleton accessed via `getAd
 
 ## Bot Setup
 
-Implemented in `src/platform/telegram/bot.ts`.
+Implemented in `apps/bot/src/platform/telegram/bot.ts`.
 
 ### Handler Registration
 
@@ -102,18 +102,18 @@ Both handlers catch errors and reply with a fallback message so the bot doesn't 
 
 To add a new platform (e.g., Discord):
 
-1. **Create adapter** at `src/platform/discord/adapter.ts`
-   - Implement the `PlatformAdapter` interface
+1. **Create adapter** at `apps/bot/src/platform/discord/adapter.ts`
+   - Implement the `PlatformAdapter` interface (from `@mashiro/shared`)
    - Handle message normalization to `IncomingMessage`
 
-2. **Create bot setup** at `src/platform/discord/bot.ts`
+2. **Create bot setup** at `apps/bot/src/platform/discord/bot.ts`
    - Register event handlers for the platform's SDK
    - Apply rate limiting and allowlist logic
-   - Call `handleMessage()` from `src/ai/generate.ts`
+   - Call `handleMessage()` from `apps/bot/src/ai/generate.ts`
    - Call `resetTimer()` to integrate with the proactive scheduler
 
-3. **Wire into entry point** (`src/index.ts`)
+3. **Wire into entry point** (`apps/bot/src/index.ts`)
    - Initialize the new adapter alongside or instead of Telegram
    - Pass it to the proactive scheduler
 
-The AI layer (`src/ai/`) is platform-agnostic — it only uses `PlatformAdapter` and `IncomingMessage`, so no changes are needed there.
+The AI layer (`apps/bot/src/ai/`) is platform-agnostic — it only uses `PlatformAdapter` and `IncomingMessage` from `@mashiro/shared`, so no changes are needed there.

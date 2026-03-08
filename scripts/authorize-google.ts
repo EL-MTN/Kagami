@@ -1,14 +1,21 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ path: "apps/bot/.env" });
+
 import { google } from "googleapis";
 import * as readline from "readline";
 
-const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/calendar"];
+const SCOPES = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/calendar",
+];
 
 const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
 const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
 
 if (!clientId || !clientSecret) {
-  console.error("Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET environment variables first.");
+  console.error(
+    "Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET environment variables first.",
+  );
   process.exit(1);
 }
 
