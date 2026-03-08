@@ -44,7 +44,7 @@ export function wasPhotoSent(steps: Step[]): boolean {
 }
 
 /**
- * Send text split on double-newlines with simulated typing delays (~100 WPM).
+ * Send text split on double-newlines as separate message bubbles.
  */
 export async function sendSegmented(
   adapter: PlatformAdapter,
@@ -52,14 +52,8 @@ export async function sendSegmented(
   text: string,
 ): Promise<void> {
   const segments = text.split("\n\n").filter((s) => s.trim());
-  for (let i = 0; i < segments.length; i++) {
-    if (i > 0) {
-      const words = segments[i].split(/\s+/).length;
-      const baseDelay = (words / 100) * 60_000; // ~100 WPM
-      const delay = Math.min(Math.max(baseDelay * (0.8 + Math.random() * 0.4), 500), 4000);
-      await new Promise((r) => setTimeout(r, delay));
-    }
-    await adapter.sendText(chatId, segments[i]);
+  for (const segment of segments) {
+    await adapter.sendText(chatId, segment);
   }
 }
 
