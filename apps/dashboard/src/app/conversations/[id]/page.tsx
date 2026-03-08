@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "@/components/message-bubble";
@@ -20,12 +21,11 @@ export default async function ConversationDetailPage({
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Link
-          href="/conversations"
-          className="rounded-md p-1.5 hover:bg-accent"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
+        <Button variant="ghost" size="icon-sm" asChild>
+          <Link href="/conversations">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+        </Button>
         <h2 className="text-2xl font-bold">Conversation</h2>
       </div>
 

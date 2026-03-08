@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -23,12 +25,11 @@ export default async function RemindersPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Reminders</h2>
-        <a
-          href={`/reminders?showFired=${!showFired}`}
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          {showFired ? "Hide fired" : "Show fired"}
-        </a>
+        <Button variant="ghost" size="sm" asChild>
+          <Link href={`/reminders?showFired=${!showFired}`}>
+            {showFired ? "Hide fired" : "Show fired"}
+          </Link>
+        </Button>
       </div>
 
       <div className="rounded-lg border border-border">

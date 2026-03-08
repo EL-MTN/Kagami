@@ -11,10 +11,10 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const isTool = message.role === "tool";
 
   return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("flex min-w-0", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[75%] rounded-lg px-4 py-2",
+          "min-w-0 max-w-[75%] rounded-lg px-4 py-2",
           isUser && "bg-primary text-primary-foreground",
           !isUser && !isSystem && !isTool && "bg-card border border-border",
           isSystem && "bg-muted text-muted-foreground text-xs italic",
@@ -44,15 +44,27 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         {message.toolCalls && message.toolCalls.length > 0 && (
           <div className="mt-2 space-y-1 border-t border-border/50 pt-2">
             {message.toolCalls.map((tc, i) => (
-              <div key={i} className="rounded bg-muted/50 p-2 text-xs font-mono">
-                <span className="font-semibold text-primary">{tc.toolName}</span>
-                <span className="ml-1 text-muted-foreground">
-                  ({Object.keys(tc.args).join(", ")})
-                </span>
-                {tc.result && (
-                  <p className="mt-1 truncate text-muted-foreground">{tc.result}</p>
-                )}
-              </div>
+              <details key={i} className="rounded bg-muted/50 text-xs font-mono">
+                <summary className="cursor-pointer p-2 select-none">
+                  <span className="font-semibold text-primary">{tc.toolName}</span>
+                  <span className="ml-1 text-muted-foreground">
+                    ({Object.keys(tc.args).join(", ")})
+                  </span>
+                </summary>
+                <div className="border-t border-border/50 p-2 space-y-2">
+                  <pre className="whitespace-pre-wrap break-words text-muted-foreground">
+                    {JSON.stringify(tc.args, null, 2)}
+                  </pre>
+                  {tc.result && (
+                    <>
+                      <div className="text-muted-foreground/70">Result:</div>
+                      <pre className="whitespace-pre-wrap break-words text-muted-foreground">
+                        {tc.result}
+                      </pre>
+                    </>
+                  )}
+                </div>
+              </details>
             ))}
           </div>
         )}

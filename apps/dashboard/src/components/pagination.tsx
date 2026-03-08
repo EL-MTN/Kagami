@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 interface PaginationProps {
   currentPage: number;
@@ -18,16 +19,13 @@ export function Pagination({ currentPage, totalPages, basePath, searchParams = {
   return (
     <div className="flex items-center justify-center gap-2 pt-4">
       {currentPage > 1 ? (
-        <Link
-          href={buildHref(currentPage - 1)}
-          className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
-        >
-          Previous
-        </Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link href={buildHref(currentPage - 1)}>Previous</Link>
+        </Button>
       ) : (
-        <span className="rounded-md border border-border/50 px-3 py-1.5 text-sm text-muted-foreground">
+        <Button variant="outline" size="sm" disabled>
           Previous
-        </span>
+        </Button>
       )}
 
       <span className="text-sm text-muted-foreground">
@@ -35,16 +33,13 @@ export function Pagination({ currentPage, totalPages, basePath, searchParams = {
       </span>
 
       {currentPage < totalPages ? (
-        <Link
-          href={buildHref(currentPage + 1)}
-          className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
-        >
-          Next
-        </Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link href={buildHref(currentPage + 1)}>Next</Link>
+        </Button>
       ) : (
-        <span className="rounded-md border border-border/50 px-3 py-1.5 text-sm text-muted-foreground">
+        <Button variant="outline" size="sm" disabled>
           Next
-        </span>
+        </Button>
       )}
     </div>
   );

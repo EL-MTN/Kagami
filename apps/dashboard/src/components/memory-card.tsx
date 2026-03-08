@@ -1,17 +1,15 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 import type { MemoryListItem } from "@/lib/queries/memories";
 
 interface MemoryCardProps {
   memory: MemoryListItem;
 }
 
-function importanceColor(importance?: number): string {
-  if (!importance) return "bg-muted text-muted-foreground";
-  if (importance >= 8) return "bg-red-500/20 text-red-400";
-  if (importance >= 5) return "bg-yellow-500/20 text-yellow-400";
-  return "bg-green-500/20 text-green-400";
+function importanceVariant(importance?: number): "default" | "secondary" | "destructive" {
+  if (!importance || importance < 5) return "secondary";
+  if (importance >= 8) return "destructive";
+  return "default";
 }
 
 export function MemoryCard({ memory }: MemoryCardProps) {
@@ -21,14 +19,9 @@ export function MemoryCard({ memory }: MemoryCardProps) {
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline">{memory.type}</Badge>
           {memory.importance != null && (
-            <span
-              className={cn(
-                "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                importanceColor(memory.importance),
-              )}
-            >
+            <Badge variant={importanceVariant(memory.importance)}>
               {memory.importance}/10
-            </span>
+            </Badge>
           )}
         </div>
         <span className="shrink-0 text-xs text-muted-foreground">
