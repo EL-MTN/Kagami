@@ -8,7 +8,13 @@ export function createCheckEmailTool() {
     description:
       "Check Goshujin-sama's email. Lists unread emails or retrieves a specific email by ID.",
     parameters: z.object({
-      maxResults: z.number().default(10).describe("Maximum number of unread emails to fetch"),
+      maxResults: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .default(10)
+        .describe("Maximum number of unread emails to fetch (1-100)"),
       emailId: z.string().optional().describe("Specific email ID to retrieve full details for"),
     }),
     execute: async ({ maxResults, emailId }) => {
