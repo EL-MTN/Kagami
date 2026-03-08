@@ -9,17 +9,8 @@
       "cache": false,
       "persistent": true
     },
-    "transit": {
-      "dependsOn": ["^transit"]
-    },
-    "typecheck": {
-      "dependsOn": ["transit"]
-    },
-    "lint": {
-      "dependsOn": ["transit"]
-    },
-    "lint:fix": {
-      "dependsOn": ["transit"]
-    }
+    "typecheck": {},
+    "lint": {},
+    "lint:fix": {}
   }
 }

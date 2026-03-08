@@ -38,7 +38,7 @@ function shutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down...`);
   stopProactiveScheduler?.();
   stopReminderScheduler?.();
-  disconnectDB().finally(() => process.exit(0));
+  void disconnectDB().finally(() => process.exit(0));
 }
 
 process.on("SIGINT", () => shutdown("SIGINT"));

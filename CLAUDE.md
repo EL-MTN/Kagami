@@ -23,7 +23,7 @@ mashiro/
 └── docs/
 ```
 
-**Stack**: npm workspaces + Turborepo + tsup (compiled packages)
+**Stack**: npm workspaces + Turborepo (internal packages pattern — libraries export raw `.ts` source, only apps build)
 
 ## Commands
 
@@ -66,7 +66,7 @@ npm run migrate:memory # Memory system migration
 - **Platform-agnostic types** — `IncomingMessage`/`PlatformAdapter` in `@mashiro/shared`
 - **Cross-package imports** — use `@mashiro/shared`, `@mashiro/db`, `@mashiro/memory` (not relative paths)
 - **Within-package imports** — use relative paths with `.js` extension
-- **Compiled packages** — libraries build to `dist/` via tsup; Turborepo handles build ordering
+- **Internal packages** — libraries export raw `.ts` source (`exports: "./src/index.ts"`); only `bot` and `dashboard` have build steps
 - **`.env` location** — `apps/bot/.env` (not root)
 
 ## Doc Maintenance

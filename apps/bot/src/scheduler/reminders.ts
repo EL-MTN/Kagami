@@ -29,9 +29,9 @@ async function firePendingReminders(adapter: PlatformAdapter): Promise<void> {
 
 export function startReminderScheduler(adapter: PlatformAdapter): () => void {
   // Startup recovery: immediately fire any reminders that were due while down
-  firePendingReminders(adapter);
+  void firePendingReminders(adapter);
 
-  interval = setInterval(() => firePendingReminders(adapter), POLL_INTERVAL_MS);
+  interval = setInterval(() => void firePendingReminders(adapter), POLL_INTERVAL_MS);
   interval.unref();
 
   logger.info("Reminder scheduler started");

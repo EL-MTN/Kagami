@@ -70,7 +70,7 @@ export async function handleMessage(
     {
       systemPromptLength: systemPrompt.length,
       messageCount: messages.length,
-      lastMessage: messages.at(-1)?.content?.toString().slice(0, 80),
+      lastMessage: JSON.stringify(messages.at(-1)?.content)?.slice(0, 80),
     },
     "Context assembled",
   );

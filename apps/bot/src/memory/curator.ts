@@ -20,27 +20,28 @@ const CURATION_BATCH = 40;
 const curationLocks = new Map<string, Promise<void>>();
 
 function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string {
+  const a = tc.args as Record<string, string>;
   switch (tc.toolName) {
     case "searchMemory":
-      return `searched memories for "${tc.args.query ?? ""}"`;
+      return `searched memories for "${a.query ?? ""}"`;
     case "readMemory":
-      return `read ${tc.args.path ?? "a memory file"}`;
+      return `read ${a.path ?? "a memory file"}`;
     case "rememberFact":
-      return `remembered: ${tc.args.content ?? "something"}`;
+      return `remembered: ${a.content ?? "something"}`;
     case "noteToSelf":
-      return `noted: ${tc.args.note ?? "something"}`;
+      return `noted: ${a.note ?? "something"}`;
     case "listMemories":
-      return `browsed her ${tc.args.type ?? ""} memories`;
+      return `browsed her ${a.type ?? ""} memories`;
     case "curateMemory":
       return "organized her memories";
     case "sendPhoto":
-      return `sent a photo: ${tc.args.description ?? ""}`;
+      return `sent a photo: ${a.description ?? ""}`;
     case "checkEmail":
       return "checked Goshujin-sama's email";
     case "manageCalendar":
-      return `managed calendar (${tc.args.action ?? "unknown"})`;
+      return `managed calendar (${a.action ?? "unknown"})`;
     case "manageReminders":
-      return `managed reminders (${tc.args.action ?? "unknown"})`;
+      return `managed reminders (${a.action ?? "unknown"})`;
     default:
       return `used ${tc.toolName}`;
   }
@@ -260,7 +261,7 @@ async function updateUserFacts(summary: string): Promise<void> {
 
   const factsContext =
     relevantFacts.length > 0
-      ? relevantFacts.map((f) => `[id:${f._id}] ${f.content}`).join("\n")
+      ? relevantFacts.map((f) => `[id:${String(f._id)}] ${f.content}`).join("\n")
       : "(no existing facts)";
 
   const totalNote =

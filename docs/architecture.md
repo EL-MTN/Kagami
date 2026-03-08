@@ -239,7 +239,7 @@ Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop p
 
 ## Key Design Decisions
 
-- **Monorepo with compiled packages** — npm workspaces + Turborepo + tsup. Libraries build to `dist/` for caching. No TypeScript project references; Turborepo handles ordering via `^build`.
+- **Internal packages pattern** — npm workspaces + Turborepo. Library packages (`shared`, `db`, `memory`) export raw TypeScript source via `exports: { ".": "./src/index.ts" }`. No build step for libraries; consumers resolve source directly. Only `bot` and `dashboard` have build scripts (tsup and Next.js respectively). The bot's tsup config uses `noExternal: [/^@mashiro\//]` to inline all workspace packages into a single bundle.
 - **Session-based conversations** — sessions close after 1 hour of inactivity, replacing daily scoping. Eliminates cross-midnight amnesia.
 - **Curator stays in bot** — `curator.ts` imports `getModel` and `generateObject` from the AI layer. Dashboard only reads data, never curates.
 - **Config stays unified** — single config module in `@mashiro/shared`. Bot-specific vars (TELEGRAM_BOT_TOKEN) are optional at schema level, validated at bot startup.

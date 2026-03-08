@@ -73,7 +73,7 @@ function extractPlainText(payload: {
 
   if (payload.parts) {
     for (const part of payload.parts) {
-      const text = extractPlainText(part as typeof payload);
+      const text = extractPlainText(part);
       if (text) return text;
     }
   }

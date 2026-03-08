@@ -1,8 +1,6 @@
 {
   "extends": "./base.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src",
     "noEmit": true
   }
 }
