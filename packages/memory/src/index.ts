@@ -12,6 +12,7 @@ export {
   getAllFacts,
   getRecentMilestones,
   getActiveFollowUps,
+  getActiveFollowUpsWithIds,
   resolveFollowUp,
   setWorkingMemory,
   getWorkingMemories,

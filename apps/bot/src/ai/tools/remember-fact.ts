@@ -25,6 +25,17 @@ export const rememberFact = tool({
   execute: async ({ content, type, importance }) => {
     logger.info({ type, importance, contentPreview: content.slice(0, 80) }, "Tool: rememberFact");
 
+    // Check for duplicate facts
+    const existing = await engine.recall(content, { type, limit: 1, minScore: 0.85 });
+    if (existing.length > 0) {
+      logger.info({ existingId: existing[0].id }, "Tool: rememberFact duplicate detected");
+      return {
+        success: false,
+        reason: "Similar fact already exists",
+        existing: existing[0].content,
+      };
+    }
+
     const memory = await engine.remember(content, type, "tool", { importance });
 
     return {

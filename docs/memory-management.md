@@ -4,13 +4,13 @@
 
 Mashiro's memory operates in five tiers:
 
-| Tier | Storage | Scope | What's in it |
-|------|---------|-------|-------------|
-| **Hot** | MongoDB `conversations` | Active session messages | Raw messages, images, tool calls |
-| **Working** | MongoDB `memories` (type: `"working"`) | Session-scoped, 24h TTL | Temporary notes (auto-deleted by MongoDB TTL index) |
-| **Warm** | MongoDB `memories` collection | All curated memories | Embeddings, structured metadata, facts/episodes/milestones |
-| **Archive** | MongoDB `memories` (with `archivedAt`) | Soft-archived originals | Preserved after merge; excluded from search/context |
-| **Static** | `vault/personality/card.md` | Hand-edited | Character definition only |
+| Tier        | Storage                                | Scope                   | What's in it                                               |
+| ----------- | -------------------------------------- | ----------------------- | ---------------------------------------------------------- |
+| **Hot**     | MongoDB `conversations`                | Active session messages | Raw messages, images, tool calls                           |
+| **Working** | MongoDB `memories` (type: `"working"`) | Session-scoped, 24h TTL | Temporary notes (auto-deleted by MongoDB TTL index)        |
+| **Warm**    | MongoDB `memories` collection          | All curated memories    | Embeddings, structured metadata, facts/episodes/milestones |
+| **Archive** | MongoDB `memories` (with `archivedAt`) | Soft-archived originals | Preserved after merge; excluded from search/context        |
+| **Static**  | `vault/personality/card.md`            | Hand-edited             | Character definition only                                  |
 
 The personality card (`vault/personality/card.md`) is the only vault file — all facts, milestones, and episodes live exclusively in MongoDB.
 
@@ -63,6 +63,7 @@ generateText() with tools
 ### What the LLM Sees at Generation Time
 
 **Always (system prompt):**
+
 - Full character definition (personality/card.md)
 - Top 30 facts about the user (from MongoDB, sorted by importance)
 - Recent milestones (last 5, from MongoDB)
@@ -76,9 +77,11 @@ generateText() with tools
 - Response format instructions
 
 **Always (message history):**
+
 - Up to 40 messages from the active session, including reconstructed tool calls
 
 **On-demand (via tools, within 5 maxSteps):**
+
 - Semantic search results with optional type filter (searchMemory)
 - Memory discovery by type/date, excluding archived (listMemories)
 - Specific vault file or memory by ID (readMemory)
@@ -99,6 +102,7 @@ This eliminates "cross-midnight amnesia" — sessions naturally span day boundar
 ### Memory Write Paths
 
 **1. Automatic Curation (batch-triggered, non-blocking)**
+
 - Fires as fire-and-forget when 40+ messages overflow beyond the 40-message context window
 - Per-chat mutex prevents concurrent curation runs
 - Formats overflow as rich transcript (images as `[sent a photo]`, tool calls as human-readable descriptions)
@@ -108,20 +112,24 @@ This eliminates "cross-midnight amnesia" — sessions naturally span day boundar
 - Trims MongoDB conversation to 40 messages
 
 **2. Session-end curation (background)**
+
 - Triggered when `getOrCreateSession` detects and closes a stale session
 - Short sessions (< 5 messages) → lightweight summary with importance 3
 - Longer sessions → full summarization + fact extraction
 
 **3. LLM-triggered rememberFact tool (direct-to-MongoDB)**
+
 - Stores facts or milestones directly in the Memory collection
 - Parameters: content, type (fact/milestone), importance (1-10)
 - No vault involvement
 
 **4. LLM-triggered noteToSelf tool (working memory)**
+
 - Stores session-scoped temporary notes
-- Auto-expires after 21 hour (MongoDB TTL index)
+- Auto-expires after 24 hours (MongoDB TTL index)
 
 **5. Weekly deep curation (non-destructive merge)**
+
 - Triggers when 4+ curation episodes are older than 7 days
 - Fires from proactive scheduler only (decoupled from curation)
 - LLM compresses all old dailies into single weekly summary
@@ -129,6 +137,7 @@ This eliminates "cross-midnight amnesia" — sessions naturally span day boundar
 - Original daily episodes soft-archived (`metadata.archivedAt` set)
 
 **6. Monthly consolidation (non-destructive merge)**
+
 - Triggers when 3+ weekly-merge episodes are older than 30 days
 - Fires from proactive scheduler only
 - LLM extracts relationship patterns and long-term observations
@@ -138,6 +147,7 @@ This eliminates "cross-midnight amnesia" — sessions naturally span day boundar
 ### Memory Read Paths
 
 **1. System prompt assembly (automatic, every generation)**
+
 - Loads top 30 facts from MongoDB (sorted by importance desc)
 - Loads last 5 milestones from MongoDB
 - Loads separated episode types: 3 daily + 2 weekly
@@ -146,10 +156,12 @@ This eliminates "cross-midnight amnesia" — sessions naturally span day boundar
 - Reads personality/card.md from vault
 
 **2. Message history assembly (automatic, every generation)**
+
 - Queries active session's conversation
 - Returns last 40 messages with reconstructed tool-call pairs
 
 **3. searchMemory tool (LLM-initiated, semantic)**
+
 - All search goes through Memory Engine's `recall()` function
 - Tiered search: 90 days first, widens to 365 if insufficient results
 - Composite score: 0.50×relevance + 0.25×recency + 0.15×importance + 0.10×emotional
@@ -158,17 +170,20 @@ This eliminates "cross-midnight amnesia" — sessions naturally span day boundar
 - Optional type filter parameter
 
 **4. listMemories tool (LLM-initiated)**
+
 - Queries Memory collection by type (fact/episode/milestone)
 - Excludes archived memories by default
 - Returns date, preview, importance, and follow-up status
 
 **5. readMemory tool (LLM-initiated)**
+
 - Reads a specific vault file by path (personality card)
 - OR reads a specific memory by ID from MongoDB
 
 ### Archival Model
 
 Merges use soft-archival instead of hard deletion:
+
 - `metadata.archivedAt` — timestamp when archived
 - `metadata.mergedInto` — ObjectId of the merge target
 - Archived memories excluded from all searches and context assembly

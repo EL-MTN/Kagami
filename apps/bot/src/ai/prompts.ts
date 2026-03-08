@@ -1,3 +1,5 @@
+import { config } from "@mashiro/shared";
+
 export const TOOL_USAGE_INSTRUCTIONS = `
 ## Tool Usage Guidelines
 You have access to memory and communication tools. Use them thoughtfully:
@@ -10,7 +12,7 @@ You have access to memory and communication tools. Use them thoughtfully:
 - **curateMemory**: Trigger memory organization. Only use when explicitly asked.
 - **sendPhoto**: Send a photo that matches the current mood or context. Use naturally — don't force it.
 - **checkEmail**: Check Goshujin-sama's unread emails or retrieve a specific email by ID.
-- **sendEmail**: Send an email on behalf of Goshujin-sama. Requires recipient address, subject, and body.
+- **sendEmail**: Send an email on behalf of Goshujin-sama. Requires recipient address, subject, and body. Can reply to a thread using threadId and inReplyTo from checkEmail results.
 - **manageCalendar**: List, create, update, or delete Google Calendar events.
 - **manageReminders**: Create, list, or delete reminders. Compose the reminder message at creation time.
 
@@ -37,9 +39,16 @@ export const DATETIME_CONTEXT = (now: Date): string => {
     hour: "2-digit",
     minute: "2-digit",
     timeZoneName: "short",
+    timeZone: config.TIMEZONE,
   };
   const formatted = now.toLocaleString("en-US", options);
-  const hour = now.getHours();
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      hour12: false,
+      timeZone: config.TIMEZONE,
+    }).format(now),
+  );
 
   let timeOfDay: string;
   if (hour < 6) timeOfDay = "late night";

@@ -10,7 +10,11 @@ Defined in `packages/shared/src/types.ts`:
 interface PlatformAdapter {
   readonly platform: string;
   sendText(chatId: string, text: string): Promise<void>;
-  sendPhoto(chatId: string, photo: { path?: string; fileId?: string }, caption?: string): Promise<string | undefined>;
+  sendPhoto(
+    chatId: string,
+    photo: { path?: string; fileId?: string },
+    caption?: string,
+  ): Promise<string | undefined>;
   sendPhotoBuffer(chatId: string, buffer: Buffer, caption?: string): Promise<string | undefined>;
 }
 ```
@@ -37,13 +41,13 @@ Implemented in `apps/bot/src/platform/telegram/adapter.ts`. Singleton accessed v
 
 ### Methods
 
-| Method | Description |
-|---|---|
-| `normalize(ctx)` | Extract text message from Grammy context → `IncomingMessage` |
-| `normalizePhoto(ctx)` | Download photo from Telegram API, convert to base64, detect MIME type → `IncomingMessage` |
-| `sendText(chatId, text)` | Send plain text message |
-| `sendPhoto(chatId, photo, caption)` | Send photo by file path or file_id. Returns file_id for caching. |
-| `sendPhotoBuffer(chatId, buffer, caption)` | Send photo from memory buffer. Returns file_id. |
+| Method                                     | Description                                                                               |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `normalize(ctx)`                           | Extract text message from Grammy context → `IncomingMessage`                              |
+| `normalizePhoto(ctx)`                      | Download photo from Telegram API, convert to base64, detect MIME type → `IncomingMessage` |
+| `sendText(chatId, text)`                   | Send plain text message                                                                   |
+| `sendPhoto(chatId, photo, caption)`        | Send photo by file path or file_id. Returns file_id for caching.                          |
+| `sendPhotoBuffer(chatId, buffer, caption)` | Send photo from memory buffer. Returns file_id.                                           |
 
 ### Photo Handling
 
@@ -59,7 +63,7 @@ Implemented in `apps/bot/src/platform/telegram/bot.ts`.
 ### Handler Registration
 
 ```
-createBot(adapter, handleMessage, resetTimer)
+createBot(token)
     │
     ├─ Allowlist middleware (if ALLOWED_USER_IDS configured)
     │
@@ -84,6 +88,7 @@ createBot(adapter, handleMessage, resetTimer)
 ### Allowlist Middleware
 
 When `ALLOWED_USER_IDS` is configured in env:
+
 - Only listed user IDs pass through
 - Unauthorized attempts are logged and silently dropped
 

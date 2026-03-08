@@ -25,6 +25,8 @@ const baseSchema = z.object({
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   GOOGLE_OAUTH_REFRESH_TOKEN: z.string().optional(),
 
+  TIMEZONE: z.string().default("America/New_York"),
+
   VAULT_PATH: z.string().default("./vault"),
   CONTEXT_PATH: z.string().default("./context"),
 

@@ -146,6 +146,9 @@ async function _curateIfNeeded(chatId: string): Promise<void> {
   // Update facts with bounded retrieval
   await updateUserFacts(curation.summary);
 
+  // Resolve follow-ups addressed in this conversation segment
+  await resolveAddressedFollowUps(transcript);
+
   // Trim conversation to keep only recent messages
   await trimConversation(overflow.conversationId, CONTEXT_WINDOW);
 
@@ -240,10 +243,54 @@ async function _curateClosedSession(conversation: IConversation): Promise<void> 
 
   await updateUserFacts(curation.summary);
 
+  // Resolve follow-ups addressed in this session
+  await resolveAddressedFollowUps(transcript);
+
   logger.info(
     { chatId, messageCount: messages.length, sessionId: conversation.sessionId },
     "Closed session fully curated",
   );
+}
+
+async function resolveAddressedFollowUps(transcript: string): Promise<void> {
+  const followUps = await engine.getActiveFollowUpsWithIds();
+  if (followUps.length === 0) return;
+
+  const numbered = followUps.map((fu, i) => `${i + 1}. ${fu.text}`).join("\n");
+
+  try {
+    const { object: result } = await generateObject({
+      model: getModel(ModelTier.Fast),
+      schema: z.object({
+        resolvedIndices: z
+          .array(z.number())
+          .describe("1-based indices of follow-ups that were addressed in the transcript"),
+      }),
+      system: `You are a memory curator. Given a conversation transcript and a list of pending follow-ups, identify which follow-ups have been addressed or resolved by the conversation. Return the 1-based indices of resolved follow-ups. If none were addressed, return an empty array.`,
+      messages: [
+        {
+          role: "user",
+          content: `Pending follow-ups:\n${numbered}\n\nConversation transcript:\n${transcript}`,
+        },
+      ],
+      abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    });
+
+    let resolved = 0;
+    for (const idx of result.resolvedIndices) {
+      const fu = followUps[idx - 1];
+      if (fu) {
+        await engine.resolveFollowUp(fu.memoryId, fu.text);
+        resolved++;
+      }
+    }
+
+    if (resolved > 0) {
+      logger.info({ resolved, total: followUps.length }, "Follow-ups resolved");
+    }
+  } catch (error) {
+    logger.warn({ error }, "Follow-up resolution failed");
+  }
 }
 
 const FactOperationSchema = z.object({

@@ -9,10 +9,12 @@ export interface EmailSummary {
   snippet: string;
   date: string;
   isUnread: boolean;
+  threadId: string;
 }
 
 export interface EmailDetail extends EmailSummary {
   body: string;
+  messageId: string;
 }
 
 function getGmail() {
@@ -55,6 +57,7 @@ export async function listUnreadEmails(maxResults = 10): Promise<EmailSummary[]>
         snippet: detail.data.snippet ?? "",
         date: getHeader(headers, "Date"),
         isUnread: (detail.data.labelIds ?? []).includes("UNREAD"),
+        threadId: detail.data.threadId!,
       };
     }),
   );
@@ -81,6 +84,41 @@ function extractPlainText(payload: {
   return "";
 }
 
+function extractHtmlBody(payload: {
+  mimeType?: string | null;
+  body?: { data?: string | null } | null;
+  parts?: (typeof payload)[] | null;
+}): string {
+  if (payload.mimeType === "text/html" && payload.body?.data) {
+    return Buffer.from(payload.body.data, "base64url").toString("utf-8");
+  }
+
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      const html = extractHtmlBody(part);
+      if (html) return html;
+    }
+  }
+
+  return "";
+}
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export interface SendEmailResult {
   id: string;
   threadId: string;
@@ -90,26 +128,36 @@ export async function sendEmail(
   to: string,
   subject: string,
   body: string,
+  options?: { threadId?: string; inReplyTo?: string },
 ): Promise<SendEmailResult> {
   const gmail = getGmail();
 
   const encodedSubject = `=?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`;
   const encodedBody = Buffer.from(body).toString("base64");
 
-  const messageParts = [
-    "MIME-Version: 1.0",
-    `To: ${to}`,
-    `Subject: ${encodedSubject}`,
+  const messageParts = ["MIME-Version: 1.0", `To: ${to}`, `Subject: ${encodedSubject}`];
+
+  if (options?.inReplyTo) {
+    messageParts.push(`In-Reply-To: ${options.inReplyTo}`);
+    messageParts.push(`References: ${options.inReplyTo}`);
+  }
+
+  messageParts.push(
     "Content-Type: text/plain; charset=utf-8",
     "Content-Transfer-Encoding: base64",
     "",
     encodedBody,
-  ];
+  );
   const raw = Buffer.from(messageParts.join("\r\n")).toString("base64url");
+
+  const requestBody: { raw: string; threadId?: string } = { raw };
+  if (options?.threadId) {
+    requestBody.threadId = options.threadId;
+  }
 
   const res = await gmail.users.messages.send({
     userId: "me",
-    requestBody: { raw },
+    requestBody,
   });
 
   logger.info({ to, subject, id: res.data.id }, "Email sent");
@@ -131,7 +179,11 @@ export async function getEmailById(messageId: string): Promise<EmailDetail | nul
     });
 
     const headers = detail.data.payload?.headers ?? [];
-    const body = extractPlainText(detail.data.payload as Parameters<typeof extractPlainText>[0]);
+    const payload = detail.data.payload as Parameters<typeof extractPlainText>[0];
+    let body = extractPlainText(payload);
+    if (!body) {
+      body = stripHtml(extractHtmlBody(payload));
+    }
 
     return {
       id: detail.data.id!,
@@ -140,6 +192,8 @@ export async function getEmailById(messageId: string): Promise<EmailDetail | nul
       snippet: detail.data.snippet ?? "",
       date: getHeader(headers, "Date"),
       isUnread: (detail.data.labelIds ?? []).includes("UNREAD"),
+      threadId: detail.data.threadId!,
+      messageId: getHeader(headers, "Message-ID"),
       body: body.slice(0, 2000),
     };
   } catch (error) {

@@ -39,22 +39,41 @@ const CLEANUP_INTERVAL = 24 * 60 * 60_000; // 24 hours
 
 let cleanupTimer: NodeJS.Timeout | null = null;
 
+function getHourInTimezone(): number {
+  return Number(
+    new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      hour12: false,
+      timeZone: config.TIMEZONE,
+    }).format(new Date()),
+  );
+}
+
 function isActiveHour(): boolean {
-  const hour = new Date().getHours();
+  const hour = getHourInTimezone();
   return hour >= 9 || hour < 1;
 }
 
 function msUntilNextActive(): number {
   const now = new Date();
-  const target = new Date(now);
-  target.setHours(9, 0, 0, 0);
-  if (target.getTime() <= now.getTime()) {
-    target.setDate(target.getDate() + 1);
-  }
-  return target.getTime() - now.getTime();
+  const tz = config.TIMEZONE;
+
+  const currentHour = Number(
+    new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: tz }).format(now),
+  );
+  const currentMinute = Number(
+    new Intl.DateTimeFormat("en-US", { minute: "numeric", timeZone: tz }).format(now),
+  );
+  const currentSecond = Number(
+    new Intl.DateTimeFormat("en-US", { second: "numeric", timeZone: tz }).format(now),
+  );
+
+  // Calculate ms until 9:00:00 AM in the configured timezone
+  const hoursUntil9 = currentHour < 9 ? 9 - currentHour : 24 - currentHour + 9;
+  return hoursUntil9 * 60 * 60_000 - (currentMinute * 60_000 + currentSecond * 1000);
 }
 
-function scheduleNext(chatId: string, delayMs?: number): void {
+function scheduleNext(chatId: string, userId: string, delayMs?: number): void {
   const existing = timers.get(chatId);
   if (existing) clearTimeout(existing);
 
@@ -68,9 +87,9 @@ function scheduleNext(chatId: string, delayMs?: number): void {
 
   const timeout = setTimeout(() => {
     timers.delete(chatId);
-    fireProactive(chatId).catch((error) => {
+    fireProactive(chatId, userId).catch((error) => {
       logger.error({ error, chatId }, "Proactive fire failed");
-      scheduleNext(chatId);
+      scheduleNext(chatId, userId);
     });
   }, delay);
 
@@ -78,13 +97,13 @@ function scheduleNext(chatId: string, delayMs?: number): void {
   logger.debug({ chatId, nextIn: Math.round(delay / 60_000) + "m" }, "Proactive timer scheduled");
 }
 
-async function fireProactive(chatId: string): Promise<void> {
+async function fireProactive(chatId: string, userId: string): Promise<void> {
   if (!_adapter) return;
 
   // Check active hours — if outside, reschedule to next 9am + jitter
   if (!isActiveHour()) {
     const delay = msUntilNextActive() + randomBetween(0, 30 * 60_000);
-    scheduleNext(chatId, delay);
+    scheduleNext(chatId, userId, delay);
     logger.debug({ chatId }, "Outside active hours, rescheduled to morning");
     return;
   }
@@ -96,7 +115,7 @@ async function fireProactive(chatId: string): Promise<void> {
     if (elapsed < MIN_IDLE) {
       // Reschedule for when idle threshold is met + small jitter
       const delay = MIN_IDLE - elapsed + randomBetween(0, 10 * 60_000);
-      scheduleNext(chatId, delay);
+      scheduleNext(chatId, userId, delay);
       logger.debug(
         { chatId, minsSince: Math.round(elapsed / 60_000) },
         "Chat still active, rescheduled",
@@ -107,13 +126,13 @@ async function fireProactive(chatId: string): Promise<void> {
 
   // Generate and send
   try {
-    await generateProactiveMessage(chatId, _adapter);
+    await generateProactiveMessage(chatId, userId, _adapter);
   } catch (error) {
     logger.error({ error, chatId }, "Failed to send proactive message");
   }
 
   // Schedule next
-  scheduleNext(chatId);
+  scheduleNext(chatId, userId);
 
   // Fire-and-forget memory consolidation checks
   checkWeeklyMerge().catch((error) => {
@@ -124,10 +143,14 @@ async function fireProactive(chatId: string): Promise<void> {
   });
 }
 
-async function generateProactiveMessage(chatId: string, adapter: PlatformAdapter): Promise<void> {
+async function generateProactiveMessage(
+  chatId: string,
+  userId: string,
+  adapter: PlatformAdapter,
+): Promise<void> {
   logger.info({ chatId }, "Generating proactive message");
 
-  const { conversation } = await getOrCreateSession(chatId, chatId, "telegram");
+  const { conversation } = await getOrCreateSession(chatId, userId, "telegram");
   const sessionId = conversation.sessionId;
 
   const [systemPrompt, messages] = await Promise.all([
@@ -196,14 +219,16 @@ async function runDailyCleanup(): Promise<void> {
 
 export function resetTimer(chatId: string): void {
   if (!_adapter) return;
-  scheduleNext(chatId);
+  // For Telegram private chats, chatId equals userId
+  scheduleNext(chatId, chatId);
 }
 
 export function startProactiveScheduler(adapter: PlatformAdapter): () => void {
   _adapter = adapter;
 
-  for (const userId of config.ALLOWED_USER_IDS) {
-    const chatId = String(userId);
+  for (const numericUserId of config.ALLOWED_USER_IDS) {
+    const chatId = String(numericUserId);
+    const userId = String(numericUserId);
 
     // Restore persisted timer, falling back to last-message heuristic
     getNextProactiveAt(chatId)
@@ -212,11 +237,11 @@ export function startProactiveScheduler(adapter: PlatformAdapter): () => void {
           const remaining = savedAt.getTime() - Date.now();
           if (remaining > 0) {
             // Timer hasn't expired yet — resume exactly where we left off
-            scheduleNext(chatId, remaining);
+            scheduleNext(chatId, userId, remaining);
             return;
           }
           // Timer expired while we were down — fire soon but not instantly
-          scheduleNext(chatId, randomBetween(STARTUP_MIN, STARTUP_MAX));
+          scheduleNext(chatId, userId, randomBetween(STARTUP_MIN, STARTUP_MAX));
           return;
         }
 
@@ -230,11 +255,11 @@ export function startProactiveScheduler(adapter: PlatformAdapter): () => void {
           const remaining = randomBetween(MIN_INTERVAL, MAX_INTERVAL) - elapsed;
           delay = remaining > 0 ? remaining : randomBetween(STARTUP_MIN, STARTUP_MAX);
         }
-        scheduleNext(chatId, delay);
+        scheduleNext(chatId, userId, delay);
       })
       .catch((error) => {
         logger.error({ error, chatId }, "Failed to init proactive timer");
-        scheduleNext(chatId, randomBetween(STARTUP_MIN, STARTUP_MAX));
+        scheduleNext(chatId, userId, randomBetween(STARTUP_MIN, STARTUP_MAX));
       });
   }
 

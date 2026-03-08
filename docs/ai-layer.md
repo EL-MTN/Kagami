@@ -91,8 +91,8 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 
 - **Purpose**: Save important facts or milestones directly to MongoDB
 - **Parameters**: `{ content: string, type: "fact" | "milestone", importance: 1-10 }`
-- **Returns**: `{ success: true, memoryId, type, content, importance }`
-- **Behavior**: Stores directly in Memory collection with embedding. No vault involvement.
+- **Returns**: `{ success: true, memoryId, type, content, importance }` or `{ success: false, reason, existing }` if duplicate
+- **Behavior**: Checks for duplicate facts (cosine similarity ≥ 0.85) before saving. If a similar fact exists, returns the existing content instead of creating a duplicate. Stores directly in Memory collection with embedding. No vault involvement.
 
 ### noteToSelf
 
@@ -145,10 +145,10 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 
 ### sendEmail (conditional — requires Google OAuth)
 
-- **Purpose**: Send an email on behalf of Goshujin-sama
-- **Parameters**: `{ to: string, subject: string, body: string }`
+- **Purpose**: Send an email or reply to a thread on behalf of Goshujin-sama
+- **Parameters**: `{ to: string, subject: string, body: string, threadId?: string, inReplyTo?: string }`
 - **Returns**: `{ success: true, id, threadId }` or `{ success: false, reason }`
-- **Behavior**: Composes a plain-text RFC 2822 message and sends via Gmail API. Requires `gmail.send` OAuth scope. Only registered when `GOOGLE_OAUTH_CLIENT_ID` is configured.
+- **Behavior**: Composes a plain-text RFC 2822 message and sends via Gmail API. When `threadId` and `inReplyTo` are provided (from `checkEmail` results), sends as a threaded reply with proper `In-Reply-To` and `References` headers. Requires `gmail.send` OAuth scope. Only registered when `GOOGLE_OAUTH_CLIENT_ID` is configured.
 
 ### manageCalendar (conditional — requires Google OAuth)
 
@@ -227,7 +227,6 @@ Implemented in `apps/bot/src/ai/response.ts`.
 
 - Splits response text on double-newlines (`\n\n`)
 - Sends each segment as a separate message
-- Adds delays between segments (~100 WPM typing simulation, clamped to 0.5–4 seconds)
 - Skipped entirely if `wasPhotoSent()` is true (photo already delivered)
 
 ### Step Logging

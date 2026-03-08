@@ -245,6 +245,37 @@ export async function getActiveFollowUps(limit = 10, maxAgeDays = 30): Promise<s
   return followUps;
 }
 
+export async function getActiveFollowUpsWithIds(
+  limit = 10,
+  maxAgeDays = 30,
+): Promise<{ memoryId: string; text: string }[]> {
+  const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
+
+  const memories = await Memory.find({
+    "metadata.followUps": { $exists: true, $ne: [] },
+    "metadata.createdAt": { $gte: cutoff },
+    "metadata.archivedAt": { $exists: false },
+  })
+    .sort({ "metadata.createdAt": -1 })
+    .limit(limit)
+    .exec();
+
+  const seen = new Set<string>();
+  const results: { memoryId: string; text: string }[] = [];
+  for (const mem of memories) {
+    if (mem.metadata.followUps) {
+      for (const fu of mem.metadata.followUps) {
+        const key = fu.toLowerCase().trim();
+        if (!seen.has(key)) {
+          seen.add(key);
+          results.push({ memoryId: mem._id.toString(), text: fu });
+        }
+      }
+    }
+  }
+  return results;
+}
+
 export async function resolveFollowUp(memoryId: string, followUpText: string): Promise<void> {
   await Memory.findByIdAndUpdate(memoryId, {
     $pull: { "metadata.followUps": followUpText },
