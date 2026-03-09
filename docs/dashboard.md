@@ -69,7 +69,6 @@ This allows the dashboard to import `@mashiro/db` → `@mashiro/shared` without 
 
 - `transpilePackages` for `@mashiro/*` workspace packages
 - `serverExternalPackages` for `mongoose`, `pino`, `pino-pretty` (Node.js native modules)
-- Webpack `extensionAlias` to resolve extensionless imports for internal packages
 
 ## Components
 
