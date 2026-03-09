@@ -189,7 +189,7 @@ mashiro/                          # npm workspaces + Turborepo
        │   ├─ System: personality + facts (top 30) + milestones (last 5)
        │   │         + daily episodes (3) + weekly episodes (2)
        │   │         + working memory + follow-ups + datetime + tools + format
-       │   └─ Messages: last 40 msgs from active session, images from GridFS, tool-call pairs
+       │   └─ Messages: last 40 msgs from active session, images from GridFS, tool-call pairs (recent 10 only)
        │
 10. generateText({ model, system, messages, tools, maxSteps: 5, temperature: 0.7 })
        │   └─ LLM may call tools (rememberFact, noteToSelf, readMemory, searchMemory, sendPhoto, etc.)

@@ -8,7 +8,7 @@ import {
 } from "@mashiro/db";
 import * as engine from "@mashiro/memory";
 import {
-  TOOL_USAGE_INSTRUCTIONS,
+  TOOL_BEHAVIOR_GUIDELINES,
   MAID_SERVICE_INSTRUCTIONS,
   BROWSER_INSTRUCTIONS,
   DATETIME_CONTEXT,
@@ -106,8 +106,8 @@ export async function assemblePromptShell(): Promise<string[]> {
   // Date/time
   parts.push(DATETIME_CONTEXT(new Date()));
 
-  // Tool instructions
-  parts.push(TOOL_USAGE_INSTRUCTIONS);
+  // Tool behavioral guidelines (tool schemas are self-describing)
+  parts.push(TOOL_BEHAVIOR_GUIDELINES);
 
   // Maid service instructions (only when Google credentials are configured)
   if (config.GOOGLE_OAUTH_CLIENT_ID) {
@@ -205,6 +205,11 @@ export async function assembleProactiveSystemPrompt(
   return parts.join("\n\n---\n\n");
 }
 
+// Only reconstruct full tool-call/tool-result pairs for the last N raw messages.
+// Older tool results are dropped — the assistant's text response already contains
+// the synthesized answer, so replaying raw JSON from many turns ago adds no value.
+const TOOL_RESULT_KEEP_LAST = 10;
+
 export async function assembleMessages(chatId: string): Promise<CoreMessage[]> {
   // History already includes the current message (saved before this call)
   const history = await getRecentMessages(chatId, 40);
@@ -219,7 +224,10 @@ export async function assembleMessages(chatId: string): Promise<CoreMessage[]> {
 
   const messages: CoreMessage[] = [];
 
-  for (const msg of history) {
+  for (let i = 0; i < history.length; i++) {
+    const msg = history[i];
+    const isRecent = i >= history.length - TOOL_RESULT_KEEP_LAST;
+
     if (msg.role === "user") {
       let content: UserContent = msg.content;
       if (msg.imageRef) {
@@ -233,9 +241,9 @@ export async function assembleMessages(chatId: string): Promise<CoreMessage[]> {
       }
       messages.push({ role: "user", content });
     } else {
-      // Reconstruct tool-call / tool-result pairs so the model
-      // can see what tools it used in previous turns
-      if (msg.toolCalls?.length) {
+      // Only reconstruct tool-call / tool-result pairs for recent messages.
+      // Older tool results are dropped to save context window space.
+      if (msg.toolCalls?.length && isRecent) {
         const callIdBase = `tc_${messages.length}`;
         messages.push({
           role: "assistant",
