@@ -2,6 +2,7 @@ import { Bot, InputFile } from "grammy";
 import type { IncomingMessage, PlatformAdapter } from "@mashiro/shared";
 import type { Context } from "grammy";
 import { logger } from "@mashiro/shared";
+import { markdownToTelegramHtml } from "./format.js";
 
 export class TelegramAdapter implements PlatformAdapter {
   readonly platform = "telegram";
@@ -66,7 +67,13 @@ export class TelegramAdapter implements PlatformAdapter {
   }
 
   async sendText(chatId: string, text: string): Promise<void> {
-    await this.bot.api.sendMessage(Number(chatId), text);
+    try {
+      const html = markdownToTelegramHtml(text);
+      await this.bot.api.sendMessage(Number(chatId), html, { parse_mode: "HTML" });
+    } catch {
+      // Fallback to plain text if HTML parsing fails
+      await this.bot.api.sendMessage(Number(chatId), text);
+    }
   }
 
   async sendPhoto(
@@ -77,8 +84,8 @@ export class TelegramAdapter implements PlatformAdapter {
     const input = photo.fileId ? photo.fileId : new InputFile(photo.path!);
 
     const sent = await this.bot.api.sendPhoto(Number(chatId), input, {
-      caption,
-      parse_mode: "Markdown",
+      caption: caption ? markdownToTelegramHtml(caption) : undefined,
+      parse_mode: "HTML",
     });
 
     const fileId = sent.photo?.at(-1)?.file_id;
@@ -96,8 +103,8 @@ export class TelegramAdapter implements PlatformAdapter {
     const input = new InputFile(buffer, "mashiro.jpg");
 
     const sent = await this.bot.api.sendPhoto(Number(chatId), input, {
-      caption,
-      parse_mode: "Markdown",
+      caption: caption ? markdownToTelegramHtml(caption) : undefined,
+      parse_mode: "HTML",
     });
 
     const fileId = sent.photo?.at(-1)?.file_id;
