@@ -9,8 +9,8 @@ import {
 } from "@mashiro/db";
 import { logger } from "@mashiro/shared";
 import type { PlatformAdapter } from "@mashiro/shared";
-import { computeNextRunAt, isValidCron } from "../../services/cron.js";
-import { executeWorkflow } from "../../services/workflow-executor.js";
+import { computeNextRunAt, isValidCron } from "../../services/cron";
+import { executeWorkflow } from "../../services/workflow-executor";
 
 export function createManageWorkflowsTool(chatId: string, adapter: PlatformAdapter) {
   return tool({

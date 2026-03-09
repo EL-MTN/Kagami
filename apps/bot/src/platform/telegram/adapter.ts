@@ -2,7 +2,7 @@ import { Bot, InputFile } from "grammy";
 import type { IncomingMessage, PlatformAdapter } from "@mashiro/shared";
 import type { Context } from "grammy";
 import { logger } from "@mashiro/shared";
-import { markdownToTelegramHtml } from "./format.js";
+import { markdownToTelegramHtml } from "./format";
 
 export class TelegramAdapter implements PlatformAdapter {
   readonly platform = "telegram";

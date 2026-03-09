@@ -1,7 +1,7 @@
 import { getDueWorkflows, resetStaleRunningLogs } from "@mashiro/db";
 import { logger } from "@mashiro/shared";
 import type { PlatformAdapter } from "@mashiro/shared";
-import { executeWorkflow } from "../services/workflow-executor.js";
+import { executeWorkflow } from "../services/workflow-executor";
 
 const POLL_INTERVAL_MS = 60_000; // 1 minute
 

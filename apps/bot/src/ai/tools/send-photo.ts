@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { generateImage } from "../../context/generator.js";
+import { generateImage } from "../../context/generator";
 import type { PlatformAdapter } from "@mashiro/shared";
 import { logger } from "@mashiro/shared";
 

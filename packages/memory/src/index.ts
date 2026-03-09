@@ -24,6 +24,6 @@ export {
   type RecallOptions,
   type RecallResult,
   type EmotionalBaseline,
-} from "./engine.js";
-export { generateEmbedding, generateEmbeddings, cosineSimilarity } from "./embedding.js";
-export { readVaultFile, writeVaultFile } from "./vault.js";
+} from "./engine";
+export { generateEmbedding, generateEmbeddings, cosineSimilarity } from "./embedding";
+export { readVaultFile, writeVaultFile } from "./vault";

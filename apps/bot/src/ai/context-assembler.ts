@@ -9,7 +9,7 @@ import {
   DATETIME_CONTEXT,
   RESPONSE_FORMAT_INSTRUCTIONS,
   PROACTIVE_MESSAGE_INSTRUCTIONS,
-} from "./prompts.js";
+} from "./prompts";
 import { config, logger } from "@mashiro/shared";
 import type { CoreMessage, UserContent } from "ai";
 

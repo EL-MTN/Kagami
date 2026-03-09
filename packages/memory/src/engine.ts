@@ -1,5 +1,5 @@
 import { Memory, type IMemory } from "@mashiro/db";
-import { generateEmbedding, cosineSimilarity } from "./embedding.js";
+import { generateEmbedding, cosineSimilarity } from "./embedding";
 import { logger } from "@mashiro/shared";
 
 export interface RememberOptions {

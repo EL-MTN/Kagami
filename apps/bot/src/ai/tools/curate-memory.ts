@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { curateIfNeeded } from "../../memory/curator.js";
+import { curateIfNeeded } from "../../memory/curator";
 import { logger } from "@mashiro/shared";
 
 export function createCurateMemoryTool(chatId: string) {

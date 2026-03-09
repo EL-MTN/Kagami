@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { sendEmail } from "../../services/gmail.js";
+import { sendEmail } from "../../services/gmail";
 import { logger } from "@mashiro/shared";
 
 export function createSendEmailTool() {

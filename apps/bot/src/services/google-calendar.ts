@@ -1,6 +1,6 @@
 import { google } from "googleapis";
 import { addDays } from "date-fns";
-import { getGoogleAuth } from "./google-auth.js";
+import { getGoogleAuth } from "./google-auth";
 import { logger } from "@mashiro/shared";
 
 export interface CalendarEvent {

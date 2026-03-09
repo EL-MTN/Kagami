@@ -1,9 +1,9 @@
 import { generateText } from "ai";
-import { getModel } from "./provider.js";
-import { assembleSystemPrompt, assembleMessages } from "./context-assembler.js";
-import { allTools, type ToolContext } from "./tools/index.js";
+import { getModel } from "./provider";
+import { assembleSystemPrompt, assembleMessages } from "./context-assembler";
+import { allTools, type ToolContext } from "./tools/index";
 import { getOrCreateSession, appendMessage, writeImage, generateImageKey } from "@mashiro/db";
-import { curateIfNeeded, curateClosedSession } from "../memory/curator.js";
+import { curateIfNeeded, curateClosedSession } from "../memory/curator";
 import type { IncomingMessage, PlatformAdapter } from "@mashiro/shared";
 import { logger } from "@mashiro/shared";
 import {
@@ -12,7 +12,7 @@ import {
   wasPhotoSent,
   sendSegmented,
   logSteps,
-} from "./response.js";
+} from "./response";
 
 const LLM_TIMEOUT_MS = 120_000; // 2 minutes
 

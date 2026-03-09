@@ -5,7 +5,7 @@ import {
   releaseBrowser,
   resetBrowser,
   withBrowserLock,
-} from "../../services/browser.js";
+} from "../../services/browser";
 import { logger } from "@mashiro/shared";
 import type { PlatformAdapter } from "@mashiro/shared";
 

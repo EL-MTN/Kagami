@@ -1,6 +1,6 @@
 import mongoose, { Schema, type Document } from "mongoose";
 import crypto from "node:crypto";
-import { removeImages } from "../gridfs.js";
+import { removeImages } from "../gridfs";
 
 export interface IMessage {
   role: "user" | "assistant" | "system" | "tool";

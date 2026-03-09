@@ -22,14 +22,14 @@ cd apps/dashboard && npm run dev   # dashboard only (port 3000)
 
 ## Pages
 
-| Route | Description |
-|-------|-------------|
-| `/` | Overview — stat cards (conversations, memories, facts, reminders), emotional trend chart, recent activity feed |
-| `/conversations` | Paginated table of all conversation sessions with status, message count, platform, dates |
-| `/conversations/[id]` | Conversation detail — header metadata + scrollable message history with chat bubbles |
-| `/memories` | Tabbed view by type (fact/episode/milestone/working) with count badges, paginated |
-| `/reminders` | Reminder table with message, fire time, status (pending/fired), toggle to show fired |
-| `/api/images/[key]` | GridFS image proxy — serves stored images by key with immutable cache headers |
+| Route                 | Description                                                                                                    |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `/`                   | Overview — stat cards (conversations, memories, facts, reminders), emotional trend chart, recent activity feed |
+| `/conversations`      | Paginated table of all conversation sessions with status, message count, platform, dates                       |
+| `/conversations/[id]` | Conversation detail — header metadata + scrollable message history with chat bubbles                           |
+| `/memories`           | Tabbed view by type (fact/episode/milestone/working) with count badges, paginated                              |
+| `/reminders`          | Reminder table with message, fire time, status (pending/fired), toggle to show fired                           |
+| `/api/images/[key]`   | GridFS image proxy — serves stored images by key with immutable cache headers                                  |
 
 ## Architecture
 
@@ -59,6 +59,7 @@ Queries use `@mashiro/db` models directly. `@mashiro/memory` is **not** imported
 ### Config Refactor
 
 `@mashiro/shared/config.ts` was split into:
+
 - **Base parse** (always succeeds) — validates structure + defaults, no API key requirements
 - **`validateConfig()`** — strict check for LLM/embedding keys, called explicitly by the bot at startup
 
@@ -68,24 +69,25 @@ This allows the dashboard to import `@mashiro/db` → `@mashiro/shared` without 
 
 - `transpilePackages` for `@mashiro/*` workspace packages
 - `serverExternalPackages` for `mongoose`, `pino`, `pino-pretty` (Node.js native modules)
-- Webpack `extensionAlias` to resolve `.js` → `.ts` for internal packages that use TypeScript ESM import conventions
+- Webpack `extensionAlias` to resolve extensionless imports for internal packages
 
 ## Components
 
-| Component | Type | Purpose |
-|-----------|------|---------|
-| `sidebar.tsx` | Server | Nav sidebar with page links |
-| `nav-link.tsx` | Client | Active route highlighting via `usePathname()` |
-| `stat-card.tsx` | Server | Reusable stats card (icon, label, value) |
-| `emotional-indicator.tsx` | Server | Trend badge (rising/falling/stable) |
-| `activity-feed.tsx` | Server | Recent conversations + memories interleaved by time |
-| `message-bubble.tsx` | Server | Chat message with role-based styling, tool call display |
-| `memory-card.tsx` | Server | Memory content with importance/type badges |
-| `pagination.tsx` | Server | Simple prev/next page links |
+| Component                 | Type   | Purpose                                                 |
+| ------------------------- | ------ | ------------------------------------------------------- |
+| `sidebar.tsx`             | Server | Nav sidebar with page links                             |
+| `nav-link.tsx`            | Client | Active route highlighting via `usePathname()`           |
+| `stat-card.tsx`           | Server | Reusable stats card (icon, label, value)                |
+| `emotional-indicator.tsx` | Server | Trend badge (rising/falling/stable)                     |
+| `activity-feed.tsx`       | Server | Recent conversations + memories interleaved by time     |
+| `message-bubble.tsx`      | Server | Chat message with role-based styling, tool call display |
+| `memory-card.tsx`         | Server | Memory content with importance/type badges              |
+| `pagination.tsx`          | Server | Simple prev/next page links                             |
 
 ## Dependencies
 
 Dashboard-specific (beyond monorepo shared):
+
 - `tailwindcss` v4 + `@tailwindcss/postcss` — CSS framework
 - `class-variance-authority`, `clsx`, `tailwind-merge` — shadcn/ui utilities
 - `lucide-react` — icons

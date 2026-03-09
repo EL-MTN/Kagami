@@ -65,7 +65,7 @@ npm run migrate:memory # Memory system migration
 - **No classes for services** — prefer standalone exported functions
 - **Platform-agnostic types** — `IncomingMessage`/`PlatformAdapter` in `@mashiro/shared`
 - **Cross-package imports** — use `@mashiro/shared`, `@mashiro/db`, `@mashiro/memory` (not relative paths)
-- **Within-package imports** — use relative paths with `.js` extension
+- **Within-package imports** — use relative paths without file extensions
 - **Internal packages** — libraries export raw `.ts` source (`exports: "./src/index.ts"`); only `bot` and `dashboard` have build steps
 - **`.env` location** — `apps/bot/.env` (not root)
 
@@ -74,6 +74,7 @@ npm run migrate:memory # Memory system migration
 After any code change, update the relevant doc in `/docs` to reflect the change. If a new module or major feature is added, create a new doc file. Keep docs accurate — they are the primary architecture reference.
 
 See `/docs` for:
+
 - [architecture.md](docs/architecture.md) — system overview, message flow, module map
 - [vault.md](docs/vault.md) — memory system, curation pipeline, frontmatter schema
 - [telegram.md](docs/telegram.md) — platform adapter, bot handlers, rate limiting

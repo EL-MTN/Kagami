@@ -5,7 +5,7 @@ import {
   createEvent,
   updateEvent,
   deleteEvent,
-} from "../../services/google-calendar.js";
+} from "../../services/google-calendar";
 import { logger } from "@mashiro/shared";
 
 const isoDatetime = z

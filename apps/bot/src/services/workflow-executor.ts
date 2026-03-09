@@ -1,12 +1,12 @@
 import { generateText } from "ai";
-import { getModel } from "../ai/provider.js";
-import { allTools, type ToolContext } from "../ai/tools/index.js";
+import { getModel } from "../ai/provider";
+import { allTools, type ToolContext } from "../ai/tools/index";
 import {
   TOOL_USAGE_INSTRUCTIONS,
   MAID_SERVICE_INSTRUCTIONS,
   BROWSER_INSTRUCTIONS,
   DATETIME_CONTEXT,
-} from "../ai/prompts.js";
+} from "../ai/prompts";
 import { readVaultFile } from "@mashiro/memory";
 import {
   isWorkflowRunning,
@@ -18,8 +18,8 @@ import {
 } from "@mashiro/db";
 import { config, logger } from "@mashiro/shared";
 import type { PlatformAdapter } from "@mashiro/shared";
-import { extractResponseText, sendSegmented } from "../ai/response.js";
-import { computeNextRunAt } from "./cron.js";
+import { extractResponseText, sendSegmented } from "../ai/response";
+import { computeNextRunAt } from "./cron";
 
 const LLM_TIMEOUT_MS = 180_000; // 3 minutes — workflows can be long
 const NO_REPORT_SENTINEL = "[no report]";

@@ -1,7 +1,7 @@
 import { generateText, generateObject } from "ai";
 import { z } from "zod";
 import { format, subDays, subMonths } from "date-fns";
-import { getModel, ModelTier } from "../ai/provider.js";
+import { getModel, ModelTier } from "../ai/provider";
 import {
   getOverflowMessages,
   trimConversation,

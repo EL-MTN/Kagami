@@ -1,8 +1,8 @@
 import { generateText } from "ai";
-import { getModel } from "../ai/provider.js";
-import { assembleProactiveSystemPrompt, assembleMessages } from "../ai/context-assembler.js";
-import { checkWeeklyMerge, checkMonthlyConsolidation } from "../memory/curator.js";
-import { allTools, type ToolContext } from "../ai/tools/index.js";
+import { getModel } from "../ai/provider";
+import { assembleProactiveSystemPrompt, assembleMessages } from "../ai/context-assembler";
+import { checkWeeklyMerge, checkMonthlyConsolidation } from "../memory/curator";
+import { allTools, type ToolContext } from "../ai/tools/index";
 import {
   getOrCreateSession,
   appendMessage,
@@ -15,12 +15,7 @@ import {
 } from "@mashiro/db";
 import { config, logger } from "@mashiro/shared";
 import type { PlatformAdapter } from "@mashiro/shared";
-import {
-  extractResponseText,
-  collectToolCalls,
-  wasPhotoSent,
-  sendSegmented,
-} from "../ai/response.js";
+import { extractResponseText, collectToolCalls, wasPhotoSent, sendSegmented } from "../ai/response";
 
 const LLM_TIMEOUT_MS = 120_000; // 2 minutes
 

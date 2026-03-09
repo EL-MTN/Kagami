@@ -1,5 +1,5 @@
-export { config, validateConfig } from "./config.js";
-export { logger } from "./logger.js";
-export { parseMarkdown, toMarkdown } from "./markdown.js";
-export type { ParsedMarkdown } from "./markdown.js";
-export type { IncomingMessage, PlatformAdapter, VaultFile } from "./types.js";
+export { config, validateConfig } from "./config";
+export { logger } from "./logger";
+export { parseMarkdown, toMarkdown } from "./markdown";
+export type { ParsedMarkdown } from "./markdown";
+export type { IncomingMessage, PlatformAdapter, VaultFile } from "./types";

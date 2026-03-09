@@ -1,6 +1,6 @@
-export { connectDB, disconnectDB } from "./connection.js";
-export { generateImageKey, writeImage, readImage, removeImage, removeImages } from "./gridfs.js";
-export { Memory, type IMemory, type IMemoryMetadata } from "./models/memory.js";
+export { connectDB, disconnectDB } from "./connection";
+export { generateImageKey, writeImage, readImage, removeImage, removeImages } from "./gridfs";
+export { Memory, type IMemory, type IMemoryMetadata } from "./models/memory";
 export {
   Conversation,
   getOrCreateSession,
@@ -15,7 +15,7 @@ export {
   type IConversation,
   type SessionResult,
   type OverflowResult,
-} from "./models/conversation.js";
+} from "./models/conversation";
 export {
   Reminder,
   createReminder,
@@ -25,13 +25,13 @@ export {
   deleteReminder,
   cleanupFiredReminders,
   type IReminder,
-} from "./models/reminder.js";
+} from "./models/reminder";
 export {
   SchedulerState,
   getNextProactiveAt,
   setNextProactiveAt,
   type ISchedulerState,
-} from "./models/scheduler-state.js";
+} from "./models/scheduler-state";
 export {
   Workflow,
   WorkflowLog,
@@ -52,4 +52,4 @@ export {
   type IWorkflow,
   type IWorkflowLog,
   type WorkflowInput,
-} from "./models/workflow.js";
+} from "./models/workflow";

@@ -2,8 +2,8 @@ import { generateText } from "ai";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { config, logger } from "@mashiro/shared";
-import { getModel, ModelTier } from "../ai/provider.js";
-import type { ImageGenerationRequest, GeneratedImage } from "./types.js";
+import { getModel, ModelTier } from "../ai/provider";
+import type { ImageGenerationRequest, GeneratedImage } from "./types";
 
 const FAST_LLM_TIMEOUT_MS = 30_000; // 30 seconds for classification calls
 

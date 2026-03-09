@@ -1,9 +1,9 @@
 import { Bot } from "grammy";
 import { config, logger } from "@mashiro/shared";
 import { clearConversation } from "@mashiro/db";
-import { TelegramAdapter } from "./adapter.js";
-import { handleMessage } from "../../ai/generate.js";
-import { resetTimer } from "../../scheduler/proactive.js";
+import { TelegramAdapter } from "./adapter";
+import { handleMessage } from "../../ai/generate";
+import { resetTimer } from "../../scheduler/proactive";
 
 // Simple in-memory rate limiter
 const rateLimitMap = new Map<string, number[]>();

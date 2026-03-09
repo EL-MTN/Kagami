@@ -2,12 +2,12 @@ import { config, logger, validateConfig } from "@mashiro/shared";
 
 validateConfig();
 import { connectDB, disconnectDB } from "@mashiro/db";
-import { createBot, startBot, getAdapter } from "./platform/telegram/bot.js";
-import { loadContext } from "./context/generator.js";
-import { startProactiveScheduler } from "./scheduler/proactive.js";
-import { startReminderScheduler } from "./scheduler/reminders.js";
-import { startWorkflowScheduler } from "./scheduler/workflows.js";
-import { shutdownBrowser } from "./services/browser.js";
+import { createBot, startBot, getAdapter } from "./platform/telegram/bot";
+import { loadContext } from "./context/generator";
+import { startProactiveScheduler } from "./scheduler/proactive";
+import { startReminderScheduler } from "./scheduler/reminders";
+import { startWorkflowScheduler } from "./scheduler/workflows";
+import { shutdownBrowser } from "./services/browser";
 
 // Bot-specific validation: TELEGRAM_BOT_TOKEN is required
 function requireToken(): string {

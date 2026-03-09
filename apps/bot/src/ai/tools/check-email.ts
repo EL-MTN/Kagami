@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { listUnreadEmails, getEmailById } from "../../services/gmail.js";
+import { listUnreadEmails, getEmailById } from "../../services/gmail";
 import { logger } from "@mashiro/shared";
 
 export function createCheckEmailTool() {
