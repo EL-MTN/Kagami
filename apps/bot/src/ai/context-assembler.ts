@@ -82,10 +82,14 @@ async function assembleMemoryContext(sessionId?: string): Promise<string[]> {
   return parts;
 }
 
-async function assembleBasePrompt(sessionId?: string): Promise<string[]> {
+/**
+ * Shared prompt shell: personality card + datetime + tool/service instructions.
+ * Used by both conversation prompts and workflow prompts.
+ */
+export async function assemblePromptShell(): Promise<string[]> {
   const parts: string[] = [];
 
-  // 1. Personality card (still from vault — hand-edited)
+  // Personality card (from vault — hand-edited)
   const personality = await readVaultFile("personality/card.md");
   if (personality) {
     parts.push(personality.content);
@@ -94,7 +98,29 @@ async function assembleBasePrompt(sessionId?: string): Promise<string[]> {
     parts.push("You are Shiina Mashiro, a quiet and eccentric artist girlfriend.");
   }
 
-  // 2. User knowledge (from MongoDB, not vault)
+  // Date/time
+  parts.push(DATETIME_CONTEXT(new Date()));
+
+  // Tool instructions
+  parts.push(TOOL_USAGE_INSTRUCTIONS);
+
+  // Maid service instructions (only when Google credentials are configured)
+  if (config.GOOGLE_OAUTH_CLIENT_ID) {
+    parts.push(MAID_SERVICE_INSTRUCTIONS);
+  }
+
+  // Browser instructions (only when browser is enabled)
+  if (config.BROWSER_ENABLED) {
+    parts.push(BROWSER_INSTRUCTIONS);
+  }
+
+  return parts;
+}
+
+async function assembleBasePrompt(sessionId?: string): Promise<string[]> {
+  const parts = await assemblePromptShell();
+
+  // User knowledge (from MongoDB, not vault)
   try {
     const facts = await engine.getTopFacts(30);
     if (facts.length > 0) {
@@ -105,7 +131,7 @@ async function assembleBasePrompt(sessionId?: string): Promise<string[]> {
     logger.warn({ error }, "Failed to load facts for context");
   }
 
-  // 3. Milestones (from MongoDB, not vault)
+  // Milestones (from MongoDB, not vault)
   try {
     const milestones = await engine.getRecentMilestones(5);
     if (milestones.length > 0) {
@@ -118,25 +144,9 @@ async function assembleBasePrompt(sessionId?: string): Promise<string[]> {
     logger.warn({ error }, "Failed to load milestones for context");
   }
 
-  // 4. Recent episode context + follow-ups + working memory
+  // Recent episode context + follow-ups + working memory
   const memoryContext = await assembleMemoryContext(sessionId);
   parts.push(...memoryContext);
-
-  // 5. Date/time
-  parts.push(DATETIME_CONTEXT(new Date()));
-
-  // 6. Tool instructions
-  parts.push(TOOL_USAGE_INSTRUCTIONS);
-
-  // 7. Maid service instructions (only when Google credentials are configured)
-  if (config.GOOGLE_OAUTH_CLIENT_ID) {
-    parts.push(MAID_SERVICE_INSTRUCTIONS);
-  }
-
-  // 8. Browser instructions (only when browser is enabled)
-  if (config.BROWSER_ENABLED) {
-    parts.push(BROWSER_INSTRUCTIONS);
-  }
 
   return parts;
 }

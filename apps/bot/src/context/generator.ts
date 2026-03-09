@@ -2,7 +2,8 @@ import { generateText } from "ai";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { config, logger } from "@mashiro/shared";
-import { getModel, ModelTier } from "../ai/provider";
+import { getModel, getModelName, ModelTier } from "../ai/provider";
+import { trackUsage, trackImageGeneration } from "../ai/token-tracker";
 import type { ImageGenerationRequest, GeneratedImage } from "./types";
 
 const FAST_LLM_TIMEOUT_MS = 30_000; // 30 seconds for classification calls
@@ -100,7 +101,7 @@ async function selectOutfit(sceneDescription: string): Promise<OutfitSelection |
   const filenames = [...outfitMap.keys()];
 
   try {
-    const { text } = await generateText({
+    const { text, usage } = await generateText({
       model: getModel(ModelTier.Fast),
       temperature: 0,
       abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
@@ -114,6 +115,8 @@ ${filenames.join("\n")}
 Pick the single most appropriate outfit for this scene, or "none" if none of the outfits fit the scenario.
 Return ONLY the filename or "none", nothing else.`,
     });
+
+    trackUsage("image-selection", getModelName(ModelTier.Fast), usage);
 
     const picked = text.trim().toLowerCase();
 
@@ -144,7 +147,7 @@ async function selectFaceRef(sceneDescription: string): Promise<RefImage | null>
   const filenames = faceRefs.map((r) => r.filename);
 
   try {
-    const { text } = await generateText({
+    const { text, usage } = await generateText({
       model: getModel(ModelTier.Fast),
       temperature: 0,
       abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
@@ -158,6 +161,8 @@ ${filenames.join("\n")}
 Pick the single most appropriate face reference for this scene — consider expression (smiling vs neutral), angle, and mood. Say "none" if none of the references fit the scenario.
 Return ONLY the filename or "none", nothing else.`,
     });
+
+    trackUsage("image-selection", getModelName(ModelTier.Fast), usage);
 
     const picked = text.trim().toLowerCase();
 
@@ -188,7 +193,7 @@ async function selectBodyRef(sceneDescription: string): Promise<RefImage | null>
   const filenames = bodyRefs.map((r) => r.filename);
 
   try {
-    const { text } = await generateText({
+    const { text, usage } = await generateText({
       model: getModel(ModelTier.Fast),
       temperature: 0,
       abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
@@ -202,6 +207,8 @@ ${filenames.join("\n")}
 Pick the single most appropriate body reference for this scene — consider pose, framing, and body language. Say "none" if none of the references fit the scenario.
 Return ONLY the filename or "none", nothing else.`,
     });
+
+    trackUsage("image-selection", getModelName(ModelTier.Fast), usage);
 
     const picked = text.trim().toLowerCase();
 
@@ -242,7 +249,7 @@ async function selectSetting(sceneDescription: string): Promise<SettingSelection
   const names = [...settingsMap.keys()];
 
   try {
-    const { text } = await generateText({
+    const { text, usage } = await generateText({
       model: getModel(ModelTier.Fast),
       temperature: 0,
       abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
@@ -256,6 +263,8 @@ ${names.join("\n")}
 Pick the single most appropriate setting for this scene, or "none" if the scene doesn't match any specific setting.
 Return ONLY the setting name, nothing else.`,
     });
+
+    trackUsage("image-selection", getModelName(ModelTier.Fast), usage);
 
     const picked = text.trim().toLowerCase();
 
@@ -357,8 +366,8 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
     {
       endpoint,
       imageCount: images.length,
-      faceRefs: faceRefs.length > 0 ? 1 : 0,
-      bodyRefs: bodyRefs.length > 0 ? 1 : 0,
+      faceRefs: faceRefs.length,
+      bodyRefs: bodyRefs.length,
       outfit: outfitInstruction ? true : false,
       setting: settingInstruction ? true : false,
       promptLength: fullPrompt.length,
@@ -391,6 +400,7 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
   const mimeType = "image/png";
   const elapsed = Date.now() - start;
 
+  trackImageGeneration();
   logger.info({ elapsed, mimeType }, "Generated image");
 
   return { buffer, mimeType };

@@ -27,6 +27,13 @@ const TIER_MODELS: Record<string, Record<NonDefaultTier, string>> = {
   },
 };
 
+export function getModelName(tier: ModelTier = ModelTier.Default): string {
+  const provider = config.LLM_PROVIDER;
+  return tier === ModelTier.Default
+    ? config.LLM_MODEL
+    : TIER_MODELS[provider][tier as NonDefaultTier];
+}
+
 export function getModel(tier: ModelTier = ModelTier.Default): LanguageModelV1 {
   const provider = config.LLM_PROVIDER;
   const modelId =

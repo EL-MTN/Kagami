@@ -277,3 +277,26 @@ The main `generateText()` call in `apps/bot/src/ai/generate.ts` uses:
 | `maxSteps`    | 5                                                                                          |
 | `temperature` | 0.7                                                                                        |
 | `abortSignal` | `AbortSignal.timeout(120_000)` — 2 minute timeout (30s for Fast tier classification calls) |
+
+## Token Usage Observability
+
+All LLM call sites track token usage via `apps/bot/src/ai/token-tracker.ts`. Each call logs prompt/completion tokens and estimated cost via Pino, then persists to the `TokenUsage` MongoDB collection (fire-and-forget).
+
+### Categories
+
+| Category           | Call Sites                                                           |
+| ------------------ | -------------------------------------------------------------------- |
+| `conversation`     | Main `generateText` in `generate.ts`                                 |
+| `proactive`        | Proactive message generation in `proactive.ts`                       |
+| `workflow`         | Workflow execution in `workflow-executor.ts`                         |
+| `curation`         | All curator calls (summary, facts, follow-ups, weekly/monthly merge) |
+| `image-selection`  | Reference image selection (outfit, face, body, setting)              |
+| `image-generation` | xAI image generation (fixed cost per call)                           |
+
+### Pricing
+
+Cost estimation uses a per-model lookup table (`MODEL_PRICING` in `token-tracker.ts`). Image generation uses a fixed cost per call. The `getModelName(tier)` helper in `provider.ts` resolves the string model ID without creating a provider instance.
+
+### Dashboard
+
+The `/usage` page displays cost breakdowns by category, daily trends, and summary stats (today/week/month). Queries in `apps/dashboard/src/lib/queries/usage.ts`. The `TokenUsage` model and aggregation helpers (`getUsageSummary`, `getDailyUsage`, `getTotalCost`) are exported from `@mashiro/db`.

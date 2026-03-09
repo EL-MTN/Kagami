@@ -167,6 +167,7 @@ export async function shutdownBrowser(): Promise<void> {
   const current = instance;
   instance = null;
   initPromise = null;
+  lockChain = Promise.resolve();
 
   if (current) {
     try {
@@ -185,4 +186,5 @@ export async function shutdownBrowser(): Promise<void> {
 export function resetBrowser(): void {
   instance = null;
   initPromise = null;
+  lockChain = Promise.resolve();
 }

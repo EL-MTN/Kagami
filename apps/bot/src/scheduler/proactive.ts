@@ -16,6 +16,8 @@ import {
 import { config, logger } from "@mashiro/shared";
 import type { PlatformAdapter } from "@mashiro/shared";
 import { extractResponseText, collectToolCalls, wasPhotoSent, sendSegmented } from "../ai/response";
+import { trackUsage } from "../ai/token-tracker";
+import { getModelName } from "../ai/provider";
 
 const LLM_TIMEOUT_MS = 120_000; // 2 minutes
 
@@ -171,6 +173,13 @@ async function generateProactiveMessage(
     maxSteps: 5,
     temperature: 0.7,
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+  });
+
+  // Track token usage
+  trackUsage("proactive", getModelName(), result.usage, {
+    chatId,
+    sessionId,
+    steps: result.steps.length,
   });
 
   // Extract response text from steps

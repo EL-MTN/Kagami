@@ -1,13 +1,7 @@
 import { generateText } from "ai";
 import { getModel } from "../ai/provider";
 import { allTools, type ToolContext } from "../ai/tools/index";
-import {
-  TOOL_USAGE_INSTRUCTIONS,
-  MAID_SERVICE_INSTRUCTIONS,
-  BROWSER_INSTRUCTIONS,
-  DATETIME_CONTEXT,
-} from "../ai/prompts";
-import { readVaultFile } from "@mashiro/memory";
+import { assemblePromptShell } from "../ai/context-assembler";
 import {
   isWorkflowRunning,
   createWorkflowLog,
@@ -16,38 +10,18 @@ import {
   advanceNextRunAt,
   type IWorkflow,
 } from "@mashiro/db";
-import { config, logger } from "@mashiro/shared";
+import { logger } from "@mashiro/shared";
 import type { PlatformAdapter } from "@mashiro/shared";
 import { extractResponseText, sendSegmented } from "../ai/response";
+import { trackUsage } from "../ai/token-tracker";
+import { getModelName } from "../ai/provider";
 import { computeNextRunAt } from "./cron";
 
 const LLM_TIMEOUT_MS = 180_000; // 3 minutes — workflows can be long
 const NO_REPORT_SENTINEL = "[no report]";
 
 async function assembleWorkflowSystemPrompt(workflow: IWorkflow): Promise<string> {
-  const parts: string[] = [];
-
-  // Personality card
-  const personality = await readVaultFile("personality/card.md");
-  if (personality) {
-    parts.push(personality.content);
-  } else {
-    parts.push("You are Shiina Mashiro, a quiet and eccentric artist girlfriend.");
-  }
-
-  // Date/time context
-  parts.push(DATETIME_CONTEXT(new Date()));
-
-  // Tool instructions
-  parts.push(TOOL_USAGE_INSTRUCTIONS);
-
-  // Conditional service instructions
-  if (config.GOOGLE_OAUTH_CLIENT_ID) {
-    parts.push(MAID_SERVICE_INSTRUCTIONS);
-  }
-  if (config.BROWSER_ENABLED) {
-    parts.push(BROWSER_INSTRUCTIONS);
-  }
+  const parts = await assemblePromptShell();
 
   // Workflow-specific instructions
   const reportInstruction =
@@ -109,6 +83,13 @@ export async function executeWorkflow(
     });
 
     const responseText = result.text || extractResponseText(result.steps) || "";
+
+    // Track token usage
+    trackUsage("workflow", getModelName(), result.usage, {
+      chatId,
+      workflowId,
+      steps: result.steps.length,
+    });
 
     // Log completion
     await completeWorkflowLog(logId, responseText);

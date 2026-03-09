@@ -92,6 +92,7 @@ mashiro/                          # npm workspaces + Turborepo
 │        │  │ Reminder    │
 │        │  │ Workflow    │
 │        │  │ WorkflowLog │
+│        │  │ TokenUsage  │
 └────────┘  └─────────────┘
     ▲            ▲
     └─────┬──────┘

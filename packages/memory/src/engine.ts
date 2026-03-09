@@ -109,17 +109,6 @@ export async function getRecentWeeklyEpisodes(limit = 2): Promise<IMemory[]> {
     .exec();
 }
 
-/** @deprecated Use getRecentDailyEpisodes/getRecentWeeklyEpisodes instead */
-export async function getRecentEpisodes(limit = 3): Promise<IMemory[]> {
-  return Memory.find({
-    type: "episode",
-    "metadata.archivedAt": { $exists: false },
-  })
-    .sort({ "metadata.createdAt": -1 })
-    .limit(limit)
-    .exec();
-}
-
 export async function getEpisodesBefore(
   olderThan: Date,
   excludeSources?: string[],
@@ -158,7 +147,6 @@ export async function getFactsByRelevance(query: string, limit = 30): Promise<IM
   })
     .sort({ "metadata.createdAt": -1 })
     .limit(200)
-    .lean()
     .exec();
 
   const scored = candidates
@@ -171,14 +159,7 @@ export async function getFactsByRelevance(query: string, limit = 30): Promise<IM
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
-  // Return as full documents by fetching by IDs
-  const ids = scored.map((s) => s.doc._id);
-  if (ids.length === 0) return [];
-  const docs = await Memory.find({ _id: { $in: ids } }).exec();
-
-  // Maintain score-sorted order
-  const docMap = new Map(docs.map((d) => [d._id.toString(), d]));
-  return ids.map((id) => docMap.get(id.toString())).filter((d) => d != null);
+  return scored.map((s) => s.doc);
 }
 
 export async function getFactCount(): Promise<number> {
@@ -186,16 +167,6 @@ export async function getFactCount(): Promise<number> {
     type: "fact",
     "metadata.archivedAt": { $exists: false },
   });
-}
-
-/** @deprecated Use getTopFacts or getFactsByRelevance instead */
-export async function getAllFacts(): Promise<IMemory[]> {
-  return Memory.find({
-    type: "fact",
-    "metadata.archivedAt": { $exists: false },
-  })
-    .sort({ "metadata.createdAt": -1 })
-    .exec();
 }
 
 // ---------------------------------------------------------------------------

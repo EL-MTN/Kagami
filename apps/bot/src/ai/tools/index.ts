@@ -29,8 +29,11 @@ export function allTools(ctx: ToolContext) {
     searchMemory,
     listMemories,
     curateMemory: createCurateMemoryTool(ctx.chatId),
-    sendPhoto: createSendPhotoTool(ctx.chatId, ctx.adapter),
   };
+
+  if (config.XAI_API_KEY) {
+    tools.sendPhoto = createSendPhotoTool(ctx.chatId, ctx.adapter);
+  }
 
   if (config.GOOGLE_OAUTH_CLIENT_ID) {
     tools.checkEmail = createCheckEmailTool();

@@ -10,6 +10,8 @@ import {
 } from "@mashiro/db";
 import * as engine from "@mashiro/memory";
 import { logger } from "@mashiro/shared";
+import { trackUsage } from "../ai/token-tracker";
+import { getModelName } from "../ai/provider";
 
 const LLM_TIMEOUT_MS = 120_000; // 2 minutes
 
@@ -44,6 +46,10 @@ function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string 
       return `managed calendar (${a.action ?? "unknown"})`;
     case "manageReminders":
       return `managed reminders (${a.action ?? "unknown"})`;
+    case "browse":
+      return `browsed the web (${a.action ?? "unknown"})`;
+    case "manageWorkflows":
+      return `managed workflows (${a.action ?? "unknown"})`;
     default:
       return `used ${tc.toolName}`;
   }
@@ -101,7 +107,7 @@ async function _curateIfNeeded(chatId: string): Promise<void> {
 
   const transcript = overflow.overflow.map(formatMessageForTranscript).filter(Boolean).join("\n");
 
-  const { object: curation } = await generateObject({
+  const { object: curation, usage: curationUsage } = await generateObject({
     model: getModel(),
     schema: z.object({
       summary: z
@@ -134,6 +140,8 @@ async function _curateIfNeeded(chatId: string): Promise<void> {
     ],
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
+
+  trackUsage("curation", getModelName(), curationUsage, { chatId });
 
   // Store episode in Memory collection
   await engine.remember(curation.summary, "episode", "curation", {
@@ -211,7 +219,7 @@ async function _curateClosedSession(conversation: IConversation): Promise<void> 
   }
 
   // Full curation for longer sessions
-  const { object: curation } = await generateObject({
+  const { object: curation, usage: sessionCurationUsage } = await generateObject({
     model: getModel(),
     schema: z.object({
       summary: z
@@ -232,6 +240,8 @@ async function _curateClosedSession(conversation: IConversation): Promise<void> 
     ],
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
+
+  trackUsage("curation", getModelName(), sessionCurationUsage, { chatId });
 
   await engine.remember(curation.summary, "episode", "session-curation", {
     chatId,
@@ -259,7 +269,7 @@ async function resolveAddressedFollowUps(transcript: string): Promise<void> {
   const numbered = followUps.map((fu, i) => `${i + 1}. ${fu.text}`).join("\n");
 
   try {
-    const { object: result } = await generateObject({
+    const { object: result, usage: followUpUsage } = await generateObject({
       model: getModel(ModelTier.Fast),
       schema: z.object({
         resolvedIndices: z
@@ -275,6 +285,8 @@ async function resolveAddressedFollowUps(transcript: string): Promise<void> {
       ],
       abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
+
+    trackUsage("curation", getModelName(ModelTier.Fast), followUpUsage);
 
     let resolved = 0;
     for (const idx of result.resolvedIndices) {
@@ -318,7 +330,7 @@ async function updateUserFacts(summary: string): Promise<void> {
       ? `\n\nNote: Showing ${relevantFacts.length} most relevant facts out of ${totalFacts} total. Only classify against facts shown above.`
       : "";
 
-  const { object: result } = await generateObject({
+  const { object: result, usage: factUsage } = await generateObject({
     model: getModel(ModelTier.Fast),
     schema: FactOperationSchema,
     system: `You are a memory curator. Given a conversation summary and a list of existing facts about the user, classify what changes need to be made.
@@ -338,6 +350,8 @@ If there are no changes needed, output an empty operations array.`,
     ],
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
+
+  trackUsage("curation", getModelName(ModelTier.Fast), factUsage);
 
   const operations = result.operations;
 
@@ -418,6 +432,8 @@ async function weeklyDeepCuration(
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
+  trackUsage("curation", getModelName(), result.usage);
+
   // Store weekly summary
   const merged = await engine.remember(result.text, "episode", "weekly-merge", { importance: 6 });
 
@@ -477,6 +493,8 @@ Write from Mashiro's perspective as long-term relationship insights, not a chron
     ],
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
+
+  trackUsage("curation", getModelName(), result.usage);
 
   // Store as milestone
   const monthOf = format(subMonths(new Date(), 1), "yyyy-MM");

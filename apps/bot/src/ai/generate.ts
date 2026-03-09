@@ -13,6 +13,8 @@ import {
   sendSegmented,
   logSteps,
 } from "./response";
+import { trackUsage } from "./token-tracker";
+import { getModelName } from "./provider";
 
 const LLM_TIMEOUT_MS = 120_000; // 2 minutes
 
@@ -95,7 +97,12 @@ export async function handleMessage(
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
-  // 6. Debug: log every step
+  // 6. Track token usage + debug log
+  trackUsage("conversation", getModelName(), result.usage, {
+    chatId: incoming.chatId,
+    sessionId,
+    steps: result.steps.length,
+  });
   logSteps(result.steps);
 
   // 7. Extract response text

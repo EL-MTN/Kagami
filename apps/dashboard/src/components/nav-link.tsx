@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, MessageSquare, Brain, Bell, Repeat } from "lucide-react";
+import { LayoutDashboard, MessageSquare, Brain, Bell, Repeat, Coins } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const iconMap = {
@@ -11,6 +11,7 @@ const iconMap = {
   Brain,
   Bell,
   Repeat,
+  Coins,
 } as const;
 
 export type IconName = keyof typeof iconMap;
