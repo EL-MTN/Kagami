@@ -72,6 +72,7 @@ generateText() with tools
 - Working memory notes for this session (if any)
 - Active follow-up items (30-day age limit, deduplicated)
 - Emotional trend note (when mood is rising or falling, not when stable)
+- Active reminders: pending + recently fired in last 12h (proactive prompts only)
 - Current date/time with time-of-day label
 - Tool usage instructions
 - Response format instructions

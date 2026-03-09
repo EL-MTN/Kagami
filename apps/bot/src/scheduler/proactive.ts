@@ -152,7 +152,7 @@ async function generateProactiveMessage(
   const sessionId = conversation.sessionId;
 
   const [systemPrompt, messages] = await Promise.all([
-    assembleProactiveSystemPrompt(sessionId),
+    assembleProactiveSystemPrompt(chatId, sessionId),
     assembleMessages(chatId),
   ]);
 

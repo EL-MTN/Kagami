@@ -47,7 +47,8 @@ assembleSystemPrompt(sessionId?)
     ├─ 10. Tool usage instructions← hardcoded guidance in prompts.ts
     ├─ 11. Maid service instructions← conditional on Google OAuth config (prompts.ts)
     ├─ 12. Browser instructions   ← conditional on BROWSER_ENABLED (prompts.ts)
-    └─ 13. Response format        ← message style rules in prompts.ts
+    ├─ 13. Response format        ← message style rules in prompts.ts
+    └─ 14. Active reminders       ← pending + recently fired (proactive only)
 
     All parts joined with "---" separator
 ```

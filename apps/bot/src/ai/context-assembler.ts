@@ -1,6 +1,11 @@
 import { format } from "date-fns";
 import { readVaultFile } from "@mashiro/memory";
-import { getRecentMessages, readImage } from "@mashiro/db";
+import {
+  getRecentMessages,
+  readImage,
+  listRemindersForChat,
+  getRecentlyFiredReminders,
+} from "@mashiro/db";
 import * as engine from "@mashiro/memory";
 import {
   TOOL_USAGE_INSTRUCTIONS,
@@ -157,8 +162,45 @@ export async function assembleSystemPrompt(sessionId?: string): Promise<string> 
   return parts.join("\n\n---\n\n");
 }
 
-export async function assembleProactiveSystemPrompt(sessionId?: string): Promise<string> {
+async function assembleReminderContext(chatId: string): Promise<string | null> {
+  try {
+    const [pending, fired] = await Promise.all([
+      listRemindersForChat(chatId),
+      getRecentlyFiredReminders(chatId),
+    ]);
+
+    if (pending.length === 0 && fired.length === 0) return null;
+
+    const lines: string[] = [];
+
+    for (const r of pending) {
+      const time = format(r.fireAt, "MMM d, h:mm a");
+      lines.push(`- "${r.message}" → fires at ${time}`);
+    }
+
+    for (const r of fired) {
+      const time = format(r.fireAt, "MMM d, h:mm a");
+      lines.push(`- "${r.message}" → fired at ${time} (done)`);
+    }
+
+    return "## Active Reminders\n" + lines.join("\n");
+  } catch (error) {
+    logger.warn({ error }, "Failed to load reminder context");
+    return null;
+  }
+}
+
+export async function assembleProactiveSystemPrompt(
+  chatId: string,
+  sessionId?: string,
+): Promise<string> {
   const parts = await assembleBasePrompt(sessionId);
+
+  const reminderContext = await assembleReminderContext(chatId);
+  if (reminderContext) {
+    parts.push(reminderContext);
+  }
+
   parts.push(PROACTIVE_MESSAGE_INSTRUCTIONS);
   return parts.join("\n\n---\n\n");
 }

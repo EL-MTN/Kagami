@@ -22,6 +22,7 @@ export {
   getPendingReminders,
   markReminderFired,
   listRemindersForChat,
+  getRecentlyFiredReminders,
   deleteReminder,
   cleanupFiredReminders,
   type IReminder,

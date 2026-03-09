@@ -44,6 +44,14 @@ export async function listRemindersForChat(chatId: string): Promise<IReminder[]>
   return Reminder.find({ chatId, fired: false }).sort({ fireAt: 1 });
 }
 
+export async function getRecentlyFiredReminders(
+  chatId: string,
+  withinHours = 12,
+): Promise<IReminder[]> {
+  const cutoff = new Date(Date.now() - withinHours * 60 * 60 * 1000);
+  return Reminder.find({ chatId, fired: true, fireAt: { $gte: cutoff } }).sort({ fireAt: -1 });
+}
+
 export async function deleteReminder(reminderId: string): Promise<boolean> {
   const result = await Reminder.findByIdAndDelete(reminderId);
   return result !== null;
