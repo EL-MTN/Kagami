@@ -9,6 +9,7 @@ import {
   getRecentMessages,
   cleanupOldConversations,
   cleanupFiredReminders,
+  cleanupOldWorkflowLogs,
   getNextProactiveAt,
   setNextProactiveAt,
 } from "@mashiro/db";
@@ -205,12 +206,13 @@ async function generateProactiveMessage(
 
 async function runDailyCleanup(): Promise<void> {
   try {
-    const [deletedReminders, deletedConvos] = await Promise.all([
+    const [deletedReminders, deletedConvos, deletedLogs] = await Promise.all([
       cleanupFiredReminders(30),
       cleanupOldConversations(90),
+      cleanupOldWorkflowLogs(90),
     ]);
-    if (deletedReminders > 0 || deletedConvos > 0) {
-      logger.info({ deletedReminders, deletedConvos }, "Daily cleanup complete");
+    if (deletedReminders > 0 || deletedConvos > 0 || deletedLogs > 0) {
+      logger.info({ deletedReminders, deletedConvos, deletedLogs }, "Daily cleanup complete");
     }
   } catch (error) {
     logger.error({ error }, "Daily cleanup failed");

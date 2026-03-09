@@ -85,7 +85,7 @@ interface ToolContext {
   sessionId: string;
 }
 
-allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse? }
+allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageWorkflows }
 ```
 
 ### rememberFact
@@ -180,8 +180,20 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 | `act`        | `instruction`  | Interact with page (click, type, scroll)                     | `stagehand.act(instruction)`                |
 | `screenshot` | —              | Capture page → send as photo                                 | `page.screenshot()`                         |
 | `agent`      | `goal`         | Autonomous multi-step task (up to 25 steps)                  | `stagehand.agent().execute()`               |
+| `login`      | `url`          | Opens login page for manual credential entry                 | `page.goto()` (no browser release)          |
 
 **Architecture**: Two independent LLM streams — Mashiro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_DATA_DIR`, `BROWSER_HEADLESS` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
+
+### manageWorkflows
+
+- **Purpose**: Manage automated workflows that run on cron schedules
+- **Parameters**: `{ action: "create"|"list"|"update"|"delete"|"enable"|"disable"|"trigger", workflowId?, name?, prompt?, cronSchedule?, reportMode? }`
+- **Returns**: `{ success, workflowId? }` or `{ success, workflows? }` or `{ success: false, reason }`
+- **Behavior**: Creates, lists, updates, deletes, enables/disables, or triggers workflows. Workflows are natural language task descriptions that execute autonomously on a cron schedule using all available tools. Each workflow has a `reportMode`: `"always"` sends a summary after every run, `"alert"` only messages when something noteworthy or an error occurs. The `trigger` action runs a workflow immediately (fire-and-forget). Cron expressions are validated before saving.
+
+**Workflow Execution**: Workflows run via `generateText` with a clean context (personality + datetime + tool instructions, no conversation history), `maxSteps: 20`, and `temperature: 0.4`. A separate execution log (`WorkflowLog`) tracks each run's status, summary, and timing. The scheduler polls every 60s, skips workflows that are already running, and resets stale locks on startup.
+
+**Architecture**: Executor service in `apps/bot/src/services/workflow-executor.ts`, scheduler in `apps/bot/src/scheduler/workflows.ts`, cron helper in `apps/bot/src/services/cron.ts`, tool in `apps/bot/src/ai/tools/manage-workflows.ts`. DB models (`Workflow`, `WorkflowLog`) in `packages/db/src/models/workflow.ts`.
 
 ## Image Generation
 

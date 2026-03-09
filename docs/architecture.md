@@ -16,8 +16,8 @@ mashiro/                          # npm workspaces + Turborepo
 │   │   │   ├── context/          # image generation (generator.ts, types.ts)
 │   │   │   ├── memory/           # curator.ts (tightly coupled to AI layer)
 │   │   │   ├── platform/telegram/
-│   │   │   ├── services/         # google-auth, gmail, google-calendar
-│   │   │   └── scheduler/        # proactive, reminders
+│   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, cron, workflow-executor
+│   │   │   └── scheduler/        # proactive, reminders, workflows
 │   │   ├── vault/                # personality card (data)
 │   │   └── context/              # reference images/settings (data)
 │   └── dashboard/                # Next.js dashboard (read-only data viewer)
@@ -88,6 +88,8 @@ mashiro/                          # npm workspaces + Turborepo
 │ ality/ │  │ State       │
 │ card   │  │ Memory      │
 │        │  │ Reminder    │
+│        │  │ Workflow    │
+│        │  │ WorkflowLog │
 └────────┘  └─────────────┘
     ▲            ▲
     └─────┬──────┘
@@ -121,6 +123,17 @@ mashiro/                          # npm workspaces + Turborepo
 │           ─► send text   │
 │           ─► mark fired  │
 │ startup recovery         │
+└──────────────────────────┘
+
+┌──────────────────────────┐
+│   Workflow Scheduler     │    ← apps/bot/src/scheduler/workflows.ts
+│                          │
+│ poll 60s ─► due?         │
+│           ─► execute     │
+│           ─► log result  │
+│           ─► advance cron│
+│ startup recovery         │
+│ stale lock cleanup       │
 └──────────────────────────┘
 
 ┌──────────────────────────┐
@@ -205,25 +218,25 @@ When firing, the scheduler uses `getOrCreateSession` to get the active session, 
 
 ## Package Boundaries
 
-| Package | Purpose | Key Exports |
-|---|---|---|
-| `@mashiro/shared` | Config, logging, markdown, platform types | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, `VaultFile` |
-| `@mashiro/db` | MongoDB connection, all models, GridFS | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `readImage`, `writeImage`, all model CRUD functions |
-| `@mashiro/memory` | Memory engine, embeddings, vault files | `remember`, `recall`, `forget`, `readVaultFile`, `writeVaultFile`, `generateEmbedding`, episode/fact/milestone retrieval |
-| `@mashiro/bot` | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages |
-| `@mashiro/dashboard` | Next.js dashboard (read-only data viewer) | Overview, conversations, memories, reminders pages |
+| Package              | Purpose                                            | Key Exports                                                                                                                                                         |
+| -------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@mashiro/shared`    | Config, logging, markdown, platform types          | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, `VaultFile`                                                                |
+| `@mashiro/db`        | MongoDB connection, all models, GridFS             | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `Workflow`, `WorkflowLog`, `readImage`, `writeImage`, all model CRUD functions |
+| `@mashiro/memory`    | Memory engine, embeddings, vault files             | `remember`, `recall`, `forget`, `readVaultFile`, `writeVaultFile`, `generateEmbedding`, episode/fact/milestone retrieval                                            |
+| `@mashiro/bot`       | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages                                                                                                                    |
+| `@mashiro/dashboard` | Next.js dashboard (read-only data viewer)          | Overview, conversations, memories, reminders, workflows pages                                                                                                       |
 
 ### Bot-Internal Modules
 
-| Directory | Purpose |
-|---|---|
-| `apps/bot/src/ai/` | LLM integration, prompt assembly, tool orchestration |
-| `apps/bot/src/ai/tools/` | Tool implementations available to the LLM |
-| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup |
-| `apps/bot/src/memory/` | Curator (tightly coupled to AI layer) |
-| `apps/bot/src/services/` | Google OAuth, Gmail, Calendar |
-| `apps/bot/src/scheduler/` | Proactive + reminder scheduling |
-| `apps/bot/src/context/` | Image reference loading + generation |
+| Directory                         | Purpose                                                         |
+| --------------------------------- | --------------------------------------------------------------- |
+| `apps/bot/src/ai/`                | LLM integration, prompt assembly, tool orchestration            |
+| `apps/bot/src/ai/tools/`          | Tool implementations available to the LLM                       |
+| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup                                    |
+| `apps/bot/src/memory/`            | Curator (tightly coupled to AI layer)                           |
+| `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Cron, Workflow executor |
+| `apps/bot/src/scheduler/`         | Proactive, reminder, workflow scheduling                        |
+| `apps/bot/src/context/`           | Image reference loading + generation                            |
 
 ## Boot Sequence
 
@@ -234,8 +247,9 @@ When firing, the scheduler uses `getOrCreateSession` to get the active session, 
 5. Start bot (long-polling)
 6. Start proactive scheduler (restore timers from DB, start daily cleanup)
 7. Start reminder scheduler (polls every 60s, fires pending reminders)
+8. Start workflow scheduler (reset stale locks, polls every 60s, executes due workflows)
 
-Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, disconnect DB.
+Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, stop workflow scheduler, shutdown browser, disconnect DB.
 
 ## Key Design Decisions
 

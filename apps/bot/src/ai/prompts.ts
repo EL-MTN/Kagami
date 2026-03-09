@@ -16,6 +16,7 @@ You have access to memory and communication tools. Use them thoughtfully:
 - **manageCalendar**: List, create, update, or delete Google Calendar events.
 - **manageReminders**: Create, list, or delete reminders. Compose the reminder message at creation time.
 - **browse**: Browse the web — search (DuckDuckGo), visit URLs, extract page data, interact with elements, take screenshots, run autonomous multi-step tasks via agent, or open a login page for manual credential entry.
+- **manageWorkflows**: Create, list, update, delete, enable/disable, or trigger automated workflows. Workflows run on a cron schedule and execute tasks autonomously using your tools. Each workflow has a report mode: "always" (send summary every run) or "alert" (only message on noteworthy events/failures).
 
 Most messages don't need tools. Just talk naturally. Use tools when the conversation genuinely calls for it.
 `;

@@ -6,6 +6,7 @@ import { createBot, startBot, getAdapter } from "./platform/telegram/bot.js";
 import { loadContext } from "./context/generator.js";
 import { startProactiveScheduler } from "./scheduler/proactive.js";
 import { startReminderScheduler } from "./scheduler/reminders.js";
+import { startWorkflowScheduler } from "./scheduler/workflows.js";
 import { shutdownBrowser } from "./services/browser.js";
 
 // Bot-specific validation: TELEGRAM_BOT_TOKEN is required
@@ -21,6 +22,7 @@ const TELEGRAM_BOT_TOKEN = requireToken();
 
 let stopProactiveScheduler: (() => void) | null = null;
 let stopReminderScheduler: (() => void) | null = null;
+let stopWorkflowScheduler: (() => void) | null = null;
 
 async function main() {
   logger.info("Starting Mashiro...");
@@ -35,12 +37,14 @@ async function main() {
 
   stopProactiveScheduler = startProactiveScheduler(getAdapter());
   stopReminderScheduler = startReminderScheduler(getAdapter());
+  stopWorkflowScheduler = startWorkflowScheduler(getAdapter());
 }
 
 function shutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down...`);
   stopProactiveScheduler?.();
   stopReminderScheduler?.();
+  stopWorkflowScheduler?.();
   void shutdownBrowser()
     .then(() => disconnectDB())
     .finally(() => process.exit(0));
