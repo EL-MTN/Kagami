@@ -5,6 +5,7 @@ Mashiro integrates with Gmail and Google Calendar to perform real assistant task
 ## OAuth Setup
 
 ### Prerequisites
+
 1. A Google Cloud project with Gmail API and Google Calendar API enabled
 2. An OAuth 2.0 client ID (Desktop type) created in the Google Cloud Console
 
@@ -20,6 +21,7 @@ npm run auth:google
 ```
 
 The script will:
+
 1. Print an authorization URL — open it in your browser
 2. Sign in and grant access to Gmail (read-only) and Calendar (full access)
 3. Paste the authorization code back into the terminal
@@ -37,10 +39,11 @@ All three must be set together (validated at startup). If none are set, Google s
 
 ### OAuth Scopes
 
-| Scope | Purpose |
-|---|---|
-| `gmail.readonly` | Read email messages and metadata |
-| `calendar` | Full read/write access to Google Calendar |
+| Scope            | Purpose                                   |
+| ---------------- | ----------------------------------------- |
+| `gmail.readonly` | Read email messages and metadata          |
+| `gmail.send`     | Send emails on behalf of the user         |
+| `calendar`       | Full read/write access to Google Calendar |
 
 ## Architecture
 
@@ -57,7 +60,8 @@ apps/bot/src/scheduler/
 └── reminders.ts          Reminder polling scheduler
 
 apps/bot/src/ai/tools/
-├── check-email.ts        LLM tool for email
+├── check-email.ts        LLM tool for reading email
+├── send-email.ts         LLM tool for sending email
 ├── manage-calendar.ts    LLM tool for calendar
 └── manage-reminders.ts   LLM tool for reminders
 ```
@@ -68,29 +72,31 @@ Lazy singleton `OAuth2Client` from the `googleapis` package. Reads credentials f
 
 ### Gmail Service (`apps/bot/src/services/gmail.ts`)
 
-| Function | Description |
-|---|---|
+| Function                        | Description                                                      |
+| ------------------------------- | ---------------------------------------------------------------- |
 | `listUnreadEmails(maxResults?)` | Lists unread emails with metadata (from, subject, snippet, date) |
-| `getEmailById(messageId)` | Retrieves full email body (plain text, truncated to 2000 chars) |
+| `getEmailById(messageId)`       | Retrieves full email body (plain text, truncated to 2000 chars)  |
 
 ### Calendar Service (`apps/bot/src/services/google-calendar.ts`)
 
-| Function | Description |
-|---|---|
+| Function                                      | Description                               |
+| --------------------------------------------- | ----------------------------------------- |
 | `listUpcomingEvents(daysAhead?, maxResults?)` | Lists events within the given time window |
-| `createEvent(params)` | Creates a new calendar event |
-| `updateEvent(eventId, params)` | Updates an existing event |
-| `deleteEvent(eventId)` | Deletes an event |
+| `createEvent(params)`                         | Creates a new calendar event              |
+| `updateEvent(eventId, params)`                | Updates an existing event                 |
+| `deleteEvent(eventId)`                        | Deletes an event                          |
 
 ### Reminder System
 
 Reminders are stored in MongoDB and polled by a scheduler.
 
 **Model** (`packages/db/src/models/reminder.ts`):
+
 - Schema: `{ chatId, message, fireAt, fired, createdAt }`
 - Index: `{ fired: 1, fireAt: 1 }` for efficient polling
 
 **Scheduler** (`apps/bot/src/scheduler/reminders.ts`):
+
 - Polls every 60 seconds via `setInterval` (`.unref()`)
 - Fires pending reminders via `adapter.sendText()`
 - Startup recovery: immediately fires any reminders that were due while the process was down
@@ -119,7 +125,8 @@ Reminders are stored in MongoDB and polled by a scheduler.
 ## Conditional Activation
 
 When Google OAuth credentials are configured:
-- Three new tools are added to `allTools()` (`apps/bot/src/ai/tools/index.ts`)
+
+- Four new tools are added to `allTools()` (`apps/bot/src/ai/tools/index.ts`)
 - `MAID_SERVICE_INSTRUCTIONS` are injected into the system prompt (`apps/bot/src/ai/context-assembler.ts`)
 - The curator formats tool calls for the new tools (`apps/bot/src/memory/curator.ts`)
 

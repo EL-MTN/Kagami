@@ -29,6 +29,8 @@ cd apps/dashboard && npm run dev   # dashboard only (port 3000)
 | `/conversations/[id]` | Conversation detail — header metadata + scrollable message history with chat bubbles                           |
 | `/memories`           | Tabbed view by type (fact/episode/milestone/working) with count badges, paginated                              |
 | `/reminders`          | Reminder table with message, fire time, status (pending/fired), toggle to show fired                           |
+| `/workflows`          | Workflow table with name, schedule, status, last run time                                                      |
+| `/workflows/[id]`     | Workflow detail — configuration + execution history log                                                        |
 | `/api/images/[key]`   | GridFS image proxy — serves stored images by key with immutable cache headers                                  |
 
 ## Architecture
@@ -53,6 +55,7 @@ All in `src/lib/queries/`:
 - `conversations.ts` — `getConversationList(page)`, `getConversationDetail(id)`
 - `memories.ts` — `getMemoriesByType(type, page)`, `getMemoryTypeCounts()`
 - `reminders.ts` — `getReminderList(showFired?)`
+- `workflows.ts` — `getWorkflowList()`, `getWorkflowDetail(id)`
 
 Queries use `@mashiro/db` models directly. `@mashiro/memory` is **not** imported (it depends on Google AI SDK which is unnecessary for read-only display).
 

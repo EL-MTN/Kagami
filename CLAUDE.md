@@ -10,7 +10,9 @@ Mashiro — a Telegram-based conversational AI that maintains persistent persona
 mashiro/
 ├── apps/
 │   ├── bot/          # Telegram bot (Grammy, AI tools, schedulers)
-│   └── dashboard/    # Next.js dashboard (placeholder)
+│   │   ├── vault/    # Persistent memory store (personality card)
+│   │   └── context/  # Character reference images/settings
+│   └── dashboard/    # Next.js dashboard (read-only data viewer)
 ├── packages/
 │   ├── typescript-config/  # Shared tsconfig bases (JSON only)
 │   ├── eslint-config/      # Shared ESLint flat config
@@ -18,8 +20,6 @@ mashiro/
 │   ├── db/                 # MongoDB connection, models, GridFS
 │   └── memory/             # engine, embedding, vault
 ├── scripts/          # Migration, seed, auth scripts
-├── vault/            # Persistent memory store (data)
-├── context/          # Character reference images/settings
 └── docs/
 ```
 

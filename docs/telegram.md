@@ -68,7 +68,7 @@ createBot(token)
     ├─ Allowlist middleware (if ALLOWED_USER_IDS configured)
     │
     ├─ /clear command
-    │   └─ Deletes today's conversation → replies "Context cleared"
+    │   └─ Deletes all active conversations → replies "Context cleared — starting fresh."
     │
     ├─ message:text handler
     │   ├─ normalize(ctx) → IncomingMessage

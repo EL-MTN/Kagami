@@ -73,7 +73,9 @@ mashiro/                          # npm workspaces + Turborepo
 │  │ read/search/  │  └──────────────┘                 │
 │  │ list/curate/  │                                    │
 │  │ photo/email/  │                                    │
-│  │ cal/reminders │                                    │
+│  │ cal/reminders/│                                    │
+│  │ browse/       │                                    │
+│  │ workflows     │                                    │
 │  └──────┬───────┘                                    │
 └─────────┼────────────────────────────────────────────┘
           │
@@ -212,7 +214,7 @@ The scheduler sends unprompted messages to maintain engagement:
 - **Persistence**: next-fire timestamps saved to MongoDB (survives restarts)
 - **Reset**: any user message reschedules the next proactive to 1.5–2.5h out
 - **Memory consolidation**: after each proactive fire, checks weekly merge and monthly consolidation (fire-and-forget)
-- **Daily cleanup**: removes fired reminders (>30 days) and closed conversations (>90 days)
+- **Daily cleanup**: removes fired reminders (>30 days), closed conversations (>90 days), and old workflow logs (>90 days)
 
 When firing, the scheduler uses `getOrCreateSession` to get the active session, assembles a proactive system prompt with sessionId, and injects a synthetic nudge if no recent user message exists.
 
