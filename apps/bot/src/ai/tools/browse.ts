@@ -27,7 +27,7 @@ export function createBrowseTool(chatId: string, adapter: PlatformAdapter) {
     description:
       "Browse the web. Search for information, visit pages, extract data, interact with elements, take screenshots, or complete multi-step tasks autonomously.",
     parameters: z.object({
-      action: z.enum(["search", "visit", "extract", "act", "screenshot", "agent"]),
+      action: z.enum(["search", "visit", "extract", "act", "screenshot", "agent", "login"]),
       query: z.string().optional().describe("Search query (for search action)"),
       url: z.string().optional().describe("URL to visit (for visit action)"),
       instruction: z
@@ -113,6 +113,23 @@ export function createBrowseTool(chatId: string, adapter: PlatformAdapter) {
               const summary = typeof result === "string" ? result : JSON.stringify(result);
               releaseBrowser();
               return { success: true, goal, result: summary.slice(0, 4000) };
+            }
+
+            case "login": {
+              if (!url) return { success: false, reason: "url is required for login" };
+              const loginUrl = normalizeUrl(url);
+              logger.info({ url: loginUrl }, "Tool: browse (login)");
+              await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
+              const title = await page.evaluate(() => document.title).catch(() => "");
+              // Don't release browser — keep it alive while user logs in
+              return {
+                success: true,
+                url: loginUrl,
+                title,
+                waitingForUser: true,
+                message:
+                  "Login page opened in the browser window. Waiting for manual credential entry.",
+              };
             }
           }
         } catch (error) {

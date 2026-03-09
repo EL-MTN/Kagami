@@ -33,16 +33,27 @@ export function collectToolCalls(steps: Step[]) {
 }
 
 /**
- * Check whether any step successfully sent a photo (so we can skip text delivery).
+ * Check whether a photo was the only meaningful tool interaction.
+ * Returns true only when sendPhoto/browse-screenshot sent a photo AND
+ * no other tools (like browse search/visit) were used — avoids skipping
+ * substantive text responses that accompany tool-heavy flows.
  */
 export function wasPhotoSent(steps: Step[]): boolean {
-  return steps.some((step) =>
-    step.toolResults?.some(
-      (tr) =>
-        (tr.toolName === "sendPhoto" && (tr.result as { sent?: boolean })?.sent) ||
-        (tr.toolName === "browse" && (tr.result as { sent?: boolean })?.sent),
-    ),
+  const allResults = steps.flatMap((s) => s.toolResults ?? []);
+  const photoSent = allResults.some(
+    (tr) =>
+      (tr.toolName === "sendPhoto" && (tr.result as { sent?: boolean })?.sent) ||
+      (tr.toolName === "browse" && (tr.result as { sent?: boolean })?.sent),
   );
+  if (!photoSent) return false;
+
+  // If there were other tool calls besides photo-sending ones, don't skip text
+  const hasOtherTools = allResults.some(
+    (tr) =>
+      tr.toolName !== "sendPhoto" &&
+      !(tr.toolName === "browse" && (tr.result as { sent?: boolean })?.sent),
+  );
+  return !hasOtherTools;
 }
 
 /**

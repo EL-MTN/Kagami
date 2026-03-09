@@ -32,6 +32,7 @@ const baseSchema = z.object({
     .default("false")
     .transform((s) => s === "true"),
   BROWSER_MODEL: z.string().optional(),
+  BROWSER_GEOLOCATION: z.string().optional(),
   BROWSER_DATA_DIR: z.string().default("./data/browser"),
   BROWSER_HEADLESS: z
     .string()

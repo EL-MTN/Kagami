@@ -25,6 +25,8 @@ export function withBrowserLock<T>(fn: () => Promise<T>): Promise<T> {
   return prev.then(fn).finally(() => release!());
 }
 
+// --- Directory helpers ---
+
 function ensureDirs(): { cacheDir: string; profileDir: string } {
   const base = resolve(config.BROWSER_DATA_DIR);
   const cacheDir = resolve(base, "cache");
@@ -33,6 +35,18 @@ function ensureDirs(): { cacheDir: string; profileDir: string } {
   mkdirSync(profileDir, { recursive: true });
   return { cacheDir, profileDir };
 }
+
+// --- Geolocation ---
+
+function parseGeolocation(): { latitude: number; longitude: number } | undefined {
+  const geo = config.BROWSER_GEOLOCATION;
+  if (!geo) return undefined;
+  const [lat, lng] = geo.split(",").map(Number);
+  if (isNaN(lat) || isNaN(lng)) return undefined;
+  return { latitude: lat, longitude: lng };
+}
+
+// --- Model config ---
 
 /**
  * Maps the configured LLM provider to Stagehand's "provider/model" format.
@@ -64,9 +78,25 @@ export function getStagehandModelConfig():
   return models[provider] ?? "anthropic/claude-haiku-4-5";
 }
 
+// --- Lifecycle ---
+
 async function createInstance(): Promise<Stagehand> {
   const { cacheDir, profileDir } = ensureDirs();
   const modelConfig = getStagehandModelConfig();
+  const geolocation = parseGeolocation();
+
+  // Geolocation and permissions are BrowserContextOptions — valid for
+  // launchPersistentContext which Stagehand uses when userDataDir is set.
+  // Session persistence is handled entirely by userDataDir (Chromium's
+  // built-in profile dir persists cookies, localStorage, IndexedDB, etc.)
+  const launchOptions: Record<string, unknown> = {
+    headless: config.BROWSER_HEADLESS,
+    userDataDir: profileDir,
+  };
+  if (geolocation) {
+    launchOptions.geolocation = geolocation;
+    launchOptions.permissions = ["geolocation"];
+  }
 
   const stagehand = new Stagehand({
     env: "LOCAL",
@@ -75,13 +105,14 @@ async function createInstance(): Promise<Stagehand> {
     cacheDir,
     disablePino: true,
     verbose: 0,
-    localBrowserLaunchOptions: {
-      headless: config.BROWSER_HEADLESS,
-      userDataDir: profileDir,
-    },
+    localBrowserLaunchOptions: launchOptions,
   });
 
   await stagehand.init();
+
+  if (geolocation) {
+    logger.info({ geolocation }, "Browser geolocation set");
+  }
   logger.info("Browser initialized");
   return stagehand;
 }
