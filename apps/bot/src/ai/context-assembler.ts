@@ -5,6 +5,7 @@ import * as engine from "@mashiro/memory";
 import {
   TOOL_USAGE_INSTRUCTIONS,
   MAID_SERVICE_INSTRUCTIONS,
+  BROWSER_INSTRUCTIONS,
   DATETIME_CONTEXT,
   RESPONSE_FORMAT_INSTRUCTIONS,
   PROACTIVE_MESSAGE_INSTRUCTIONS,
@@ -130,6 +131,11 @@ async function assembleBasePrompt(sessionId?: string): Promise<string[]> {
   // 7. Maid service instructions (only when Google credentials are configured)
   if (config.GOOGLE_OAUTH_CLIENT_ID) {
     parts.push(MAID_SERVICE_INSTRUCTIONS);
+  }
+
+  // 8. Browser instructions (only when browser is enabled)
+  if (config.BROWSER_ENABLED) {
+    parts.push(BROWSER_INSTRUCTIONS);
   }
 
   return parts;

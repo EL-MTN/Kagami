@@ -46,7 +46,8 @@ assembleSystemPrompt(sessionId?)
     ├─ 9. Datetime context       ← current time + time-of-day label
     ├─ 10. Tool usage instructions← hardcoded guidance in prompts.ts
     ├─ 11. Maid service instructions← conditional on Google OAuth config (prompts.ts)
-    └─ 12. Response format        ← message style rules in prompts.ts
+    ├─ 12. Browser instructions   ← conditional on BROWSER_ENABLED (prompts.ts)
+    └─ 13. Response format        ← message style rules in prompts.ts
 
     All parts joined with "---" separator
 ```
@@ -84,7 +85,7 @@ interface ToolContext {
   sessionId: string;
 }
 
-allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto, checkEmail?, sendEmail?, manageCalendar?, manageReminders? }
+allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse? }
 ```
 
 ### rememberFact
@@ -163,6 +164,24 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 - **Parameters**: `{ action: "create"|"list"|"delete", message?, fireAt?, reminderId? }`
 - **Returns**: `{ success, reminderId? }` or `{ success, reminders? }` or `{ success: false, reason }`
 - **Behavior**: Creates, lists, or deletes reminders. The LLM composes the reminder message at creation time — it's sent as-is when fired by the reminder scheduler.
+
+### browse (conditional — requires BROWSER_ENABLED=true)
+
+- **Purpose**: Browse the web — search, visit pages, extract data, interact with elements, take screenshots, or complete multi-step autonomous tasks
+- **Parameters**: `{ action: "search"|"visit"|"extract"|"act"|"screenshot"|"agent", query?, url?, instruction?, goal? }`
+- **Returns**: Varies by action. Always includes `{ success: boolean }`.
+- **Behavior**: Uses Stagehand (LLM-driven browser automation on accessibility tree) with a singleton Chromium instance. Lazy-initialized on first call, auto-shuts down after 5 minutes idle. Persistent user profile preserves cookies/logins across restarts.
+
+| Action       | Required param | What it does                                                 | Stagehand method                            |
+| ------------ | -------------- | ------------------------------------------------------------ | ------------------------------------------- |
+| `search`     | `query`        | DuckDuckGo search → structured results (title, URL, snippet) | `page.goto()` + `extract()` with Zod schema |
+| `visit`      | `url`          | Navigate + extract readable text (truncated 4000 chars)      | `page.goto()` + `extract()` raw pageText    |
+| `extract`    | `instruction`  | Structured extraction from current page                      | `stagehand.extract(instruction)`            |
+| `act`        | `instruction`  | Interact with page (click, type, scroll)                     | `stagehand.act(instruction)`                |
+| `screenshot` | —              | Capture page → send as photo                                 | `page.screenshot()`                         |
+| `agent`      | `goal`         | Autonomous multi-step task (up to 25 steps)                  | `stagehand.agent().execute()`               |
+
+**Architecture**: Two independent LLM streams — Mashiro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_DATA_DIR`, `BROWSER_HEADLESS` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
 
 ## Image Generation
 

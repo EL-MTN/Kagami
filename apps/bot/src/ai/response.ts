@@ -38,7 +38,9 @@ export function collectToolCalls(steps: Step[]) {
 export function wasPhotoSent(steps: Step[]): boolean {
   return steps.some((step) =>
     step.toolResults?.some(
-      (tr) => tr.toolName === "sendPhoto" && (tr.result as { sent?: boolean })?.sent,
+      (tr) =>
+        (tr.toolName === "sendPhoto" && (tr.result as { sent?: boolean })?.sent) ||
+        (tr.toolName === "browse" && (tr.result as { sent?: boolean })?.sent),
     ),
   );
 }

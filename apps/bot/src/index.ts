@@ -6,6 +6,7 @@ import { createBot, startBot, getAdapter } from "./platform/telegram/bot.js";
 import { loadContext } from "./context/generator.js";
 import { startProactiveScheduler } from "./scheduler/proactive.js";
 import { startReminderScheduler } from "./scheduler/reminders.js";
+import { shutdownBrowser } from "./services/browser.js";
 
 // Bot-specific validation: TELEGRAM_BOT_TOKEN is required
 function requireToken(): string {
@@ -40,7 +41,9 @@ function shutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down...`);
   stopProactiveScheduler?.();
   stopReminderScheduler?.();
-  void disconnectDB().finally(() => process.exit(0));
+  void shutdownBrowser()
+    .then(() => disconnectDB())
+    .finally(() => process.exit(0));
 }
 
 process.on("SIGINT", () => shutdown("SIGINT"));

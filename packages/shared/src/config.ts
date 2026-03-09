@@ -27,6 +27,17 @@ const baseSchema = z.object({
 
   TIMEZONE: z.string().default("America/New_York"),
 
+  BROWSER_ENABLED: z
+    .string()
+    .default("false")
+    .transform((s) => s === "true"),
+  BROWSER_MODEL: z.string().optional(),
+  BROWSER_DATA_DIR: z.string().default("./data/browser"),
+  BROWSER_HEADLESS: z
+    .string()
+    .default("true")
+    .transform((s) => s === "true"),
+
   VAULT_PATH: z.string().default("./vault"),
   CONTEXT_PATH: z.string().default("./context"),
 

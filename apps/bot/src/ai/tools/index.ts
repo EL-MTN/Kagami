@@ -9,6 +9,7 @@ import { createCheckEmailTool } from "./check-email.js";
 import { createSendEmailTool } from "./send-email.js";
 import { createManageCalendarTool } from "./manage-calendar.js";
 import { createManageRemindersTool } from "./manage-reminders.js";
+import { createBrowseTool } from "./browse.js";
 import { config } from "@mashiro/shared";
 import type { CoreTool } from "ai";
 import type { PlatformAdapter } from "@mashiro/shared";
@@ -35,6 +36,10 @@ export function allTools(ctx: ToolContext) {
     tools.sendEmail = createSendEmailTool();
     tools.manageCalendar = createManageCalendarTool();
     tools.manageReminders = createManageRemindersTool(ctx.chatId);
+  }
+
+  if (config.BROWSER_ENABLED) {
+    tools.browse = createBrowseTool(ctx.chatId, ctx.adapter);
   }
 
   return tools;

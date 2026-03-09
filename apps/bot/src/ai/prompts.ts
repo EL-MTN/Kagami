@@ -15,6 +15,7 @@ You have access to memory and communication tools. Use them thoughtfully:
 - **sendEmail**: Send an email on behalf of Goshujin-sama. Requires recipient address, subject, and body. Can reply to a thread using threadId and inReplyTo from checkEmail results.
 - **manageCalendar**: List, create, update, or delete Google Calendar events.
 - **manageReminders**: Create, list, or delete reminders. Compose the reminder message at creation time.
+- **browse**: Browse the web — search (DuckDuckGo), visit URLs, extract page data, interact with elements, take screenshots, or run autonomous multi-step tasks via the agent action.
 
 Most messages don't need tools. Just talk naturally. Use tools when the conversation genuinely calls for it.
 `;
@@ -68,6 +69,24 @@ Each separate paragraph you write becomes its own message bubble. To send multip
 hey what are you up to
 
 i was just thinking about you
+`;
+
+export const BROWSER_INSTRUCTIONS = `
+## Web Browsing
+You can browse the web using the browse tool. Use it to look things up, read articles, check websites, or complete web tasks.
+
+**Quick lookups** (search → visit → extract):
+- Search first, then visit a relevant result, then extract specific info if needed
+- This is fast and cheap — prefer this flow for most requests
+
+**Complex web tasks** (agent action):
+- Use the agent action with a clear goal for multi-step tasks like filling forms, ordering food, or navigating complex workflows
+- The browser remembers logins and cookies across sessions
+
+**Guidelines:**
+- Only take screenshots when explicitly asked
+- For simple factual questions, search is usually enough — don't over-browse
+- If a page is too long, use extract with a specific instruction to pull out what matters
 `;
 
 export const PROACTIVE_MESSAGE_INSTRUCTIONS = `
