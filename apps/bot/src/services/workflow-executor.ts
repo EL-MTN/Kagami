@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { generateText, stepCountIs } from "ai";
 import { getModel } from "../ai/provider";
 import { allTools, type ToolContext } from "../ai/tools/index";
 import { assemblePromptShell } from "../ai/context-assembler";
@@ -77,7 +77,7 @@ export async function executeWorkflow(
       system: systemPrompt,
       messages: [{ role: "user", content: workflow.prompt }],
       tools: allTools(toolContext),
-      maxSteps: 20,
+      stopWhen: stepCountIs(20),
       temperature: 0.4,
       abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });

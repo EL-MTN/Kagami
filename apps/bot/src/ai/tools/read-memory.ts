@@ -7,7 +7,7 @@ import { logger } from "@mashiro/shared";
 export const readMemory = tool({
   description:
     "Read from your memory. Use 'path' to read a vault file (e.g. personality card), or 'memoryId' to read a specific memory by its ID from the database.",
-  parameters: z.object({
+  inputSchema: z.object({
     path: z.string().optional().describe("Path relative to vault root, e.g. 'personality/card.md'"),
     memoryId: z.string().optional().describe("ID of a specific memory to read from the database"),
   }),

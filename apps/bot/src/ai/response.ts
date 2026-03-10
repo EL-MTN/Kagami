@@ -25,8 +25,8 @@ export function collectToolCalls(steps: Step[]) {
       const tr = step.toolResults?.find((r) => r.toolCallId === tc.toolCallId);
       return {
         toolName: tc.toolName,
-        args: tc.args as Record<string, unknown>,
-        result: tr ? JSON.stringify(tr.result) : undefined,
+        args: tc.input as Record<string, unknown>,
+        result: tr ? JSON.stringify(tr.output) : undefined,
       };
     });
   });
@@ -42,8 +42,8 @@ export function wasPhotoSent(steps: Step[]): boolean {
   const allResults = steps.flatMap((s) => s.toolResults ?? []);
   const photoSent = allResults.some(
     (tr) =>
-      (tr.toolName === "sendPhoto" && (tr.result as { sent?: boolean })?.sent) ||
-      (tr.toolName === "browse" && (tr.result as { sent?: boolean })?.sent),
+      (tr.toolName === "sendPhoto" && (tr.output as { sent?: boolean })?.sent) ||
+      (tr.toolName === "browse" && (tr.output as { sent?: boolean })?.sent),
   );
   if (!photoSent) return false;
 
@@ -51,7 +51,7 @@ export function wasPhotoSent(steps: Step[]): boolean {
   const hasOtherTools = allResults.some(
     (tr) =>
       tr.toolName !== "sendPhoto" &&
-      !(tr.toolName === "browse" && (tr.result as { sent?: boolean })?.sent),
+      !(tr.toolName === "browse" && (tr.output as { sent?: boolean })?.sent),
   );
   return !hasOtherTools;
 }

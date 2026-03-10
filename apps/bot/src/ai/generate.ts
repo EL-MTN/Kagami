@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { generateText, stepCountIs } from "ai";
 import { getModel } from "./provider";
 import { assembleSystemPrompt, assembleMessages } from "./context-assembler";
 import { allTools, type ToolContext } from "./tools/index";
@@ -92,7 +92,7 @@ export async function handleMessage(
     system: systemPrompt,
     messages,
     tools: allTools(toolContext),
-    maxSteps: 5,
+    stopWhen: stepCountIs(5),
     temperature: 0.7,
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });

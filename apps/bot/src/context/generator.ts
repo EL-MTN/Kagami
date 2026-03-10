@@ -1,8 +1,14 @@
-import { generateText } from "ai";
+import { generateText, generateImage as aiGenerateImage } from "ai";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { config, logger } from "@mashiro/shared";
-import { getModel, getModelName, ModelTier } from "../ai/provider";
+import {
+  getModel,
+  getModelName,
+  getImageModel,
+  getImageModelSpec,
+  ModelTier,
+} from "../ai/provider";
 import { trackUsage, trackImageGeneration } from "../ai/token-tracker";
 import type { ImageGenerationRequest, GeneratedImage } from "./types";
 
@@ -289,27 +295,27 @@ Return ONLY the setting name, nothing else.`,
   }
 }
 
-async function fileDataUri(filePath: string): Promise<string> {
+function dataUriToBase64(dataUri: string): string {
+  const commaIdx = dataUri.indexOf(",");
+  return commaIdx === -1 ? dataUri : dataUri.slice(commaIdx + 1);
+}
+
+async function readFileAsBase64(filePath: string): Promise<string> {
   const data = await fs.readFile(filePath);
-  const ext = path.extname(filePath).toLowerCase();
-  const mimeType = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
-  return `data:${mimeType};base64,${data.toString("base64")}`;
+  return data.toString("base64");
 }
 
 export async function generateImage(request: ImageGenerationRequest): Promise<GeneratedImage> {
-  if (!config.XAI_API_KEY) {
-    throw new Error("XAI_API_KEY is required for image generation");
-  }
-
+  const { provider, modelId } = getImageModelSpec();
   const start = Date.now();
 
-  // Build reference images array (up to 3 for grok-imagine-image edits)
-  const images: { url: string; type: "image_url" }[] = [];
+  // Build reference images as base64 strings for the AI SDK
+  const refImages: string[] = [];
   let outfitInstruction = "";
 
   if (request.referenceImages) {
     for (const p of request.referenceImages) {
-      images.push({ url: await fileDataUri(p), type: "image_url" });
+      refImages.push(await readFileAsBase64(p));
     }
   } else {
     // Select face, body, and outfit refs in parallel (all use LLM selection)
@@ -320,13 +326,13 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
     ]);
 
     if (face) {
-      images.push({ url: face.dataUri, type: "image_url" });
+      refImages.push(dataUriToBase64(face.dataUri));
     }
     if (body) {
-      images.push({ url: body.dataUri, type: "image_url" });
+      refImages.push(dataUriToBase64(body.dataUri));
     }
     if (outfit) {
-      images.push({ url: outfit.dataUri, type: "image_url" });
+      refImages.push(dataUriToBase64(outfit.dataUri));
       outfitInstruction = `IMPORTANT: She must be wearing the exact outfit shown in the outfit reference image "${outfit.filename}" — match the clothing precisely, ignoring clothing visible in face or body references.`;
     }
   }
@@ -342,30 +348,11 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
   const instructions = [outfitInstruction, settingInstruction].filter(Boolean).join("\n\n");
   const fullPrompt = instructions ? `${request.prompt}\n\n${instructions}` : request.prompt;
 
-  // Choose endpoint based on whether we have reference images
-  const hasRefs = images.length > 0;
-  const endpoint = hasRefs
-    ? "https://api.x.ai/v1/images/edits"
-    : "https://api.x.ai/v1/images/generations";
-
-  const body: Record<string, unknown> = {
-    model: "grok-imagine-image",
-    prompt: fullPrompt,
-    response_format: "b64_json",
-  };
-
-  if (request.aspectRatio) {
-    body.aspect_ratio = request.aspectRatio;
-  }
-
-  if (hasRefs) {
-    body.images = images;
-  }
-
   logger.info(
     {
-      endpoint,
-      imageCount: images.length,
+      provider,
+      model: modelId,
+      imageCount: refImages.length,
       faceRefs: faceRefs.length,
       bodyRefs: bodyRefs.length,
       outfit: outfitInstruction ? true : false,
@@ -373,35 +360,21 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
       promptLength: fullPrompt.length,
       promptPreview: fullPrompt.slice(0, 200),
     },
-    "Calling xAI image generation",
+    "Calling image generation",
   );
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.XAI_API_KEY}`,
-    },
-    body: JSON.stringify(body),
+  const result = await aiGenerateImage({
+    model: getImageModel(),
+    prompt: refImages.length > 0 ? { text: fullPrompt, images: refImages } : fullPrompt,
+    aspectRatio: request.aspectRatio as `${number}:${number}` | undefined,
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`xAI API error ${response.status}: ${errorText}`);
-  }
-
-  const json = (await response.json()) as { data?: { b64_json?: string }[] };
-  const b64 = json.data?.[0]?.b64_json;
-  if (!b64) {
-    throw new Error("No image data in xAI response");
-  }
-
-  const buffer = Buffer.from(b64, "base64");
+  const buffer = Buffer.from(result.image.uint8Array);
   const mimeType = "image/png";
   const elapsed = Date.now() - start;
 
-  trackImageGeneration();
-  logger.info({ elapsed, mimeType }, "Generated image");
+  trackImageGeneration(modelId, provider);
+  logger.info({ elapsed, mimeType, provider, model: modelId }, "Generated image");
 
   return { buffer, mimeType };
 }

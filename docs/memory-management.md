@@ -81,7 +81,7 @@ generateText() with tools
 
 - Up to 40 messages from the active session, including reconstructed tool calls
 
-**On-demand (via tools, within 5 maxSteps):**
+**On-demand (via tools, within 5 steps):**
 
 - Semantic search results with optional type filter (searchMemory)
 - Memory discovery by type/date, excluding archived (listMemories)

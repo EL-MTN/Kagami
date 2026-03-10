@@ -11,8 +11,12 @@ const MODEL_PRICING: Record<string, [number, number]> = {
   "grok-4-1-fast-non-reasoning": [0.6, 4],
 };
 
-// Fixed cost per xAI image generation call
-const IMAGE_GENERATION_COST = 0.012;
+// Fixed cost per image generation call (per model)
+const IMAGE_GENERATION_PRICING: Record<string, number> = {
+  "grok-imagine-image": 0.012,
+  "gpt-image-1": 0.04,
+  "gpt-image-1-mini": 0.0075,
+};
 
 interface TokenUsageData {
   promptTokens?: number;
@@ -71,12 +75,19 @@ export function trackUsage(
   });
 }
 
-export function trackImageGeneration(metadata?: TrackUsageMetadata): void {
+export function trackImageGeneration(
+  model: string,
+  provider: string,
+  metadata?: TrackUsageMetadata,
+): void {
+  const cost = IMAGE_GENERATION_PRICING[model] ?? 0;
+
   logger.info(
     {
       category: "image-generation",
-      model: "grok-imagine-image",
-      estimatedCost: IMAGE_GENERATION_COST,
+      model,
+      provider,
+      estimatedCost: cost,
     },
     "Token usage tracked",
   );
@@ -84,12 +95,12 @@ export function trackImageGeneration(metadata?: TrackUsageMetadata): void {
   TokenUsage.create({
     timestamp: new Date(),
     category: "image-generation" as const,
-    modelName: "grok-imagine-image",
-    provider: "xai",
+    modelName: model,
+    provider,
     promptTokens: 0,
     completionTokens: 0,
     totalTokens: 0,
-    estimatedCost: IMAGE_GENERATION_COST,
+    estimatedCost: cost,
     metadata,
   }).catch((error) => {
     logger.warn({ error }, "Failed to persist image generation usage");

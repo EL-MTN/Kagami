@@ -7,7 +7,7 @@ export function createCheckEmailTool() {
   return tool({
     description:
       "Check Goshujin-sama's email. Lists unread emails or retrieves a specific email by ID.",
-    parameters: z.object({
+    inputSchema: z.object({
       maxResults: z
         .number()
         .int()

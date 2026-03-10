@@ -7,7 +7,7 @@ export function createCurateMemoryTool(chatId: string) {
   return tool({
     description:
       "Trigger memory curation — summarize and organize overflow messages. Only use when explicitly asked.",
-    parameters: z.object({}),
+    inputSchema: z.object({}),
     execute: () => {
       void curateIfNeeded(chatId).catch((err) => {
         logger.error({ err, chatId }, "Background curation failed (tool-triggered)");

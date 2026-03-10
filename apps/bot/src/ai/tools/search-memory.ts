@@ -6,7 +6,7 @@ import { logger } from "@mashiro/shared";
 export const searchMemory = tool({
   description:
     "Search across all memories using semantic understanding. Finds relevant information even when exact words don't match. Use when you need to find information but aren't sure where it is.",
-  parameters: z.object({
+  inputSchema: z.object({
     query: z.string().describe("The search term, phrase, or question to search for"),
     type: z
       .enum(["fact", "episode", "milestone"])

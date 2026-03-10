@@ -6,17 +6,18 @@ The AI layer handles LLM integration, prompt assembly, tool orchestration, image
 
 Defined in `apps/bot/src/ai/provider.ts`. Uses the Vercel AI SDK (`ai` package).
 
-| Env Variable        | Description                                                                                                                 |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `LLM_PROVIDER`      | `"anthropic"` (default), `"openai"`, or `"xai"`                                                                             |
-| `LLM_MODEL`         | Model identifier (default: `"claude-sonnet-4-6"`; recommended xAI model: `grok-4-1-fast-non-reasoning`)                     |
-| `ANTHROPIC_API_KEY` | Required if provider is `anthropic` (validated at startup)                                                                  |
-| `OPENAI_API_KEY`    | Required if provider is `openai` (validated at startup)                                                                     |
-| `XAI_API_KEY`       | Required if provider is `xai` (validated at startup). Also required at runtime for image generation regardless of provider. |
-| `GOOGLE_API_KEY`    | Required for embedding generation (Google Gemini `gemini-embedding-001`)                                                    |
-| `EMBEDDING_MODEL`   | Embedding model name (default: `"gemini-embedding-001"`)                                                                    |
+| Env Variable             | Description                                                                                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `LLM_PROVIDER`           | `"anthropic"` (default), `"openai"`, or `"xai"`                                                                                                                    |
+| `LLM_MODEL`              | Model identifier (default: `"claude-sonnet-4-6"`; recommended xAI model: `grok-4-1-fast-non-reasoning`)                                                            |
+| `ANTHROPIC_API_KEY`      | Required if provider is `anthropic` (validated at startup)                                                                                                         |
+| `OPENAI_API_KEY`         | Required if provider is `openai` (validated at startup)                                                                                                            |
+| `XAI_API_KEY`            | Required if provider is `xai` (validated at startup)                                                                                                               |
+| `IMAGE_GENERATION_MODEL` | Image model in `provider/model` format (e.g., `xai/grok-imagine-image`, `google/gemini-2.5-flash-image`, `openai/gpt-image-1`). Enables `sendPhoto` tool when set. |
+| `GOOGLE_API_KEY`         | Required for embedding generation (Google Gemini `gemini-embedding-001`)                                                                                           |
+| `EMBEDDING_MODEL`        | Embedding model name (default: `"gemini-embedding-001"`)                                                                                                           |
 
-`getModel(tier?)` returns a `LanguageModelV1` instance from the appropriate SDK (`@ai-sdk/anthropic`, `@ai-sdk/openai`, or `@ai-sdk/xai`).
+`getModel(tier?)` returns a `LanguageModel` instance from the appropriate SDK (`@ai-sdk/anthropic`, `@ai-sdk/openai`, or `@ai-sdk/xai`).
 
 ### Model Tiers
 
@@ -86,7 +87,7 @@ interface ToolContext {
   sessionId: string;
 }
 
-allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageWorkflows }
+allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageWorkflows }
 ```
 
 ### rememberFact
@@ -192,13 +193,23 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 - **Returns**: `{ success, workflowId? }` or `{ success, workflows? }` or `{ success: false, reason }`
 - **Behavior**: Creates, lists, updates, deletes, enables/disables, or triggers workflows. Workflows are natural language task descriptions that execute autonomously on a cron schedule using all available tools. Each workflow has a `reportMode`: `"always"` sends a summary after every run, `"alert"` only messages when something noteworthy or an error occurs. The `trigger` action runs a workflow immediately (fire-and-forget). Cron expressions are validated before saving.
 
-**Workflow Execution**: Workflows run via `generateText` with a clean context (personality + datetime + tool instructions, no conversation history), `maxSteps: 20`, and `temperature: 0.4`. A separate execution log (`WorkflowLog`) tracks each run's status, summary, and timing. The scheduler polls every 60s, skips workflows that are already running, and resets stale locks on startup.
+**Workflow Execution**: Workflows run via `generateText` with a clean context (personality + datetime + tool instructions, no conversation history), `stopWhen: stepCountIs(20)`, and `temperature: 0.4`. A separate execution log (`WorkflowLog`) tracks each run's status, summary, and timing. The scheduler polls every 60s, skips workflows that are already running, and resets stale locks on startup.
 
 **Architecture**: Executor service in `apps/bot/src/services/workflow-executor.ts`, scheduler in `apps/bot/src/scheduler/workflows.ts`, cron helper in `apps/bot/src/services/cron.ts`, tool in `apps/bot/src/ai/tools/manage-workflows.ts`. DB models (`Workflow`, `WorkflowLog`) in `packages/db/src/models/workflow.ts`.
 
 ## Image Generation
 
-Implemented in `apps/bot/src/context/generator.ts`. Uses xAI Grok Imagine (`grok-imagine-image`).
+Implemented in `apps/bot/src/context/generator.ts`. Uses the Vercel AI SDK `generateImage()` function with a configurable provider/model via `IMAGE_GENERATION_MODEL`.
+
+### Supported Providers
+
+| Provider | Example Models                                                                           | Max Refs | Notes                                   |
+| -------- | ---------------------------------------------------------------------------------------- | -------- | --------------------------------------- |
+| `xai`    | `grok-imagine-image`                                                                     | 3        | Original provider                       |
+| `google` | `gemini-2.5-flash-image`, `gemini-3-pro-image-preview`, `gemini-3.1-flash-image-preview` | 11–14    | Object fidelity + character consistency |
+| `openai` | `gpt-image-1`, `gpt-image-1-mini`                                                        | 16       | Mask optional                           |
+
+Set via env: `IMAGE_GENERATION_MODEL=xai/grok-imagine-image` (compound `provider/model` format).
 
 ### Reference Images
 
@@ -211,7 +222,7 @@ context/references/
 └── outfits/    → Outfit options (LLM selects best match)
 ```
 
-Images are converted to base64 data URIs. Up to 3 references are sent with each generation request. All three reference types use `getModel(ModelTier.Fast)` to pick the best match for the scene — considering expression/angle for faces, pose/framing for bodies, and clothing fit for outfits. If only one reference exists in a category it's used directly; selection is skipped.
+Images are converted to base64 and passed to `generateImage()` via `prompt.images`. All three reference types use `getModel(ModelTier.Fast)` to pick the best match for the scene — considering expression/angle for faces, pose/framing for bodies, and clothing fit for outfits. If only one reference exists in a category it's used directly; selection is skipped.
 
 ### Settings
 
@@ -232,13 +243,12 @@ sendPhoto tool invoked with description
     │
     ├─ 3. LLM selects setting/location if relevant
     │
-    ├─ 4. POST to xAI API:
-    │      ├─ Model: grok-imagine-image
-    │      ├─ Endpoint: /v1/images/edits (with refs) or /v1/images/generations (without)
-    │      ├─ response_format: b64_json
-    │      └─ aspect_ratio from tool parameters
+    ├─ 4. AI SDK generateImage():
+    │      ├─ Model: getImageModel() (from IMAGE_GENERATION_MODEL env)
+    │      ├─ prompt: { text, images } (with refs) or plain string (without)
+    │      └─ aspectRatio from tool parameters
     │
-    ├─ 5. Decode base64 response → Buffer
+    ├─ 5. result.image.uint8Array → Buffer
     │
     └─ 6. adapter.sendPhotoBuffer(chatId, buffer, caption)
 ```
@@ -275,7 +285,7 @@ The main `generateText()` call in `apps/bot/src/ai/generate.ts` uses:
 | `system`      | Assembled system prompt (with sessionId)                                                   |
 | `messages`    | Last 40 messages from active session (reconstructed)                                       |
 | `tools`       | `allTools(ctx)` — includes sessionId for noteToSelf                                        |
-| `maxSteps`    | 5                                                                                          |
+| `stopWhen`    | `stepCountIs(5)`                                                                           |
 | `temperature` | 0.7                                                                                        |
 | `abortSignal` | `AbortSignal.timeout(120_000)` — 2 minute timeout (30s for Fast tier classification calls) |
 
@@ -292,7 +302,7 @@ All LLM call sites track token usage via `apps/bot/src/ai/token-tracker.ts`. Eac
 | `workflow`         | Workflow execution in `workflow-executor.ts`                         |
 | `curation`         | All curator calls (summary, facts, follow-ups, weekly/monthly merge) |
 | `image-selection`  | Reference image selection (outfit, face, body, setting)              |
-| `image-generation` | xAI image generation (fixed cost per call)                           |
+| `image-generation` | Image generation via AI SDK (fixed cost per call, model-dependent)   |
 
 ### Pricing
 

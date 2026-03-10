@@ -16,7 +16,7 @@ import {
   PROACTIVE_MESSAGE_INSTRUCTIONS,
 } from "./prompts";
 import { config, logger } from "@mashiro/shared";
-import type { CoreMessage, UserContent } from "ai";
+import type { ModelMessage, UserContent, ToolContent } from "ai";
 
 async function assembleMemoryContext(sessionId?: string): Promise<string[]> {
   const parts: string[] = [];
@@ -210,7 +210,7 @@ export async function assembleProactiveSystemPrompt(
 // the synthesized answer, so replaying raw JSON from many turns ago adds no value.
 const TOOL_RESULT_KEEP_LAST = 10;
 
-export async function assembleMessages(chatId: string): Promise<CoreMessage[]> {
+export async function assembleMessages(chatId: string): Promise<ModelMessage[]> {
   // History already includes the current message (saved before this call)
   const history = await getRecentMessages(chatId, 40);
 
@@ -222,7 +222,7 @@ export async function assembleMessages(chatId: string): Promise<CoreMessage[]> {
     "Message history loaded",
   );
 
-  const messages: CoreMessage[] = [];
+  const messages: ModelMessage[] = [];
 
   for (let i = 0; i < history.length; i++) {
     const msg = history[i];
@@ -234,7 +234,7 @@ export async function assembleMessages(chatId: string): Promise<CoreMessage[]> {
         const img = await readImage(msg.imageRef);
         if (img) {
           content = [
-            { type: "image", image: img.data.toString("base64"), mimeType: img.mimeType },
+            { type: "image", image: img.data.toString("base64"), mediaType: img.mimeType },
             { type: "text", text: msg.content },
           ];
         }
@@ -251,27 +251,30 @@ export async function assembleMessages(chatId: string): Promise<CoreMessage[]> {
             type: "tool-call" as const,
             toolCallId: `${callIdBase}_${i}`,
             toolName: tc.toolName,
-            args: tc.args,
+            input: tc.args ?? {},
           })),
         });
         messages.push({
           role: "tool",
           content: msg.toolCalls.map((tc, i) => {
-            let result: unknown = "done";
+            let parsed: unknown = "done";
             if (tc.result) {
               try {
-                result = JSON.parse(tc.result);
+                parsed = JSON.parse(tc.result);
               } catch {
-                result = tc.result;
+                parsed = tc.result;
               }
             }
             return {
               type: "tool-result" as const,
               toolCallId: `${callIdBase}_${i}`,
               toolName: tc.toolName,
-              result,
+              output:
+                typeof parsed === "string"
+                  ? { type: "text" as const, value: parsed }
+                  : { type: "json" as const, value: parsed },
             };
-          }),
+          }) as ToolContent,
         });
       }
       if (msg.content) {

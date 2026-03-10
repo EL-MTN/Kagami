@@ -16,7 +16,7 @@ export function createManageCalendarTool() {
   return tool({
     description:
       "Manage Goshujin-sama's Google Calendar. List upcoming events, create, update, or delete events.",
-    parameters: z.object({
+    inputSchema: z.object({
       action: z.enum(["list", "create", "update", "delete"]),
       daysAhead: z.number().optional().describe("Number of days ahead to list events (default 7)"),
       maxResults: z.number().optional().describe("Maximum number of events to return (default 10)"),

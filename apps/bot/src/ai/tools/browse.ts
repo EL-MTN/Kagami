@@ -26,7 +26,7 @@ export function createBrowseTool(chatId: string, adapter: PlatformAdapter) {
   return tool({
     description:
       "Browse the web. Search for information, visit pages, extract data, interact with elements, take screenshots, or complete multi-step tasks autonomously.",
-    parameters: z.object({
+    inputSchema: z.object({
       action: z.enum(["search", "visit", "extract", "act", "screenshot", "agent", "login"]),
       query: z.string().optional().describe("Search query (for search action)"),
       url: z.string().optional().describe("URL to visit (for visit action)"),

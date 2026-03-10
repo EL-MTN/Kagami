@@ -1,4 +1,4 @@
-import { generateText, generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 import { format, subDays, subMonths } from "date-fns";
 import { getModel, ModelTier } from "../ai/provider";
@@ -107,29 +107,33 @@ async function _curateIfNeeded(chatId: string): Promise<void> {
 
   const transcript = overflow.overflow.map(formatMessageForTranscript).filter(Boolean).join("\n");
 
-  const { object: curation, usage: curationUsage } = await generateObject({
+  const curationResult = await generateText({
     model: getModel(),
-    schema: z.object({
-      summary: z
-        .string()
-        .describe(
-          "Bullet-point summary of the conversation. Include important facts learned, emotional highlights, topics discussed, and any promises or follow-ups. Write from Mashiro's perspective.",
-        ),
-      emotionalTone: z
-        .number()
-        .int()
-        .min(1)
-        .max(10)
-        .describe("Overall emotional tone: 1=very negative, 10=very positive"),
-      importance: z
-        .number()
-        .int()
-        .min(1)
-        .max(10)
-        .describe("Importance of this conversation: 1=mundane small talk, 10=life-changing event"),
-      followUps: z
-        .array(z.string())
-        .describe("Action items, promises, or things to follow up on. Empty array if none."),
+    output: Output.object({
+      schema: z.object({
+        summary: z
+          .string()
+          .describe(
+            "Bullet-point summary of the conversation. Include important facts learned, emotional highlights, topics discussed, and any promises or follow-ups. Write from Mashiro's perspective.",
+          ),
+        emotionalTone: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .describe("Overall emotional tone: 1=very negative, 10=very positive"),
+        importance: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .describe(
+            "Importance of this conversation: 1=mundane small talk, 10=life-changing event",
+          ),
+        followUps: z
+          .array(z.string())
+          .describe("Action items, promises, or things to follow up on. Empty array if none."),
+      }),
     }),
     system: `You are a memory curator. Summarize conversations into key points. Be concise. Use bullet points. Write from the perspective of Mashiro (the girlfriend AI) remembering the conversation.`,
     messages: [
@@ -140,8 +144,9 @@ async function _curateIfNeeded(chatId: string): Promise<void> {
     ],
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
+  const curation = curationResult.output;
 
-  trackUsage("curation", getModelName(), curationUsage, { chatId });
+  trackUsage("curation", getModelName(), curationResult.usage, { chatId });
 
   // Store episode in Memory collection
   await engine.remember(curation.summary, "episode", "curation", {
@@ -219,17 +224,19 @@ async function _curateClosedSession(conversation: IConversation): Promise<void> 
   }
 
   // Full curation for longer sessions
-  const { object: curation, usage: sessionCurationUsage } = await generateObject({
+  const sessionCurationResult = await generateText({
     model: getModel(),
-    schema: z.object({
-      summary: z
-        .string()
-        .describe(
-          "Bullet-point summary of the conversation. Include important facts, emotional highlights, topics, and follow-ups. Write from Mashiro's perspective.",
-        ),
-      emotionalTone: z.number().int().min(1).max(10),
-      importance: z.number().int().min(1).max(10),
-      followUps: z.array(z.string()),
+    output: Output.object({
+      schema: z.object({
+        summary: z
+          .string()
+          .describe(
+            "Bullet-point summary of the conversation. Include important facts, emotional highlights, topics, and follow-ups. Write from Mashiro's perspective.",
+          ),
+        emotionalTone: z.number().int().min(1).max(10),
+        importance: z.number().int().min(1).max(10),
+        followUps: z.array(z.string()),
+      }),
     }),
     system: `You are a memory curator. Summarize conversations into key points. Be concise. Use bullet points. Write from the perspective of Mashiro (the girlfriend AI) remembering the conversation.`,
     messages: [
@@ -240,8 +247,9 @@ async function _curateClosedSession(conversation: IConversation): Promise<void> 
     ],
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
+  const curation = sessionCurationResult.output;
 
-  trackUsage("curation", getModelName(), sessionCurationUsage, { chatId });
+  trackUsage("curation", getModelName(), sessionCurationResult.usage, { chatId });
 
   await engine.remember(curation.summary, "episode", "session-curation", {
     chatId,
@@ -269,12 +277,14 @@ async function resolveAddressedFollowUps(transcript: string): Promise<void> {
   const numbered = followUps.map((fu, i) => `${i + 1}. ${fu.text}`).join("\n");
 
   try {
-    const { object: result, usage: followUpUsage } = await generateObject({
+    const followUpResult = await generateText({
       model: getModel(ModelTier.Fast),
-      schema: z.object({
-        resolvedIndices: z
-          .array(z.number())
-          .describe("1-based indices of follow-ups that were addressed in the transcript"),
+      output: Output.object({
+        schema: z.object({
+          resolvedIndices: z
+            .array(z.number())
+            .describe("1-based indices of follow-ups that were addressed in the transcript"),
+        }),
       }),
       system: `You are a memory curator. Given a conversation transcript and a list of pending follow-ups, identify which follow-ups have been addressed or resolved by the conversation. Return the 1-based indices of resolved follow-ups. If none were addressed, return an empty array.`,
       messages: [
@@ -285,8 +295,9 @@ async function resolveAddressedFollowUps(transcript: string): Promise<void> {
       ],
       abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
+    const result = followUpResult.output;
 
-    trackUsage("curation", getModelName(ModelTier.Fast), followUpUsage);
+    trackUsage("curation", getModelName(ModelTier.Fast), followUpResult.usage);
 
     let resolved = 0;
     for (const idx of result.resolvedIndices) {
@@ -330,9 +341,9 @@ async function updateUserFacts(summary: string): Promise<void> {
       ? `\n\nNote: Showing ${relevantFacts.length} most relevant facts out of ${totalFacts} total. Only classify against facts shown above.`
       : "";
 
-  const { object: result, usage: factUsage } = await generateObject({
+  const factResult = await generateText({
     model: getModel(ModelTier.Fast),
-    schema: FactOperationSchema,
+    output: Output.object({ schema: FactOperationSchema }),
     system: `You are a memory curator. Given a conversation summary and a list of existing facts about the user, classify what changes need to be made.
 
 For each relevant fact from the conversation, output an operation:
@@ -350,8 +361,9 @@ If there are no changes needed, output an empty operations array.`,
     ],
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
+  const result = factResult.output;
 
-  trackUsage("curation", getModelName(ModelTier.Fast), factUsage);
+  trackUsage("curation", getModelName(ModelTier.Fast), factResult.usage);
 
   const operations = result.operations;
 

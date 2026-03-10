@@ -12,7 +12,7 @@ import { createManageRemindersTool } from "./manage-reminders";
 import { createBrowseTool } from "./browse";
 import { createManageWorkflowsTool } from "./manage-workflows";
 import { config } from "@mashiro/shared";
-import type { CoreTool } from "ai";
+import type { ToolSet } from "ai";
 import type { PlatformAdapter } from "@mashiro/shared";
 
 export interface ToolContext {
@@ -22,7 +22,7 @@ export interface ToolContext {
 }
 
 export function allTools(ctx: ToolContext) {
-  const tools: Record<string, CoreTool> = {
+  const tools: ToolSet = {
     readMemory,
     rememberFact,
     noteToSelf: createNoteToSelfTool(ctx.sessionId),
@@ -31,7 +31,7 @@ export function allTools(ctx: ToolContext) {
     curateMemory: createCurateMemoryTool(ctx.chatId),
   };
 
-  if (config.XAI_API_KEY) {
+  if (config.IMAGE_GENERATION_MODEL) {
     tools.sendPhoto = createSendPhotoTool(ctx.chatId, ctx.adapter);
   }
 

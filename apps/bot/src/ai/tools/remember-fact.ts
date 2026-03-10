@@ -6,7 +6,7 @@ import { logger } from "@mashiro/shared";
 export const rememberFact = tool({
   description:
     "Save an important fact or milestone about him directly to your memory. Use for things worth remembering long-term: preferences, life events, important dates, relationship milestones. Don't save trivial things.",
-  parameters: z.object({
+  inputSchema: z.object({
     content: z.string().describe("The fact or milestone to remember"),
     type: z
       .enum(["fact", "milestone"])

@@ -15,7 +15,7 @@ export function createSendPhotoTool(chatId: string, adapter: PlatformAdapter) {
   return tool({
     description:
       "Generate and send a photo/selfie. Use when the conversation naturally calls for a picture. Provide a vivid scene description — the image will be AI-generated to match. Don't force it.",
-    parameters: z.object({
+    inputSchema: z.object({
       description: z
         .string()
         .describe(

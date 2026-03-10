@@ -7,7 +7,7 @@ export function createSendEmailTool() {
   return tool({
     description:
       "Send an email on behalf of Goshujin-sama. Can also reply to an existing email thread by providing threadId and inReplyTo from checkEmail results.",
-    parameters: z.object({
+    inputSchema: z.object({
       to: z.string().email().describe("Recipient email address"),
       subject: z.string().min(1).describe("Email subject line"),
       body: z.string().min(1).describe("Plain text email body"),

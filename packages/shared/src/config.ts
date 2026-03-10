@@ -27,6 +27,8 @@ const baseSchema = z.object({
 
   TIMEZONE: z.string().default("America/New_York"),
 
+  IMAGE_GENERATION_MODEL: z.string().optional(),
+
   BROWSER_ENABLED: z
     .string()
     .default("false")
@@ -81,6 +83,29 @@ export function validateConfig(): void {
     errors.push(
       `${requiredEmbedding} is required when EMBEDDING_PROVIDER is "${config.EMBEDDING_PROVIDER}"`,
     );
+  }
+
+  if (config.IMAGE_GENERATION_MODEL) {
+    const slash = config.IMAGE_GENERATION_MODEL.indexOf("/");
+    if (slash === -1) {
+      errors.push(
+        'IMAGE_GENERATION_MODEL must be in "provider/model" format (e.g., "xai/grok-imagine-image")',
+      );
+    } else {
+      const provider = config.IMAGE_GENERATION_MODEL.slice(0, slash);
+      const imageKeyMap: Record<string, string> = {
+        anthropic: "ANTHROPIC_API_KEY",
+        openai: "OPENAI_API_KEY",
+        xai: "XAI_API_KEY",
+        google: "GOOGLE_API_KEY",
+      };
+      const requiredKey = imageKeyMap[provider];
+      if (requiredKey && !config[requiredKey as keyof typeof config]) {
+        errors.push(
+          `${requiredKey} is required when IMAGE_GENERATION_MODEL uses "${provider}" provider`,
+        );
+      }
+    }
   }
 
   const googleOAuthFields = [

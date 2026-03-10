@@ -7,7 +7,7 @@ export function createNoteToSelfTool(sessionId: string) {
   return tool({
     description:
       "Make a temporary note to yourself for this session. Use for things you want to track short-term: what he's cooking, a topic to circle back to, something to ask about later. These notes auto-expire after 24 hours.",
-    parameters: z.object({
+    inputSchema: z.object({
       note: z.string().describe("The note to save for this session"),
     }),
     execute: async ({ note }) => {

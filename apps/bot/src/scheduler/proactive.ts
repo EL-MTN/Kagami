@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { generateText, stepCountIs } from "ai";
 import { getModel } from "../ai/provider";
 import { assembleProactiveSystemPrompt, assembleMessages } from "../ai/context-assembler";
 import { checkWeeklyMerge, checkMonthlyConsolidation } from "../memory/curator";
@@ -170,7 +170,7 @@ async function generateProactiveMessage(
     system: systemPrompt,
     messages,
     tools: allTools(toolContext),
-    maxSteps: 5,
+    stopWhen: stepCountIs(5),
     temperature: 0.7,
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });

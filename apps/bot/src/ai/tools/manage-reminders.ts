@@ -7,7 +7,7 @@ export function createManageRemindersTool(chatId: string) {
   return tool({
     description:
       "Manage reminders for Goshujin-sama. Create, list, or delete reminders. Compose the reminder message at creation time — it will be sent as-is when it fires.",
-    parameters: z.object({
+    inputSchema: z.object({
       action: z.enum(["create", "list", "delete"]),
       message: z
         .string()

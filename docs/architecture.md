@@ -191,7 +191,7 @@ mashiro/                          # npm workspaces + Turborepo
        │   │         + working memory + follow-ups + datetime + tools + format
        │   └─ Messages: last 40 msgs from active session, images from GridFS, tool-call pairs (recent 10 only)
        │
-10. generateText({ model, system, messages, tools, maxSteps: 5, temperature: 0.7 })
+10. generateText({ model, system, messages, tools, stopWhen: stepCountIs(5), temperature: 0.7 })
        │   └─ LLM may call tools (rememberFact, noteToSelf, readMemory, searchMemory, sendPhoto, etc.)
        │
 11. extractResponseText(steps) + collectToolCalls(steps)

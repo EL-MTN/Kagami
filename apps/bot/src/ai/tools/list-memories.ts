@@ -7,7 +7,7 @@ import { logger } from "@mashiro/shared";
 export const listMemories = tool({
   description:
     "List available memories by type. Use to discover past conversation summaries, stored facts, or milestones. Helpful when you want to see what you remember.",
-  parameters: z.object({
+  inputSchema: z.object({
     type: z
       .enum(["fact", "episode", "milestone"])
       .optional()

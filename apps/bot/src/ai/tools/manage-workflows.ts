@@ -16,7 +16,7 @@ export function createManageWorkflowsTool(chatId: string, adapter: PlatformAdapt
   return tool({
     description:
       "Manage automated workflows. Create, list, update, delete, enable/disable, or trigger workflows that run on a cron schedule.",
-    parameters: z.object({
+    inputSchema: z.object({
       action: z.enum(["create", "list", "update", "delete", "enable", "disable", "trigger"]),
       workflowId: z
         .string()
