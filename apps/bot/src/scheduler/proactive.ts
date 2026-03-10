@@ -10,6 +10,7 @@ import {
   cleanupOldConversations,
   cleanupFiredReminders,
   cleanupOldWorkflowLogs,
+  cleanupOldLocations,
   getNextProactiveAt,
   setNextProactiveAt,
 } from "@mashiro/db";
@@ -210,13 +211,17 @@ async function generateProactiveMessage(
 
 async function runDailyCleanup(): Promise<void> {
   try {
-    const [deletedReminders, deletedConvos, deletedLogs] = await Promise.all([
+    const [deletedReminders, deletedConvos, deletedLogs, deletedLocations] = await Promise.all([
       cleanupFiredReminders(30),
       cleanupOldConversations(90),
       cleanupOldWorkflowLogs(90),
+      cleanupOldLocations(90),
     ]);
-    if (deletedReminders > 0 || deletedConvos > 0 || deletedLogs > 0) {
-      logger.info({ deletedReminders, deletedConvos, deletedLogs }, "Daily cleanup complete");
+    if (deletedReminders > 0 || deletedConvos > 0 || deletedLogs > 0 || deletedLocations > 0) {
+      logger.info(
+        { deletedReminders, deletedConvos, deletedLogs, deletedLocations },
+        "Daily cleanup complete",
+      );
     }
   } catch (error) {
     logger.error({ error }, "Daily cleanup failed");
@@ -227,6 +232,16 @@ export function resetTimer(chatId: string): void {
   if (!_adapter) return;
   // For Telegram private chats, chatId equals userId
   scheduleNext(chatId, chatId);
+}
+
+export function triggerLocationProactive(chatId: string): void {
+  if (!_adapter) return;
+  const delay = config.LOCATION_PROACTIVE_DELAY_MS + randomBetween(0, 5 * 60_000);
+  logger.debug(
+    { chatId, delayMin: Math.round(delay / 60_000) },
+    "Location-triggered proactive message scheduled",
+  );
+  scheduleNext(chatId, chatId, delay);
 }
 
 export function startProactiveScheduler(adapter: PlatformAdapter): () => void {

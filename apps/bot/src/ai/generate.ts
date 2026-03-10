@@ -64,7 +64,7 @@ export async function handleMessage(
 
   // 3. Build system prompt and message history
   const [systemPrompt, messages] = await Promise.all([
-    assembleSystemPrompt(sessionId),
+    assembleSystemPrompt(incoming.chatId, sessionId),
     assembleMessages(incoming.chatId),
   ]);
 

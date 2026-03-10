@@ -93,6 +93,8 @@ mashiro/                          # npm workspaces + Turborepo
 │        │  │ Workflow    │
 │        │  │ WorkflowLog │
 │        │  │ TokenUsage  │
+│        │  │ Location    │
+│        │  │  History    │
 └────────┘  └─────────────┘
     ▲            ▲
     └─────┬──────┘
@@ -163,7 +165,7 @@ mashiro/                          # npm workspaces + Turborepo
 ```
 1. User sends message on Telegram
        │
-2. Grammy handler fires (message:text or message:photo)
+2. Grammy handler fires (message:text, message:photo, or message:location)
        │
 3. Allowlist check ─► Rate limit check
        │
@@ -185,10 +187,10 @@ mashiro/                          # npm workspaces + Turborepo
        │   ├─ classify facts as ADD/UPDATE/DELETE (bounded: 30 most relevant facts)
        │   └─ trim conversation to 40 messages (delete orphaned GridFS images)
        │
-9. Parallel: assembleSystemPrompt(sessionId) + assembleMessages(chatId)
+9. Parallel: assembleSystemPrompt(chatId, sessionId) + assembleMessages(chatId)
        │   ├─ System: personality + facts (top 30) + milestones (last 5)
        │   │         + daily episodes (3) + weekly episodes (2)
-       │   │         + working memory + follow-ups + datetime + tools + format
+       │   │         + working memory + follow-ups + location + datetime + tools + format
        │   └─ Messages: last 40 msgs from active session, images from GridFS, tool-call pairs (recent 10 only)
        │
 10. generateText({ model, system, messages, tools, stopWhen: stepCountIs(5), temperature: 0.7 })
@@ -215,31 +217,31 @@ The scheduler sends unprompted messages to maintain engagement:
 - **Persistence**: next-fire timestamps saved to MongoDB (survives restarts)
 - **Reset**: any user message reschedules the next proactive to 1.5–2.5h out
 - **Memory consolidation**: after each proactive fire, checks weekly merge and monthly consolidation (fire-and-forget)
-- **Daily cleanup**: removes fired reminders (>30 days), closed conversations (>90 days), and old workflow logs (>90 days)
+- **Daily cleanup**: removes fired reminders (>30 days), closed conversations (>90 days), old workflow logs (>90 days), and old location history (>90 days)
 
 When firing, the scheduler uses `getOrCreateSession` to get the active session, assembles a proactive system prompt with sessionId, and injects a synthetic nudge if no recent user message exists.
 
 ## Package Boundaries
 
-| Package              | Purpose                                            | Key Exports                                                                                                                                                         |
-| -------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@mashiro/shared`    | Config, logging, markdown, platform types          | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, `VaultFile`                                                                |
-| `@mashiro/db`        | MongoDB connection, all models, GridFS             | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `Workflow`, `WorkflowLog`, `readImage`, `writeImage`, all model CRUD functions |
-| `@mashiro/memory`    | Memory engine, embeddings, vault files             | `remember`, `recall`, `forget`, `readVaultFile`, `writeVaultFile`, `generateEmbedding`, episode/fact/milestone retrieval                                            |
-| `@mashiro/bot`       | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages                                                                                                                    |
-| `@mashiro/dashboard` | Next.js dashboard (read-only data viewer)          | Overview, conversations, memories, reminders, workflows pages                                                                                                       |
+| Package              | Purpose                                            | Key Exports                                                                                                                                                                            |
+| -------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@mashiro/shared`    | Config, logging, markdown, platform types          | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, `VaultFile`                                                                                   |
+| `@mashiro/db`        | MongoDB connection, all models, GridFS             | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `Workflow`, `WorkflowLog`, `LocationHistory`, `readImage`, `writeImage`, all model CRUD functions |
+| `@mashiro/memory`    | Memory engine, embeddings, vault files             | `remember`, `recall`, `forget`, `readVaultFile`, `writeVaultFile`, `generateEmbedding`, episode/fact/milestone retrieval                                                               |
+| `@mashiro/bot`       | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages                                                                                                                                       |
+| `@mashiro/dashboard` | Next.js dashboard (read-only data viewer)          | Overview, conversations, memories, reminders, workflows pages                                                                                                                          |
 
 ### Bot-Internal Modules
 
-| Directory                         | Purpose                                                         |
-| --------------------------------- | --------------------------------------------------------------- |
-| `apps/bot/src/ai/`                | LLM integration, prompt assembly, tool orchestration            |
-| `apps/bot/src/ai/tools/`          | Tool implementations available to the LLM                       |
-| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup                                    |
-| `apps/bot/src/memory/`            | Curator (tightly coupled to AI layer)                           |
-| `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Cron, Workflow executor |
-| `apps/bot/src/scheduler/`         | Proactive, reminder, workflow scheduling                        |
-| `apps/bot/src/context/`           | Image reference loading + generation                            |
+| Directory                         | Purpose                                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------ |
+| `apps/bot/src/ai/`                | LLM integration, prompt assembly, tool orchestration                                 |
+| `apps/bot/src/ai/tools/`          | Tool implementations available to the LLM                                            |
+| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup                                                         |
+| `apps/bot/src/memory/`            | Curator (tightly coupled to AI layer)                                                |
+| `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Cron, Workflow executor, Geocoding, Location |
+| `apps/bot/src/scheduler/`         | Proactive, reminder, workflow scheduling                                             |
+| `apps/bot/src/context/`           | Image reference loading + generation                                                 |
 
 ## Boot Sequence
 

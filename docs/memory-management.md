@@ -41,7 +41,7 @@ User sends message
   - Originals soft-archived (metadata.archivedAt), not deleted
        |
        v
-[ASSEMBLY] assembleSystemPrompt(sessionId?)
+[ASSEMBLY] assembleSystemPrompt(chatId, sessionId?)
   - [STATIC] personality/card.md         --+
   - [WARM] top 30 facts (by importance)    |
   - [WARM] recent milestones (last 5)      |

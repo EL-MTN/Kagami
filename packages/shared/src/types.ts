@@ -8,6 +8,13 @@ export interface IncomingMessage {
   imageMimeType?: string;
   timestamp: Date;
   replyToMessageId?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+    heading?: number;
+    accuracy?: number;
+    livePeriod?: number;
+  };
 }
 
 export interface PlatformAdapter {

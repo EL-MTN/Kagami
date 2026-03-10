@@ -66,6 +66,48 @@ export class TelegramAdapter implements PlatformAdapter {
     }
   }
 
+  normalizeLocation(ctx: Context): IncomingMessage | null {
+    const msg = ctx.message;
+    if (!msg?.location || !msg.from) return null;
+
+    return {
+      platform: "telegram",
+      chatId: String(msg.chat.id),
+      userId: String(msg.from.id),
+      userName: msg.from.first_name || "Unknown",
+      text: "[location shared]",
+      timestamp: new Date(msg.date * 1000),
+      location: {
+        latitude: msg.location.latitude,
+        longitude: msg.location.longitude,
+        heading: msg.location.heading,
+        accuracy: msg.location.horizontal_accuracy,
+        livePeriod: msg.location.live_period,
+      },
+    };
+  }
+
+  normalizeLocationEdit(ctx: Context): IncomingMessage | null {
+    const msg = ctx.editedMessage;
+    if (!msg?.location || !msg.from) return null;
+
+    return {
+      platform: "telegram",
+      chatId: String(msg.chat.id),
+      userId: String(msg.from.id),
+      userName: msg.from.first_name || "Unknown",
+      text: "[live location update]",
+      timestamp: new Date(msg.date * 1000),
+      location: {
+        latitude: msg.location.latitude,
+        longitude: msg.location.longitude,
+        heading: msg.location.heading,
+        accuracy: msg.location.horizontal_accuracy,
+        livePeriod: msg.location.live_period,
+      },
+    };
+  }
+
   async sendText(chatId: string, text: string): Promise<void> {
     try {
       const html = markdownToTelegramHtml(text);

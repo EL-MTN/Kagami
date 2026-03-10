@@ -6,16 +6,19 @@ The AI layer handles LLM integration, prompt assembly, tool orchestration, image
 
 Defined in `apps/bot/src/ai/provider.ts`. Uses the Vercel AI SDK (`ai` package).
 
-| Env Variable             | Description                                                                                                                                                        |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `LLM_PROVIDER`           | `"anthropic"` (default), `"openai"`, or `"xai"`                                                                                                                    |
-| `LLM_MODEL`              | Model identifier (default: `"claude-sonnet-4-6"`; recommended xAI model: `grok-4-1-fast-non-reasoning`)                                                            |
-| `ANTHROPIC_API_KEY`      | Required if provider is `anthropic` (validated at startup)                                                                                                         |
-| `OPENAI_API_KEY`         | Required if provider is `openai` (validated at startup)                                                                                                            |
-| `XAI_API_KEY`            | Required if provider is `xai` (validated at startup)                                                                                                               |
-| `IMAGE_GENERATION_MODEL` | Image model in `provider/model` format (e.g., `xai/grok-imagine-image`, `google/gemini-2.5-flash-image`, `openai/gpt-image-1`). Enables `sendPhoto` tool when set. |
-| `GOOGLE_API_KEY`         | Required for embedding generation (Google Gemini `gemini-embedding-001`)                                                                                           |
-| `EMBEDDING_MODEL`        | Embedding model name (default: `"gemini-embedding-001"`)                                                                                                           |
+| Env Variable                 | Description                                                                                                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `LLM_PROVIDER`               | `"anthropic"` (default), `"openai"`, or `"xai"`                                                                                                                    |
+| `LLM_MODEL`                  | Model identifier (default: `"claude-sonnet-4-6"`; recommended xAI model: `grok-4-1-fast-non-reasoning`)                                                            |
+| `ANTHROPIC_API_KEY`          | Required if provider is `anthropic` (validated at startup)                                                                                                         |
+| `OPENAI_API_KEY`             | Required if provider is `openai` (validated at startup)                                                                                                            |
+| `XAI_API_KEY`                | Required if provider is `xai` (validated at startup)                                                                                                               |
+| `IMAGE_GENERATION_MODEL`     | Image model in `provider/model` format (e.g., `xai/grok-imagine-image`, `google/gemini-2.5-flash-image`, `openai/gpt-image-1`). Enables `sendPhoto` tool when set. |
+| `GOOGLE_API_KEY`             | Required for embedding generation (Google Gemini `gemini-embedding-001`)                                                                                           |
+| `EMBEDDING_MODEL`            | Embedding model name (default: `"gemini-embedding-001"`)                                                                                                           |
+| `LOCATION_ENABLED`           | Feature gate for location awareness (default: `false`)                                                                                                             |
+| `GOOGLE_MAPS_API_KEY`        | Google Maps Geocoding API key (required when `LOCATION_ENABLED=true`)                                                                                              |
+| `LOCATION_CONTEXT_MAX_AGE_H` | Max age in hours for location data to appear in LLM context (default: `12`)                                                                                        |
 
 `getModel(tier?)` returns a `LanguageModel` instance from the appropriate SDK (`@ai-sdk/anthropic`, `@ai-sdk/openai`, or `@ai-sdk/xai`).
 
@@ -34,7 +37,7 @@ The `ModelTier` enum lets call sites declare intent rather than hardcoding model
 Implemented in `apps/bot/src/ai/context-assembler.ts`. The system prompt is built from MongoDB and the personality card at generation time.
 
 ```
-assembleSystemPrompt(sessionId?)
+assembleSystemPrompt(chatId, sessionId?)
     │
     ├─ 1. Personality card       ← vault/personality/card.md
     ├─ 2. User knowledge         ← engine.getTopFacts(30) — MongoDB
@@ -44,12 +47,13 @@ assembleSystemPrompt(sessionId?)
     ├─ 6. Working memory         ← engine.getWorkingMemories(sessionId) — MongoDB (if sessionId)
     ├─ 7. Follow-ups             ← engine.getActiveFollowUps() — 30-day limit, deduped
     ├─ 8. Emotional note         ← injected when mood trend is rising or falling (not stable)
-    ├─ 9. Datetime context       ← current time + time-of-day label
-    ├─ 10. Tool behavior guidelines← compact behavioral rules in prompts.ts (tool schemas are self-describing)
-    ├─ 11. Maid service instructions← conditional on Google OAuth config (prompts.ts, condensed)
-    ├─ 12. Browser instructions   ← conditional on BROWSER_ENABLED (prompts.ts, condensed)
-    ├─ 13. Response format        ← message style rules in prompts.ts
-    └─ 14. Active reminders       ← pending + recently fired (proactive only)
+    ├─ 9. Location context       ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (conditional on LOCATION_ENABLED)
+    ├─ 10. Datetime context      ← current time + time-of-day label
+    ├─ 11. Tool behavior guidelines← compact behavioral rules in prompts.ts (tool schemas are self-describing)
+    ├─ 12. Maid service instructions← conditional on Google OAuth config (prompts.ts, condensed)
+    ├─ 13. Browser instructions   ← conditional on BROWSER_ENABLED (prompts.ts, condensed)
+    ├─ 14. Response format        ← message style rules in prompts.ts
+    └─ 15. Active reminders       ← pending + recently fired (proactive only)
 
     All parts joined with "---" separator
 ```

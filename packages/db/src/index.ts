@@ -44,6 +44,15 @@ export {
   type DailyUsage,
 } from "./models/token-usage";
 export {
+  LocationHistory,
+  storeLocation,
+  getLatestLocation,
+  getRecentLocations,
+  getLocationVisitCount,
+  cleanupOldLocations,
+  type ILocationHistory,
+} from "./models/location-history";
+export {
   Workflow,
   WorkflowLog,
   createWorkflow,

@@ -41,6 +41,15 @@ const baseSchema = z.object({
     .default("true")
     .transform((s) => s === "true"),
 
+  LOCATION_ENABLED: z
+    .string()
+    .default("false")
+    .transform((s) => s === "true"),
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
+  LOCATION_MOVEMENT_THRESHOLD_M: z.coerce.number().default(100),
+  LOCATION_PROACTIVE_DELAY_MS: z.coerce.number().default(1_200_000),
+  LOCATION_CONTEXT_MAX_AGE_H: z.coerce.number().default(12),
+
   VAULT_PATH: z.string().default("./vault"),
   CONTEXT_PATH: z.string().default("./context"),
 
@@ -119,6 +128,10 @@ export function validateConfig(): void {
     for (const field of missing) {
       errors.push(`${field} is required when any Google OAuth variable is set`);
     }
+  }
+
+  if (config.LOCATION_ENABLED && !config.GOOGLE_MAPS_API_KEY) {
+    errors.push("GOOGLE_MAPS_API_KEY is required when LOCATION_ENABLED is true");
   }
 
   if (errors.length > 0) {

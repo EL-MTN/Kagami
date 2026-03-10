@@ -1,10 +1,11 @@
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { readVaultFile } from "@mashiro/memory";
 import {
   getRecentMessages,
   readImage,
   listRemindersForChat,
   getRecentlyFiredReminders,
+  getLatestLocation,
 } from "@mashiro/db";
 import * as engine from "@mashiro/memory";
 import {
@@ -156,8 +157,36 @@ async function assembleBasePrompt(sessionId?: string): Promise<string[]> {
   return parts;
 }
 
-export async function assembleSystemPrompt(sessionId?: string): Promise<string> {
+async function assembleLocationContext(chatId: string): Promise<string | null> {
+  if (!config.LOCATION_ENABLED) return null;
+
+  try {
+    const latest = await getLatestLocation(chatId);
+    if (!latest) return null;
+
+    const ageMs = Date.now() - latest.timestamp.getTime();
+    const maxAgeMs = config.LOCATION_CONTEXT_MAX_AGE_H * 60 * 60 * 1000;
+    if (ageMs > maxAgeMs) return null;
+
+    const ago = formatDistanceToNow(latest.timestamp, { addSuffix: true });
+    const name =
+      latest.placeName ?? `${latest.latitude.toFixed(4)}, ${latest.longitude.toFixed(4)}`;
+    const category = latest.placeCategory ? ` (${latest.placeCategory})` : "";
+    const live = latest.isLive ? "\n(live location sharing is active)" : "";
+
+    return `## Location\nLast known: ${name}${category}, ${ago}${live}`;
+  } catch (error) {
+    logger.warn({ error }, "Failed to load location context");
+    return null;
+  }
+}
+
+export async function assembleSystemPrompt(chatId: string, sessionId?: string): Promise<string> {
   const parts = await assembleBasePrompt(sessionId);
+
+  const locationContext = await assembleLocationContext(chatId);
+  if (locationContext) parts.push(locationContext);
+
   parts.push(RESPONSE_FORMAT_INSTRUCTIONS);
   return parts.join("\n\n---\n\n");
 }
@@ -200,6 +229,9 @@ export async function assembleProactiveSystemPrompt(
   if (reminderContext) {
     parts.push(reminderContext);
   }
+
+  const locationContext = await assembleLocationContext(chatId);
+  if (locationContext) parts.push(locationContext);
 
   parts.push(PROACTIVE_MESSAGE_INSTRUCTIONS);
   return parts.join("\n\n---\n\n");

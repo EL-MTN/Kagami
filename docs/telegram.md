@@ -45,6 +45,8 @@ Implemented in `apps/bot/src/platform/telegram/adapter.ts`. Singleton accessed v
 | ------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | `normalize(ctx)`                           | Extract text message from Grammy context → `IncomingMessage`                              |
 | `normalizePhoto(ctx)`                      | Download photo from Telegram API, convert to base64, detect MIME type → `IncomingMessage` |
+| `normalizeLocation(ctx)`                   | Extract location from message → `IncomingMessage` with `location` field                   |
+| `normalizeLocationEdit(ctx)`               | Extract location from edited message (live location update) → `IncomingMessage`           |
 | `sendText(chatId, text)`                   | Send plain text message                                                                   |
 | `sendPhoto(chatId, photo, caption)`        | Send photo by file path or file_id. Returns file_id for caching.                          |
 | `sendPhotoBuffer(chatId, buffer, caption)` | Send photo from memory buffer. Returns file_id.                                           |
@@ -77,12 +79,25 @@ createBot(token)
     │   ├─ handleMessage(incoming, adapter)
     │   └─ resetTimer(chatId)
     │
-    └─ message:photo handler
-        ├─ normalizePhoto(ctx) → IncomingMessage (with base64 image)
-        ├─ Rate limit check
-        ├─ Send typing action
-        ├─ handleMessage(incoming, adapter)
-        └─ resetTimer(chatId)
+    ├─ message:photo handler
+    │   ├─ normalizePhoto(ctx) → IncomingMessage (with base64 image)
+    │   ├─ Rate limit check
+    │   ├─ Send typing action
+    │   ├─ handleMessage(incoming, adapter)
+    │   └─ resetTimer(chatId)
+    │
+    ├─ message:location handler (gated on LOCATION_ENABLED)
+    │   ├─ normalizeLocation(ctx) → IncomingMessage (with location)
+    │   ├─ Rate limit check
+    │   ├─ processLocation() → geocode, store, detect events
+    │   ├─ handleMessage(incoming, adapter) — full AI pipeline
+    │   ├─ resetTimer(chatId)
+    │   └─ If arrival event → triggerLocationProactive(chatId)
+    │
+    └─ edited_message:location handler (gated on LOCATION_ENABLED)
+        ├─ normalizeLocationEdit(ctx) → IncomingMessage (live update)
+        ├─ processLocation() — silent store only (no AI pipeline)
+        └─ If arrival event → triggerLocationProactive(chatId)
 ```
 
 ### Allowlist Middleware
