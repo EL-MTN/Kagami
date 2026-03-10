@@ -22,7 +22,7 @@ const CURATION_BATCH = 40;
 const curationLocks = new Map<string, Promise<void>>();
 
 function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string {
-  const a = tc.args as Record<string, string>;
+  const a = (tc.args ?? {}) as Record<string, string>;
   switch (tc.toolName) {
     case "searchMemory":
       return `searched memories for "${a.query ?? ""}"`;
