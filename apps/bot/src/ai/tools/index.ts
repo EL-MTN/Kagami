@@ -11,6 +11,7 @@ import { createManageCalendarTool } from "./manage-calendar";
 import { createManageRemindersTool } from "./manage-reminders";
 import { createBrowseTool } from "./browse";
 import { createManageWorkflowsTool } from "./manage-workflows";
+import { createSendVoiceTool } from "./send-voice";
 import { config } from "@mashiro/shared";
 import type { ToolSet } from "ai";
 import type { PlatformAdapter } from "@mashiro/shared";
@@ -33,6 +34,10 @@ export function allTools(ctx: ToolContext) {
 
   if (config.IMAGE_GENERATION_MODEL) {
     tools.sendPhoto = createSendPhotoTool(ctx.chatId, ctx.adapter);
+  }
+
+  if (config.TTS_PROVIDER) {
+    tools.sendVoice = createSendVoiceTool(ctx.chatId, ctx.adapter);
   }
 
   if (config.GOOGLE_OAUTH_CLIENT_ID) {

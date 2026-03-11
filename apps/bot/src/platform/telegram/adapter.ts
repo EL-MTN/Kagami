@@ -137,6 +137,11 @@ export class TelegramAdapter implements PlatformAdapter {
     return fileId;
   }
 
+  async sendVoiceBuffer(chatId: string, buffer: Buffer, duration?: number): Promise<void> {
+    const input = new InputFile(buffer, "voice.ogg");
+    await this.bot.api.sendVoice(Number(chatId), input, duration ? { duration } : undefined);
+  }
+
   async sendPhotoBuffer(
     chatId: string,
     buffer: Buffer,

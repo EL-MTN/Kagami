@@ -6,7 +6,8 @@ export type UsageCategory =
   | "workflow"
   | "curation"
   | "image-selection"
-  | "image-generation";
+  | "image-generation"
+  | "tts-generation";
 
 export interface ITokenUsage extends Document {
   timestamp: Date;
@@ -38,6 +39,7 @@ const tokenUsageSchema = new Schema<ITokenUsage>(
         "curation",
         "image-selection",
         "image-generation",
+        "tts-generation",
       ],
       required: true,
     },

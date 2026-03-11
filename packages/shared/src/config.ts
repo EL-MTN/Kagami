@@ -29,6 +29,10 @@ const baseSchema = z.object({
 
   IMAGE_GENERATION_MODEL: z.string().optional(),
 
+  TTS_PROVIDER: z.string().optional(),
+  TTS_VOICE_ID: z.string().optional(),
+  ELEVENLABS_API_KEY: z.string().optional(),
+
   BROWSER_ENABLED: z
     .string()
     .default("false")
@@ -127,6 +131,28 @@ export function validateConfig(): void {
     const missing = googleOAuthFields.filter((f) => !config[f]);
     for (const field of missing) {
       errors.push(`${field} is required when any Google OAuth variable is set`);
+    }
+  }
+
+  if (config.TTS_PROVIDER) {
+    const slash = config.TTS_PROVIDER.indexOf("/");
+    if (slash === -1) {
+      errors.push(
+        'TTS_PROVIDER must be in "provider/model" format (e.g., "elevenlabs/eleven_flash_v2_5")',
+      );
+    } else {
+      const provider = config.TTS_PROVIDER.slice(0, slash);
+      const ttsKeyMap: Record<string, keyof typeof config | undefined> = {
+        elevenlabs: "ELEVENLABS_API_KEY",
+        openai: "OPENAI_API_KEY",
+      };
+      const requiredKey = ttsKeyMap[provider];
+      if (requiredKey && !config[requiredKey]) {
+        errors.push(`${requiredKey} is required when TTS_PROVIDER uses "${provider}" provider`);
+      }
+    }
+    if (!config.TTS_VOICE_ID) {
+      errors.push("TTS_VOICE_ID is required when TTS_PROVIDER is set");
     }
   }
 

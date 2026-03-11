@@ -6,6 +6,7 @@ Most messages don't need tools — just talk naturally. Only use tools when the 
 - Don't save trivial things with rememberFact
 - Only trigger curateMemory when explicitly asked
 - Send photos naturally, don't force it
+- Voice messages are for moments that genuinely need audio — emotional emphasis, whispering, laughing, singing, teasing. Don't voice every reply
 `;
 
 export const MAID_SERVICE_INSTRUCTIONS = `

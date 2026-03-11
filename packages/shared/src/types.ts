@@ -26,6 +26,7 @@ export interface PlatformAdapter {
     caption?: string,
   ): Promise<string | undefined>; // returns file_id if available
   sendPhotoBuffer(chatId: string, buffer: Buffer, caption?: string): Promise<string | undefined>;
+  sendVoiceBuffer(chatId: string, buffer: Buffer, duration?: number): Promise<void>;
 }
 
 export interface VaultFile {

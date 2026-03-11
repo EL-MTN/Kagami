@@ -18,6 +18,18 @@ const IMAGE_GENERATION_PRICING: Record<string, number> = {
   "gpt-image-1-mini": 0.0075,
 };
 
+// Cost per 1K characters for TTS
+const TTS_GENERATION_PRICING: Record<string, number> = {
+  eleven_v3: 0.15,
+  eleven_flash_v2_5: 0.15,
+  eleven_flash_v2: 0.15,
+  eleven_multilingual_v2: 0.15,
+  eleven_turbo_v2_5: 0.15,
+  "tts-1": 0.015,
+  "tts-1-hd": 0.03,
+  "gpt-4o-mini-tts": 0.015,
+};
+
 interface TokenUsageData {
   promptTokens?: number;
   completionTokens?: number;
@@ -72,6 +84,35 @@ export function trackUsage(
     metadata,
   }).catch((error) => {
     logger.warn({ error }, "Failed to persist token usage");
+  });
+}
+
+export function trackTtsGeneration(
+  model: string,
+  provider: string,
+  charCount: number,
+  metadata?: TrackUsageMetadata,
+): void {
+  const perThousand = TTS_GENERATION_PRICING[model] ?? 0;
+  const cost = (charCount / 1000) * perThousand;
+
+  logger.info(
+    { category: "tts-generation", model, provider, charCount, estimatedCost: cost },
+    "TTS usage tracked",
+  );
+
+  TokenUsage.create({
+    timestamp: new Date(),
+    category: "tts-generation" as const,
+    modelName: model,
+    provider,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    estimatedCost: cost,
+    metadata,
+  }).catch((error) => {
+    logger.warn({ error }, "Failed to persist TTS usage");
   });
 }
 

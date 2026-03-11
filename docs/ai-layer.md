@@ -14,6 +14,9 @@ Defined in `apps/bot/src/ai/provider.ts`. Uses the Vercel AI SDK (`ai` package).
 | `OPENAI_API_KEY`             | Required if provider is `openai` (validated at startup)                                                                                                            |
 | `XAI_API_KEY`                | Required if provider is `xai` (validated at startup)                                                                                                               |
 | `IMAGE_GENERATION_MODEL`     | Image model in `provider/model` format (e.g., `xai/grok-imagine-image`, `google/gemini-2.5-flash-image`, `openai/gpt-image-1`). Enables `sendPhoto` tool when set. |
+| `TTS_PROVIDER`               | TTS model in `provider/model` format (e.g., `elevenlabs/eleven_flash_v2_5`, `openai/tts-1`). Enables `sendVoice` tool when set.                                    |
+| `TTS_VOICE_ID`               | Voice identifier for the TTS provider (e.g., ElevenLabs voice ID or OpenAI voice name like `"shimmer"`)                                                            |
+| `ELEVENLABS_API_KEY`         | Required when `TTS_PROVIDER` uses `elevenlabs` provider                                                                                                            |
 | `GOOGLE_API_KEY`             | Required for embedding generation (Google Gemini `gemini-embedding-001`)                                                                                           |
 | `EMBEDDING_MODEL`            | Embedding model name (default: `"gemini-embedding-001"`)                                                                                                           |
 | `LOCATION_ENABLED`           | Feature gate for location awareness (default: `false`)                                                                                                             |
@@ -91,7 +94,7 @@ interface ToolContext {
   sessionId: string;
 }
 
-allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageWorkflows }
+allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageWorkflows }
 ```
 
 ### rememberFact
@@ -142,6 +145,13 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 - **Parameters**: `{ description: string, caption?: string, aspectRatio?: "1:1" | "3:4" | "4:3" | "9:16" | "16:9" }`
 - **Returns**: `{ sent: true, caption } | { sent: false, reason }`
 - **Behavior**: Builds prompt with appearance prefix, calls image generation, sends via adapter
+
+### sendVoice (conditional — requires TTS_PROVIDER)
+
+- **Purpose**: Send a voice message via TTS
+- **Parameters**: `{ text: string }`
+- **Returns**: `{ sent: true } | { sent: false, reason }`
+- **Behavior**: Converts text to speech via the configured TTS provider (ElevenLabs or OpenAI), then sends as a Telegram voice message. The LLM decides when voice fits naturally — emotional moments, teasing, singing, or when asked. Unlike photos, voice messages don't suppress the text response (no caption equivalent).
 
 ### checkEmail (conditional — requires Google OAuth)
 
@@ -257,6 +267,45 @@ sendPhoto tool invoked with description
     └─ 6. adapter.sendPhotoBuffer(chatId, buffer, caption)
 ```
 
+## TTS / Voice Generation
+
+Implemented in `apps/bot/src/tts/generator.ts` with provider modules in `apps/bot/src/tts/providers/`. Uses the Vercel AI SDK `experimental_generateSpeech()` function with a configurable provider/model via `TTS_PROVIDER`.
+
+### Supported Providers
+
+| Provider     | Example Models                                                     | Output Format | Notes                                                              |
+| ------------ | ------------------------------------------------------------------ | ------------- | ------------------------------------------------------------------ |
+| `elevenlabs` | `eleven_flash_v2_5`, `eleven_multilingual_v2`, `eleven_turbo_v2_5` | MP3 (44.1kHz) | Best quality, voice cloning, via `@ai-sdk/elevenlabs`              |
+| `openai`     | `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`                             | Opus          | Instruction-following (gpt-4o-mini-tts only), via `@ai-sdk/openai` |
+
+Set via env: `TTS_PROVIDER=elevenlabs/eleven_flash_v2_5` (compound `provider/model` format).
+
+### Generation Flow
+
+```
+sendVoice tool invoked with { text }
+    │
+    ├─ 1. generateVoice({ text }) in tts/generator.ts
+    │      ├─ Parse TTS_PROVIDER → { provider, modelId }
+    │      ├─ Dispatch to provider module (elevenlabs.ts / openai-tts.ts)
+    │      ├─ Call experimental_generateSpeech() with voice from TTS_VOICE_ID
+    │      └─ Return { buffer, mediaType }
+    │
+    ├─ 2. adapter.sendVoiceBuffer(chatId, buffer)
+    │      └─ Grammy bot.api.sendVoice() → Telegram voice message
+    │
+    └─ 3. trackTtsGeneration(model, provider, charCount)
+```
+
+### Adapter Pattern
+
+The TTS system uses the same provider/model compound format as image generation. Adding a new provider requires:
+
+1. Create `apps/bot/src/tts/providers/<name>.ts` exporting `generateWith<Name>(text, modelId)`
+2. Add a `case` in `generator.ts` dispatch switch
+3. Add pricing entry in `token-tracker.ts` `TTS_GENERATION_PRICING`
+4. Add API key validation in `packages/shared/src/config.ts` `validateConfig()`
+
 ## Response Handling
 
 Implemented in `apps/bot/src/ai/response.ts`.
@@ -307,6 +356,7 @@ All LLM call sites track token usage via `apps/bot/src/ai/token-tracker.ts`. Eac
 | `curation`         | All curator calls (summary, facts, follow-ups, weekly/monthly merge) |
 | `image-selection`  | Reference image selection (outfit, face, body, setting)              |
 | `image-generation` | Image generation via AI SDK (fixed cost per call, model-dependent)   |
+| `tts-generation`   | TTS voice generation (cost per 1K characters, model-dependent)       |
 
 ### Pricing
 
