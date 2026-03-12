@@ -2,6 +2,64 @@
 
 Skills are reusable, parameterized capabilities that the LLM can create, manage, and invoke. They evolved from the original workflow system (cron-only, no parameters) into a general-purpose automation layer. A skill is a natural language prompt that executes as an independent `generateText()` call with full tool access. Skills can run on-demand, on a cron schedule, or be composed by other skills up to three levels deep.
 
+## Architecture: Tools, Skills, and Conversation
+
+The system has three distinct layers, each with a different execution model:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Conversation LLM                                       │
+│  Nondeterministic · Full personality · Memory context    │
+│  Presents results in character                          │
+│                                                         │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  Skills (on-demand, via useSkill)                 │  │
+│  │  Nondeterministic · Lean executor prompt          │  │
+│  │  Multi-step reasoning · Returns factual results   │  │
+│  │                                                   │  │
+│  │  ┌─────────────────────────────────────────────┐  │  │
+│  │  │  Tools (always registered)                  │  │  │
+│  │  │  Deterministic · Single-operation            │  │  │
+│  │  │  Direct API/DB calls · Structured returns   │  │  │
+│  │  └─────────────────────────────────────────────┘  │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Tools** are deterministic, single-operation functions. `checkEmail()` makes one Gmail API call. `browse({ action: "search", query })` runs one search. Their schemas are always loaded in the tool set for every `generateText()` call — conversation, proactive, or skill. They are the atomic building blocks.
+
+**Skills** are nondeterministic, multi-step LLM calls that orchestrate tools. A "morning-brief" skill might call `checkEmail`, `manageCalendar`, and `browse` internally, reason about the combined results, and return a synthesized summary. Skills run with a lean executor prompt (no personality, no conversational instructions) and return factual results. They are listed by name and description in the system prompt for awareness, but only execute when the LLM calls `useSkill`. They are the compositional layer.
+
+**The conversation LLM** is the personality layer. It has the full character context (personality card, memory, facts, episodes, emotional tracking) and decides when to invoke skills, how to present their results in character, and how to respond to the user. It never leaks into skill execution — skills don't know or care about personality.
+
+This separation means:
+
+- Tools are cheap (one API call, no LLM reasoning)
+- Skills are moderate (lean LLM call, multi-step tool orchestration)
+- The conversation is rich (full personality context, but isolated from skill internals)
+- Skills never duplicate tool functionality — they compose tools into higher-level capabilities
+
+### Example: Composed skill flow
+
+```
+Conversation LLM (personality + memory + full context)
+  │
+  ├─ sees "Available Skills: morning-brief, translate, ..."
+  │
+  └─ calls useSkill("morning-brief")
+       │
+       Skill LLM (lean executor, no personality, has all tools)
+         ├─ calls checkEmail()            ← deterministic tool
+         ├─ calls manageCalendar("list")  ← deterministic tool
+         ├─ calls browse("search", ...)   ← deterministic tool
+         ├─ reasons about combined results ← nondeterministic
+         └─ returns: "3 unread emails, 2 meetings today, rain forecast"
+       │
+  ├─ receives factual summary
+  └─ responds in character: "you've got 3 emails and 2 meetings~
+      also it's gonna rain so bring an umbrella okay"
+```
+
 ## Schema
 
 Two MongoDB collections back the skill system: `Skill` (definitions) and `SkillLog` (execution history). Models are defined in `packages/db/src/models/skill.ts`.
@@ -197,7 +255,7 @@ The skill scheduler (`apps/bot/src/scheduler/skills.ts`) handles automatic execu
 
 ### Polling
 
-- Polls every 60 seconds via `setInterval` (unref'd so it doesn't keep the process alive)
+- Polls every 60 seconds via `setInterval` (unreferenced so it doesn't keep the process alive)
 - Queries `getDueSkills()`: enabled skills where `cronSchedule` is not null and `nextRunAt <= now`, sorted by `nextRunAt` ascending
 - Executes each due skill sequentially with `trigger: "cron"` and `advanceSchedule: true`
 

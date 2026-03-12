@@ -6,7 +6,7 @@ A deep comparison of four approaches to agent "skills" — how they work, what t
 
 ### Mashiro Skills — Sub-agent LLM calls with typed parameters
 
-The LLM calls `useSkill({ skillName, parameters })` → a full `generateText()` fires with personality shell + skill prompt + parameter injection + all tools → result returns synchronously to the calling LLM. Skills are MongoDB documents (prompt + typed parameter schema + optional cron). Composable up to depth 3.
+The LLM calls `useSkill({ skillName, parameters })` → a full `generateText()` fires with a lean executor identity + skill prompt + parameter injection + all tools → result returns synchronously to the calling LLM. No personality card or conversational instructions enter the skill context. Skills are MongoDB documents (prompt + typed parameter schema + optional cron). Composable up to depth 3.
 
 **Key files:** `packages/db/src/models/skill.ts`, `apps/bot/src/services/skill-executor.ts`, `apps/bot/src/ai/tools/use-skill.ts`
 
