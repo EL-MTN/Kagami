@@ -120,9 +120,10 @@ executeSkill(skill, adapter, options)
     |
     +-- 2. Create SkillLog with status "running"
     |
-    +-- 3. Assemble system prompt
-    |      assemblePromptShell() — personality + datetime + tool guidelines
-    |      + report mode instruction
+    +-- 3. Assemble system prompt (lean — no personality or conversational instructions)
+    |      executor identity ("You are a task executor...")
+    |      + datetime context
+    |      + report mode instruction (cron triggers only)
     |      + skill name header
     |      + parameter injection (formatted as markdown list)
     |
@@ -161,12 +162,16 @@ Execution parameters vary by trigger context to balance capability against cost:
 
 ### Prompt Assembly
 
-Skill prompts are assembled via `assemblePromptShell()` — a lighter version of the full system prompt that includes personality, datetime, and tool guidelines but omits conversation history, user facts, episodes, and memory context. The skill's `prompt` field is injected as the sole user message, and resolved parameters are appended to the system prompt as a markdown section.
+Skills use a lean system prompt that strips all personality and conversational context. The rationale: skills are like tool calls — they execute a task and return results. The calling LLM (which has the full personality context) is responsible for presenting the result in character.
 
-The report mode instruction tells the LLM how to behave:
+The skill system prompt contains only:
 
-- `"always"`: complete the task and write a concise summary
-- `"alert"`: complete the task; respond with `[no report]` if everything is routine, or write a real message only if something is noteworthy or failed
+1. **Executor identity**: `"You are a task executor. Complete the skill... Be concise and factual — return results, not commentary. Do not adopt a persona or use conversational tone."`
+2. **Datetime context**: current date/time and time-of-day label
+3. **Report mode instruction** (cron triggers only): tells the LLM whether to always report or only on noteworthy events
+4. **Skill name + parameters**: formatted as markdown
+
+This is deliberately minimal. No personality card, no tool behavioral guidelines, no maid/browser/response format instructions. This keeps token cost low per invocation while preserving full tool access and reasoning capability. The `prompt` field is injected as the sole user message.
 
 ### Tool Access
 
