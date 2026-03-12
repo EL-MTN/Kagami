@@ -50,6 +50,7 @@ export interface TrackUsageMetadata {
   chatId?: string;
   sessionId?: string;
   workflowId?: string;
+  skillId?: string;
   toolCalls?: number;
   steps?: number;
 }

@@ -4,6 +4,7 @@ export type UsageCategory =
   | "conversation"
   | "proactive"
   | "workflow"
+  | "skill"
   | "curation"
   | "image-selection"
   | "image-generation"
@@ -22,6 +23,7 @@ export interface ITokenUsage extends Document {
     chatId?: string;
     sessionId?: string;
     workflowId?: string;
+    skillId?: string;
     toolCalls?: number;
     steps?: number;
   };
@@ -36,6 +38,7 @@ const tokenUsageSchema = new Schema<ITokenUsage>(
         "conversation",
         "proactive",
         "workflow",
+        "skill",
         "curation",
         "image-selection",
         "image-generation",
@@ -53,6 +56,7 @@ const tokenUsageSchema = new Schema<ITokenUsage>(
       chatId: { type: String },
       sessionId: { type: String },
       workflowId: { type: String },
+      skillId: { type: String },
       toolCalls: { type: Number },
       steps: { type: Number },
     },

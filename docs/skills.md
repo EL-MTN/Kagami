@@ -1,0 +1,301 @@
+# Skills
+
+Skills are reusable, parameterized capabilities that the LLM can create, manage, and invoke. They evolved from the original workflow system (cron-only, no parameters) into a general-purpose automation layer. A skill is a natural language prompt that executes as an independent `generateText()` call with full tool access. Skills can run on-demand, on a cron schedule, or be composed by other skills up to three levels deep.
+
+## Schema
+
+Two MongoDB collections back the skill system: `Skill` (definitions) and `SkillLog` (execution history). Models are defined in `packages/db/src/models/skill.ts`.
+
+### Skill
+
+| Field          | Type                  | Description                                                                   |
+| -------------- | --------------------- | ----------------------------------------------------------------------------- |
+| `chatId`       | `string`              | Telegram chat this skill belongs to                                           |
+| `name`         | `string`              | Unique name within the chat (used as identifier for `useSkill`)               |
+| `description`  | `string`              | What the skill does — shown in the system prompt skill listing                |
+| `prompt`       | `string`              | Execution instructions — sent as the user message in the LLM call             |
+| `parameters`   | `ISkillParameter[]`   | Typed parameter definitions (see below)                                       |
+| `cronSchedule` | `string \| null`      | Cron expression for automatic scheduling, or null for on-demand               |
+| `reportMode`   | `"always" \| "alert"` | Whether to message the user after every run or only on noteworthy/failed runs |
+| `nextRunAt`    | `Date \| null`        | Next scheduled execution time (computed from cron)                            |
+| `enabled`      | `boolean`             | Whether the skill is active (default: `true`)                                 |
+| `version`      | `number`              | Incremented on every update                                                   |
+| `createdAt`    | `Date`                | Mongoose timestamp                                                            |
+| `updatedAt`    | `Date`                | Mongoose timestamp                                                            |
+
+### Skill Parameters
+
+Each parameter has:
+
+| Field         | Type                                | Description                                                       |
+| ------------- | ----------------------------------- | ----------------------------------------------------------------- |
+| `name`        | `string`                            | Parameter name                                                    |
+| `type`        | `"string" \| "number" \| "boolean"` | Value type (coerced at invocation time)                           |
+| `description` | `string`                            | What this parameter is for                                        |
+| `required`    | `boolean`                           | Whether the caller must provide it                                |
+| `default`     | `string \| number \| boolean`       | Default value (required params on cron skills must have defaults) |
+
+### SkillLog
+
+| Field         | Type                                   | Description                              |
+| ------------- | -------------------------------------- | ---------------------------------------- |
+| `skillId`     | `ObjectId`                             | Reference to the Skill document          |
+| `trigger`     | `"cron" \| "manual" \| "skill"`        | How the execution was initiated          |
+| `parentLogId` | `ObjectId?`                            | Parent log when invoked by another skill |
+| `parameters`  | `Record<string, unknown>?`             | Resolved parameters for this execution   |
+| `status`      | `"running" \| "completed" \| "failed"` | Current execution status                 |
+| `summary`     | `string?`                              | LLM response text or error reason        |
+| `startedAt`   | `Date`                                 | When execution began                     |
+| `completedAt` | `Date?`                                | When execution finished                  |
+
+### Indexes
+
+- `{ chatId: 1 }` — list skills for a chat
+- `{ chatId: 1, name: 1 }` — unique compound index (enforces name uniqueness per chat)
+- `{ enabled: 1, nextRunAt: 1 }` — efficient query for due cron skills
+- `{ skillId: 1, startedAt: -1 }` — log lookup by skill, most recent first
+
+## Tools
+
+Two tools expose the skill system to the LLM. Both are always registered (not conditional on config). Defined in `apps/bot/src/ai/tools/manage-skills.ts` and `apps/bot/src/ai/tools/use-skill.ts`.
+
+### manageSkills
+
+CRUD operations for skill definitions. Actions: `create`, `list`, `update`, `delete`, `enable`, `disable`.
+
+**Parameters:**
+
+| Parameter      | Required for                 | Description                                                      |
+| -------------- | ---------------------------- | ---------------------------------------------------------------- |
+| `action`       | all                          | One of `create`, `list`, `update`, `delete`, `enable`, `disable` |
+| `skillId`      | update/delete/enable/disable | Skill document ID                                                |
+| `name`         | create                       | Unique skill name within the chat                                |
+| `description`  | create                       | What the skill does                                              |
+| `prompt`       | create                       | Execution instructions (natural language task description)       |
+| `parameters`   | optional                     | Typed parameter definitions array                                |
+| `cronSchedule` | optional                     | Cron expression (omit for on-demand only)                        |
+| `reportMode`   | create                       | `"always"` or `"alert"`                                          |
+
+**Validation rules:**
+
+- Cron expressions are validated before saving (`isValidCron()`)
+- Cron-scheduled skills require all required parameters to have default values (the scheduler cannot prompt for input)
+- Duplicate names within a chat are rejected (MongoDB unique index, caught as error code 11000)
+- Updates increment the `version` field
+- Deleting a skill also deletes all its logs
+
+### useSkill
+
+Invokes a skill by name. The skill executes as a sub-`generateText()` call and returns its result synchronously to the calling LLM.
+
+**Parameters:**
+
+| Parameter    | Required | Description                         |
+| ------------ | -------- | ----------------------------------- |
+| `skillName`  | yes      | Name of the skill to invoke         |
+| `parameters` | no       | Key-value map of parameters to pass |
+
+**Behavior:**
+
+1. Checks recursion depth against `MAX_SKILL_DEPTH` (3)
+2. Looks up the skill by `{chatId, name}` — rejects if not found or disabled
+3. Validates and coerces parameters against the skill's parameter schema (type coercion for string/number/boolean, default filling, extra params passed through)
+4. Calls `executeSkill()` with `trigger: "skill"` and `depth + 1`
+5. Returns `{ success, skillName, result }` synchronously
+
+**Depth gating:** The `useSkill` tool is only registered when `depth < MAX_SKILL_DEPTH`. At depth 3, the tool is omitted from the tool set entirely, so the LLM cannot attempt further nesting.
+
+## Execution Model
+
+Skill execution is handled by `apps/bot/src/services/skill-executor.ts`. The core function `executeSkill()` runs the same flow regardless of trigger source.
+
+### Execution Flow
+
+```
+executeSkill(skill, adapter, options)
+    |
+    +-- 1. Concurrency guard (cron/manual only)
+    |      isSkillRunning(skillId) — checks for "running" logs
+    |      newer than 15 minutes (stale threshold)
+    |
+    +-- 2. Create SkillLog with status "running"
+    |
+    +-- 3. Assemble system prompt
+    |      assemblePromptShell() — personality + datetime + tool guidelines
+    |      + report mode instruction
+    |      + skill name header
+    |      + parameter injection (formatted as markdown list)
+    |
+    +-- 4. generateText()
+    |      model: getModel() (default tier)
+    |      system: assembled skill prompt
+    |      messages: [{ role: "user", content: skill.prompt }]
+    |      tools: allTools(ctx) with skillDepth set
+    |      stopWhen: stepCountIs(maxSteps)
+    |      temperature: varies by context
+    |      abortSignal: 3 minute timeout
+    |
+    +-- 5. Track token usage under "skill" category
+    |
+    +-- 6. Complete log with response text
+    |
+    +-- 7. Advance cron schedule (if advanceSchedule=true)
+    |      Computed from previous slot, not current time (prevents drift)
+    |
+    +-- 8. Deliver report (cron/manual only, not composed calls)
+    |      "always" mode: send response via sendSegmented()
+    |      "alert" mode: send only if response is not "[no report]"
+    |
+    +-- On error: fail log, advance cron anyway, notify user (cron/manual only)
+```
+
+### Step Limits and Temperature
+
+Execution parameters vary by trigger context to balance capability against cost:
+
+| Trigger                       | Max Steps | Temperature | Rationale                            |
+| ----------------------------- | --------- | ----------- | ------------------------------------ |
+| Cron (scheduled)              | 20        | 0.4         | Autonomous tasks may need many tools |
+| Manual (depth 0)              | 10        | 0.5         | User-triggered, moderate complexity  |
+| Composed (depth > 0, `skill`) | 5         | 0.4         | Sub-tasks should be focused          |
+
+### Prompt Assembly
+
+Skill prompts are assembled via `assemblePromptShell()` — a lighter version of the full system prompt that includes personality, datetime, and tool guidelines but omits conversation history, user facts, episodes, and memory context. The skill's `prompt` field is injected as the sole user message, and resolved parameters are appended to the system prompt as a markdown section.
+
+The report mode instruction tells the LLM how to behave:
+
+- `"always"`: complete the task and write a concise summary
+- `"alert"`: complete the task; respond with `[no report]` if everything is routine, or write a real message only if something is noteworthy or failed
+
+### Tool Access
+
+Skills receive the full tool set via `allTools(ctx)` with the `skillDepth` field set on the `ToolContext`. This means skills can use memory tools, send photos, browse the web, manage calendar events, and invoke other skills. The only restriction is depth gating on `useSkill` itself.
+
+## Skill Context in System Prompt
+
+The LLM always knows what skills are available without needing to call `manageSkills list`. The context assembler (`apps/bot/src/ai/context-assembler.ts`) injects an "Available Skills" section into the main conversation system prompt. For each enabled skill, it shows the name, parameter signature, description, and cron schedule (if any).
+
+Example format in the system prompt:
+
+```
+## Available Skills
+- **check-emails** (maxResults: number?): Check inbox and summarize unread emails [cron: 0 9 * * *]
+- **weather-report** (city: string): Get current weather for a city
+```
+
+This lets the LLM decide to invoke skills with `useSkill` based on conversational context without an extra round-trip.
+
+## Scheduler
+
+The skill scheduler (`apps/bot/src/scheduler/skills.ts`) handles automatic execution of cron-scheduled skills.
+
+### Polling
+
+- Polls every 60 seconds via `setInterval` (unref'd so it doesn't keep the process alive)
+- Queries `getDueSkills()`: enabled skills where `cronSchedule` is not null and `nextRunAt <= now`, sorted by `nextRunAt` ascending
+- Executes each due skill sequentially with `trigger: "cron"` and `advanceSchedule: true`
+
+### Cron Parameter Defaults
+
+When the scheduler fires a cron skill, it builds a parameter map from each parameter's `default` value. This is why cron-scheduled skills must have defaults for all required parameters — there is no user to supply them at execution time.
+
+### Startup Recovery
+
+On boot, the scheduler:
+
+1. Resets stale running logs — any `SkillLog` with `status: "running"` and `startedAt` older than 15 minutes is marked as `failed` with summary "Process crashed during execution"
+2. Immediately runs any skills that are past due (catches up after downtime)
+
+### Concurrent Execution Guard
+
+`isSkillRunning(skillId)` checks for any `SkillLog` with `status: "running"` and `startedAt` within the last 15 minutes. If found, the cron/manual trigger skips execution. Composed calls (`trigger: "skill"`) bypass this guard since they are controlled by the parent's step limit.
+
+The 15-minute stale threshold ensures that crashed executions (where the log was never completed) do not permanently block the skill.
+
+### Cron Advancement
+
+After execution (success or failure), the next run time is computed from the **previous** `nextRunAt` slot, not from the current time. This prevents schedule drift — if a skill was due at 09:00 but executed at 09:01, the next run is computed relative to 09:00.
+
+### Cleanup
+
+Old skill logs (completed or failed, older than 90 days) are cleaned up by the daily cleanup routine in the proactive scheduler.
+
+## Composability and Depth Limiting
+
+Skills can invoke other skills via the `useSkill` tool, enabling composition:
+
+```
+Skill A (depth 0) -- useSkill --> Skill B (depth 1) -- useSkill --> Skill C (depth 2)
+```
+
+### Depth Tracking
+
+- `MAX_SKILL_DEPTH = 3` (defined in `skill-executor.ts`)
+- Each `useSkill` call increments the depth by 1
+- The `useSkill` tool is only registered in the tool set when `depth < MAX_SKILL_DEPTH`
+- At depth 3, the `useSkill` tool is simply absent — the LLM cannot see it or attempt to call it
+
+### Execution Logs for Composed Calls
+
+Composed skill executions use `trigger: "skill"` and set `parentLogId` to the calling skill's log ID. This creates a traceable tree of execution:
+
+```
+SkillLog (Skill A, trigger: "cron")
+  +-- SkillLog (Skill B, trigger: "skill", parentLogId: ^)
+        +-- SkillLog (Skill C, trigger: "skill", parentLogId: ^)
+```
+
+### Behavioral Differences for Composed Calls
+
+- **No concurrency guard** — composed calls skip `isSkillRunning()` since the parent already holds execution context
+- **No user notification** — composed calls return their result to the calling LLM instead of sending messages to the chat
+- **Lower step limit** — 5 steps instead of 10/20, keeping sub-tasks focused
+- **Synchronous return** — the calling LLM receives the skill's text output as a tool result
+
+## Migration from Workflows
+
+Skills are the successor to the workflow system. Workflows were cron-only automation with no parameters and no composability. The migration path is:
+
+- **Script**: `scripts/migrate-workflows-to-skills.ts`
+- **Usage**: `npx tsx scripts/migrate-workflows-to-skills.ts`
+
+### What the migration does
+
+1. Reads all `Workflow` documents
+2. For each workflow, creates a `Skill` with:
+   - Same `chatId`, `name`, `prompt`, `cronSchedule`, `reportMode`, `nextRunAt`, `enabled`
+   - `description` set to `"Scheduled task: {name}"`
+   - Empty `parameters` array
+   - `version: 1`
+3. Migrates `WorkflowLog` documents to `SkillLog` with `trigger: "cron"`
+4. Skips workflows where a skill with the same `{chatId, name}` already exists
+5. Does **not** delete old collections — manual cleanup after verification
+
+### What changed from workflows to skills
+
+| Aspect         | Workflows                   | Skills                                 |
+| -------------- | --------------------------- | -------------------------------------- |
+| Parameters     | None                        | Typed parameters with defaults         |
+| Scheduling     | Cron only                   | Cron or on-demand                      |
+| Composability  | None                        | Up to 3 levels deep                    |
+| Invocation     | `manageWorkflows` (trigger) | `useSkill` (synchronous result)        |
+| Step limits    | Fixed 20                    | Varies by trigger context (5/10/20)    |
+| Token category | `workflow`                  | `skill`                                |
+| System prompt  | Not listed                  | Available skills injected into context |
+| DB models      | `Workflow`, `WorkflowLog`   | `Skill`, `SkillLog`                    |
+
+## File Map
+
+| File                                      | Purpose                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------ |
+| `packages/db/src/models/skill.ts`         | Mongoose models (`Skill`, `SkillLog`), CRUD helpers, log helpers         |
+| `apps/bot/src/ai/tools/manage-skills.ts`  | `manageSkills` tool (create/list/update/delete/enable/disable)           |
+| `apps/bot/src/ai/tools/use-skill.ts`      | `useSkill` tool (invoke by name with parameters)                         |
+| `apps/bot/src/services/skill-executor.ts` | `executeSkill()` — prompt assembly, `generateText()`, logging, reporting |
+| `apps/bot/src/scheduler/skills.ts`        | Skill scheduler — polling, startup recovery, cron execution              |
+| `apps/bot/src/services/cron.ts`           | Cron expression validation and next-run computation                      |
+| `apps/bot/src/ai/tools/index.ts`          | Tool registration with depth gating                                      |
+| `apps/bot/src/ai/context-assembler.ts`    | Skill context injection into system prompt                               |
+| `apps/bot/src/ai/prompts.ts`              | `SKILL_BEHAVIOR_INSTRUCTIONS` constant                                   |
+| `scripts/migrate-workflows-to-skills.ts`  | One-time workflow-to-skill migration                                     |

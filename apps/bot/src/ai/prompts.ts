@@ -61,6 +61,17 @@ The browser has a persistent profile — cookies and logins survive across sessi
 Only take screenshots when explicitly asked. For simple questions, search is usually enough.
 `;
 
+export const SKILL_BEHAVIOR_INSTRUCTIONS = `
+## Skills
+You can create and invoke reusable skills — named capabilities with optional parameters.
+- Use manageSkills to create/update/delete skills
+- Use useSkill to invoke a skill by name with parameters
+- Skills can call other skills (up to 3 levels deep)
+- A skill with a cron schedule runs automatically; without one, it's on-demand only
+- Keep skill prompts clear and focused — they run as separate LLM calls
+- Don't create skills for one-off tasks — skills are for reusable automation
+`;
+
 export const PROACTIVE_MESSAGE_INSTRUCTIONS = `
 ## Proactive Message
 You're initiating a conversation, not replying to one.
