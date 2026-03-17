@@ -48,8 +48,6 @@ function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string 
       return `managed reminders (${a.action ?? "unknown"})`;
     case "browse":
       return `browsed the web (${a.action ?? "unknown"})`;
-    case "manageWorkflows":
-      return `managed workflows (${a.action ?? "unknown"})`;
     default:
       return `used ${tc.toolName}`;
   }

@@ -1,6 +1,6 @@
 # Skills
 
-Skills are reusable, parameterized capabilities that the LLM can create, manage, and invoke. They evolved from the original workflow system (cron-only, no parameters) into a general-purpose automation layer. A skill is a natural language prompt that executes as an independent `generateText()` call with full tool access. Skills can run on-demand, on a cron schedule, or be composed by other skills up to three levels deep.
+Skills are reusable, parameterized capabilities that the LLM can create, manage, and invoke. A skill is a natural language prompt that executes as an independent `generateText()` call with full tool access. Skills can run on-demand, on a cron schedule, or be composed by other skills up to three levels deep.
 
 ## Architecture: Tools, Skills, and Conversation
 
@@ -316,38 +316,6 @@ SkillLog (Skill A, trigger: "cron")
 - **Lower step limit** — 5 steps instead of 10/20, keeping sub-tasks focused
 - **Synchronous return** — the calling LLM receives the skill's text output as a tool result
 
-## Migration from Workflows
-
-Skills are the successor to the workflow system. Workflows were cron-only automation with no parameters and no composability. The migration path is:
-
-- **Script**: `scripts/migrate-workflows-to-skills.ts`
-- **Usage**: `npx tsx scripts/migrate-workflows-to-skills.ts`
-
-### What the migration does
-
-1. Reads all `Workflow` documents
-2. For each workflow, creates a `Skill` with:
-   - Same `chatId`, `name`, `prompt`, `cronSchedule`, `reportMode`, `nextRunAt`, `enabled`
-   - `description` set to `"Scheduled task: {name}"`
-   - Empty `parameters` array
-   - `version: 1`
-3. Migrates `WorkflowLog` documents to `SkillLog` with `trigger: "cron"`
-4. Skips workflows where a skill with the same `{chatId, name}` already exists
-5. Does **not** delete old collections — manual cleanup after verification
-
-### What changed from workflows to skills
-
-| Aspect         | Workflows                   | Skills                                 |
-| -------------- | --------------------------- | -------------------------------------- |
-| Parameters     | None                        | Typed parameters with defaults         |
-| Scheduling     | Cron only                   | Cron or on-demand                      |
-| Composability  | None                        | Up to 3 levels deep                    |
-| Invocation     | `manageWorkflows` (trigger) | `useSkill` (synchronous result)        |
-| Step limits    | Fixed 20                    | Varies by trigger context (5/10/20)    |
-| Token category | `workflow`                  | `skill`                                |
-| System prompt  | Not listed                  | Available skills injected into context |
-| DB models      | `Workflow`, `WorkflowLog`   | `Skill`, `SkillLog`                    |
-
 ## File Map
 
 | File                                      | Purpose                                                                  |
@@ -361,4 +329,3 @@ Skills are the successor to the workflow system. Workflows were cron-only automa
 | `apps/bot/src/ai/tools/index.ts`          | Tool registration with depth gating                                      |
 | `apps/bot/src/ai/context-assembler.ts`    | Skill context injection into system prompt                               |
 | `apps/bot/src/ai/prompts.ts`              | `SKILL_BEHAVIOR_INSTRUCTIONS` constant                                   |
-| `scripts/migrate-workflows-to-skills.ts`  | One-time workflow-to-skill migration                                     |

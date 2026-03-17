@@ -49,7 +49,6 @@ export function estimateCost(model: string, usage: TokenUsageData): number {
 export interface TrackUsageMetadata {
   chatId?: string;
   sessionId?: string;
-  workflowId?: string;
   skillId?: string;
   toolCalls?: number;
   steps?: number;

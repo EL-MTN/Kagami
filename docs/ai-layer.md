@@ -360,7 +360,6 @@ All LLM call sites track token usage via `apps/bot/src/ai/token-tracker.ts`. Eac
 | ------------------ | -------------------------------------------------------------------- |
 | `conversation`     | Main `generateText` in `generate.ts`                                 |
 | `proactive`        | Proactive message generation in `proactive.ts`                       |
-| `workflow`         | Legacy workflow execution (deprecated)                               |
 | `skill`            | Skill execution in `skill-executor.ts`                               |
 | `curation`         | All curator calls (summary, facts, follow-ups, weekly/monthly merge) |
 | `image-selection`  | Reference image selection (outfit, face, body, setting)              |
