@@ -92,7 +92,7 @@ async function assembleMemoryContext(sessionId?: string): Promise<string[]> {
 
 /**
  * Shared prompt shell: personality card + datetime + tool/service instructions.
- * Used by both conversation prompts and skill executor prompts.
+ * Used by conversation prompts and proactive prompts (not the skill executor).
  */
 export async function assemblePromptShell(): Promise<string[]> {
   const parts: string[] = [];

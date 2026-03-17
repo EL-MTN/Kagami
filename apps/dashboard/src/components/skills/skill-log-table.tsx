@@ -68,11 +68,11 @@ export function SkillLogTable({ skillId, initialLogs, initialHasMore }: SkillLog
 
   async function loadMore() {
     if (!hasMore || loading) return;
-    setLoading(true);
 
     const lastLog = logs[logs.length - 1];
     if (!lastLog) return;
 
+    setLoading(true);
     try {
       const res = await fetch(`/api/skills/${skillId}/logs?limit=50&before=${lastLog.startedAt}`);
       const data = (await res.json()) as ApiLogResponse;
