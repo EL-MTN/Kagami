@@ -20,7 +20,7 @@ mashiro/                          # npm workspaces + Turborepo
 │   │   │   └── scheduler/        # proactive, reminders, skills
 │   │   ├── vault/                # personality card (data)
 │   │   └── context/              # reference images/settings (data)
-│   └── dashboard/                # Next.js dashboard (read-only data viewer)
+│   └── dashboard/                # Next.js dashboard (skill management, observability)
 ├── packages/
 │   ├── typescript-config/        # shared tsconfig bases (JSON only)
 │   ├── eslint-config/            # shared ESLint flat config
