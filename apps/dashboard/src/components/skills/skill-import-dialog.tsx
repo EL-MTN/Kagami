@@ -62,24 +62,25 @@ export function SkillImportDialog({ onImported }: SkillImportDialogProps) {
     }
   }
 
+  async function readFileAsText(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  }
+
   function handleDrop(e: DragEvent) {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => tryParse(reader.result as string);
-      reader.readAsText(file);
-    }
+    if (file) void readFileAsText(file).then(tryParse);
   }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => tryParse(reader.result as string);
-      reader.readAsText(file);
-    }
+    if (file) void readFileAsText(file).then(tryParse);
   }
 
   function handlePaste(value: string) {
