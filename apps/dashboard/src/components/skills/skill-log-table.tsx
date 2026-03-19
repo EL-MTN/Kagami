@@ -1,10 +1,8 @@
-import { notFound } from "next/navigation";
-import Link from "next/link";
-import cronstrue from "cronstrue";
-import { ArrowLeft } from "lucide-react";
+"use client";
+
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -13,7 +11,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getWorkflowHistory } from "@/lib/queries/workflows";
+import type { SkillLogItem } from "@/lib/skill-schema";
+
+interface ApiLogResponse {
+  logs: SkillLogItem[];
+  hasMore: boolean;
+}
+
+interface SkillLogTableProps {
+  skillId: string;
+  initialLogs: SkillLogItem[];
+  initialHasMore: boolean;
+}
 
 function statusVariant(status: string) {
   switch (status) {
@@ -28,7 +37,20 @@ function statusVariant(status: string) {
   }
 }
 
-function formatDuration(start: Date, end?: Date): string {
+function triggerVariant(trigger: string) {
+  switch (trigger) {
+    case "cron":
+      return "outline" as const;
+    case "manual":
+      return "secondary" as const;
+    case "skill":
+      return "ghost" as const;
+    default:
+      return "secondary" as const;
+  }
+}
+
+function formatDuration(start: string, end?: string): string {
   if (!end) return "—";
   const ms = new Date(end).getTime() - new Date(start).getTime();
   if (ms < 1000) return `${ms}ms`;
@@ -39,62 +61,37 @@ function formatDuration(start: Date, end?: Date): string {
   return `${mins}m ${remSecs}s`;
 }
 
-export default async function WorkflowDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const { workflow, logs } = await getWorkflowHistory(id);
+export function SkillLogTable({ skillId, initialLogs, initialHasMore }: SkillLogTableProps) {
+  const [logs, setLogs] = useState(initialLogs);
+  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [loading, setLoading] = useState(false);
 
-  if (!workflow) notFound();
+  async function loadMore() {
+    if (!hasMore || loading) return;
+
+    const lastLog = logs[logs.length - 1];
+    if (!lastLog) return;
+
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/skills/${skillId}/logs?limit=50&before=${lastLog.startedAt}`);
+      const data = (await res.json()) as ApiLogResponse;
+      setLogs((prev) => [...prev, ...data.logs]);
+      setHasMore(data.hasMore);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon-sm" asChild>
-          <Link href="/workflows">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <h2 className="text-2xl font-bold">{workflow.name}</h2>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center gap-3">
-            <CardTitle className="text-base">{workflow.name}</CardTitle>
-            <Badge variant={workflow.enabled ? "default" : "secondary"}>
-              {workflow.enabled ? "enabled" : "disabled"}
-            </Badge>
-            <Badge variant={workflow.reportMode === "alert" ? "secondary" : "default"}>
-              {workflow.reportMode}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <div className="rounded bg-muted p-3 text-sm">{workflow.prompt}</div>
-            <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
-              <span>
-                Schedule:{" "}
-                {cronstrue.toString(workflow.cronSchedule, {
-                  use24HourTimeFormat: false,
-                  verbose: true,
-                })}
-              </span>
-              <span>Next run: {new Date(workflow.nextRunAt).toLocaleString()}</span>
-              <span>Chat: {workflow.chatId}</span>
-              <span>Created: {new Date(workflow.createdAt).toLocaleDateString()}</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <h3 className="text-lg font-semibold">Execution History</h3>
-
+    <div className="space-y-3">
       <div className="rounded-lg border border-border">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Started</TableHead>
               <TableHead>Duration</TableHead>
+              <TableHead>Trigger</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Summary</TableHead>
             </TableRow>
@@ -107,6 +104,9 @@ export default async function WorkflowDetailPage({ params }: { params: Promise<{
                 </TableCell>
                 <TableCell className="text-sm font-mono">
                   {formatDuration(log.startedAt, log.completedAt)}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={triggerVariant(log.trigger)}>{log.trigger}</Badge>
                 </TableCell>
                 <TableCell>
                   <Badge variant={statusVariant(log.status)}>{log.status}</Badge>
@@ -130,7 +130,7 @@ export default async function WorkflowDetailPage({ params }: { params: Promise<{
             ))}
             {logs.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
                   No executions yet.
                 </TableCell>
               </TableRow>
@@ -138,6 +138,14 @@ export default async function WorkflowDetailPage({ params }: { params: Promise<{
           </TableBody>
         </Table>
       </div>
+
+      {hasMore && (
+        <div className="flex justify-center">
+          <Button variant="outline" size="sm" onClick={() => void loadMore()} disabled={loading}>
+            {loading ? "Loading..." : "Load more"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -92,9 +92,10 @@ interface ToolContext {
   chatId: string;
   adapter: PlatformAdapter;
   sessionId: string;
+  skillDepth?: number; // Current skill nesting depth (0 = top-level)
 }
 
-allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageWorkflows }
+allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageSkills, useSkill? }
 ```
 
 ### rememberFact
@@ -200,16 +201,23 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 
 **Architecture**: Two independent LLM streams — Mashiro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_DATA_DIR`, `BROWSER_HEADLESS` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
 
-### manageWorkflows
+### manageSkills
 
-- **Purpose**: Manage automated workflows that run on cron schedules
-- **Parameters**: `{ action: "create"|"list"|"update"|"delete"|"enable"|"disable"|"trigger", workflowId?, name?, prompt?, cronSchedule?, reportMode? }`
-- **Returns**: `{ success, workflowId? }` or `{ success, workflows? }` or `{ success: false, reason }`
-- **Behavior**: Creates, lists, updates, deletes, enables/disables, or triggers workflows. Workflows are natural language task descriptions that execute autonomously on a cron schedule using all available tools. Each workflow has a `reportMode`: `"always"` sends a summary after every run, `"alert"` only messages when something noteworthy or an error occurs. The `trigger` action runs a workflow immediately (fire-and-forget). Cron expressions are validated before saving.
+- **Purpose**: Manage reusable skills — named capabilities with optional parameters and optional cron schedules
+- **Parameters**: `{ action: "create"|"list"|"update"|"delete"|"enable"|"disable", skillId?, name?, description?, prompt?, parameters?, cronSchedule?, reportMode? }`
+- **Returns**: `{ success, skillId? }` or `{ success, skills? }` or `{ success: false, reason }`
+- **Behavior**: Creates, lists, updates, deletes, enables, or disables skills. Skills are named LLM-prompted capabilities stored in the database with typed parameters. Each skill has a `reportMode`: `"always"` sends a summary after every run, `"alert"` only messages when something noteworthy or an error occurs. Cron expressions are validated. Cron-scheduled skills require all required parameters to have defaults. Skill names are unique per chat (compound index). Version number increments on each update.
 
-**Workflow Execution**: Workflows run via `generateText` with a clean context (personality + datetime + tool instructions, no conversation history), `stopWhen: stepCountIs(20)`, and `temperature: 0.4`. A separate execution log (`WorkflowLog`) tracks each run's status, summary, and timing. The scheduler polls every 60s, skips workflows that are already running, and resets stale locks on startup.
+### useSkill (conditional — omitted at max depth)
 
-**Architecture**: Executor service in `apps/bot/src/services/workflow-executor.ts`, scheduler in `apps/bot/src/scheduler/workflows.ts`, cron helper in `apps/bot/src/services/cron.ts`, tool in `apps/bot/src/ai/tools/manage-workflows.ts`. DB models (`Workflow`, `WorkflowLog`) in `packages/db/src/models/workflow.ts`.
+- **Purpose**: Invoke a skill by name with optional parameters
+- **Parameters**: `{ skillName: string, parameters?: Record<string, string | number | boolean> }`
+- **Returns**: `{ success: true, skillName, result }` or `{ success: false, reason }`
+- **Behavior**: Looks up skill by name, validates parameters (type checking, required params, defaults), then executes synchronously via `executeSkill()`. The result is returned to the calling LLM. Supports composition: skills can call other skills up to 3 levels deep. At `MAX_SKILL_DEPTH` (3), the `useSkill` tool is omitted from the tool set entirely.
+
+**Skill Execution**: Skills run via `generateText` with a lean context (executor identity + datetime + parameter injection — no personality card or conversational instructions). Step limits vary by trigger: cron = 20 steps at temp 0.4, manual (depth 0) = 10 steps at temp 0.5, composed (depth > 0) = 5 steps at temp 0.4. A separate execution log (`SkillLog`) tracks each run's status, trigger type, parameters, parent log (for composed calls), and timing. The scheduler polls every 60s, skips skills that are already running, and resets stale locks on startup.
+
+**Architecture**: Executor service in `apps/bot/src/services/skill-executor.ts`, scheduler in `apps/bot/src/scheduler/skills.ts`, cron helper in `apps/bot/src/services/cron.ts`, tools in `apps/bot/src/ai/tools/manage-skills.ts` and `apps/bot/src/ai/tools/use-skill.ts`. DB models (`Skill`, `SkillLog`) in `packages/db/src/models/skill.ts`. See [skills.md](skills.md) for full documentation.
 
 ## Image Generation
 
@@ -352,7 +360,7 @@ All LLM call sites track token usage via `apps/bot/src/ai/token-tracker.ts`. Eac
 | ------------------ | -------------------------------------------------------------------- |
 | `conversation`     | Main `generateText` in `generate.ts`                                 |
 | `proactive`        | Proactive message generation in `proactive.ts`                       |
-| `workflow`         | Workflow execution in `workflow-executor.ts`                         |
+| `skill`            | Skill execution in `skill-executor.ts`                               |
 | `curation`         | All curator calls (summary, facts, follow-ups, weekly/monthly merge) |
 | `image-selection`  | Reference image selection (outfit, face, body, setting)              |
 | `image-generation` | Image generation via AI SDK (fixed cost per call, model-dependent)   |
