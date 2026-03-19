@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, MessageSquare, Brain, Bell, Repeat, Coins } from "lucide-react";
+import { LayoutDashboard, MessageSquare, Brain, Bell, Zap, Coins } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const iconMap = {
@@ -10,7 +10,7 @@ const iconMap = {
   MessageSquare,
   Brain,
   Bell,
-  Repeat,
+  Zap,
   Coins,
 } as const;
 

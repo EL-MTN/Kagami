@@ -6,12 +6,14 @@ import {
   listRemindersForChat,
   getRecentlyFiredReminders,
   getLatestLocation,
+  listSkillsForChat,
 } from "@mashiro/db";
 import * as engine from "@mashiro/memory";
 import {
   TOOL_BEHAVIOR_GUIDELINES,
   MAID_SERVICE_INSTRUCTIONS,
   BROWSER_INSTRUCTIONS,
+  SKILL_BEHAVIOR_INSTRUCTIONS,
   DATETIME_CONTEXT,
   RESPONSE_FORMAT_INSTRUCTIONS,
   PROACTIVE_MESSAGE_INSTRUCTIONS,
@@ -90,7 +92,7 @@ async function assembleMemoryContext(sessionId?: string): Promise<string[]> {
 
 /**
  * Shared prompt shell: personality card + datetime + tool/service instructions.
- * Used by both conversation prompts and workflow prompts.
+ * Used by conversation prompts and proactive prompts (not the skill executor).
  */
 export async function assemblePromptShell(): Promise<string[]> {
   const parts: string[] = [];
@@ -119,6 +121,9 @@ export async function assemblePromptShell(): Promise<string[]> {
   if (config.BROWSER_ENABLED) {
     parts.push(BROWSER_INSTRUCTIONS);
   }
+
+  // Skill behavior instructions
+  parts.push(SKILL_BEHAVIOR_INSTRUCTIONS);
 
   return parts;
 }
@@ -157,6 +162,28 @@ async function assembleBasePrompt(sessionId?: string): Promise<string[]> {
   return parts;
 }
 
+async function assembleSkillContext(chatId: string): Promise<string | null> {
+  try {
+    const skills = await listSkillsForChat(chatId);
+    const enabled = skills.filter((s) => s.enabled);
+    if (enabled.length === 0) return null;
+
+    const lines = enabled.map((s) => {
+      const params =
+        s.parameters.length > 0
+          ? ` (${s.parameters.map((p) => `${p.name}: ${p.type}${p.required ? "" : "?"}`).join(", ")})`
+          : "";
+      const cron = s.cronSchedule ? ` [cron: ${s.cronSchedule}]` : "";
+      return `- **${s.name}**${params}: ${s.description}${cron}`;
+    });
+
+    return "## Available Skills\n" + lines.join("\n");
+  } catch (error) {
+    logger.warn({ error }, "Failed to load skill context");
+    return null;
+  }
+}
+
 async function assembleLocationContext(chatId: string): Promise<string | null> {
   if (!config.LOCATION_ENABLED) return null;
 
@@ -183,6 +210,9 @@ async function assembleLocationContext(chatId: string): Promise<string | null> {
 
 export async function assembleSystemPrompt(chatId: string, sessionId?: string): Promise<string> {
   const parts = await assembleBasePrompt(sessionId);
+
+  const skillContext = await assembleSkillContext(chatId);
+  if (skillContext) parts.push(skillContext);
 
   const locationContext = await assembleLocationContext(chatId);
   if (locationContext) parts.push(locationContext);

@@ -1,0 +1,152 @@
+"use client";
+
+import { Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import type { SkillParameter } from "@/lib/skill-schema";
+
+interface ParameterEditorProps {
+  parameters: SkillParameter[];
+  onChange: (parameters: SkillParameter[]) => void;
+}
+
+const emptyParam: SkillParameter = {
+  name: "",
+  type: "string",
+  description: "",
+  required: false,
+};
+
+export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) {
+  function updateParam(index: number, patch: Partial<SkillParameter>) {
+    const updated = parameters.map((p, i) => (i === index ? { ...p, ...patch } : p));
+    onChange(updated);
+  }
+
+  function removeParam(index: number) {
+    onChange(parameters.filter((_, i) => i !== index));
+  }
+
+  function addParam() {
+    onChange([...parameters, { ...emptyParam }]);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <Label>Parameters</Label>
+        <Button type="button" variant="outline" size="xs" onClick={addParam}>
+          <Plus className="h-3 w-3" />
+          Add
+        </Button>
+      </div>
+
+      {parameters.length === 0 && (
+        <p className="text-sm text-muted-foreground">No parameters. This skill takes no input.</p>
+      )}
+
+      {parameters.map((param, i) => (
+        <div
+          key={i}
+          className="grid grid-cols-[1fr_100px_1fr_auto_auto] gap-2 items-end rounded-md border border-border p-3"
+        >
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Name</Label>
+            <Input
+              value={param.name}
+              onChange={(e) => updateParam(i, { name: e.target.value })}
+              placeholder="param-name"
+              className="h-8 text-xs"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Type</Label>
+            <Select
+              value={param.type}
+              onChange={(e) =>
+                updateParam(i, {
+                  type: e.target.value as "string" | "number" | "boolean",
+                  default: undefined,
+                })
+              }
+              className="h-8 text-xs"
+            >
+              <option value="string">string</option>
+              <option value="number">number</option>
+              <option value="boolean">boolean</option>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Description</Label>
+            <Input
+              value={param.description}
+              onChange={(e) => updateParam(i, { description: e.target.value })}
+              placeholder="What this param does"
+              className="h-8 text-xs"
+            />
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <Label className="text-xs text-muted-foreground">Required</Label>
+            <Switch
+              checked={param.required}
+              onCheckedChange={(checked) => updateParam(i, { required: !!checked })}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => removeParam(i)}
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+
+          {/* Default value row */}
+          {!param.required && (
+            <div className="col-span-5 mt-1">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground shrink-0">Default:</Label>
+                {param.type === "boolean" ? (
+                  <Select
+                    value={param.default !== undefined ? String(param.default) : ""}
+                    onChange={(e) =>
+                      updateParam(i, {
+                        default: e.target.value === "" ? undefined : e.target.value === "true",
+                      })
+                    }
+                    className="h-7 w-28 text-xs"
+                  >
+                    <option value="">none</option>
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </Select>
+                ) : (
+                  <Input
+                    type={param.type === "number" ? "number" : "text"}
+                    value={param.default !== undefined ? String(param.default) : ""}
+                    onChange={(e) =>
+                      updateParam(i, {
+                        default:
+                          e.target.value === ""
+                            ? undefined
+                            : param.type === "number"
+                              ? Number(e.target.value)
+                              : e.target.value,
+                      })
+                    }
+                    placeholder="optional default"
+                    className="h-7 text-xs max-w-xs"
+                  />
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}

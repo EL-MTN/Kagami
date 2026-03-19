@@ -1,0 +1,237 @@
+import mongoose, { Schema, Types, type Document } from "mongoose";
+
+// --- Skill Parameter ---
+
+export interface ISkillParameter {
+  name: string;
+  type: "string" | "number" | "boolean";
+  description: string;
+  required: boolean;
+  default?: string | number | boolean;
+}
+
+const skillParameterSchema = new Schema<ISkillParameter>(
+  {
+    name: { type: String, required: true },
+    type: { type: String, enum: ["string", "number", "boolean"], required: true },
+    description: { type: String, required: true },
+    required: { type: Boolean, required: true },
+    default: { type: Schema.Types.Mixed },
+  },
+  { _id: false },
+);
+
+// --- Skill ---
+
+export interface ISkill extends Document {
+  chatId: string;
+  name: string;
+  description: string;
+  prompt: string;
+  parameters: ISkillParameter[];
+  cronSchedule: string | null;
+  reportMode: "always" | "alert";
+  nextRunAt: Date | null;
+  enabled: boolean;
+  version: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const skillSchema = new Schema<ISkill>(
+  {
+    chatId: { type: String, required: true },
+    name: { type: String, required: true },
+    description: { type: String, required: true },
+    prompt: { type: String, required: true },
+    parameters: { type: [skillParameterSchema], default: [] },
+    cronSchedule: { type: String, default: null },
+    reportMode: { type: String, enum: ["always", "alert"], required: true },
+    nextRunAt: { type: Date, default: null },
+    enabled: { type: Boolean, default: true },
+    version: { type: Number, default: 1 },
+  },
+  { timestamps: true },
+);
+
+skillSchema.index({ chatId: 1 });
+skillSchema.index({ chatId: 1, name: 1 }, { unique: true });
+skillSchema.index({ enabled: 1, nextRunAt: 1 });
+
+export const Skill =
+  (mongoose.models.Skill as mongoose.Model<ISkill>) ?? mongoose.model<ISkill>("Skill", skillSchema);
+
+// --- Skill Log ---
+
+export interface ISkillLog extends Document {
+  skillId: Types.ObjectId;
+  trigger: "cron" | "manual" | "skill";
+  parentLogId?: Types.ObjectId;
+  parameters?: Record<string, unknown>;
+  status: "running" | "completed" | "failed";
+  summary?: string;
+  startedAt: Date;
+  completedAt?: Date;
+}
+
+const skillLogSchema = new Schema<ISkillLog>({
+  skillId: { type: Schema.Types.ObjectId, ref: "Skill", required: true },
+  trigger: { type: String, enum: ["cron", "manual", "skill"], required: true },
+  parentLogId: { type: Schema.Types.ObjectId, ref: "SkillLog" },
+  parameters: { type: Schema.Types.Mixed },
+  status: { type: String, enum: ["running", "completed", "failed"], required: true },
+  summary: { type: String },
+  startedAt: { type: Date, required: true },
+  completedAt: { type: Date },
+});
+
+skillLogSchema.index({ skillId: 1, startedAt: -1 });
+
+export const SkillLog =
+  (mongoose.models.SkillLog as mongoose.Model<ISkillLog>) ??
+  mongoose.model<ISkillLog>("SkillLog", skillLogSchema);
+
+// --- Skill Helpers ---
+
+export interface SkillInput {
+  name: string;
+  description: string;
+  prompt: string;
+  parameters?: ISkillParameter[];
+  cronSchedule?: string | null;
+  reportMode: "always" | "alert";
+  nextRunAt?: Date | null;
+}
+
+export async function createSkill(chatId: string, input: SkillInput): Promise<ISkill> {
+  return Skill.create({ chatId, ...input });
+}
+
+export async function listSkillsForChat(chatId: string): Promise<ISkill[]> {
+  return Skill.find({ chatId }).sort({ createdAt: -1 });
+}
+
+export async function getSkillById(skillId: string, chatId?: string): Promise<ISkill | null> {
+  const filter: Record<string, unknown> = { _id: skillId };
+  if (chatId) filter.chatId = chatId;
+  return Skill.findOne(filter);
+}
+
+export async function getSkillByName(chatId: string, name: string): Promise<ISkill | null> {
+  return Skill.findOne({ chatId, name });
+}
+
+export async function updateSkill(
+  skillId: string,
+  patch: Partial<
+    Pick<
+      ISkill,
+      | "name"
+      | "description"
+      | "prompt"
+      | "parameters"
+      | "cronSchedule"
+      | "reportMode"
+      | "enabled"
+      | "nextRunAt"
+      | "version"
+    >
+  >,
+  chatId?: string,
+): Promise<ISkill | null> {
+  const filter: Record<string, unknown> = { _id: skillId };
+  if (chatId) filter.chatId = chatId;
+  return Skill.findOneAndUpdate(filter, patch, { new: true });
+}
+
+export async function deleteSkill(skillId: string, chatId?: string): Promise<boolean> {
+  const filter: Record<string, unknown> = { _id: skillId };
+  if (chatId) filter.chatId = chatId;
+  const result = await Skill.findOneAndDelete(filter);
+  if (result) {
+    await SkillLog.deleteMany({ skillId: new Types.ObjectId(skillId) });
+  }
+  return result !== null;
+}
+
+export async function getDueSkills(): Promise<ISkill[]> {
+  return Skill.find({
+    enabled: true,
+    cronSchedule: { $ne: null },
+    nextRunAt: { $lte: new Date() },
+  }).sort({ nextRunAt: 1 });
+}
+
+export async function advanceSkillNextRunAt(skillId: string, nextRunAt: Date): Promise<void> {
+  await Skill.findByIdAndUpdate(skillId, { nextRunAt });
+}
+
+// --- Skill Log Helpers ---
+
+const STALE_RUNNING_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
+
+export async function isSkillRunning(skillId: string): Promise<boolean> {
+  const exists = await SkillLog.exists({
+    skillId: new Types.ObjectId(skillId),
+    status: "running",
+    startedAt: { $gte: new Date(Date.now() - STALE_RUNNING_THRESHOLD_MS) },
+  });
+  return exists !== null;
+}
+
+export async function createSkillLog(
+  skillId: string,
+  trigger: "cron" | "manual" | "skill",
+  options?: { parentLogId?: string; parameters?: Record<string, unknown> },
+): Promise<ISkillLog> {
+  return SkillLog.create({
+    skillId: new Types.ObjectId(skillId),
+    trigger,
+    parentLogId: options?.parentLogId ? new Types.ObjectId(options.parentLogId) : undefined,
+    parameters: options?.parameters,
+    status: "running",
+    startedAt: new Date(),
+  });
+}
+
+export async function completeSkillLog(logId: string, summary: string): Promise<void> {
+  await SkillLog.findByIdAndUpdate(logId, {
+    status: "completed",
+    summary,
+    completedAt: new Date(),
+  });
+}
+
+export async function failSkillLog(logId: string, reason: string): Promise<void> {
+  await SkillLog.findByIdAndUpdate(logId, {
+    status: "failed",
+    summary: reason,
+    completedAt: new Date(),
+  });
+}
+
+export async function getSkillLogs(skillId: string, limit = 50): Promise<ISkillLog[]> {
+  return SkillLog.find({ skillId: new Types.ObjectId(skillId) })
+    .sort({ startedAt: -1 })
+    .limit(limit);
+}
+
+export async function cleanupOldSkillLogs(olderThanDays = 90): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
+  const result = await SkillLog.deleteMany({
+    status: { $ne: "running" },
+    startedAt: { $lt: cutoff },
+  });
+  return result.deletedCount;
+}
+
+export async function resetStaleRunningSkillLogs(): Promise<number> {
+  const result = await SkillLog.updateMany(
+    {
+      status: "running",
+      startedAt: { $lt: new Date(Date.now() - STALE_RUNNING_THRESHOLD_MS) },
+    },
+    { status: "failed", summary: "Process crashed during execution", completedAt: new Date() },
+  );
+  return result.modifiedCount;
+}

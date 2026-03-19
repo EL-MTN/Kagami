@@ -9,7 +9,7 @@ import {
   getRecentMessages,
   cleanupOldConversations,
   cleanupFiredReminders,
-  cleanupOldWorkflowLogs,
+  cleanupOldSkillLogs,
   cleanupOldLocations,
   getNextProactiveAt,
   setNextProactiveAt,
@@ -214,7 +214,7 @@ async function runDailyCleanup(): Promise<void> {
     const [deletedReminders, deletedConvos, deletedLogs, deletedLocations] = await Promise.all([
       cleanupFiredReminders(30),
       cleanupOldConversations(90),
-      cleanupOldWorkflowLogs(90),
+      cleanupOldSkillLogs(90),
       cleanupOldLocations(90),
     ]);
     if (deletedReminders > 0 || deletedConvos > 0 || deletedLogs > 0 || deletedLocations > 0) {
