@@ -1,59 +1,79 @@
 import { tool } from "ai";
-import { z } from "zod";
-import { getSkillByName, type ISkillParameter } from "@mashiro/db";
+import { z, type ZodTypeAny } from "zod";
+import { getSkillByName, type ISkillParameter, type SkillParameterType } from "@mashiro/db";
 import { logger } from "@mashiro/shared";
 import type { PlatformAdapter } from "@mashiro/shared";
 import { executeSkill, MAX_SKILL_DEPTH } from "../../services/skill-executor";
+
+const jsonArrayFromString = z.string().transform((s, ctx) => {
+  try {
+    const parsed: unknown = JSON.parse(s);
+    if (!Array.isArray(parsed)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Expected an array" });
+      return z.NEVER;
+    }
+    return parsed as unknown[];
+  } catch {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid JSON" });
+    return z.NEVER;
+  }
+});
+
+const jsonObjectFromString = z.string().transform((s, ctx) => {
+  try {
+    const parsed: unknown = JSON.parse(s);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Expected an object" });
+      return z.NEVER;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid JSON" });
+    return z.NEVER;
+  }
+});
+
+const typeSchemas: Record<SkillParameterType, ZodTypeAny> = {
+  string: z.coerce.string(),
+  number: z.coerce.number(),
+  boolean: z.coerce.boolean(),
+  array: z.array(z.unknown()).or(jsonArrayFromString),
+  object: z.record(z.unknown()).or(jsonObjectFromString),
+};
+
+function buildParamSchema(schema: ISkillParameter[]): z.ZodType<Record<string, unknown>> {
+  const shape: Record<string, ZodTypeAny> = {};
+
+  for (const param of schema) {
+    let field = typeSchemas[param.type] ?? z.unknown();
+
+    if (param.default !== undefined) {
+      field = field.default(param.default);
+    }
+    if (!param.required && param.default === undefined) {
+      field = field.optional();
+    }
+
+    shape[param.name] = field;
+  }
+
+  return z.object(shape).passthrough();
+}
 
 function validateParameters(
   params: Record<string, unknown> | undefined,
   schema: ISkillParameter[],
 ): { valid: true; resolved: Record<string, unknown> } | { valid: false; reason: string } {
-  const resolved: Record<string, unknown> = {};
+  const zodSchema = buildParamSchema(schema);
+  const result = zodSchema.safeParse(params ?? {});
 
-  for (const param of schema) {
-    const value = params?.[param.name];
-
-    if (value === undefined || value === null) {
-      if (param.required) {
-        if (param.default !== undefined) {
-          resolved[param.name] = param.default;
-        } else {
-          return { valid: false, reason: `Missing required parameter: "${param.name}"` };
-        }
-      } else if (param.default !== undefined) {
-        resolved[param.name] = param.default;
-      }
-      continue;
-    }
-
-    // Type check
-    const actualType = typeof value;
-    if (param.type === "string" && actualType !== "string") {
-      resolved[param.name] = `${value as string | number | boolean}`;
-    } else if (param.type === "number" && actualType !== "number") {
-      const num = Number(value);
-      if (isNaN(num)) {
-        return { valid: false, reason: `Parameter "${param.name}" must be a number` };
-      }
-      resolved[param.name] = num;
-    } else if (param.type === "boolean" && actualType !== "boolean") {
-      resolved[param.name] = value === "true" || value === true || value === 1;
-    } else {
-      resolved[param.name] = value;
-    }
+  if (!result.success) {
+    const first = result.error.issues[0];
+    const path = first.path.length > 0 ? `"${first.path.join(".")}"` : "input";
+    return { valid: false, reason: `Parameter ${path}: ${first.message}` };
   }
 
-  // Pass through any extra parameters not in schema
-  if (params) {
-    for (const key of Object.keys(params)) {
-      if (!(key in resolved)) {
-        resolved[key] = params[key];
-      }
-    }
-  }
-
-  return { valid: true, resolved };
+  return { valid: true, resolved: result.data };
 }
 
 export function createUseSkillTool(chatId: string, adapter: PlatformAdapter, depth = 0) {
@@ -63,7 +83,7 @@ export function createUseSkillTool(chatId: string, adapter: PlatformAdapter, dep
     inputSchema: z.object({
       skillName: z.string().describe("Name of the skill to invoke"),
       parameters: z
-        .record(z.union([z.string(), z.number(), z.boolean()]))
+        .record(z.unknown())
         .optional()
         .describe("Key-value parameters to pass to the skill"),
     }),

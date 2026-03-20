@@ -2,12 +2,15 @@ import { z } from "zod";
 
 // --- Parameter schema (shared between create/patch/import) ---
 
+export const skillParameterTypes = ["string", "number", "boolean", "array", "object"] as const;
+export type SkillParameterType = (typeof skillParameterTypes)[number];
+
 export const skillParameterSchema = z.object({
   name: z.string().min(1, "Parameter name is required"),
-  type: z.enum(["string", "number", "boolean"]),
+  type: z.enum(skillParameterTypes),
   description: z.string().min(1, "Parameter description is required"),
   required: z.boolean(),
-  default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  default: z.unknown().optional(),
 });
 
 export type SkillParameter = z.infer<typeof skillParameterSchema>;

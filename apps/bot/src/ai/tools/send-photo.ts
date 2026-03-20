@@ -40,8 +40,9 @@ export function createSendPhotoTool(chatId: string, adapter: PlatformAdapter) {
 
         return { sent: true, caption };
       } catch (err) {
+        const reason = err instanceof Error ? err.message : "Image generation failed";
         logger.error({ err, description }, "Image generation failed");
-        return { sent: false, reason: "Image generation failed" };
+        return { sent: false, reason };
       }
     },
   });

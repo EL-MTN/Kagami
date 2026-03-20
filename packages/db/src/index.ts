@@ -73,5 +73,6 @@ export {
   type ISkill,
   type ISkillLog,
   type ISkillParameter,
+  type SkillParameterType,
   type SkillInput,
 } from "./models/skill";

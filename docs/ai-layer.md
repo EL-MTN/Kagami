@@ -145,7 +145,7 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 - **Purpose**: Generate and send an AI photo/selfie
 - **Parameters**: `{ description: string, caption?: string, aspectRatio?: "1:1" | "3:4" | "4:3" | "9:16" | "16:9" }`
 - **Returns**: `{ sent: true, caption } | { sent: false, reason }`
-- **Behavior**: Builds prompt with appearance prefix, calls image generation, sends via adapter
+- **Behavior**: Builds prompt with appearance prefix, calls image generation, sends via adapter. On failure, the provider's error message is returned in `reason` so the LLM can explain what went wrong to the user.
 
 ### sendVoice (conditional — requires TTS_PROVIDER)
 
@@ -211,7 +211,7 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 ### useSkill (conditional — omitted at max depth)
 
 - **Purpose**: Invoke a skill by name with optional parameters
-- **Parameters**: `{ skillName: string, parameters?: Record<string, string | number | boolean> }`
+- **Parameters**: `{ skillName: string, parameters?: Record<string, unknown> }`
 - **Returns**: `{ success: true, skillName, result }` or `{ success: false, reason }`
 - **Behavior**: Looks up skill by name, validates parameters (type checking, required params, defaults), then executes synchronously via `executeSkill()`. The result is returned to the calling LLM. Supports composition: skills can call other skills up to 3 levels deep. At `MAX_SKILL_DEPTH` (3), the `useSkill` tool is omitted from the tool set entirely.
 

@@ -2,7 +2,7 @@
 
 ## New Features
 
-- [ ] **Voice Messages** — Add speech synthesis (ElevenLabs, OpenAI TTS) so Mashiro can send Telegram voice notes, especially for proactive or emotional moments
+- [x] **Voice Messages** — Speech synthesis via ElevenLabs and OpenAI TTS, sent as Telegram voice notes
 - [ ] **Voice Input Understanding** — Accept and transcribe incoming voice messages (Whisper API) instead of silently ignoring `message:voice`
 - [ ] **Mood / Emotional State Tracking** — Maintain a persistent mood state that evolves based on conversation tone, time since last interaction, and events; influences response style, selfie expressions, and proactive frequency
 - [x] **Photo Reactions & Image Understanding** — Handle incoming photos with a vision model to respond contextually (food, places, selfies, etc.)
@@ -10,7 +10,8 @@
 - [x] **Gmail Integration** — Read-only email access with unread listing and full body retrieval via LLM tool
 - [x] **Reminder System** — MongoDB-backed reminders with polling scheduler, scoped per chat, LLM-composed messages
 - [ ] **Sticker / GIF Responses** — Curate anime stickers/GIFs that Mashiro sends contextually via Telegram's sticker support
-- [ ] **Location-Aware Context** — React to shared locations with weather/time-of-day comments via a weather API
+- [x] **Location-Aware Context** — Reverse geocoding, arrival detection, location context in system prompt
+- [ ] **Weather API Integration** — Add weather data to location-aware context when user shares location
 - [ ] **Multi-Platform Support (Discord)** — Implement a Discord adapter using the existing `PlatformAdapter` interface
 - [ ] **Conversation Recap Command** — A `/recap` command that summarizes recent conversations from vault summaries
 - [ ] **Dynamic Personality Evolution** — Evolve the personality card over time based on relationship milestones
@@ -30,7 +31,7 @@
 
 - [ ] **Add health checks / monitoring** — Lightweight HTTP health endpoint or periodic heartbeat logging
 - [ ] **Add CI/CD** — GitHub Actions pipeline for `typecheck` + `lint` on PRs and auto-deploy on main push
-- [ ] **Improve image generation error context** — Return error messages from xAI failures so the LLM can explain why a photo can't be sent
+- [x] **Improve image generation error context** — Error messages from image providers are now bubbled to the LLM so it can explain failures
 - [ ] **Persist rate limiting** — Move the in-memory rate limiter to MongoDB or Redis so it survives restarts
 
 ## Security

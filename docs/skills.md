@@ -85,13 +85,13 @@ Two MongoDB collections back the skill system: `Skill` (definitions) and `SkillL
 
 Each parameter has:
 
-| Field         | Type                                | Description                                                       |
-| ------------- | ----------------------------------- | ----------------------------------------------------------------- |
-| `name`        | `string`                            | Parameter name                                                    |
-| `type`        | `"string" \| "number" \| "boolean"` | Value type (coerced at invocation time)                           |
-| `description` | `string`                            | What this parameter is for                                        |
-| `required`    | `boolean`                           | Whether the caller must provide it                                |
-| `default`     | `string \| number \| boolean`       | Default value (required params on cron skills must have defaults) |
+| Field         | Type                                                       | Description                                                                            |
+| ------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `name`        | `string`                                                   | Parameter name                                                                         |
+| `type`        | `"string" \| "number" \| "boolean" \| "array" \| "object"` | Value type (coerced at invocation time — arrays/objects accept JSON strings or values) |
+| `description` | `string`                                                   | What this parameter is for                                                             |
+| `required`    | `boolean`                                                  | Whether the caller must provide it                                                     |
+| `default`     | `unknown`                                                  | Default value (required params on cron skills must have defaults)                      |
 
 ### SkillLog
 
@@ -157,7 +157,7 @@ Invokes a skill by name. The skill executes as a sub-`generateText()` call and r
 
 1. Checks recursion depth against `MAX_SKILL_DEPTH` (3)
 2. Looks up the skill by `{chatId, name}` — rejects if not found or disabled
-3. Validates and coerces parameters against the skill's parameter schema (type coercion for string/number/boolean, default filling, extra params passed through)
+3. Validates and coerces parameters against the skill's parameter schema (type coercion for string/number/boolean, JSON parsing for array/object, default filling, extra params passed through)
 4. Calls `executeSkill()` with `trigger: "skill"` and `depth + 1`
 5. Returns `{ success, skillName, result }` synchronously
 

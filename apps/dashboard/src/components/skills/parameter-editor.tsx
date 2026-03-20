@@ -7,6 +7,13 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import type { SkillParameter } from "@/lib/skill-schema";
+import { skillParameterTypes } from "@/lib/skill-schema";
+
+function stringifyDefault(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return `${value as string | number | boolean}`;
+}
 
 interface ParameterEditorProps {
   parameters: SkillParameter[];
@@ -68,15 +75,17 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
               value={param.type}
               onChange={(e) =>
                 updateParam(i, {
-                  type: e.target.value as "string" | "number" | "boolean",
+                  type: e.target.value as SkillParameter["type"],
                   default: undefined,
                 })
               }
               className="h-8 text-xs"
             >
-              <option value="string">string</option>
-              <option value="number">number</option>
-              <option value="boolean">boolean</option>
+              {skillParameterTypes.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
             </Select>
           </div>
           <div className="space-y-1">
@@ -112,7 +121,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
                 <Label className="text-xs text-muted-foreground shrink-0">Default:</Label>
                 {param.type === "boolean" ? (
                   <Select
-                    value={param.default !== undefined ? String(param.default) : ""}
+                    value={param.default !== undefined ? stringifyDefault(param.default) : ""}
                     onChange={(e) =>
                       updateParam(i, {
                         default: e.target.value === "" ? undefined : e.target.value === "true",
@@ -124,10 +133,27 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
                     <option value="true">true</option>
                     <option value="false">false</option>
                   </Select>
+                ) : param.type === "array" || param.type === "object" ? (
+                  <Input
+                    value={param.default !== undefined ? JSON.stringify(param.default) : ""}
+                    onChange={(e) => {
+                      if (e.target.value === "") {
+                        updateParam(i, { default: undefined });
+                        return;
+                      }
+                      try {
+                        updateParam(i, { default: JSON.parse(e.target.value) as unknown });
+                      } catch {
+                        // Allow typing — only persist valid JSON
+                      }
+                    }}
+                    placeholder={param.type === "array" ? '["item1", "item2"]' : '{"key": "value"}'}
+                    className="h-7 text-xs max-w-xs font-mono"
+                  />
                 ) : (
                   <Input
                     type={param.type === "number" ? "number" : "text"}
-                    value={param.default !== undefined ? String(param.default) : ""}
+                    value={param.default !== undefined ? stringifyDefault(param.default) : ""}
                     onChange={(e) =>
                       updateParam(i, {
                         default:

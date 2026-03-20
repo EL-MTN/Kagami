@@ -2,18 +2,24 @@ import mongoose, { Schema, Types, type Document } from "mongoose";
 
 // --- Skill Parameter ---
 
+export type SkillParameterType = "string" | "number" | "boolean" | "array" | "object";
+
 export interface ISkillParameter {
   name: string;
-  type: "string" | "number" | "boolean";
+  type: SkillParameterType;
   description: string;
   required: boolean;
-  default?: string | number | boolean;
+  default?: unknown;
 }
 
 const skillParameterSchema = new Schema<ISkillParameter>(
   {
     name: { type: String, required: true },
-    type: { type: String, enum: ["string", "number", "boolean"], required: true },
+    type: {
+      type: String,
+      enum: ["string", "number", "boolean", "array", "object"],
+      required: true,
+    },
     description: { type: String, required: true },
     required: { type: Boolean, required: true },
     default: { type: Schema.Types.Mixed },
