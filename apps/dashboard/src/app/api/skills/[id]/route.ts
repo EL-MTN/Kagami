@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { CronExpressionParser } from "cron-parser";
-import { getSkillById, updateSkill, deleteSkill } from "@mashiro/db";
+import { getSkillById, updateSkill, deleteSkill, isDuplicateKeyError } from "@mashiro/db";
 import { ensureDB } from "@/lib/db";
 import { getSkillDetail } from "@/lib/queries/skills";
 import { skillPatchSchema } from "@/lib/skill-schema";
@@ -106,7 +106,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const detail = await getSkillDetail(id);
     return NextResponse.json({ skill: detail });
   } catch (error) {
-    if (error instanceof Error && "code" in error && (error as { code: number }).code === 11000) {
+    if (isDuplicateKeyError(error)) {
       return NextResponse.json({ error: "A skill with that name already exists" }, { status: 409 });
     }
     throw error;

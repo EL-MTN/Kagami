@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { CronExpressionParser } from "cron-parser";
-import { Skill, createSkill, type ISkillParameter } from "@mashiro/db";
+import { Skill, createSkill, isDuplicateKeyError, type ISkillParameter } from "@mashiro/db";
 import { ensureDB } from "@/lib/db";
 import { skillCreateSchema, skillExportBundleSchema } from "@/lib/skill-schema";
+import { getSkillList } from "@/lib/queries/skills";
 
 export async function GET() {
   await ensureDB();
-  const { getSkillList } = await import("@/lib/queries/skills");
   const skills = await getSkillList();
   return NextResponse.json({ skills });
 }
@@ -79,7 +79,7 @@ async function handleCreate(request: Request) {
       { status: 201 },
     );
   } catch (error) {
-    if (error instanceof Error && "code" in error && (error as { code: number }).code === 11000) {
+    if (isDuplicateKeyError(error)) {
       return NextResponse.json({ error: "A skill with that name already exists" }, { status: 409 });
     }
     throw error;
@@ -140,7 +140,7 @@ async function handleImport(request: Request) {
       });
       imported++;
     } catch (error) {
-      if (error instanceof Error && "code" in error && (error as { code: number }).code === 11000) {
+      if (isDuplicateKeyError(error)) {
         skipped++;
       } else {
         errors.push(`"${item.name}": ${error instanceof Error ? error.message : "unknown error"}`);

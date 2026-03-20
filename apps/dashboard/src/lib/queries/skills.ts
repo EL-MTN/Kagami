@@ -1,79 +1,47 @@
-import { Skill, SkillLog } from "@mashiro/db";
+import { Skill, SkillLog, type ISkillParameter } from "@mashiro/db";
 import { ensureDB } from "../db";
-import type { SkillListItem, SkillLogItem } from "../skill-schema";
+import type { SkillListItem, SkillLogItem, SkillParameter } from "../skill-schema";
 
-export async function getSkillList(): Promise<SkillListItem[]> {
-  await ensureDB();
-
-  const skills = await Skill.find().sort({ createdAt: -1 }).limit(200).lean();
-
-  // Batch-fetch last log for all skills in one query
-  const skillIds = skills.map((s) => s._id);
-  const lastLogs = await SkillLog.aggregate<{
-    _id: unknown;
-    doc: { status: string; startedAt: Date; completedAt?: Date };
-  }>([
-    { $match: { skillId: { $in: skillIds } } },
-    { $sort: { startedAt: -1 } },
-    { $group: { _id: "$skillId", doc: { $first: "$$ROOT" } } },
-  ]);
-  const lastLogMap = new Map(lastLogs.map((l) => [String(l._id), l.doc]));
-
-  return skills.map((s) => {
-    const lastLog = lastLogMap.get(s._id.toString());
-    return {
-      id: s._id.toString(),
-      chatId: s.chatId,
-      name: s.name,
-      description: s.description,
-      prompt: s.prompt,
-      parameters: s.parameters.map((p) => ({
-        name: p.name,
-        type: p.type,
-        description: p.description,
-        required: p.required,
-        ...(p.default !== undefined ? { default: p.default } : {}),
-      })),
-      cronSchedule: s.cronSchedule,
-      reportMode: s.reportMode,
-      enabled: s.enabled,
-      version: s.version,
-      nextRunAt: s.nextRunAt?.toISOString() ?? null,
-      createdAt: s.createdAt.toISOString(),
-      updatedAt: s.updatedAt.toISOString(),
-      lastRun: lastLog
-        ? {
-            status: lastLog.status as "running" | "completed" | "failed",
-            startedAt: lastLog.startedAt.toISOString(),
-            completedAt: lastLog.completedAt?.toISOString(),
-          }
-        : undefined,
-    };
-  });
+interface LastLog {
+  status: string;
+  startedAt: Date;
+  completedAt?: Date;
 }
 
-export async function getSkillDetail(id: string): Promise<SkillListItem | null> {
-  await ensureDB();
+interface SkillDoc {
+  _id: { toString(): string };
+  chatId: string;
+  name: string;
+  description: string;
+  prompt: string;
+  parameters: ISkillParameter[];
+  cronSchedule: string | null;
+  reportMode: "always" | "alert";
+  enabled: boolean;
+  version: number;
+  nextRunAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
-  const s = await Skill.findById(id).lean();
-  if (!s) return null;
+export function serializeParameter(p: ISkillParameter): SkillParameter {
+  return {
+    name: p.name,
+    type: p.type,
+    description: p.description,
+    required: p.required,
+    ...(p.default !== undefined ? { default: p.default } : {}),
+  };
+}
 
-  // Get last log for this skill
-  const lastLog = await SkillLog.findOne({ skillId: s._id }).sort({ startedAt: -1 }).lean();
-
+function toSkillListItem(s: SkillDoc, lastLog?: LastLog): SkillListItem {
   return {
     id: s._id.toString(),
     chatId: s.chatId,
     name: s.name,
     description: s.description,
     prompt: s.prompt,
-    parameters: s.parameters.map((p) => ({
-      name: p.name,
-      type: p.type,
-      description: p.description,
-      required: p.required,
-      ...(p.default !== undefined ? { default: p.default } : {}),
-    })),
+    parameters: s.parameters.map(serializeParameter),
     cronSchedule: s.cronSchedule,
     reportMode: s.reportMode,
     enabled: s.enabled,
@@ -83,12 +51,39 @@ export async function getSkillDetail(id: string): Promise<SkillListItem | null> 
     updatedAt: s.updatedAt.toISOString(),
     lastRun: lastLog
       ? {
-          status: lastLog.status,
+          status: lastLog.status as "running" | "completed" | "failed",
           startedAt: lastLog.startedAt.toISOString(),
           completedAt: lastLog.completedAt?.toISOString(),
         }
       : undefined,
   };
+}
+
+export async function getSkillList(): Promise<SkillListItem[]> {
+  await ensureDB();
+
+  const skills = await Skill.find().sort({ createdAt: -1 }).limit(200).lean();
+
+  // Batch-fetch last log for all skills in one query
+  const skillIds = skills.map((s) => s._id);
+  const lastLogs = await SkillLog.aggregate<{ _id: unknown; doc: LastLog }>([
+    { $match: { skillId: { $in: skillIds } } },
+    { $sort: { startedAt: -1 } },
+    { $group: { _id: "$skillId", doc: { $first: "$$ROOT" } } },
+  ]);
+  const lastLogMap = new Map(lastLogs.map((l) => [String(l._id), l.doc]));
+
+  return skills.map((s) => toSkillListItem(s, lastLogMap.get(s._id.toString())));
+}
+
+export async function getSkillDetail(id: string): Promise<SkillListItem | null> {
+  await ensureDB();
+
+  const s = await Skill.findById(id).lean();
+  if (!s) return null;
+
+  const lastLog = await SkillLog.findOne({ skillId: s._id }).sort({ startedAt: -1 }).lean();
+  return toSkillListItem(s, lastLog ?? undefined);
 }
 
 export async function getSkillLogList(
