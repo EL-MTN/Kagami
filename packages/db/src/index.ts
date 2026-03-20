@@ -1,4 +1,4 @@
-export { connectDB, disconnectDB } from "./connection";
+export { connectDB, disconnectDB, isDuplicateKeyError } from "./connection";
 export { generateImageKey, writeImage, readImage, removeImage, removeImages } from "./gridfs";
 export { Memory, type IMemory, type IMemoryMetadata } from "./models/memory";
 export {

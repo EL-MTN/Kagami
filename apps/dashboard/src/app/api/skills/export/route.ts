@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Skill } from "@mashiro/db";
 import { ensureDB } from "@/lib/db";
 import type { SkillExportBundle } from "@/lib/skill-schema";
+import { serializeParameter } from "@/lib/queries/skills";
 
 export async function GET() {
   await ensureDB();
@@ -16,13 +17,7 @@ export async function GET() {
       name: s.name,
       description: s.description,
       prompt: s.prompt,
-      parameters: s.parameters.map((p) => ({
-        name: p.name,
-        type: p.type,
-        description: p.description,
-        required: p.required,
-        ...(p.default !== undefined ? { default: p.default } : {}),
-      })),
+      parameters: s.parameters.map(serializeParameter),
       cronSchedule: s.cronSchedule,
       reportMode: s.reportMode,
       enabled: s.enabled,

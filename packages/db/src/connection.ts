@@ -15,3 +15,9 @@ export async function disconnectDB(): Promise<void> {
   await mongoose.disconnect();
   logger.info("Disconnected from MongoDB");
 }
+
+export function isDuplicateKeyError(error: unknown): boolean {
+  return (
+    error instanceof Error && "code" in error && (error as Record<string, unknown>).code === 11000
+  );
+}

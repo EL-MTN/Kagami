@@ -6,10 +6,24 @@ import {
   getSkillById,
   updateSkill,
   deleteSkill,
+  isDuplicateKeyError,
   type ISkillParameter,
 } from "@mashiro/db";
 import { logger } from "@mashiro/shared";
 import { computeNextRunAt, isValidCron } from "../../services/cron";
+
+function validateCronParams(
+  cronSchedule: string | undefined,
+  params: ISkillParameter[],
+): string | null {
+  if (!cronSchedule) return null;
+  if (!isValidCron(cronSchedule)) return `Invalid cron expression: "${cronSchedule}"`;
+  const missing = params.filter((p) => p.required && p.default === undefined);
+  if (missing.length > 0) {
+    return `Cron-scheduled skills require defaults for all required parameters. Missing defaults: ${missing.map((p) => p.name).join(", ")}`;
+  }
+  return null;
+}
 
 const parameterSchema = z.object({
   name: z.string().describe("Parameter name"),
@@ -85,58 +99,35 @@ export function createManageSkillsTool(chatId: string) {
               };
             }
 
-            // Validate cron if provided
-            if (cronSchedule) {
-              if (!isValidCron(cronSchedule)) {
-                return { success: false, reason: `Invalid cron expression: "${cronSchedule}"` };
-              }
-
-              // Cron skills: all required parameters must have defaults
-              const params = (parameters ?? []) as ISkillParameter[];
-              const missingDefaults = params.filter((p) => p.required && p.default === undefined);
-              if (missingDefaults.length > 0) {
-                return {
-                  success: false,
-                  reason: `Cron-scheduled skills require defaults for all required parameters. Missing defaults: ${missingDefaults.map((p) => p.name).join(", ")}`,
-                };
-              }
-            }
+            const cronError = validateCronParams(
+              cronSchedule,
+              (parameters ?? []) as ISkillParameter[],
+            );
+            if (cronError) return { success: false, reason: cronError };
 
             logger.info({ chatId, name, cronSchedule, reportMode }, "Tool: manageSkills (create)");
 
             const nextRunAt = cronSchedule ? computeNextRunAt(cronSchedule) : null;
 
-            try {
-              const skill = await createSkill(chatId, {
-                name,
-                description,
-                prompt,
-                parameters: (parameters ?? []) as ISkillParameter[],
-                cronSchedule: cronSchedule ?? null,
-                reportMode,
-                nextRunAt,
-              });
-              return {
-                success: true,
-                skillId: skill._id,
-                name,
-                description,
-                cronSchedule: cronSchedule ?? null,
-                reportMode,
-                parameterCount: (parameters ?? []).length,
-                nextRunAt: nextRunAt?.toISOString() ?? null,
-              };
-            } catch (error) {
-              // Catch duplicate key error
-              if (
-                error instanceof Error &&
-                "code" in error &&
-                (error as { code: number }).code === 11000
-              ) {
-                return { success: false, reason: `A skill named "${name}" already exists` };
-              }
-              throw error;
-            }
+            const skill = await createSkill(chatId, {
+              name,
+              description,
+              prompt,
+              parameters: (parameters ?? []) as ISkillParameter[],
+              cronSchedule: cronSchedule ?? null,
+              reportMode,
+              nextRunAt,
+            });
+            return {
+              success: true,
+              skillId: skill._id,
+              name,
+              description,
+              cronSchedule: cronSchedule ?? null,
+              reportMode,
+              parameterCount: (parameters ?? []).length,
+              nextRunAt: nextRunAt?.toISOString() ?? null,
+            };
           }
 
           case "list": {
@@ -180,18 +171,9 @@ export function createManageSkillsTool(chatId: string) {
 
             if (cronSchedule !== undefined) {
               if (cronSchedule) {
-                if (!isValidCron(cronSchedule)) {
-                  return { success: false, reason: `Invalid cron expression: "${cronSchedule}"` };
-                }
-                // Validate required params have defaults
-                const params = parameters ?? existing.parameters;
-                const missingDefaults = params.filter((p) => p.required && p.default === undefined);
-                if (missingDefaults.length > 0) {
-                  return {
-                    success: false,
-                    reason: `Cron-scheduled skills require defaults for all required parameters. Missing defaults: ${missingDefaults.map((p) => p.name).join(", ")}`,
-                  };
-                }
+                const cronErr = validateCronParams(cronSchedule, parameters ?? existing.parameters);
+                if (cronErr) return { success: false, reason: cronErr };
+
                 patch.cronSchedule = cronSchedule;
                 patch.nextRunAt = computeNextRunAt(cronSchedule);
               } else {
@@ -244,6 +226,9 @@ export function createManageSkillsTool(chatId: string) {
           }
         }
       } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return { success: false, reason: `A skill named "${name}" already exists` };
+        }
         logger.error({ error, action }, "Tool: manageSkills failed");
         return {
           success: false,
