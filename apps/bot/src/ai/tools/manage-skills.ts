@@ -13,11 +13,13 @@ import { computeNextRunAt, isValidCron } from "../../services/cron";
 
 const parameterSchema = z.object({
   name: z.string().describe("Parameter name"),
-  type: z.enum(["string", "number", "boolean"]).describe("Parameter type"),
+  type: z
+    .enum(["string", "number", "boolean", "array", "object"])
+    .describe("Parameter type — use array for lists, object for key-value maps"),
   description: z.string().describe("What this parameter is for"),
   required: z.boolean().describe("Whether this parameter must be provided"),
   default: z
-    .union([z.string(), z.number(), z.boolean()])
+    .unknown()
     .optional()
     .describe("Default value (required params with cron schedules must have defaults)"),
 });
