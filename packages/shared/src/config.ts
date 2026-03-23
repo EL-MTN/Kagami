@@ -37,6 +37,9 @@ const baseSchema = z.object({
     .string()
     .default("false")
     .transform((s) => s === "true"),
+  BROWSER_ENV: z.enum(["local", "cloud"]).default("local"),
+  BROWSERBASE_API_KEY: z.string().optional(),
+  BROWSERBASE_PROJECT_ID: z.string().optional(),
   BROWSER_MODEL: z.string().optional(),
   BROWSER_GEOLOCATION: z.string().optional(),
   BROWSER_DATA_DIR: z.string().default("./data/browser"),
@@ -153,6 +156,15 @@ export function validateConfig(): void {
     }
     if (!config.TTS_VOICE_ID) {
       errors.push("TTS_VOICE_ID is required when TTS_PROVIDER is set");
+    }
+  }
+
+  if (config.BROWSER_ENABLED && config.BROWSER_ENV === "cloud") {
+    if (!config.BROWSERBASE_API_KEY) {
+      errors.push('BROWSERBASE_API_KEY is required when BROWSER_ENV is "cloud"');
+    }
+    if (!config.BROWSERBASE_PROJECT_ID) {
+      errors.push('BROWSERBASE_PROJECT_ID is required when BROWSER_ENV is "cloud"');
     }
   }
 

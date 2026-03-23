@@ -187,7 +187,7 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 - **Purpose**: Browse the web — search, visit pages, extract data, interact with elements, take screenshots, or complete multi-step autonomous tasks
 - **Parameters**: `{ action: "search"|"visit"|"extract"|"act"|"screenshot"|"agent", query?, url?, instruction?, goal? }`
 - **Returns**: Varies by action. Always includes `{ success: boolean }`.
-- **Behavior**: Uses Stagehand (LLM-driven browser automation on accessibility tree) with a singleton Chromium instance. Lazy-initialized on first call, auto-shuts down after 5 minutes idle. Persistent user profile preserves cookies/logins across restarts.
+- **Behavior**: Uses Stagehand (LLM-driven browser automation on accessibility tree). Supports two environments controlled by `BROWSER_ENV`: `local` runs a singleton Chromium instance with a persistent user profile, `cloud` delegates to Browserbase (requires `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID`). Lazy-initialized on first call, auto-shuts down after 5 minutes idle.
 
 | Action       | Required param | What it does                                                 | Stagehand method                            |
 | ------------ | -------------- | ------------------------------------------------------------ | ------------------------------------------- |
@@ -199,7 +199,7 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 | `agent`      | `goal`         | Autonomous multi-step task (up to 25 steps)                  | `stagehand.agent().execute()`               |
 | `login`      | `url`          | Opens login page for manual credential entry                 | `page.goto()` (no browser release)          |
 
-**Architecture**: Two independent LLM streams — Mashiro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_DATA_DIR`, `BROWSER_HEADLESS` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
+**Architecture**: Two independent LLM streams — Mashiro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_ENV` (`local`/`cloud`), `BROWSER_DATA_DIR`, `BROWSER_HEADLESS`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
 
 ### manageSkills
 
