@@ -3,6 +3,7 @@ import { config, logger } from "@mashiro/shared";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
+const isCloud = config.BROWSER_ENV === "cloud";
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 let instance: Stagehand | null = null;
@@ -81,8 +82,25 @@ export function getStagehandModelConfig():
 // --- Lifecycle ---
 
 async function createInstance(): Promise<Stagehand> {
-  const { cacheDir, profileDir } = ensureDirs();
   const modelConfig = getStagehandModelConfig();
+
+  if (isCloud) {
+    const stagehand = new Stagehand({
+      env: "BROWSERBASE",
+      apiKey: config.BROWSERBASE_API_KEY!,
+      projectId: config.BROWSERBASE_PROJECT_ID!,
+      model: modelConfig,
+      selfHeal: true,
+      disablePino: true,
+      verbose: 0,
+    });
+
+    await stagehand.init();
+    logger.info("Browser initialized (Browserbase cloud)");
+    return stagehand;
+  }
+
+  const { cacheDir, profileDir } = ensureDirs();
   const geolocation = parseGeolocation();
 
   // Geolocation and permissions are BrowserContextOptions — valid for
@@ -113,7 +131,7 @@ async function createInstance(): Promise<Stagehand> {
   if (geolocation) {
     logger.info({ geolocation }, "Browser geolocation set");
   }
-  logger.info("Browser initialized");
+  logger.info("Browser initialized (local)");
   return stagehand;
 }
 
