@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -22,52 +21,93 @@ export default async function RemindersPage({
   const now = new Date();
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Reminders</h2>
-        <Button variant="ghost" size="sm" asChild>
+    <div className="space-y-8">
+      <div className="flex items-end justify-between">
+        <div>
+          <h2 className="font-display text-3xl text-foreground">Reminders</h2>
+          <p className="mt-1 text-sm text-muted-foreground/70">
+            Scheduled notifications and alerts
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" asChild className="text-xs text-muted-foreground">
           <Link href={`/reminders?showFired=${!showFired}`}>
             {showFired ? "Hide fired" : "Show fired"}
           </Link>
         </Button>
       </div>
 
-      <div className="rounded-lg border border-border">
+      <div className="overflow-hidden rounded-xl border border-border">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Message</TableHead>
-              <TableHead>Fire Time</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Chat ID</TableHead>
-              <TableHead>Created</TableHead>
+            <TableRow className="border-b border-border hover:bg-transparent">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Message
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Fire Time
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Status
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Chat ID
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Created
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.map((r) => (
-              <TableRow key={r.id}>
-                <TableCell className="max-w-xs truncate">{r.message}</TableCell>
-                <TableCell className="text-sm">
-                  {new Date(r.fireAt).toLocaleString()}
-                </TableCell>
-                <TableCell>
-                  {r.fired ? (
-                    <Badge variant="secondary">fired</Badge>
-                  ) : new Date(r.fireAt) < now ? (
-                    <Badge variant="destructive">expired</Badge>
-                  ) : (
-                    <Badge variant="default">pending</Badge>
-                  )}
-                </TableCell>
-                <TableCell className="font-mono text-sm">{r.chatId}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {new Date(r.createdAt).toLocaleDateString()}
-                </TableCell>
-              </TableRow>
-            ))}
+            {items.map((r) => {
+              const status = r.fired ? "fired" : new Date(r.fireAt) < now ? "expired" : "pending";
+              return (
+                <TableRow
+                  key={r.id}
+                  className="border-border/50 transition-colors hover:bg-primary/[0.02]"
+                >
+                  <TableCell className="max-w-xs truncate text-sm text-foreground/80">
+                    {r.message}
+                  </TableCell>
+                  <TableCell className="text-xs tabular-nums text-muted-foreground/60">
+                    {new Date(r.fireAt).toLocaleString()}
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={`inline-flex items-center gap-1.5 text-xs ${
+                        status === "pending"
+                          ? "text-primary/70"
+                          : status === "fired"
+                            ? "text-muted-foreground/50"
+                            : "text-destructive-foreground"
+                      }`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          status === "pending"
+                            ? "bg-primary/70"
+                            : status === "fired"
+                              ? "bg-muted-foreground/20"
+                              : "bg-destructive/50"
+                        }`}
+                      />
+                      {status}
+                    </span>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground/40">
+                    {r.chatId}
+                  </TableCell>
+                  <TableCell className="text-xs tabular-nums text-muted-foreground/40">
+                    {new Date(r.createdAt).toLocaleDateString()}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
             {items.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell
+                  colSpan={5}
+                  className="py-12 text-center text-sm text-muted-foreground/50"
+                >
                   No reminders found.
                 </TableCell>
               </TableRow>

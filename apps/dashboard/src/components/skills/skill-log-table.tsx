@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -24,34 +23,8 @@ interface SkillLogTableProps {
   initialHasMore: boolean;
 }
 
-function statusVariant(status: string) {
-  switch (status) {
-    case "completed":
-      return "default" as const;
-    case "failed":
-      return "destructive" as const;
-    case "running":
-      return "secondary" as const;
-    default:
-      return "secondary" as const;
-  }
-}
-
-function triggerVariant(trigger: string) {
-  switch (trigger) {
-    case "cron":
-      return "outline" as const;
-    case "manual":
-      return "secondary" as const;
-    case "skill":
-      return "ghost" as const;
-    default:
-      return "secondary" as const;
-  }
-}
-
 function formatDuration(start: string, end?: string): string {
-  if (!end) return "—";
+  if (!end) return "\u2014";
   const ms = new Date(end).getTime() - new Date(start).getTime();
   if (ms < 1000) return `${ms}ms`;
   const secs = Math.round(ms / 1000);
@@ -85,52 +58,87 @@ export function SkillLogTable({ skillId, initialLogs, initialHasMore }: SkillLog
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-border">
+      <div className="overflow-hidden rounded-xl border border-border">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Started</TableHead>
-              <TableHead>Duration</TableHead>
-              <TableHead>Trigger</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Summary</TableHead>
+            <TableRow className="border-b border-border hover:bg-transparent">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Started
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Duration
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Trigger
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Status
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Summary
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {logs.map((log) => (
-              <TableRow key={log.id}>
-                <TableCell className="text-sm">
+              <TableRow
+                key={log.id}
+                className="border-border/50 transition-colors hover:bg-primary/[0.02]"
+              >
+                <TableCell className="text-xs tabular-nums text-muted-foreground">
                   {new Date(log.startedAt).toLocaleString()}
                 </TableCell>
-                <TableCell className="text-sm font-mono">
+                <TableCell className="font-mono text-xs tabular-nums text-muted-foreground/60">
                   {formatDuration(log.startedAt, log.completedAt)}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={triggerVariant(log.trigger)}>{log.trigger}</Badge>
+                  <span className="text-xs text-muted-foreground/60">{log.trigger}</span>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={statusVariant(log.status)}>{log.status}</Badge>
+                  <span
+                    className={`inline-flex items-center gap-1.5 text-xs ${
+                      log.status === "completed"
+                        ? "text-primary/60"
+                        : log.status === "failed"
+                          ? "text-destructive-foreground"
+                          : "text-muted-foreground"
+                    }`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        log.status === "completed"
+                          ? "bg-primary/60"
+                          : log.status === "failed"
+                            ? "bg-destructive/60"
+                            : "bg-muted-foreground/50 animate-pulse"
+                      }`}
+                    />
+                    {log.status}
+                  </span>
                 </TableCell>
                 <TableCell className="max-w-md">
                   {log.summary ? (
                     <details>
-                      <summary className="cursor-pointer text-sm truncate max-w-md">
+                      <summary className="max-w-md cursor-pointer truncate text-xs text-foreground/70">
                         {log.summary.slice(0, 120)}
                         {log.summary.length > 120 ? "..." : ""}
                       </summary>
-                      <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
+                      <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
                         {log.summary}
                       </p>
                     </details>
                   ) : (
-                    <span className="text-muted-foreground text-sm">—</span>
+                    <span className="text-xs text-muted-foreground/30">&mdash;</span>
                   )}
                 </TableCell>
               </TableRow>
             ))}
             {logs.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell
+                  colSpan={5}
+                  className="py-12 text-center text-sm text-muted-foreground/60"
+                >
                   No executions yet.
                 </TableCell>
               </TableRow>
@@ -141,7 +149,13 @@ export function SkillLogTable({ skillId, initialLogs, initialHasMore }: SkillLog
 
       {hasMore && (
         <div className="flex justify-center">
-          <Button variant="outline" size="sm" onClick={() => void loadMore()} disabled={loading}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void loadMore()}
+            disabled={loading}
+            className="text-muted-foreground"
+          >
             {loading ? "Loading..." : "Load more"}
           </Button>
         </div>

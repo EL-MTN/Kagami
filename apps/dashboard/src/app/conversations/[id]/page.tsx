@@ -1,9 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "@/components/message-bubble";
 import { getConversationDetail } from "@/lib/queries/conversations";
@@ -20,42 +18,65 @@ export default async function ConversationDetailPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon-sm" asChild>
+      <div className="flex items-center gap-4">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          asChild
+          className="text-muted-foreground hover:text-foreground"
+        >
           <Link href="/conversations">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <h2 className="text-2xl font-bold">Conversation</h2>
+        <div>
+          <h2 className="font-display text-2xl text-foreground">Conversation</h2>
+          <p className="font-mono text-[10px] text-muted-foreground/40">{convo.sessionId}</p>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center gap-3">
-            <CardTitle className="font-mono text-sm">{convo.sessionId}</CardTitle>
-            <Badge variant={convo.status === "active" ? "default" : "secondary"}>
-              {convo.status}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
-            <span>Platform: {convo.platform}</span>
-            <span>Chat: {convo.chatId}</span>
-            <span>Messages: {convo.messages.length}</span>
-            <span>Created: {new Date(convo.createdAt).toLocaleString()}</span>
-            {convo.closedAt && <span>Closed: {new Date(convo.closedAt).toLocaleString()}</span>}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground/60">
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${convo.status === "active" ? "bg-primary/70" : "bg-muted-foreground/20"}`}
+            />
+            {convo.status}
+          </span>
+          <span>
+            Platform: <span className="text-foreground/60">{convo.platform}</span>
+          </span>
+          <span>
+            Chat: <span className="font-mono text-foreground/60">{convo.chatId}</span>
+          </span>
+          <span>
+            Messages:{" "}
+            <span className="tabular-nums text-foreground/60">{convo.messages.length}</span>
+          </span>
+          <span>
+            Created:{" "}
+            <span className="tabular-nums text-foreground/60">
+              {new Date(convo.createdAt).toLocaleString()}
+            </span>
+          </span>
+          {convo.closedAt && (
+            <span>
+              Closed:{" "}
+              <span className="tabular-nums text-foreground/60">
+                {new Date(convo.closedAt).toLocaleString()}
+              </span>
+            </span>
+          )}
+        </div>
+      </div>
 
-      <ScrollArea className="h-[calc(100vh-20rem)]">
+      <ScrollArea className="h-[calc(100vh-18rem)]">
         <div className="space-y-3 pr-4">
           {convo.messages.map((msg, i) => (
             <MessageBubble key={i} message={msg} />
           ))}
           {convo.messages.length === 0 && (
-            <p className="text-center text-sm text-muted-foreground">No messages.</p>
+            <p className="py-12 text-center text-sm text-muted-foreground/50">No messages.</p>
           )}
         </div>
       </ScrollArea>

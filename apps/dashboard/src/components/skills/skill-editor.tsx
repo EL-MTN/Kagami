@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { ParameterEditor } from "./parameter-editor";
 import type { SkillListItem, SkillParameter } from "@/lib/skill-schema";
 
@@ -54,10 +53,7 @@ function isDirty(draft: Draft, saved: Draft): boolean {
 function getCronDescription(expr: string): string | null {
   if (!expr) return null;
   try {
-    return cronstrue.toString(expr, {
-      use24HourTimeFormat: false,
-      verbose: true,
-    });
+    return cronstrue.toString(expr, { use24HourTimeFormat: false, verbose: true });
   } catch {
     return null;
   }
@@ -75,7 +71,6 @@ export function SkillEditor({ skill }: SkillEditorProps) {
 
   const update = useCallback((patch: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...patch }));
-    // Clear errors for changed fields
     const keys = Object.keys(patch);
     setErrors((e) => {
       const next = { ...e };
@@ -134,15 +129,17 @@ export function SkillEditor({ skill }: SkillEditorProps) {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header with save */}
+    <div className="space-y-8">
+      {/* Save bar */}
       <div className="flex items-center gap-3">
-        {dirty && <Badge variant="secondary">Unsaved changes</Badge>}
-        {flash && <Badge variant="default">{flash}</Badge>}
-        {errors.general && <span className="text-sm text-destructive">{errors.general}</span>}
-        <div className="ml-auto flex items-center gap-3">
+        {dirty && <span className="text-xs font-medium text-primary">Unsaved changes</span>}
+        {flash && <span className="text-xs font-medium text-primary/60">{flash}</span>}
+        {errors.general && (
+          <span className="text-xs text-destructive-foreground">{errors.general}</span>
+        )}
+        <div className="ml-auto flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <Label className="text-sm text-muted-foreground">Enabled</Label>
+            <Label className="text-xs text-muted-foreground">Enabled</Label>
             <Switch
               checked={draft.enabled}
               onCheckedChange={(checked) => update({ enabled: !!checked })}
@@ -155,50 +152,75 @@ export function SkillEditor({ skill }: SkillEditorProps) {
       </div>
 
       {/* Name + Description */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-6">
         <div className="space-y-2">
-          <Label htmlFor="skill-name">Name</Label>
+          <Label
+            htmlFor="skill-name"
+            className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+          >
+            Name
+          </Label>
           <Input
             id="skill-name"
             value={draft.name}
             onChange={(e) => update({ name: e.target.value })}
             placeholder="skill-name"
+            className="font-mono"
           />
-          {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
+          {errors.name && <p className="text-xs text-destructive-foreground">{errors.name}</p>}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="skill-description">Description</Label>
+          <Label
+            htmlFor="skill-description"
+            className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+          >
+            Description
+          </Label>
           <Input
             id="skill-description"
             value={draft.description}
             onChange={(e) => update({ description: e.target.value })}
             placeholder="What this skill does"
           />
-          {errors.description && <p className="text-xs text-destructive">{errors.description}</p>}
+          {errors.description && (
+            <p className="text-xs text-destructive-foreground">{errors.description}</p>
+          )}
         </div>
       </div>
 
       {/* Prompt */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor="skill-prompt">Prompt</Label>
-          <span className="text-xs text-muted-foreground">{draft.prompt.length} chars</span>
+          <Label
+            htmlFor="skill-prompt"
+            className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+          >
+            Prompt
+          </Label>
+          <span className="text-[10px] tabular-nums text-muted-foreground/40">
+            {draft.prompt.length} chars
+          </span>
         </div>
         <Textarea
           id="skill-prompt"
           value={draft.prompt}
           onChange={(e) => update({ prompt: e.target.value })}
           placeholder="Execution instructions for the skill..."
-          className="min-h-[200px] font-mono text-sm"
+          className="min-h-[200px] font-mono text-xs leading-relaxed"
           style={{ fieldSizing: "content" } as React.CSSProperties}
         />
-        {errors.prompt && <p className="text-xs text-destructive">{errors.prompt}</p>}
+        {errors.prompt && <p className="text-xs text-destructive-foreground">{errors.prompt}</p>}
       </div>
 
       {/* Cron + Report Mode */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-6">
         <div className="space-y-2">
-          <Label htmlFor="skill-cron">Cron Schedule</Label>
+          <Label
+            htmlFor="skill-cron"
+            className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+          >
+            Schedule
+          </Label>
           <Input
             id="skill-cron"
             value={draft.cronSchedule}
@@ -207,21 +229,24 @@ export function SkillEditor({ skill }: SkillEditorProps) {
             className="font-mono"
           />
           {draft.cronSchedule && (
-            <p className={`text-xs ${cronDesc ? "text-muted-foreground" : "text-destructive"}`}>
+            <p
+              className={`text-[11px] ${cronDesc ? "text-muted-foreground/60" : "text-destructive-foreground"}`}
+            >
               {cronDesc ?? "Invalid cron expression"}
             </p>
           )}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="skill-report-mode">Report Mode</Label>
+          <Label
+            htmlFor="skill-report-mode"
+            className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+          >
+            Report Mode
+          </Label>
           <Select
             id="skill-report-mode"
             value={draft.reportMode}
-            onChange={(e) =>
-              update({
-                reportMode: e.target.value as "always" | "alert",
-              })
-            }
+            onChange={(e) => update({ reportMode: e.target.value as "always" | "alert" })}
           >
             <option value="always">Always — report every run</option>
             <option value="alert">Alert — only noteworthy events</option>
@@ -234,15 +259,17 @@ export function SkillEditor({ skill }: SkillEditorProps) {
         parameters={draft.parameters}
         onChange={(parameters) => update({ parameters })}
       />
-      {errors.parameters && <p className="text-xs text-destructive">{errors.parameters}</p>}
+      {errors.parameters && (
+        <p className="text-xs text-destructive-foreground">{errors.parameters}</p>
+      )}
 
-      {/* Metadata */}
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground border-t border-border pt-4">
-        <span>Version: {skill.version}</span>
+      {/* Metadata footer */}
+      <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-border pt-6 text-[10px] uppercase tracking-[0.15em] text-muted-foreground/30">
+        <span>v{skill.version}</span>
         <span>Chat: {skill.chatId}</span>
         <span>Created: {new Date(skill.createdAt).toLocaleDateString()}</span>
         <span>Updated: {new Date(skill.updatedAt).toLocaleDateString()}</span>
-        {skill.nextRunAt && <span>Next run: {new Date(skill.nextRunAt).toLocaleString()}</span>}
+        {skill.nextRunAt && <span>Next: {new Date(skill.nextRunAt).toLocaleString()}</span>}
       </div>
     </div>
   );

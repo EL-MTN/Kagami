@@ -44,7 +44,9 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <Label>Parameters</Label>
+        <Label className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+          Parameters
+        </Label>
         <Button type="button" variant="outline" size="xs" onClick={addParam}>
           <Plus className="h-3 w-3" />
           Add
@@ -52,25 +54,27 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
       </div>
 
       {parameters.length === 0 && (
-        <p className="text-sm text-muted-foreground">No parameters. This skill takes no input.</p>
+        <p className="text-xs text-muted-foreground/50">
+          No parameters. This skill takes no input.
+        </p>
       )}
 
       {parameters.map((param, i) => (
         <div
           key={i}
-          className="grid grid-cols-[1fr_100px_1fr_auto_auto] gap-2 items-end rounded-md border border-border p-3"
+          className="grid grid-cols-[1fr_100px_1fr_auto_auto] items-end gap-2 rounded-lg border border-border/60 p-3"
         >
           <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Name</Label>
+            <Label className="text-[10px] text-muted-foreground/60">Name</Label>
             <Input
               value={param.name}
               onChange={(e) => updateParam(i, { name: e.target.value })}
               placeholder="param-name"
-              className="h-8 text-xs"
+              className="h-8 font-mono text-xs"
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Type</Label>
+            <Label className="text-[10px] text-muted-foreground/60">Type</Label>
             <Select
               value={param.type}
               onChange={(e) =>
@@ -89,7 +93,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Description</Label>
+            <Label className="text-[10px] text-muted-foreground/60">Description</Label>
             <Input
               value={param.description}
               onChange={(e) => updateParam(i, { description: e.target.value })}
@@ -98,7 +102,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
             />
           </div>
           <div className="flex flex-col items-center gap-1">
-            <Label className="text-xs text-muted-foreground">Required</Label>
+            <Label className="text-[10px] text-muted-foreground/60">Required</Label>
             <Switch
               checked={param.required}
               onCheckedChange={(checked) => updateParam(i, { required: !!checked })}
@@ -109,7 +113,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
             variant="ghost"
             size="icon-xs"
             onClick={() => removeParam(i)}
-            className="text-muted-foreground hover:text-destructive"
+            className="text-muted-foreground/30 hover:text-destructive-foreground"
           >
             <Trash2 className="h-3 w-3" />
           </Button>
@@ -118,7 +122,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
           {!param.required && (
             <div className="col-span-5 mt-1">
               <div className="flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground shrink-0">Default:</Label>
+                <Label className="shrink-0 text-[10px] text-muted-foreground/50">Default:</Label>
                 {param.type === "boolean" ? (
                   <Select
                     value={param.default !== undefined ? stringifyDefault(param.default) : ""}
@@ -148,7 +152,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
                       }
                     }}
                     placeholder={param.type === "array" ? '["item1", "item2"]' : '{"key": "value"}'}
-                    className="h-7 text-xs max-w-xs font-mono"
+                    className="h-7 max-w-xs font-mono text-xs"
                   />
                 ) : (
                   <Input
@@ -165,7 +169,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
                       })
                     }
                     placeholder="optional default"
-                    className="h-7 text-xs max-w-xs"
+                    className="h-7 max-w-xs text-xs"
                   />
                 )}
               </div>
