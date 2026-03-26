@@ -168,16 +168,8 @@ async function assembleSkillContext(chatId: string): Promise<string | null> {
     const enabled = skills.filter((s) => s.enabled);
     if (enabled.length === 0) return null;
 
-    const lines = enabled.map((s) => {
-      const params =
-        s.parameters.length > 0
-          ? ` (${s.parameters.map((p) => `${p.name}: ${p.type}${p.required ? "" : "?"}`).join(", ")})`
-          : "";
-      const cron = s.cronSchedule ? ` [cron: ${s.cronSchedule}]` : "";
-      return `- **${s.name}**${params}: ${s.description}${cron}`;
-    });
-
-    return "## Available Skills\n" + lines.join("\n");
+    const names = enabled.map((s) => s.name).join(", ");
+    return `## Available Skills\n${names}\nUse searchSkills to look up details or discover skills by keyword.`;
   } catch (error) {
     logger.warn({ error }, "Failed to load skill context");
     return null;
