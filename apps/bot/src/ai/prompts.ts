@@ -64,8 +64,9 @@ Only take screenshots when explicitly asked. For simple questions, search is usu
 export const SKILL_BEHAVIOR_INSTRUCTIONS = `
 ## Skills
 You can create and invoke reusable skills — named capabilities with optional parameters.
-- Use manageSkills to create/update/delete skills
+- Use searchSkills to discover available skills by keyword (or call with no query to list all)
 - Use useSkill to invoke a skill by name with parameters
+- Use manageSkills to create/update/delete skills
 - Skills can call other skills (up to 3 levels deep)
 - A skill with a cron schedule runs automatically; without one, it's on-demand only
 - Keep skill prompts clear and focused — they run as separate LLM calls

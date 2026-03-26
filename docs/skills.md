@@ -46,6 +46,9 @@ Conversation LLM (personality + memory + full context)
   │
   ├─ sees "Available Skills: morning-brief, translate, ..."
   │
+  ├─ calls searchSkills({ query: "morning" })
+  │    └─ returns full details: name, description, parameters, cron
+  │
   └─ calls useSkill("morning-brief")
        │
        Skill LLM (lean executor, no personality, has all tools)
@@ -115,7 +118,7 @@ Each parameter has:
 
 ## Tools
 
-Two tools expose the skill system to the LLM. Both are always registered (not conditional on config). Defined in `apps/bot/src/ai/tools/manage-skills.ts` and `apps/bot/src/ai/tools/use-skill.ts`.
+Three tools expose the skill system to the LLM. All are always registered (not conditional on config). Defined in `apps/bot/src/ai/tools/manage-skills.ts`, `apps/bot/src/ai/tools/search-skills.ts`, and `apps/bot/src/ai/tools/use-skill.ts`.
 
 ### manageSkills
 
@@ -141,6 +144,20 @@ CRUD operations for skill definitions. Actions: `create`, `list`, `update`, `del
 - Duplicate names within a chat are rejected (MongoDB unique index, caught as error code 11000)
 - Updates increment the `version` field
 - Deleting a skill also deletes all its logs
+
+### searchSkills
+
+Searches enabled skills by keyword. Defined in `apps/bot/src/ai/tools/search-skills.ts`.
+
+**Parameters:**
+
+| Parameter | Required | Description                                            |
+| --------- | -------- | ------------------------------------------------------ |
+| `query`   | no       | Keywords to match against skill names and descriptions |
+
+**Returns:** `{ success, count, skills: [{ name, description, parameters, cronSchedule, reportMode }] }`
+
+Call with no query to list all enabled skills. Keywords are matched as substrings against the concatenation of skill name and description — all terms must match.
 
 ### useSkill
 
@@ -235,19 +252,30 @@ This is deliberately minimal. No personality card, no tool behavioral guidelines
 
 Skills receive the full tool set via `allTools(ctx)` with the `skillDepth` field set on the `ToolContext`. This means skills can use memory tools, send photos, browse the web, manage calendar events, and invoke other skills. The only restriction is depth gating on `useSkill` itself.
 
-## Skill Context in System Prompt
+## Skill Discovery
 
-The LLM always knows what skills are available without needing to call `manageSkills list`. The context assembler (`apps/bot/src/ai/context-assembler.ts`) injects an "Available Skills" section into the main conversation system prompt. For each enabled skill, it shows the name, parameter signature, description, and cron schedule (if any).
+Skills use a search-based discovery pattern to keep system prompt token usage low as the skill inventory grows.
 
-Example format in the system prompt:
+### System Prompt (compact listing)
+
+The context assembler (`apps/bot/src/ai/context-assembler.ts`) injects only skill **names** into the system prompt — no parameters, descriptions, or cron schedules:
 
 ```
 ## Available Skills
-- **check-emails** (maxResults: number?): Check inbox and summarize unread emails [cron: 0 9 * * *]
-- **weather-report** (city: string): Get current weather for a city
+check-emails, weather-report, morning-brief
+Use searchSkills to look up details or discover skills by keyword.
 ```
 
-This lets the LLM decide to invoke skills with `useSkill` based on conversational context without an extra round-trip.
+This gives the LLM awareness of what exists without paying the token cost of full schema definitions on every turn.
+
+### searchSkills Tool (on-demand details)
+
+When the LLM needs to invoke a skill or explore available capabilities, it calls `searchSkills`:
+
+- `searchSkills({})` — returns all enabled skills with full details
+- `searchSkills({ query: "email" })` — keyword search against skill names and descriptions
+
+Returns name, description, parameters (with types and required flags), cron schedule, and report mode for each match. This is the primary way the LLM gets parameter information before calling `useSkill`.
 
 ## Scheduler
 
@@ -322,6 +350,7 @@ SkillLog (Skill A, trigger: "cron")
 | ----------------------------------------- | ------------------------------------------------------------------------ |
 | `packages/db/src/models/skill.ts`         | Mongoose models (`Skill`, `SkillLog`), CRUD helpers, log helpers         |
 | `apps/bot/src/ai/tools/manage-skills.ts`  | `manageSkills` tool (create/list/update/delete/enable/disable)           |
+| `apps/bot/src/ai/tools/search-skills.ts`  | `searchSkills` tool (keyword discovery of available skills)              |
 | `apps/bot/src/ai/tools/use-skill.ts`      | `useSkill` tool (invoke by name with parameters)                         |
 | `apps/bot/src/services/skill-executor.ts` | `executeSkill()` — prompt assembly, `generateText()`, logging, reporting |
 | `apps/bot/src/scheduler/skills.ts`        | Skill scheduler — polling, startup recovery, cron execution              |

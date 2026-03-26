@@ -95,7 +95,7 @@ interface ToolContext {
   skillDepth?: number; // Current skill nesting depth (0 = top-level)
 }
 
-allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageSkills, useSkill? }
+allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageSkills, searchSkills, useSkill? }
 ```
 
 ### rememberFact
@@ -200,6 +200,13 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 | `login`      | `url`          | Opens login page for manual credential entry                 | `page.goto()` (no browser release)          |
 
 **Architecture**: Two independent LLM streams — Mashiro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_ENV` (`local`/`cloud`), `BROWSER_DATA_DIR`, `BROWSER_HEADLESS`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
+
+### searchSkills
+
+- **Purpose**: Search and discover available skills by keyword
+- **Parameters**: `{ query?: string }`
+- **Returns**: `{ success: true, count, skills: [{ name, description, parameters, cronSchedule, reportMode }] }` or `{ success: false, reason }`
+- **Behavior**: Searches enabled skills for the current chat by matching keywords against skill names and descriptions. Call with no query to list all enabled skills. This is the primary discovery mechanism — the system prompt only lists skill names, so the LLM uses this tool to get full details (parameters, schedules) before invoking a skill.
 
 ### manageSkills
 

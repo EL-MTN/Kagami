@@ -11,6 +11,7 @@ import { createManageCalendarTool } from "./manage-calendar";
 import { createManageRemindersTool } from "./manage-reminders";
 import { createBrowseTool } from "./browse";
 import { createManageSkillsTool } from "./manage-skills";
+import { createSearchSkillsTool } from "./search-skills";
 import { createUseSkillTool } from "./use-skill";
 import { createSendVoiceTool } from "./send-voice";
 import { MAX_SKILL_DEPTH } from "../../services/skill-executor";
@@ -58,6 +59,7 @@ export function allTools(ctx: ToolContext) {
   }
 
   tools.manageSkills = createManageSkillsTool(ctx.chatId);
+  tools.searchSkills = createSearchSkillsTool(ctx.chatId);
 
   // Only provide useSkill when below max depth (prevents infinite recursion)
   if (depth < MAX_SKILL_DEPTH) {
