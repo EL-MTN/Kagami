@@ -1,5 +1,4 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
 import { MemoryCard } from "@/components/memory-card";
 import { Pagination } from "@/components/pagination";
 import { getMemoriesByType, getMemoryTypeCounts } from "@/lib/queries/memories";
@@ -25,21 +24,26 @@ export default async function MemoriesPage({
   const totalPages = Math.ceil(total / pageSize);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Memories</h2>
-        <span className="text-sm text-muted-foreground">{total} {activeType}s</span>
+    <div className="space-y-8">
+      <div className="flex items-end justify-between">
+        <div>
+          <h2 className="font-display text-3xl text-foreground">Memories</h2>
+          <p className="mt-1 text-sm text-muted-foreground/70">Stored knowledge and experiences</p>
+        </div>
+        <span className="text-xs tabular-nums text-muted-foreground/50">
+          {total} {activeType}s
+        </span>
       </div>
 
       <Tabs defaultValue={activeType}>
         <TabsList>
           {MEMORY_TYPES.map((type) => (
             <TabsTrigger key={type} value={type} asChild>
-              <a href={`/memories?type=${type}`} className="capitalize">
+              <a href={`/memories?type=${type}`} className="gap-2 capitalize">
                 {type}
-                <Badge variant="secondary" className="ml-2">
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground/60">
                   {counts[type]}
-                </Badge>
+                </span>
               </a>
             </TabsTrigger>
           ))}
@@ -48,12 +52,12 @@ export default async function MemoriesPage({
         {MEMORY_TYPES.map((type) => (
           <TabsContent key={type} value={type}>
             {type === activeType && (
-              <div className="space-y-4">
+              <div className="stagger space-y-4">
                 {items.map((memory) => (
                   <MemoryCard key={memory.id} memory={memory} />
                 ))}
                 {items.length === 0 && (
-                  <p className="text-center text-sm text-muted-foreground py-8">
+                  <p className="py-12 text-center text-sm text-muted-foreground/50">
                     No {type} memories found.
                   </p>
                 )}

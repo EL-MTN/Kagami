@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import cronstrue from "cronstrue";
 import { Download, Trash2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -21,26 +20,10 @@ import { SkillImportDialog } from "./skill-import-dialog";
 import { SkillDeleteDialog } from "./skill-delete-dialog";
 import type { SkillListItem } from "@/lib/skill-schema";
 
-function statusVariant(status: string) {
-  switch (status) {
-    case "completed":
-      return "default" as const;
-    case "failed":
-      return "destructive" as const;
-    case "running":
-      return "secondary" as const;
-    default:
-      return "secondary" as const;
-  }
-}
-
 function getCronLabel(expr: string | null): string {
   if (!expr) return "on-demand";
   try {
-    return cronstrue.toString(expr, {
-      use24HourTimeFormat: false,
-      verbose: true,
-    });
+    return cronstrue.toString(expr, { use24HourTimeFormat: false, verbose: true });
   } catch {
     return expr;
   }
@@ -53,26 +36,19 @@ interface SkillTableProps {
 export function SkillTable({ initialSkills }: SkillTableProps) {
   const router = useRouter();
   const [skills, setSkills] = useState(initialSkills);
-  const [deleteTarget, setDeleteTarget] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const defaultChatId = skills[0]?.chatId ?? "";
 
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
-    // Optimistic update
     setSkills((prev) => prev.map((s) => (s.id === id ? { ...s, enabled } : s)));
-
     try {
       const res = await fetch(`/api/skills/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled }),
       });
-
       if (!res.ok) {
-        // Revert on failure
         setSkills((prev) => prev.map((s) => (s.id === id ? { ...s, enabled: !enabled } : s)));
       }
     } catch {
@@ -95,53 +71,71 @@ export function SkillTable({ initialSkills }: SkillTableProps) {
 
   return (
     <div className="space-y-4">
-      {/* Actions bar */}
       <div className="flex items-center gap-2">
         <SkillCreateDialog defaultChatId={defaultChatId} onCreated={handleCreated} />
         <SkillImportDialog onImported={handleImported} />
-        <Button variant="outline" size="sm" asChild>
+        <Button variant="ghost" size="sm" asChild className="text-muted-foreground">
           <a href="/api/skills/export" download>
-            <Download className="h-4 w-4" />
+            <Download className="h-3.5 w-3.5" />
             Export
           </a>
         </Button>
       </div>
 
-      {/* Table */}
-      <div className="rounded-lg border border-border">
+      <div className="overflow-hidden rounded-xl border border-border">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Schedule</TableHead>
-              <TableHead>Report</TableHead>
-              <TableHead>Enabled</TableHead>
-              <TableHead>Last Run</TableHead>
+            <TableRow className="border-b border-border hover:bg-transparent">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Name
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Description
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Schedule
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Report
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Enabled
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                Last Run
+              </TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {skills.map((s) => (
-              <TableRow key={s.id}>
+              <TableRow
+                key={s.id}
+                className="border-border/50 transition-colors hover:bg-primary/[0.02]"
+              >
                 <TableCell>
                   <Link
                     href={`/skills/${s.id}`}
-                    className="font-medium text-primary hover:underline"
+                    className="text-sm font-medium text-foreground/90 transition-colors hover:text-primary"
                   >
                     {s.name}
                   </Link>
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
+                <TableCell className="max-w-xs truncate text-xs text-muted-foreground">
                   {s.description}
                 </TableCell>
-                <TableCell className="text-sm" title={s.cronSchedule ?? undefined}>
+                <TableCell
+                  className="text-xs text-muted-foreground/60"
+                  title={s.cronSchedule ?? undefined}
+                >
                   {getCronLabel(s.cronSchedule)}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={s.reportMode === "alert" ? "secondary" : "default"}>
+                  <span
+                    className={`text-xs ${s.reportMode === "alert" ? "text-primary/60" : "text-muted-foreground/60"}`}
+                  >
                     {s.reportMode}
-                  </Badge>
+                  </span>
                 </TableCell>
                 <TableCell>
                   <Switch
@@ -149,18 +143,37 @@ export function SkillTable({ initialSkills }: SkillTableProps) {
                     onCheckedChange={(checked) => void handleToggle(s.id, !!checked)}
                   />
                 </TableCell>
-                <TableCell className="text-sm">
+                <TableCell>
                   {s.lastRun ? (
-                    <Badge variant={statusVariant(s.lastRun.status)}>{s.lastRun.status}</Badge>
+                    <span
+                      className={`inline-flex items-center gap-1.5 text-xs ${
+                        s.lastRun.status === "completed"
+                          ? "text-primary/60"
+                          : s.lastRun.status === "failed"
+                            ? "text-destructive-foreground"
+                            : "text-muted-foreground"
+                      }`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          s.lastRun.status === "completed"
+                            ? "bg-primary/60"
+                            : s.lastRun.status === "failed"
+                              ? "bg-destructive/60"
+                              : "bg-muted-foreground/50 animate-pulse"
+                        }`}
+                      />
+                      {s.lastRun.status}
+                    </span>
                   ) : (
-                    <span className="text-muted-foreground">never</span>
+                    <span className="text-xs text-muted-foreground/30">never</span>
                   )}
                 </TableCell>
                 <TableCell>
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    className="text-muted-foreground hover:text-destructive"
+                    className="text-muted-foreground/30 hover:text-destructive-foreground"
                     onClick={() => setDeleteTarget({ id: s.id, name: s.name })}
                   >
                     <Trash2 className="h-3 w-3" />
@@ -170,7 +183,10 @@ export function SkillTable({ initialSkills }: SkillTableProps) {
             ))}
             {skills.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                <TableCell
+                  colSpan={7}
+                  className="py-12 text-center text-sm text-muted-foreground/60"
+                >
                   No skills found. Create one or import from a JSON file.
                 </TableCell>
               </TableRow>
@@ -179,7 +195,6 @@ export function SkillTable({ initialSkills }: SkillTableProps) {
         </Table>
       </div>
 
-      {/* Delete dialog */}
       {deleteTarget && (
         <SkillDeleteDialog
           open

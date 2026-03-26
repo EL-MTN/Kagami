@@ -56,10 +56,7 @@ export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialo
   function getCronDesc(): string | null {
     if (!cronSchedule) return null;
     try {
-      return cronstrue.toString(cronSchedule, {
-        use24HourTimeFormat: false,
-        verbose: true,
-      });
+      return cronstrue.toString(cronSchedule, { use24HourTimeFormat: false, verbose: true });
     } catch {
       return null;
     }
@@ -114,40 +111,57 @@ export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialo
     >
       <DialogTrigger asChild>
         <Button size="sm">
-          <Plus className="h-4 w-4" />
+          <Plus className="h-3.5 w-3.5" />
           New Skill
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create Skill</DialogTitle>
+          <DialogTitle className="font-display text-xl">Create Skill</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {error && <p className="text-sm text-destructive">{error}</p>}
+        <div className="space-y-5">
+          {error && <p className="text-xs text-destructive-foreground">{error}</p>}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="create-name">Name</Label>
+              <Label
+                htmlFor="create-name"
+                className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+              >
+                Name
+              </Label>
               <Input
                 id="create-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="my-skill"
+                className="font-mono"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="create-chatid">Chat ID</Label>
+              <Label
+                htmlFor="create-chatid"
+                className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+              >
+                Chat ID
+              </Label>
               <Input
                 id="create-chatid"
                 value={chatId}
                 onChange={(e) => setChatId(e.target.value)}
+                className="font-mono"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="create-description">Description</Label>
+            <Label
+              htmlFor="create-description"
+              className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+            >
+              Description
+            </Label>
             <Input
               id="create-description"
               value={description}
@@ -157,19 +171,29 @@ export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialo
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="create-prompt">Prompt</Label>
+            <Label
+              htmlFor="create-prompt"
+              className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+            >
+              Prompt
+            </Label>
             <Textarea
               id="create-prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Execution instructions..."
-              className="min-h-[120px] font-mono text-sm"
+              className="min-h-[120px] font-mono text-xs"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="create-cron">Cron Schedule</Label>
+              <Label
+                htmlFor="create-cron"
+                className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+              >
+                Cron Schedule
+              </Label>
               <Input
                 id="create-cron"
                 value={cronSchedule}
@@ -178,13 +202,20 @@ export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialo
                 className="font-mono"
               />
               {cronSchedule && (
-                <p className={`text-xs ${cronDesc ? "text-muted-foreground" : "text-destructive"}`}>
+                <p
+                  className={`text-[11px] ${cronDesc ? "text-muted-foreground/60" : "text-destructive-foreground"}`}
+                >
                   {cronDesc ?? "Invalid cron expression"}
                 </p>
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="create-report-mode">Report Mode</Label>
+              <Label
+                htmlFor="create-report-mode"
+                className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+              >
+                Report Mode
+              </Label>
               <Select
                 id="create-report-mode"
                 value={reportMode}

@@ -1,6 +1,40 @@
 # Dashboard
 
-Web dashboard for managing and inspecting Mashiro's data, built with Next.js 15 + Tailwind CSS v4 + shadcn/ui.
+Web dashboard for managing and inspecting Mashiro's data, built with Next.js 15 + Tailwind CSS v4 + shadcn/ui (Radix primitives).
+
+## Design System
+
+The dashboard uses a **"Noir Atelier"** design language — a refined dark workspace with warm amber accents.
+
+### Typography
+
+- **Display**: Instrument Serif (Google Fonts) — used for page titles and large numbers via `font-display` Tailwind utility
+- **Body**: DM Sans (Google Fonts) — set as `--font-sans` in Tailwind theme
+- **Monospace**: JetBrains Mono (Google Fonts) — set as `--font-mono` in Tailwind theme
+
+All three fonts are loaded via `next/font/google` with CSS variable injection in `layout.tsx`.
+
+### Color Palette (OKLch)
+
+- **Background**: Deep warm charcoal (`oklch(0.085 0.005 60)`)
+- **Card surfaces**: Slightly elevated (`oklch(0.115 0.005 60)`)
+- **Primary accent**: Warm amber/gold (`oklch(0.78 0.12 75)`) — used for active states, links, glows
+- **Destructive**: Warm red (`oklch(0.42 0.16 25)`)
+- **Borders**: Subtle warm gray (`oklch(0.185 0.005 60)`)
+
+All colors are defined as CSS custom properties in `globals.css` via Tailwind v4's `@theme inline` block.
+
+### Visual Details
+
+- Subtle ambient radial gradient glow (warm amber) at viewport top
+- Custom scrollbar styling (thin, warm gray)
+- Staggered fade-in animations on card grids (`.stagger` CSS class)
+- Shimmer loading skeletons (`.skeleton` CSS class)
+- Status indicators use small colored dots instead of badges
+- Importance ratings shown as bar visualizations
+- Activity feed uses timeline-style layout with vertical connector line
+- Sidebar active state: amber left-border glow with box-shadow
+- Dialog overlay: backdrop blur + semi-transparent black
 
 ## Environment
 
@@ -132,3 +166,4 @@ Dashboard-specific (beyond monorepo shared):
 - `zod` — request/response validation (shared between API routes and client components)
 - `cron-parser` — computing `nextRunAt` from cron expressions on skill create/update
 - `cronstrue` — human-readable cron descriptions
+- `next/font/google` — Instrument Serif, DM Sans, JetBrains Mono fonts (no extra npm packages)

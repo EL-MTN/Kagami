@@ -1,7 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-
 export default function ErrorPage({
   error,
   reset,
@@ -11,9 +9,14 @@ export default function ErrorPage({
 }) {
   return (
     <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4">
-      <h2 className="text-xl font-semibold">Something went wrong</h2>
+      <p className="font-display text-2xl text-foreground">Something went wrong</p>
       <p className="text-sm text-muted-foreground">{error.message}</p>
-      <Button onClick={reset}>Try again</Button>
+      <button
+        onClick={reset}
+        className="mt-2 rounded-lg bg-primary/10 px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/20"
+      >
+        Try again
+      </button>
     </div>
   );
 }

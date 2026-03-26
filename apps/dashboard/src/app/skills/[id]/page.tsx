@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { SkillEditor } from "@/components/skills/skill-editor";
 import { SkillLogTable } from "@/components/skills/skill-log-table";
 import { getSkillDetail, getSkillLogList } from "@/lib/queries/skills";
@@ -14,25 +13,38 @@ export default async function SkillDetailPage({ params }: { params: Promise<{ id
   if (!skill) notFound();
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon-sm" asChild>
+    <div className="space-y-8">
+      <div className="flex items-center gap-4">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          asChild
+          className="text-muted-foreground hover:text-foreground"
+        >
           <Link href="/skills">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <h2 className="text-2xl font-bold">{skill.name}</h2>
+        <div>
+          <h2 className="font-display text-2xl text-foreground">{skill.name}</h2>
+          <p className="text-xs text-muted-foreground/50">{skill.description}</p>
+        </div>
       </div>
 
-      <Card>
-        <CardContent className="pt-6">
-          <SkillEditor skill={skill} />
-        </CardContent>
-      </Card>
+      <div className="rounded-xl border border-border bg-card p-6">
+        <SkillEditor skill={skill} />
+      </div>
 
-      <h3 className="text-lg font-semibold">Execution History</h3>
-
-      <SkillLogTable skillId={id} initialLogs={logResult.logs} initialHasMore={logResult.hasMore} />
+      <div>
+        <h3 className="mb-4 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+          Execution History
+        </h3>
+        <SkillLogTable
+          skillId={id}
+          initialLogs={logResult.logs}
+          initialHasMore={logResult.hasMore}
+        />
+      </div>
     </div>
   );
 }

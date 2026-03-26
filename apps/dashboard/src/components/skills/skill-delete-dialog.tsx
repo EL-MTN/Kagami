@@ -47,8 +47,8 @@ export function SkillDeleteDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Delete Skill</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="font-display text-xl">Delete Skill</DialogTitle>
+          <DialogDescription className="text-muted-foreground/70">
             This will permanently delete &ldquo;{skillName}&rdquo; and all its execution logs. This
             action cannot be undone.
           </DialogDescription>

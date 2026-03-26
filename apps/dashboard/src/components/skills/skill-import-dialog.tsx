@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Upload } from "lucide-react";
 import { skillExportBundleSchema, type SkillExportBundle } from "@/lib/skill-schema";
 
@@ -134,18 +133,18 @@ export function SkillImportDialog({ onImported }: SkillImportDialogProps) {
     >
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          <Upload className="h-4 w-4" />
+          <Upload className="h-3.5 w-3.5" />
           Import
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Import Skills</DialogTitle>
+          <DialogTitle className="font-display text-xl">Import Skills</DialogTitle>
         </DialogHeader>
 
         {state.step === "result" ? (
           <div className="space-y-3">
-            <p className="text-sm">
+            <p className="text-sm text-foreground/90">
               Imported <strong>{state.imported}</strong> skill
               {state.imported !== 1 ? "s" : ""}
               {state.skipped > 0 && (
@@ -156,9 +155,9 @@ export function SkillImportDialog({ onImported }: SkillImportDialogProps) {
             </p>
             {state.errors.length > 0 && (
               <div className="space-y-1">
-                <p className="text-sm text-destructive">Errors:</p>
+                <p className="text-xs text-destructive-foreground">Errors:</p>
                 {state.errors.map((err, i) => (
-                  <p key={i} className="text-xs text-destructive">
+                  <p key={i} className="text-xs text-destructive-foreground/80">
                     {err}
                   </p>
                 ))}
@@ -179,8 +178,8 @@ export function SkillImportDialog({ onImported }: SkillImportDialogProps) {
           <>
             {/* Drop zone */}
             <div
-              className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 transition-colors ${
-                dragOver ? "border-primary bg-primary/5" : "border-border"
+              className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-8 transition-colors ${
+                dragOver ? "border-primary/40 bg-primary/5" : "border-border hover:border-border/80"
               }`}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -190,8 +189,8 @@ export function SkillImportDialog({ onImported }: SkillImportDialogProps) {
               onDrop={handleDrop}
               onClick={() => fileRef.current?.click()}
             >
-              <Upload className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
+              <Upload className="h-8 w-8 text-muted-foreground/30" />
+              <p className="text-xs text-muted-foreground/60">
                 Drop a JSON file here or click to browse
               </p>
               <input
@@ -207,8 +206,10 @@ export function SkillImportDialog({ onImported }: SkillImportDialogProps) {
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t border-border" />
               </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="bg-background px-2 text-muted-foreground">or paste JSON</span>
+              <div className="relative flex justify-center text-[10px]">
+                <span className="bg-background px-3 uppercase tracking-wider text-muted-foreground/40">
+                  or paste JSON
+                </span>
               </div>
             </div>
 
@@ -216,22 +217,25 @@ export function SkillImportDialog({ onImported }: SkillImportDialogProps) {
               value={pasteValue}
               onChange={(e) => handlePaste(e.target.value)}
               placeholder='{"version": 1, "skills": [...]}'
-              className="font-mono text-xs min-h-[100px]"
+              className="min-h-[100px] font-mono text-xs"
             />
 
-            {parseError && <p className="text-sm text-destructive">{parseError}</p>}
+            {parseError && <p className="text-xs text-destructive-foreground">{parseError}</p>}
 
             {state.step === "preview" && (
               <div className="space-y-2">
-                <p className="text-sm">
+                <p className="text-sm text-foreground/90">
                   Found <strong>{state.bundle.skills.length}</strong> skill
                   {state.bundle.skills.length !== 1 ? "s" : ""}:
                 </p>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1.5">
                   {state.bundle.skills.map((s) => (
-                    <Badge key={s.name} variant="secondary">
+                    <span
+                      key={s.name}
+                      className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary/80"
+                    >
                       {s.name}
-                    </Badge>
+                    </span>
                   ))}
                 </div>
               </div>
