@@ -35,9 +35,6 @@
       "prettier --write"
     ]
   },
-  "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.60.0"
-  },
   "devDependencies": {
     "eslint": "^10.0.3",
     "husky": "^9.1.7",
