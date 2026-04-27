@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import matter from 'gray-matter';
 import {
   EntityFrontmatter,
@@ -105,6 +106,125 @@ export async function findByNameOrAlias(
     if (haystack.includes(target)) matches.push(frontmatter);
   }
   return matches;
+}
+
+// Merge `from` into `to`: union aliases, append from's observations to top of
+// to's, delete from's file, rewrite wikilinks vault-wide. Manual de-dup.
+export async function mergeEntities(
+  fromId: string,
+  toId: string,
+): Promise<{ observations_moved: number; wikilinks_rewritten: number }> {
+  if (fromId === toId) throw new Error('cannot merge entity with itself');
+
+  const from = await readEntity(fromId);
+  const to = await readEntity(toId);
+
+  const fromObs = extractObservationsBlock(from.body);
+  const toBody = insertObservations(to.body, fromObs);
+
+  const aliases = unique([
+    ...to.frontmatter.aliases,
+    from.frontmatter.name,
+    ...from.frontmatter.aliases,
+  ]);
+
+  const updated: EntityFrontmatter = {
+    ...to.frontmatter,
+    aliases,
+    updated: today(),
+  };
+  await fs.writeFile(to.path, matter.stringify(toBody, updated));
+  await fs.unlink(from.path);
+
+  const wikilinks_rewritten = await rewriteWikilinks(fromId, toId);
+
+  // Count observations roughly by counting H3 headings in the merged block.
+  const observations_moved = (fromObs.match(/^### /gm) || []).length;
+  return { observations_moved, wikilinks_rewritten };
+}
+
+function extractObservationsBlock(body: string): string {
+  const idx = body.indexOf('## Observations');
+  if (idx === -1) return '';
+  const after = body.slice(idx + '## Observations'.length);
+  // Stop at the next H2 heading if any.
+  const next = after.search(/^##\s/m);
+  return (next === -1 ? after : after.slice(0, next)).trim();
+}
+
+function insertObservations(body: string, block: string): string {
+  if (!block.trim()) return body;
+  const heading = '## Observations';
+  const idx = body.indexOf(heading);
+  if (idx === -1) {
+    return body.trimEnd() + `\n\n${heading}\n\n${block}\n`;
+  }
+  const insertAt = idx + heading.length;
+  return body.slice(0, insertAt) + '\n\n' + block + '\n' + body.slice(insertAt);
+}
+
+async function rewriteWikilinks(fromId: string, toId: string): Promise<number> {
+  // Match [[fromId]] and [[fromId|alias]]; rewrite the slug part only.
+  const re = new RegExp(
+    `\\[\\[${escapeRegex(fromId)}(\\|[^\\]]*)?\\]\\]`,
+    'g',
+  );
+  let count = 0;
+  for (const file of await walkMarkdown(paths.vault)) {
+    const content = await fs.readFile(file, 'utf8');
+    if (!re.test(content)) continue;
+    re.lastIndex = 0;
+    const next = content.replace(re, (_, alias) => `[[${toId}${alias || ''}]]`);
+    if (next !== content) {
+      count += (content.match(re) || []).length;
+      await fs.writeFile(file, next);
+    }
+  }
+  return count;
+}
+
+async function walkMarkdown(root: string): Promise<string[]> {
+  const out: string[] = [];
+  async function walk(dir: string): Promise<void> {
+    let entries: Array<{ name: string; isDir: boolean }>;
+    try {
+      const dirents = await fs.readdir(dir, { withFileTypes: true });
+      entries = dirents.map((d) => ({ name: d.name, isDir: d.isDirectory() }));
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      // raw/ is immutable; .memory/ is derived; .git/ is sync state.
+      if (e.name === 'raw' || e.name === '.memory' || e.name === '.git') {
+        continue;
+      }
+      const full = path.join(dir, e.name);
+      if (e.isDir) await walk(full);
+      else if (e.name.endsWith('.md')) out.push(full);
+    }
+  }
+  await walk(root);
+  return out;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function unique(strings: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of strings) {
+    if (s && !seen.has(s)) {
+      seen.add(s);
+      out.push(s);
+    }
+  }
+  return out;
+}
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function renderObservation(obs: Observation): string {
