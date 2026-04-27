@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import cronstrue from "cronstrue";
+import { describeCron } from "@/lib/cron-format";
 import {
   Dialog,
   DialogContent,
@@ -21,26 +21,33 @@ import type { SkillListItem, SkillParameter } from "@/lib/skill-schema";
 
 interface ApiSkillResponse {
   error?: string;
+  issues?: { path?: string[]; message: string }[];
   skill?: SkillListItem;
 }
 
 interface SkillCreateDialogProps {
-  defaultChatId: string;
+  knownChatIds: string[];
   onCreated: (skill: SkillListItem) => void;
 }
 
-export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialogProps) {
+const NEW_CHAT_SENTINEL = "__new__";
+
+export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialogProps) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const defaultChatId = knownChatIds[0] ?? "";
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [prompt, setPrompt] = useState("");
   const [parameters, setParameters] = useState<SkillParameter[]>([]);
   const [cronSchedule, setCronSchedule] = useState("");
   const [reportMode, setReportMode] = useState<"always" | "alert">("always");
-  const [chatId, setChatId] = useState(defaultChatId);
+  const [chatIdMode, setChatIdMode] = useState<string>(defaultChatId || NEW_CHAT_SENTINEL);
+  const [newChatId, setNewChatId] = useState("");
+
+  const chatId = chatIdMode === NEW_CHAT_SENTINEL ? newChatId : chatIdMode;
 
   function reset() {
     setName("");
@@ -49,22 +56,14 @@ export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialo
     setParameters([]);
     setCronSchedule("");
     setReportMode("always");
-    setChatId(defaultChatId);
-    setError(null);
-  }
-
-  function getCronDesc(): string | null {
-    if (!cronSchedule) return null;
-    try {
-      return cronstrue.toString(cronSchedule, { use24HourTimeFormat: false, verbose: true });
-    } catch {
-      return null;
-    }
+    setChatIdMode(defaultChatId || NEW_CHAT_SENTINEL);
+    setNewChatId("");
+    setErrors({});
   }
 
   async function handleCreate() {
     setSaving(true);
-    setError(null);
+    setErrors({});
 
     try {
       const res = await fetch("/api/skills", {
@@ -84,7 +83,16 @@ export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialo
       const data = (await res.json()) as ApiSkillResponse;
 
       if (!res.ok) {
-        setError(data.error ?? "Failed to create skill");
+        if (data.issues) {
+          const fieldErrors: Record<string, string> = {};
+          for (const issue of data.issues) {
+            const path = issue.path?.join(".") ?? "general";
+            fieldErrors[path] = issue.message;
+          }
+          setErrors(fieldErrors);
+        } else {
+          setErrors({ general: data.error ?? "Failed to create skill" });
+        }
         return;
       }
 
@@ -92,14 +100,14 @@ export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialo
       setOpen(false);
       reset();
     } catch {
-      setError("Network error");
+      setErrors({ general: "Network error" });
     } finally {
       setSaving(false);
     }
   }
 
-  const cronDesc = getCronDesc();
-  const canCreate = name && description && prompt;
+  const cronDesc = describeCron(cronSchedule);
+  const canCreate = name && description && prompt && chatId;
 
   return (
     <Dialog
@@ -121,7 +129,9 @@ export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialo
         </DialogHeader>
 
         <div className="space-y-5">
-          {error && <p className="text-xs text-destructive-foreground">{error}</p>}
+          {errors.general && (
+            <p className="text-xs text-destructive-foreground">{errors.general}</p>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -138,6 +148,9 @@ export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialo
                 placeholder="my-skill"
                 className="font-mono"
               />
+              {errors.name && (
+                <p className="text-xs text-destructive-foreground">{errors.name}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label
@@ -146,12 +159,32 @@ export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialo
               >
                 Chat ID
               </Label>
-              <Input
-                id="create-chatid"
-                value={chatId}
-                onChange={(e) => setChatId(e.target.value)}
-                className="font-mono"
-              />
+              {knownChatIds.length > 0 ? (
+                <Select
+                  id="create-chatid"
+                  value={chatIdMode}
+                  onChange={(e) => setChatIdMode(e.target.value)}
+                  className="font-mono"
+                >
+                  {knownChatIds.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                  <option value={NEW_CHAT_SENTINEL}>+ New chat…</option>
+                </Select>
+              ) : null}
+              {(knownChatIds.length === 0 || chatIdMode === NEW_CHAT_SENTINEL) && (
+                <Input
+                  value={newChatId}
+                  onChange={(e) => setNewChatId(e.target.value)}
+                  placeholder="Telegram chat ID"
+                  className="font-mono"
+                />
+              )}
+              {errors.chatId && (
+                <p className="text-xs text-destructive-foreground">{errors.chatId}</p>
+              )}
             </div>
           </div>
 
@@ -168,6 +201,9 @@ export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialo
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What this skill does"
             />
+            {errors.description && (
+              <p className="text-xs text-destructive-foreground">{errors.description}</p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -184,6 +220,9 @@ export function SkillCreateDialog({ defaultChatId, onCreated }: SkillCreateDialo
               placeholder="Execution instructions..."
               className="min-h-[120px] font-mono text-xs"
             />
+            {errors.prompt && (
+              <p className="text-xs text-destructive-foreground">{errors.prompt}</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

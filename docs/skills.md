@@ -69,20 +69,21 @@ Two MongoDB collections back the skill system: `Skill` (definitions) and `SkillL
 
 ### Skill
 
-| Field          | Type                  | Description                                                                   |
-| -------------- | --------------------- | ----------------------------------------------------------------------------- |
-| `chatId`       | `string`              | Telegram chat this skill belongs to                                           |
-| `name`         | `string`              | Unique name within the chat (used as identifier for `useSkill`)               |
-| `description`  | `string`              | What the skill does — shown in the system prompt skill listing                |
-| `prompt`       | `string`              | Execution instructions — sent as the user message in the LLM call             |
-| `parameters`   | `ISkillParameter[]`   | Typed parameter definitions (see below)                                       |
-| `cronSchedule` | `string \| null`      | Cron expression for automatic scheduling, or null for on-demand               |
-| `reportMode`   | `"always" \| "alert"` | Whether to message the user after every run or only on noteworthy/failed runs |
-| `nextRunAt`    | `Date \| null`        | Next scheduled execution time (computed from cron)                            |
-| `enabled`      | `boolean`             | Whether the skill is active (default: `true`)                                 |
-| `version`      | `number`              | Incremented on every update                                                   |
-| `createdAt`    | `Date`                | Mongoose timestamp                                                            |
-| `updatedAt`    | `Date`                | Mongoose timestamp                                                            |
+| Field                  | Type                  | Description                                                                                  |
+| ---------------------- | --------------------- | -------------------------------------------------------------------------------------------- |
+| `chatId`               | `string`              | Telegram chat this skill belongs to                                                          |
+| `name`                 | `string`              | Unique name within the chat (used as identifier for `useSkill`)                              |
+| `description`          | `string`              | What the skill does — shown in the system prompt skill listing                               |
+| `prompt`               | `string`              | Execution instructions — sent as the user message in the LLM call                            |
+| `parameters`           | `ISkillParameter[]`   | Typed parameter definitions (see below)                                                      |
+| `cronSchedule`         | `string \| null`      | Cron expression for automatic scheduling, or null for on-demand                              |
+| `reportMode`           | `"always" \| "alert"` | Whether to message the user after every run or only on noteworthy/failed runs                |
+| `nextRunAt`            | `Date \| null`        | Next scheduled execution time (computed from cron)                                           |
+| `manualRunRequestedAt` | `Date \| null`        | Set by the dashboard "Run Now" action; cleared atomically when the bot's scheduler claims it |
+| `enabled`              | `boolean`             | Whether the skill is active (default: `true`)                                                |
+| `version`              | `number`              | Incremented on every update                                                                  |
+| `createdAt`            | `Date`                | Mongoose timestamp                                                                           |
+| `updatedAt`            | `Date`                | Mongoose timestamp                                                                           |
 
 ### Skill Parameters
 
@@ -283,9 +284,9 @@ The skill scheduler (`apps/bot/src/scheduler/skills.ts`) handles automatic execu
 
 ### Polling
 
-- Polls every 60 seconds via `setInterval` (unreferenced so it doesn't keep the process alive)
-- Queries `getDueSkills()`: enabled skills where `cronSchedule` is not null and `nextRunAt <= now`, sorted by `nextRunAt` ascending
-- Executes each due skill sequentially with `trigger: "cron"` and `advanceSchedule: true`
+- **Cron tick**: every 60 seconds via `setInterval`. Queries `getDueSkills()` (enabled skills where `cronSchedule` is not null and `nextRunAt <= now`) and executes each with `trigger: "cron"`, `advanceSchedule: true`.
+- **Manual-run tick**: every 3 seconds. Calls `claimPendingManualRun()` — an atomic `findOneAndUpdate` that clears `manualRunRequestedAt` and returns the claimed skill — and executes it with `trigger: "manual"`, `advanceSchedule: false`, `silent: true`. The dashboard sets `manualRunRequestedAt` via `POST /api/skills/[id]/run`; the bot picks it up within ~3 s and writes the result to a `SkillLog` that the dashboard polls. Silent mode suppresses the Telegram delivery so testing from the dashboard doesn't spam the chat.
+- Both intervals are `unref()`ed so they don't keep the process alive.
 
 ### Cron Parameter Defaults
 
@@ -346,15 +347,15 @@ SkillLog (Skill A, trigger: "cron")
 
 ## File Map
 
-| File                                      | Purpose                                                                  |
-| ----------------------------------------- | ------------------------------------------------------------------------ |
-| `packages/db/src/models/skill.ts`         | Mongoose models (`Skill`, `SkillLog`), CRUD helpers, log helpers         |
-| `apps/bot/src/ai/tools/manage-skills.ts`  | `manageSkills` tool (create/list/update/delete/enable/disable)           |
-| `apps/bot/src/ai/tools/search-skills.ts`  | `searchSkills` tool (keyword discovery of available skills)              |
-| `apps/bot/src/ai/tools/use-skill.ts`      | `useSkill` tool (invoke by name with parameters)                         |
-| `apps/bot/src/services/skill-executor.ts` | `executeSkill()` — prompt assembly, `generateText()`, logging, reporting |
-| `apps/bot/src/scheduler/skills.ts`        | Skill scheduler — polling, startup recovery, cron execution              |
-| `apps/bot/src/services/cron.ts`           | Cron expression validation and next-run computation                      |
-| `apps/bot/src/ai/tools/index.ts`          | Tool registration with depth gating                                      |
-| `apps/bot/src/ai/context-assembler.ts`    | Skill context injection into system prompt                               |
-| `apps/bot/src/ai/prompts.ts`              | `SKILL_BEHAVIOR_INSTRUCTIONS` constant                                   |
+| File                                      | Purpose                                                                                                                                  |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/db/src/models/skill.ts`         | Mongoose models (`Skill`, `SkillLog`), CRUD helpers, log helpers                                                                         |
+| `apps/bot/src/ai/tools/manage-skills.ts`  | `manageSkills` tool (create/list/update/delete/enable/disable)                                                                           |
+| `apps/bot/src/ai/tools/search-skills.ts`  | `searchSkills` tool (keyword discovery of available skills)                                                                              |
+| `apps/bot/src/ai/tools/use-skill.ts`      | `useSkill` tool (invoke by name with parameters)                                                                                         |
+| `apps/bot/src/services/skill-executor.ts` | `executeSkill()` — prompt assembly, `generateText()`, logging, reporting; `silent` option suppresses Telegram delivery                   |
+| `apps/bot/src/scheduler/skills.ts`        | Skill scheduler — cron polling (60 s) + manual-run polling (3 s)                                                                         |
+| `packages/shared/src/skill-validation.ts` | Shared cron validation (`isValidCron`, `computeNextRunAt`, `validateCronAndDefaults`) used by both the bot tool and dashboard API routes |
+| `apps/bot/src/ai/tools/index.ts`          | Tool registration with depth gating                                                                                                      |
+| `apps/bot/src/ai/context-assembler.ts`    | Skill context injection into system prompt                                                                                               |
+| `apps/bot/src/ai/prompts.ts`              | `SKILL_BEHAVIOR_INSTRUCTIONS` constant                                                                                                   |

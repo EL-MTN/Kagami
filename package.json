@@ -22,19 +22,6 @@
     "migrate:memory": "tsx scripts/migrate-memory-v2.ts",
     "prepare": "husky"
   },
-  "lint-staged": {
-    "apps/**/src/**/*.{ts,tsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "packages/**/*.ts": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "**/*.{json,md}": [
-      "prettier --write"
-    ]
-  },
   "devDependencies": {
     "eslint": "^10.0.3",
     "husky": "^9.1.7",

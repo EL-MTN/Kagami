@@ -63,6 +63,8 @@ export {
   deleteSkill,
   getDueSkills,
   advanceSkillNextRunAt,
+  requestManualRun,
+  claimPendingManualRun,
   isSkillRunning,
   createSkillLog,
   completeSkillLog,

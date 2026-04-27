@@ -1,11 +1,13 @@
-import { getDueSkills, resetStaleRunningSkillLogs } from "@mashiro/db";
+import { getDueSkills, claimPendingManualRun, resetStaleRunningSkillLogs } from "@mashiro/db";
 import { logger } from "@mashiro/shared";
 import type { PlatformAdapter } from "@mashiro/shared";
 import { executeSkill } from "../services/skill-executor";
 
-const POLL_INTERVAL_MS = 60_000; // 1 minute
+const POLL_INTERVAL_MS = 60_000; // cron tick: 1 minute
+const MANUAL_POLL_INTERVAL_MS = 3_000; // manual-run tick: 3 seconds
 
 let interval: NodeJS.Timeout | null = null;
+let manualInterval: NodeJS.Timeout | null = null;
 
 async function runDueSkills(adapter: PlatformAdapter): Promise<void> {
   try {
@@ -38,6 +40,28 @@ async function runDueSkills(adapter: PlatformAdapter): Promise<void> {
   }
 }
 
+async function runPendingManualRequest(adapter: PlatformAdapter): Promise<void> {
+  try {
+    const skill = await claimPendingManualRun();
+    if (!skill) return;
+
+    const params: Record<string, unknown> = {};
+    for (const p of skill.parameters) {
+      if (p.default !== undefined) params[p.name] = p.default;
+    }
+
+    logger.info({ skillId: skill._id, name: skill.name }, "Executing manual run request");
+    await executeSkill(skill, adapter, {
+      trigger: "manual",
+      advanceSchedule: false,
+      silent: true,
+      parameters: Object.keys(params).length > 0 ? params : undefined,
+    });
+  } catch (error) {
+    logger.error({ error }, "Failed to execute manual run request");
+  }
+}
+
 async function startupRecovery(adapter: PlatformAdapter): Promise<void> {
   // Clean up stale "running" logs from crashed executions first
   try {
@@ -60,12 +84,22 @@ export function startSkillScheduler(adapter: PlatformAdapter): () => void {
   interval = setInterval(() => void runDueSkills(adapter), POLL_INTERVAL_MS);
   interval.unref();
 
+  manualInterval = setInterval(
+    () => void runPendingManualRequest(adapter),
+    MANUAL_POLL_INTERVAL_MS,
+  );
+  manualInterval.unref();
+
   logger.info("Skill scheduler started");
 
   return () => {
     if (interval) {
       clearInterval(interval);
       interval = null;
+    }
+    if (manualInterval) {
+      clearInterval(manualInterval);
+      manualInterval = null;
     }
     logger.info("Skill scheduler stopped");
   };

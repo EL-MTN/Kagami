@@ -72,6 +72,7 @@ cd apps/dashboard && npm run dev   # dashboard only (port 3000)
 | `/api/skills/export`    | GET — download all skills as versioned JSON bundle                                                             |
 | `/api/skills/[id]`      | GET detail, PATCH update, DELETE                                                                               |
 | `/api/skills/[id]/logs` | GET paginated execution logs (cursor-based via `?before=`)                                                     |
+| `/api/skills/[id]/run`  | POST — sets `manualRunRequestedAt` so the bot's scheduler picks the skill up on its next 3 s tick              |
 | `/api/images/[key]`     | GridFS image proxy — serves stored images by key with immutable cache headers                                  |
 
 ## Architecture
@@ -103,6 +104,12 @@ Queries use `@mashiro/db` models directly. `@mashiro/memory` is **not** imported
 ### Validation
 
 `src/lib/skill-schema.ts` — Zod schemas shared between API route handlers (server-side validation) and client components (live validation). Exports: `skillCreateSchema`, `skillPatchSchema`, `skillExportBundleSchema`, and inferred TypeScript types. Zero Node.js-specific imports so it works in both runtimes.
+
+Cron validation (parse + required-defaults check) lives in `@mashiro/shared` (`validateCronAndDefaults`, `computeNextRunAt`) so the bot's `manageSkills` tool and the dashboard API routes share one implementation.
+
+### Editor UX
+
+`SkillEditor` (`src/components/skills/skill-editor.tsx`) supports Cmd/Ctrl+S to save, a `beforeunload` guard while dirty, and an inline Run button (disabled while dirty) that drives the run-now flow described above. Cron preview helpers live in `src/lib/cron-format.ts` (`describeCron`, `cronLabel`).
 
 ### Export/Import Format
 
@@ -137,23 +144,24 @@ This allows the dashboard to import `@mashiro/db` → `@mashiro/shared` without 
 
 ## Components
 
-| Component                        | Type   | Purpose                                                     |
-| -------------------------------- | ------ | ----------------------------------------------------------- |
-| `sidebar.tsx`                    | Server | Nav sidebar with page links                                 |
-| `nav-link.tsx`                   | Client | Active route highlighting via `usePathname()`               |
-| `stat-card.tsx`                  | Server | Reusable stats card (icon, label, value)                    |
-| `emotional-indicator.tsx`        | Server | Trend badge (rising/falling/stable)                         |
-| `activity-feed.tsx`              | Server | Recent conversations + memories interleaved by time         |
-| `message-bubble.tsx`             | Server | Chat message with role-based styling, tool call display     |
-| `memory-card.tsx`                | Server | Memory content with importance/type badges                  |
-| `pagination.tsx`                 | Server | Simple prev/next page links                                 |
-| `skills/skill-table.tsx`         | Client | Interactive skill list with enable/disable, delete          |
-| `skills/skill-editor.tsx`        | Client | Inline skill editing with live cron preview, dirty tracking |
-| `skills/skill-create-dialog.tsx` | Client | New skill creation dialog                                   |
-| `skills/skill-import-dialog.tsx` | Client | Drag-drop/paste JSON import with preview                    |
-| `skills/skill-delete-dialog.tsx` | Client | Confirm delete dialog                                       |
-| `skills/skill-log-table.tsx`     | Client | Execution logs with expandable summaries, load more         |
-| `skills/parameter-editor.tsx`    | Client | Dynamic parameter list editor with type-aware defaults      |
+| Component                        | Type   | Purpose                                                                                                                                   |
+| -------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `sidebar.tsx`                    | Server | Nav sidebar with page links                                                                                                               |
+| `nav-link.tsx`                   | Client | Active route highlighting via `usePathname()`                                                                                             |
+| `stat-card.tsx`                  | Server | Reusable stats card (icon, label, value)                                                                                                  |
+| `emotional-indicator.tsx`        | Server | Trend badge (rising/falling/stable)                                                                                                       |
+| `activity-feed.tsx`              | Server | Recent conversations + memories interleaved by time                                                                                       |
+| `message-bubble.tsx`             | Server | Chat message with role-based styling, tool call display                                                                                   |
+| `memory-card.tsx`                | Server | Memory content with importance/type badges                                                                                                |
+| `pagination.tsx`                 | Server | Simple prev/next page links                                                                                                               |
+| `skills/skill-table.tsx`         | Client | Interactive skill list with name/description search, enabled/cron filters, enable/disable toggle (with rollback toast on failure), delete |
+| `skills/skill-editor.tsx`        | Client | Inline skill editing with live cron preview, dirty tracking, Cmd+S save, navigate-away guard                                              |
+| `skills/skill-run-button.tsx`    | Client | Triggers a manual run via `/api/skills/[id]/run` and polls logs for the result                                                            |
+| `skills/skill-create-dialog.tsx` | Client | New skill creation dialog (chatId picked from a select of known chats with a "+ New chat…" escape hatch)                                  |
+| `skills/skill-import-dialog.tsx` | Client | Drag-drop/paste JSON import with preview                                                                                                  |
+| `skills/skill-delete-dialog.tsx` | Client | Confirm delete dialog                                                                                                                     |
+| `skills/skill-log-table.tsx`     | Client | Execution logs with expandable summaries, load more                                                                                       |
+| `skills/parameter-editor.tsx`    | Client | Dynamic parameter list editor with type-aware defaults                                                                                    |
 
 ## Dependencies
 

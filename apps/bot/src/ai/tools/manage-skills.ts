@@ -9,21 +9,7 @@ import {
   isDuplicateKeyError,
   type ISkillParameter,
 } from "@mashiro/db";
-import { logger } from "@mashiro/shared";
-import { computeNextRunAt, isValidCron } from "../../services/cron";
-
-function validateCronParams(
-  cronSchedule: string | undefined,
-  params: ISkillParameter[],
-): string | null {
-  if (!cronSchedule) return null;
-  if (!isValidCron(cronSchedule)) return `Invalid cron expression: "${cronSchedule}"`;
-  const missing = params.filter((p) => p.required && p.default === undefined);
-  if (missing.length > 0) {
-    return `Cron-scheduled skills require defaults for all required parameters. Missing defaults: ${missing.map((p) => p.name).join(", ")}`;
-  }
-  return null;
-}
+import { logger, computeNextRunAt, validateCronAndDefaults } from "@mashiro/shared";
 
 const parameterSchema = z.object({
   name: z.string().describe("Parameter name"),
@@ -99,11 +85,11 @@ export function createManageSkillsTool(chatId: string) {
               };
             }
 
-            const cronError = validateCronParams(
+            const cronError = validateCronAndDefaults(
               cronSchedule,
               (parameters ?? []) as ISkillParameter[],
             );
-            if (cronError) return { success: false, reason: cronError };
+            if (cronError) return { success: false, reason: cronError.message };
 
             logger.info({ chatId, name, cronSchedule, reportMode }, "Tool: manageSkills (create)");
 
@@ -171,13 +157,15 @@ export function createManageSkillsTool(chatId: string) {
 
             if (cronSchedule !== undefined) {
               if (cronSchedule) {
-                const cronErr = validateCronParams(cronSchedule, parameters ?? existing.parameters);
-                if (cronErr) return { success: false, reason: cronErr };
+                const cronErr = validateCronAndDefaults(
+                  cronSchedule,
+                  parameters ?? existing.parameters,
+                );
+                if (cronErr) return { success: false, reason: cronErr.message };
 
                 patch.cronSchedule = cronSchedule;
                 patch.nextRunAt = computeNextRunAt(cronSchedule);
               } else {
-                // Explicitly clearing cron
                 patch.cronSchedule = null;
                 patch.nextRunAt = null;
               }

@@ -38,6 +38,7 @@ export interface ISkill extends Document {
   cronSchedule: string | null;
   reportMode: "always" | "alert";
   nextRunAt: Date | null;
+  manualRunRequestedAt: Date | null;
   enabled: boolean;
   version: number;
   createdAt: Date;
@@ -54,6 +55,7 @@ const skillSchema = new Schema<ISkill>(
     cronSchedule: { type: String, default: null },
     reportMode: { type: String, enum: ["always", "alert"], required: true },
     nextRunAt: { type: Date, default: null },
+    manualRunRequestedAt: { type: Date, default: null },
     enabled: { type: Boolean, default: true },
     version: { type: Number, default: 1 },
   },
@@ -63,6 +65,7 @@ const skillSchema = new Schema<ISkill>(
 skillSchema.index({ chatId: 1 });
 skillSchema.index({ chatId: 1, name: 1 }, { unique: true });
 skillSchema.index({ enabled: 1, nextRunAt: 1 });
+skillSchema.index({ manualRunRequestedAt: 1 });
 
 export const Skill =
   (mongoose.models.Skill as mongoose.Model<ISkill>) ?? mongoose.model<ISkill>("Skill", skillSchema);
@@ -170,6 +173,26 @@ export async function getDueSkills(): Promise<ISkill[]> {
 
 export async function advanceSkillNextRunAt(skillId: string, nextRunAt: Date): Promise<void> {
   await Skill.findByIdAndUpdate(skillId, { nextRunAt });
+}
+
+export async function requestManualRun(skillId: string): Promise<ISkill | null> {
+  return Skill.findByIdAndUpdate(
+    skillId,
+    { manualRunRequestedAt: new Date() },
+    { new: true },
+  );
+}
+
+/**
+ * Atomically claim the next pending manual-run request. Sets
+ * `manualRunRequestedAt` back to null so this won't be picked up twice.
+ */
+export async function claimPendingManualRun(): Promise<ISkill | null> {
+  return Skill.findOneAndUpdate(
+    { manualRunRequestedAt: { $ne: null }, enabled: true },
+    { manualRunRequestedAt: null },
+    { sort: { manualRunRequestedAt: 1 }, new: false },
+  );
 }
 
 // --- Skill Log Helpers ---

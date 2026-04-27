@@ -9,13 +9,12 @@ import {
   advanceSkillNextRunAt,
   type ISkill,
 } from "@mashiro/db";
-import { logger } from "@mashiro/shared";
+import { logger, computeNextRunAt } from "@mashiro/shared";
 import type { PlatformAdapter } from "@mashiro/shared";
 import { extractResponseText, sendSegmented } from "../ai/response";
 import { trackUsage } from "../ai/token-tracker";
 import { getModelName } from "../ai/provider";
 import { DATETIME_CONTEXT } from "../ai/prompts";
-import { computeNextRunAt } from "./cron";
 
 export const MAX_SKILL_DEPTH = 3;
 const LLM_TIMEOUT_MS = 180_000; // 3 minutes
@@ -66,6 +65,12 @@ export interface ExecuteSkillOptions {
   parameters?: Record<string, unknown>;
   depth?: number;
   parentLogId?: string;
+  /**
+   * When true, suppresses Telegram delivery of the result and any failure
+   * notification. The SkillLog is still written, so callers (e.g. the
+   * dashboard) can read the outcome.
+   */
+  silent?: boolean;
 }
 
 /**
@@ -77,7 +82,14 @@ export async function executeSkill(
   adapter: PlatformAdapter,
   options: ExecuteSkillOptions,
 ): Promise<string> {
-  const { advanceSchedule = false, trigger, parameters, depth = 0, parentLogId } = options;
+  const {
+    advanceSchedule = false,
+    trigger,
+    parameters,
+    depth = 0,
+    parentLogId,
+    silent = false,
+  } = options;
   const skillId = skill._id.toString();
   const chatId = skill.chatId;
 
@@ -153,8 +165,9 @@ export async function executeSkill(
       );
     }
 
-    // Deliver report to user if this is a cron or manual trigger (not composed)
-    if (trigger !== "skill") {
+    // Deliver report to user if this is a cron or manual trigger (not composed,
+    // not silent dashboard runs)
+    if (trigger !== "skill" && !silent) {
       const isNoReport = responseText.trim().toLowerCase() === NO_REPORT_SENTINEL.toLowerCase();
       if (responseText && !isNoReport) {
         await sendSegmented(adapter, chatId, responseText);
@@ -180,8 +193,8 @@ export async function executeSkill(
       }
     }
 
-    // Alert user about the failure (only for direct triggers)
-    if (trigger !== "skill") {
+    // Alert user about the failure (only for direct, non-silent triggers)
+    if (trigger !== "skill" && !silent) {
       await adapter.sendText(chatId, `Skill "${skill.name}" failed: ${reason}`).catch((e) => {
         logger.error({ error: e }, "Failed to send skill error notification");
       });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { CronExpressionParser } from "cron-parser";
 import { Skill, createSkill, isDuplicateKeyError, type ISkillParameter } from "@mashiro/db";
+import { computeNextRunAt, validateCronAndDefaults } from "@mashiro/shared";
 import { ensureDB } from "@/lib/db";
 import { skillCreateSchema, skillExportBundleSchema } from "@/lib/skill-schema";
 import { getSkillList } from "@/lib/queries/skills";
@@ -37,17 +37,11 @@ async function handleCreate(request: Request) {
 
   const { chatId, cronSchedule, ...rest } = parsed.data;
 
-  let nextRunAt: Date | null = null;
-  if (cronSchedule) {
-    try {
-      nextRunAt = CronExpressionParser.parse(cronSchedule).next().toDate();
-    } catch {
-      return NextResponse.json(
-        { error: `Invalid cron expression: "${cronSchedule}"` },
-        { status: 400 },
-      );
-    }
+  const cronError = validateCronAndDefaults(cronSchedule, rest.parameters);
+  if (cronError) {
+    return NextResponse.json({ error: cronError.message }, { status: 400 });
   }
+  const nextRunAt = cronSchedule ? computeNextRunAt(cronSchedule) : null;
 
   try {
     const skill = await createSkill(chatId, {
@@ -118,15 +112,12 @@ async function handleImport(request: Request) {
   const errors: string[] = [];
 
   for (const item of parsed.data.skills) {
-    let nextRunAt: Date | null = null;
-    if (item.cronSchedule) {
-      try {
-        nextRunAt = CronExpressionParser.parse(item.cronSchedule).next().toDate();
-      } catch {
-        errors.push(`"${item.name}": invalid cron "${item.cronSchedule}"`);
-        continue;
-      }
+    const cronErr = validateCronAndDefaults(item.cronSchedule, item.parameters);
+    if (cronErr) {
+      errors.push(`"${item.name}": ${cronErr.message}`);
+      continue;
     }
+    const nextRunAt = item.cronSchedule ? computeNextRunAt(item.cronSchedule) : null;
 
     try {
       await createSkill(chatId, {
