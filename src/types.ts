@@ -6,6 +6,8 @@ const dateString = z
   .union([z.string(), z.date()])
   .transform((v) => (v instanceof Date ? v.toISOString() : v));
 
+// LLM wire-format: always strings, no unions/transforms — keeps the JSON
+// schema sent to the model simple (no `anyOf`, which trips strict mode).
 export const Candidate = z.object({
   entity_name: z.string(),
   type: z.string(),
@@ -13,7 +15,7 @@ export const Candidate = z.object({
   headline: z.string(),
   quote: z.string(),
   turn_id: z.string(),
-  date: dateString,
+  date: z.string(),
 });
 export type Candidate = z.infer<typeof Candidate>;
 
@@ -33,7 +35,7 @@ export const EntityFrontmatter = z.object({
 export type EntityFrontmatter = z.infer<typeof EntityFrontmatter>;
 
 export const Observation = z.object({
-  date: dateString,
+  date: z.string(),
   headline: z.string(),
   quote: z.string(),
   source: z.string(),

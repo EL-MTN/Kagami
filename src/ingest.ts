@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readTranscript } from './transcript.js';
-import { callJson } from './llm.js';
+import { callJsonText } from './llm.js';
 import {
   appendObservation,
   createEntity,
@@ -110,10 +110,9 @@ async function extract(transcript: Transcript): Promise<Candidate[] | null> {
     .replace('{{transcript_id}}', transcript.frontmatter.id)
     .replace('{{turns}}', turns);
 
-  const result = await callJson({
+  const result = await callJsonText({
     stage: 'extraction',
     schema: ExtractionResult,
-    schemaName: 'extraction',
     systemPrompt: system,
     userPrompt,
   });
