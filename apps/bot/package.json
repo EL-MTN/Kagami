@@ -30,7 +30,7 @@
     "date-fns": "^4.1.0",
     "googleapis": "^171.4.0",
     "grammy": "^1.30.0",
-    "zod": "^3.24.0"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@mashiro/eslint-config": "*",

@@ -38,7 +38,7 @@ const typeSchemas: Record<SkillParameterType, ZodTypeAny> = {
   number: z.coerce.number(),
   boolean: z.coerce.boolean(),
   array: z.array(z.unknown()).or(jsonArrayFromString),
-  object: z.record(z.unknown()).or(jsonObjectFromString),
+  object: z.record(z.string(), z.unknown()).or(jsonObjectFromString),
 };
 
 function buildParamSchema(schema: ISkillParameter[]): z.ZodType<Record<string, unknown>> {
@@ -83,7 +83,7 @@ export function createUseSkillTool(chatId: string, adapter: PlatformAdapter, dep
     inputSchema: z.object({
       skillName: z.string().describe("Name of the skill to invoke"),
       parameters: z
-        .record(z.unknown())
+        .record(z.string(), z.unknown())
         .optional()
         .describe("Key-value parameters to pass to the skill"),
     }),

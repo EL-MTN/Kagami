@@ -238,7 +238,7 @@ export function SkillEditor({ skill }: SkillEditorProps) {
           onChange={(e) => update({ prompt: e.target.value })}
           placeholder="Execution instructions for the skill..."
           className="min-h-[200px] font-mono text-xs leading-relaxed"
-          style={{ fieldSizing: "content" } as React.CSSProperties}
+          style={{ fieldSizing: "content" }}
         />
         {errors.prompt && <p className="text-xs text-destructive-foreground">{errors.prompt}</p>}
       </div>
