@@ -5,10 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/mcp_server.ts",
-    "build": "tsc",
-    "start": "node dist/mcp_server.js",
+    "start": "node --import tsx src/mcp_server.ts",
     "test": "node --import tsx --test tests/**/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
@@ -17,7 +16,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@types/node": "^20.19.39",
     "tsx": "^4.0.0",
     "typescript": "^5.4.0"
   }
