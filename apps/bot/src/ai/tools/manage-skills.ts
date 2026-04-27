@@ -7,7 +7,6 @@ import {
   updateSkill,
   deleteSkill,
   isDuplicateKeyError,
-  type ISkillParameter,
 } from "@mashiro/db";
 import { logger, computeNextRunAt, validateCronAndDefaults } from "@mashiro/shared";
 
@@ -85,10 +84,7 @@ export function createManageSkillsTool(chatId: string) {
               };
             }
 
-            const cronError = validateCronAndDefaults(
-              cronSchedule,
-              (parameters ?? []) as ISkillParameter[],
-            );
+            const cronError = validateCronAndDefaults(cronSchedule, parameters ?? []);
             if (cronError) return { success: false, reason: cronError.message };
 
             logger.info({ chatId, name, cronSchedule, reportMode }, "Tool: manageSkills (create)");
@@ -99,7 +95,7 @@ export function createManageSkillsTool(chatId: string) {
               name,
               description,
               prompt,
-              parameters: (parameters ?? []) as ISkillParameter[],
+              parameters: parameters ?? [],
               cronSchedule: cronSchedule ?? null,
               reportMode,
               nextRunAt,
