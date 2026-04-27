@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { CronExpressionParser } from "cron-parser";
 import { getSkillById, updateSkill, deleteSkill, isDuplicateKeyError } from "@mashiro/db";
+import { computeNextRunAt, validateCronAndDefaults } from "@mashiro/shared";
 import { ensureDB } from "@/lib/db";
 import { getSkillDetail } from "@/lib/queries/skills";
 import { skillPatchSchema } from "@/lib/skill-schema";
@@ -63,31 +63,13 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
   if (data.cronSchedule !== undefined) {
     if (data.cronSchedule) {
-      try {
-        CronExpressionParser.parse(data.cronSchedule);
-      } catch {
-        return NextResponse.json(
-          {
-            error: `Invalid cron expression: "${data.cronSchedule}"`,
-          },
-          { status: 400 },
-        );
-      }
-
-      // Validate required params have defaults
       const params = data.parameters ?? existing.parameters;
-      const missingDefaults = params.filter((p) => p.required && p.default === undefined);
-      if (missingDefaults.length > 0) {
-        return NextResponse.json(
-          {
-            error: `Cron-scheduled skills require defaults for all required parameters. Missing: ${missingDefaults.map((p) => p.name).join(", ")}`,
-          },
-          { status: 400 },
-        );
+      const cronErr = validateCronAndDefaults(data.cronSchedule, params);
+      if (cronErr) {
+        return NextResponse.json({ error: cronErr.message }, { status: 400 });
       }
-
       patch.cronSchedule = data.cronSchedule;
-      patch.nextRunAt = CronExpressionParser.parse(data.cronSchedule).next().toDate();
+      patch.nextRunAt = computeNextRunAt(data.cronSchedule);
     } else {
       patch.cronSchedule = null;
       patch.nextRunAt = null;

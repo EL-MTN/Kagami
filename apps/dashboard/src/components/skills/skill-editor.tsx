@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import cronstrue from "cronstrue";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +8,8 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { ParameterEditor } from "./parameter-editor";
+import { SkillRunButton } from "./skill-run-button";
+import { describeCron } from "@/lib/cron-format";
 import type { SkillListItem, SkillParameter } from "@/lib/skill-schema";
 
 interface ApiErrorResponse {
@@ -50,15 +51,6 @@ function isDirty(draft: Draft, saved: Draft): boolean {
   return JSON.stringify(draft) !== JSON.stringify(saved);
 }
 
-function getCronDescription(expr: string): string | null {
-  if (!expr) return null;
-  try {
-    return cronstrue.toString(expr, { use24HourTimeFormat: false, verbose: true });
-  } catch {
-    return null;
-  }
-}
-
 export function SkillEditor({ skill }: SkillEditorProps) {
   const [saved, setSaved] = useState<Draft>(() => skillToDraft(skill));
   const [draft, setDraft] = useState<Draft>(() => skillToDraft(skill));
@@ -67,7 +59,8 @@ export function SkillEditor({ skill }: SkillEditorProps) {
   const [flash, setFlash] = useState<string | null>(null);
 
   const dirty = isDirty(draft, saved);
-  const cronDesc = getCronDescription(draft.cronSchedule);
+  const cronDesc = describeCron(draft.cronSchedule);
+  const saveRef = useRef<() => void>(() => {});
 
   const update = useCallback((patch: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...patch }));
@@ -77,6 +70,29 @@ export function SkillEditor({ skill }: SkillEditorProps) {
       for (const k of keys) delete next[k];
       return next;
     });
+  }, []);
+
+  // Warn before navigating away with unsaved changes.
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
+
+  // Cmd/Ctrl+S triggers save when dirty.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        saveRef.current();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, []);
 
   async function handleSave() {
@@ -128,6 +144,10 @@ export function SkillEditor({ skill }: SkillEditorProps) {
     }
   }
 
+  saveRef.current = () => {
+    if (dirty && !saving) void handleSave();
+  };
+
   return (
     <div className="space-y-8">
       {/* Save bar */}
@@ -138,6 +158,17 @@ export function SkillEditor({ skill }: SkillEditorProps) {
           <span className="text-xs text-destructive-foreground">{errors.general}</span>
         )}
         <div className="ml-auto flex items-center gap-4">
+          <SkillRunButton
+            skillId={skill.id}
+            disabled={dirty || !draft.enabled}
+            disabledReason={
+              dirty
+                ? "Save your changes before running"
+                : !draft.enabled
+                  ? "Enable the skill to run it"
+                  : undefined
+            }
+          />
           <div className="flex items-center gap-2">
             <Label className="text-xs text-muted-foreground">Enabled</Label>
             <Switch
@@ -146,7 +177,7 @@ export function SkillEditor({ skill }: SkillEditorProps) {
             />
           </div>
           <Button onClick={() => void handleSave()} disabled={!dirty || saving} size="sm">
-            {saving ? "Saving..." : "Save"}
+            {saving ? "Saving..." : "Save (⌘S)"}
           </Button>
         </div>
       </div>

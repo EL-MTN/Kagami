@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import cronstrue from "cronstrue";
-import { Download, Trash2 } from "lucide-react";
+import { Download, Trash2, Search } from "lucide-react";
+import { cronLabel } from "@/lib/cron-format";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -20,27 +21,39 @@ import { SkillImportDialog } from "./skill-import-dialog";
 import { SkillDeleteDialog } from "./skill-delete-dialog";
 import type { SkillListItem } from "@/lib/skill-schema";
 
-function getCronLabel(expr: string | null): string {
-  if (!expr) return "on-demand";
-  try {
-    return cronstrue.toString(expr, { use24HourTimeFormat: false, verbose: true });
-  } catch {
-    return expr;
-  }
-}
-
 interface SkillTableProps {
   initialSkills: SkillListItem[];
 }
+
+type FilterMode = "all" | "enabled" | "cron";
 
 export function SkillTable({ initialSkills }: SkillTableProps) {
   const router = useRouter();
   const [skills, setSkills] = useState(initialSkills);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<FilterMode>("all");
+  const [toggleError, setToggleError] = useState<string | null>(null);
 
-  const defaultChatId = skills[0]?.chatId ?? "";
+  const knownChatIds = useMemo(
+    () => Array.from(new Set(skills.map((s) => s.chatId))).sort(),
+    [skills],
+  );
+
+  const visibleSkills = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return skills.filter((s) => {
+      if (filter === "enabled" && !s.enabled) return false;
+      if (filter === "cron" && !s.cronSchedule) return false;
+      if (!q) return true;
+      return (
+        s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
+      );
+    });
+  }, [skills, query, filter]);
 
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
+    setToggleError(null);
     setSkills((prev) => prev.map((s) => (s.id === id ? { ...s, enabled } : s)));
     try {
       const res = await fetch(`/api/skills/${id}`, {
@@ -49,10 +62,15 @@ export function SkillTable({ initialSkills }: SkillTableProps) {
         body: JSON.stringify({ enabled }),
       });
       if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
         setSkills((prev) => prev.map((s) => (s.id === id ? { ...s, enabled: !enabled } : s)));
+        setToggleError(data.error ?? "Failed to update");
+        window.setTimeout(() => setToggleError(null), 4000);
       }
     } catch {
       setSkills((prev) => prev.map((s) => (s.id === id ? { ...s, enabled: !enabled } : s)));
+      setToggleError("Network error");
+      window.setTimeout(() => setToggleError(null), 4000);
     }
   }, []);
 
@@ -71,8 +89,8 @@ export function SkillTable({ initialSkills }: SkillTableProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <SkillCreateDialog defaultChatId={defaultChatId} onCreated={handleCreated} />
+      <div className="flex flex-wrap items-center gap-2">
+        <SkillCreateDialog knownChatIds={knownChatIds} onCreated={handleCreated} />
         <SkillImportDialog onImported={handleImported} />
         <Button variant="ghost" size="sm" asChild className="text-muted-foreground">
           <a href="/api/skills/export" download>
@@ -80,6 +98,39 @@ export function SkillTable({ initialSkills }: SkillTableProps) {
             Export
           </a>
         </Button>
+
+        <div className="ml-auto flex items-center gap-2">
+          {toggleError && (
+            <span className="text-xs text-destructive-foreground" role="alert">
+              {toggleError}
+            </span>
+          )}
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search skills"
+              className="h-8 w-56 pl-7 text-xs"
+            />
+          </div>
+          <div className="flex overflow-hidden rounded-md border border-border text-xs">
+            {(["all", "enabled", "cron"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setFilter(mode)}
+                className={`px-2.5 py-1 transition-colors ${
+                  filter === mode
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground/70 hover:text-foreground"
+                }`}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border">
@@ -108,7 +159,7 @@ export function SkillTable({ initialSkills }: SkillTableProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {skills.map((s) => (
+            {visibleSkills.map((s) => (
               <TableRow
                 key={s.id}
                 className="border-border/50 transition-colors hover:bg-primary/[0.02]"
@@ -128,7 +179,7 @@ export function SkillTable({ initialSkills }: SkillTableProps) {
                   className="text-xs text-muted-foreground/60"
                   title={s.cronSchedule ?? undefined}
                 >
-                  {getCronLabel(s.cronSchedule)}
+                  {cronLabel(s.cronSchedule)}
                 </TableCell>
                 <TableCell>
                   <span
@@ -181,13 +232,15 @@ export function SkillTable({ initialSkills }: SkillTableProps) {
                 </TableCell>
               </TableRow>
             ))}
-            {skills.length === 0 && (
+            {visibleSkills.length === 0 && (
               <TableRow>
                 <TableCell
                   colSpan={7}
                   className="py-12 text-center text-sm text-muted-foreground/60"
                 >
-                  No skills found. Create one or import from a JSON file.
+                  {skills.length === 0
+                    ? "No skills found. Create one or import from a JSON file."
+                    : "No skills match the current filter."}
                 </TableCell>
               </TableRow>
             )}
