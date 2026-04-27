@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readTranscript } from './transcript.js';
-import { callJsonText } from './llm.js';
+import { callObject } from './llm.js';
 import {
   appendObservation,
   createEntity,
@@ -110,11 +110,13 @@ async function extract(transcript: Transcript): Promise<Candidate[] | null> {
     .replace('{{transcript_id}}', transcript.frontmatter.id)
     .replace('{{turns}}', turns);
 
-  const result = await callJsonText({
+  const result = await callObject({
     stage: 'extraction',
     schema: ExtractionResult,
     systemPrompt: system,
     userPrompt,
+    // Mitigation against Gemma 4's repetition-under-grammar tendency.
+    frequencyPenalty: 0.3,
   });
   return result?.candidates ?? null;
 }

@@ -1,110 +1,69 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import OpenAI from 'openai';
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { generateObject } from 'ai';
 import { paths } from './paths.js';
 
 const baseURL = process.env.LMSTUDIO_URL ?? 'http://localhost:1234/v1';
 const apiKey = process.env.LMSTUDIO_API_KEY ?? 'lm-studio';
-const model = process.env.MODEL ?? '';
+const modelName = process.env.MODEL ?? '';
 
-if (!model) {
+if (!modelName) {
   console.warn(
     '[brainiac] MODEL is unset. Set it in .env to whatever your local server exposes.',
   );
 }
 
-export const client = new OpenAI({ baseURL, apiKey });
+// `supportsStructuredOutputs: true` makes the provider send
+// `response_format: { type: "json_schema", ... }` instead of the default
+// `json_object`, which LM Studio rejects with "must be 'json_schema' or 'text'".
+// The option is honored at runtime but isn't in the public settings type.
+const provider = createOpenAICompatible({
+  name: 'lmstudio',
+  baseURL,
+  apiKey,
+  supportsStructuredOutputs: true,
+} as Parameters<typeof createOpenAICompatible>[0]);
 
-export interface JsonCallOptions<T extends z.ZodTypeAny> {
-  stage: string;
-  schema: T;
-  schemaName: string;
-  systemPrompt: string;
-  userPrompt: string;
-  temperature?: number;
-}
+export const model = provider(modelName);
 
-export async function callJson<T extends z.ZodTypeAny>(
-  opts: JsonCallOptions<T>,
-): Promise<z.infer<T> | null> {
-  const { stage, schema, schemaName, systemPrompt, userPrompt } = opts;
-  const temperature = opts.temperature ?? 0.2;
-
-  const params = {
-    model,
-    messages: [
-      { role: 'system' as const, content: systemPrompt },
-      { role: 'user' as const, content: userPrompt },
-    ],
-    temperature,
-    response_format: {
-      type: 'json_schema' as const,
-      json_schema: {
-        name: schemaName,
-        strict: true,
-        schema: zodToJsonSchema(schema),
-      },
-    },
-  };
-
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    let raw: string | null = null;
-    try {
-      const r = (await client.chat.completions.create(
-        params as unknown as Parameters<typeof client.chat.completions.create>[0],
-      )) as { choices: Array<{ message: { content: string | null } }> };
-      raw = r.choices[0]?.message?.content ?? null;
-      if (!raw) throw new Error('empty completion');
-      const parsed = JSON.parse(raw);
-      return schema.parse(parsed);
-    } catch (err) {
-      if (attempt === 2) {
-        await quarantine(stage, { err: String(err), raw, systemPrompt, userPrompt });
-        return null;
-      }
-    }
-  }
-  return null;
-}
-
-export interface JsonTextCallOptions<T extends z.ZodTypeAny> {
+export interface ObjectCallOptions<T extends z.ZodTypeAny> {
   stage: string;
   schema: T;
   systemPrompt: string;
   userPrompt: string;
   temperature?: number;
+  // Mitigation knob for Gemma 4's repetition-under-grammar tendency.
+  // 0 by default; 0.3–0.5 if loops are observed.
+  frequencyPenalty?: number;
 }
 
-// Plain-text completion + JSON.parse. Used when json_schema mode is broken
-// (e.g. gpt-oss-20b on LM Studio produces ellipsis-filled garbage in strict
-// mode for nested schemas — text mode with a one-shot example works fine).
-export async function callJsonText<T extends z.ZodTypeAny>(
-  opts: JsonTextCallOptions<T>,
+// generateObject sends the Zod schema to the provider as a JSON schema; the
+// provider enforces it via constrained decoding. AI SDK validates the result
+// against the same Zod schema before returning.
+export async function callObject<T extends z.ZodTypeAny>(
+  opts: ObjectCallOptions<T>,
 ): Promise<z.infer<T> | null> {
   const { stage, schema, systemPrompt, userPrompt } = opts;
   const temperature = opts.temperature ?? 0.2;
+  const frequencyPenalty = opts.frequencyPenalty ?? 0;
 
   for (let attempt = 1; attempt <= 2; attempt++) {
-    let raw: string | null = null;
     try {
-      const r = (await client.chat.completions.create({
+      const { object } = await generateObject({
         model,
-        messages: [
-          { role: 'system' as const, content: systemPrompt },
-          { role: 'user' as const, content: userPrompt },
-        ],
+        schema,
+        system: systemPrompt,
+        prompt: userPrompt,
         temperature,
-      })) as { choices: Array<{ message: { content: string | null } }> };
-      raw = r.choices[0]?.message?.content ?? null;
-      if (!raw) throw new Error('empty completion');
-      return schema.parse(JSON.parse(raw.trim()));
+        frequencyPenalty,
+      });
+      return object as z.infer<T>;
     } catch (err) {
       if (attempt === 2) {
         await quarantine(stage, {
           err: String(err),
-          raw,
           systemPrompt,
           userPrompt,
         });
@@ -124,4 +83,3 @@ async function quarantine(stage: string, payload: unknown): Promise<void> {
     JSON.stringify(payload, null, 2),
   );
 }
-

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import { z } from 'zod';
-import { callJsonText } from './llm.js';
+import { callObject } from './llm.js';
 import { listEntityIds } from './entity_io.js';
 import { entityPath, paths } from './paths.js';
 
@@ -51,11 +51,12 @@ export async function query(question: string): Promise<QueryResult> {
     `Question: ${question}`,
   ].join('\n\n');
 
-  const result = await callJsonText({
+  const result = await callObject({
     stage: 'query',
     schema: QueryResponse,
     systemPrompt: SYSTEM_PROMPT,
     userPrompt,
+    frequencyPenalty: 0.3,
   });
   return result ?? { answer: '(no answer — LLM failure)', citations: [] };
 }

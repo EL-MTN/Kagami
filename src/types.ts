@@ -6,11 +6,23 @@ const dateString = z
   .union([z.string(), z.date()])
   .transform((v) => (v instanceof Date ? v.toISOString() : v));
 
+export const EntityType = z.enum([
+  'person',
+  'belief',
+  'preference',
+  'project',
+  'place',
+  'concept',
+  'event',
+  'skill',
+]);
+export type EntityType = z.infer<typeof EntityType>;
+
 // LLM wire-format: always strings, no unions/transforms — keeps the JSON
 // schema sent to the model simple (no `anyOf`, which trips strict mode).
 export const Candidate = z.object({
   entity_name: z.string(),
-  type: z.string(),
+  type: EntityType,
   aliases_seen: z.array(z.string()),
   headline: z.string(),
   quote: z.string(),
