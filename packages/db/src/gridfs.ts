@@ -1,15 +1,14 @@
-import mongoose from "mongoose";
-import { GridFSBucket } from "mongodb";
+import mongoose, { mongo } from "mongoose";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { logger } from "@mashiro/shared";
 
 const BUCKET_NAME = "images";
 
-function getBucket(): GridFSBucket {
+function getBucket(): mongo.GridFSBucket {
   const db = mongoose.connection.db;
   if (!db) throw new Error("MongoDB not connected — cannot access GridFS");
-  return new GridFSBucket(db, { bucketName: BUCKET_NAME });
+  return new mongo.GridFSBucket(db, { bucketName: BUCKET_NAME });
 }
 
 export function generateImageKey(): string {
