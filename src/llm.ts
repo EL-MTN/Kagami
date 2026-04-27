@@ -99,8 +99,7 @@ export async function callJsonText<T extends z.ZodTypeAny>(
       })) as { choices: Array<{ message: { content: string | null } }> };
       raw = r.choices[0]?.message?.content ?? null;
       if (!raw) throw new Error('empty completion');
-      const json = extractJson(raw);
-      return schema.parse(JSON.parse(json));
+      return schema.parse(JSON.parse(raw.trim()));
     } catch (err) {
       if (attempt === 2) {
         await quarantine(stage, {
@@ -114,43 +113,6 @@ export async function callJsonText<T extends z.ZodTypeAny>(
     }
   }
   return null;
-}
-
-function extractJson(s: string): string {
-  let t = s.trim();
-  // Strip ``` or ```json fences.
-  if (t.startsWith('```')) {
-    t = t.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
-  }
-  // Trim any prose before the first '{' or '['.
-  const obj = t.indexOf('{');
-  const arr = t.indexOf('[');
-  let start = -1;
-  if (obj === -1) start = arr;
-  else if (arr === -1) start = obj;
-  else start = Math.min(obj, arr);
-  if (start > 0) t = t.slice(start);
-  // Trim trailing prose by walking brace/bracket depth on a string-aware scan.
-  return trimToJsonEnd(t);
-}
-
-function trimToJsonEnd(s: string): string {
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i]!;
-    if (escape) { escape = false; continue; }
-    if (c === '\\') { escape = true; continue; }
-    if (c === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (c === '{' || c === '[') depth++;
-    else if (c === '}' || c === ']') {
-      depth--;
-      if (depth === 0) return s.slice(0, i + 1);
-    }
-  }
-  return s;
 }
 
 async function quarantine(stage: string, payload: unknown): Promise<void> {
