@@ -30,9 +30,7 @@ const TIER_MODELS: Record<string, Record<NonDefaultTier, string>> = {
 
 export function getModelName(tier: ModelTier = ModelTier.Default): string {
   const provider = config.LLM_PROVIDER;
-  return tier === ModelTier.Default
-    ? config.LLM_MODEL
-    : TIER_MODELS[provider][tier as NonDefaultTier];
+  return tier === ModelTier.Default ? config.LLM_MODEL : TIER_MODELS[provider][tier];
 }
 
 // --- Image model (provider/model compound format) ---
@@ -68,8 +66,7 @@ export function getImageModelSpec(): { provider: string; modelId: string } {
 
 export function getModel(tier: ModelTier = ModelTier.Default): LanguageModel {
   const provider = config.LLM_PROVIDER;
-  const modelId =
-    tier === ModelTier.Default ? config.LLM_MODEL : TIER_MODELS[provider][tier as NonDefaultTier];
+  const modelId = tier === ModelTier.Default ? config.LLM_MODEL : TIER_MODELS[provider][tier];
 
   if (provider === "anthropic") {
     return anthropic(modelId);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Skill, createSkill, isDuplicateKeyError, type ISkillParameter } from "@mashiro/db";
+import { Skill, createSkill, isDuplicateKeyError } from "@mashiro/db";
 import { computeNextRunAt, validateCronAndDefaults } from "@mashiro/shared";
 import { ensureDB } from "@/lib/db";
 import { skillCreateSchema, skillExportBundleSchema } from "@/lib/skill-schema";
@@ -46,7 +46,7 @@ async function handleCreate(request: Request) {
   try {
     const skill = await createSkill(chatId, {
       ...rest,
-      parameters: rest.parameters as ISkillParameter[],
+      parameters: rest.parameters,
       cronSchedule: cronSchedule ?? null,
       reportMode: rest.reportMode,
       nextRunAt,
@@ -124,7 +124,7 @@ async function handleImport(request: Request) {
         name: item.name,
         description: item.description,
         prompt: item.prompt,
-        parameters: item.parameters as ISkillParameter[],
+        parameters: item.parameters,
         cronSchedule: item.cronSchedule ?? null,
         reportMode: item.reportMode,
         nextRunAt,

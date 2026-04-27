@@ -15,7 +15,7 @@
     "dotenv": "^16.4.0",
     "gray-matter": "^4.0.3",
     "pino": "^9.6.0",
-    "zod": "^3.24.0"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@mashiro/eslint-config": "*",
