@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+*.log
+
+# The vault is its own git repo, initialized separately.
+memory/

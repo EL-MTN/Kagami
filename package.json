@@ -1,0 +1,24 @@
+{
+  "name": "brainiac",
+  "version": "0.1.0",
+  "description": "Personal long-term memory subsystem for an agentic assistant.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/mcp_server.ts",
+    "build": "tsc",
+    "start": "node dist/mcp_server.js",
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "gray-matter": "^4.0.3",
+    "openai": "^4.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}
