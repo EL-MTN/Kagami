@@ -7,6 +7,7 @@ import { loadContext } from "./context/generator";
 import { startProactiveScheduler } from "./scheduler/proactive";
 import { startReminderScheduler } from "./scheduler/reminders";
 import { startSkillScheduler } from "./scheduler/skills";
+import { startWatcherScheduler } from "./scheduler/watchers";
 import { shutdownBrowser } from "./services/browser";
 
 // Bot-specific validation: TELEGRAM_BOT_TOKEN is required
@@ -23,6 +24,7 @@ const TELEGRAM_BOT_TOKEN = requireToken();
 let stopProactiveScheduler: (() => void) | null = null;
 let stopReminderScheduler: (() => void) | null = null;
 let stopSkillScheduler: (() => void) | null = null;
+let stopWatcherScheduler: (() => void) | null = null;
 
 async function main() {
   logger.info("Starting Mashiro...");
@@ -38,6 +40,7 @@ async function main() {
   stopProactiveScheduler = startProactiveScheduler(getAdapter());
   stopReminderScheduler = startReminderScheduler(getAdapter());
   stopSkillScheduler = startSkillScheduler(getAdapter());
+  stopWatcherScheduler = startWatcherScheduler(getAdapter());
 }
 
 function shutdown(signal: string) {
@@ -45,6 +48,7 @@ function shutdown(signal: string) {
   stopProactiveScheduler?.();
   stopReminderScheduler?.();
   stopSkillScheduler?.();
+  stopWatcherScheduler?.();
   void shutdownBrowser()
     .then(() => disconnectDB())
     .finally(() => process.exit(0));

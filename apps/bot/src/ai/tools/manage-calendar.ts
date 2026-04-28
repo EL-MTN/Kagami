@@ -12,7 +12,39 @@ const isoDatetime = z
   .string()
   .refine((s) => !isNaN(Date.parse(s)), { message: "Must be a valid ISO 8601 datetime" });
 
-export function createManageCalendarTool() {
+export interface ManageCalendarToolOptions {
+  /** "full" exposes list/create/update/delete; "readOnly" restricts to list. */
+  mode?: "full" | "readOnly";
+}
+
+function createListCalendarTool() {
+  return tool({
+    description: "List upcoming events on Goshujin-sama's Google Calendar.",
+    inputSchema: z.object({
+      daysAhead: z.number().optional().describe("Number of days ahead to list events (default 7)"),
+      maxResults: z.number().optional().describe("Maximum number of events to return (default 10)"),
+    }),
+    execute: async ({ daysAhead, maxResults }) => {
+      try {
+        logger.info({ daysAhead, maxResults }, "Tool: listCalendarEvents");
+        const events = await listUpcomingEvents(daysAhead, maxResults);
+        return { success: true as const, count: events.length, events };
+      } catch (error) {
+        logger.error({ error }, "Tool: listCalendarEvents failed");
+        return {
+          success: false as const,
+          reason: error instanceof Error ? error.message : "Calendar list failed",
+        };
+      }
+    },
+  });
+}
+
+export function createManageCalendarTool(options: ManageCalendarToolOptions = {}) {
+  if (options.mode === "readOnly") {
+    return createListCalendarTool();
+  }
+
   return tool({
     description:
       "Manage Goshujin-sama's Google Calendar. List upcoming events, create, update, or delete events.",

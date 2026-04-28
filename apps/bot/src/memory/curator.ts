@@ -52,6 +52,8 @@ function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string 
       return `managed skills (${a.action ?? "unknown"})`;
     case "useSkill":
       return `used skill: ${a.skillName ?? "unknown"}`;
+    case "manageWatchers":
+      return `managed watchers (${a.action ?? "unknown"})`;
     default:
       return `used ${tc.toolName}`;
   }

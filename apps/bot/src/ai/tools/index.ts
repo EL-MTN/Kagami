@@ -9,11 +9,13 @@ import { createCheckEmailTool } from "./check-email";
 import { createSendEmailTool } from "./send-email";
 import { createManageCalendarTool } from "./manage-calendar";
 import { createManageRemindersTool } from "./manage-reminders";
-import { createBrowseTool } from "./browse";
+import { createBrowseTool, createReadOnlyBrowseTool } from "./browse";
 import { createManageSkillsTool } from "./manage-skills";
 import { createSearchSkillsTool } from "./search-skills";
 import { createUseSkillTool } from "./use-skill";
 import { createSendVoiceTool } from "./send-voice";
+import { createManageWatchersTool } from "./manage-watchers";
+import { reportWatcherResult } from "./report-watcher-result";
 import { MAX_SKILL_DEPTH } from "../../services/skill-executor";
 import { config } from "@mashiro/shared";
 import type { ToolSet } from "ai";
@@ -60,10 +62,40 @@ export function allTools(ctx: ToolContext) {
 
   tools.manageSkills = createManageSkillsTool(ctx.chatId);
   tools.searchSkills = createSearchSkillsTool(ctx.chatId);
+  tools.manageWatchers = createManageWatchersTool(ctx.chatId);
 
   // Only provide useSkill when below max depth (prevents infinite recursion)
   if (depth < MAX_SKILL_DEPTH) {
     tools.useSkill = createUseSkillTool(ctx.chatId, ctx.adapter, depth);
+  }
+
+  return tools;
+}
+
+/**
+ * Read-only tool subset for watcher executor ticks. Watchers observe; they
+ * never mutate external state (sends, writes to memory, calendar/email writes,
+ * skill creation, watcher creation). Action belongs to the trigger handler.
+ *
+ * The `_ctx` parameter is kept for signature parity with `allTools` even
+ * though none of the current read-only tools need chatId or adapter — future
+ * read-only tools may.
+ */
+export function watcherTools(_ctx: ToolContext): ToolSet {
+  const tools: ToolSet = {
+    readMemory,
+    searchMemory,
+    listMemories,
+    reportWatcherResult,
+  };
+
+  if (config.GOOGLE_OAUTH_CLIENT_ID) {
+    tools.checkEmail = createCheckEmailTool();
+    tools.listCalendarEvents = createManageCalendarTool({ mode: "readOnly" });
+  }
+
+  if (config.BROWSER_ENABLED) {
+    tools.browse = createReadOnlyBrowseTool();
   }
 
   return tools;

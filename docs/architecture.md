@@ -16,8 +16,8 @@ mashiro/                          # npm workspaces + Turborepo
 │   │   │   ├── context/          # image generation (generator.ts, types.ts)
 │   │   │   ├── memory/           # curator.ts (tightly coupled to AI layer)
 │   │   │   ├── platform/telegram/
-│   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, cron, skill-executor
-│   │   │   └── scheduler/        # proactive, reminders, skills
+│   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, cron, skill-executor, watcher-executor
+│   │   │   └── scheduler/        # proactive, reminders, skills, watchers
 │   │   └── context/              # soul (personality), reference images, settings (data)
 │   └── dashboard/                # Next.js dashboard (skill management, observability)
 ├── packages/
@@ -141,6 +141,19 @@ mashiro/                          # npm workspaces + Turborepo
 └──────────────────────────┘
 
 ┌──────────────────────────┐
+│   Watcher Scheduler      │    ← apps/bot/src/scheduler/watchers.ts
+│                          │
+│ poll 60s ─► due?         │
+│           ─► detect      │
+│           ─► diff vs     │
+│              lastState   │
+│           ─► notify only │
+│              on trigger  │
+│ archive expired          │
+│ stale lock cleanup       │
+└──────────────────────────┘
+
+┌──────────────────────────┐
 │   Google Services        │    ← apps/bot/src/services/
 │                          │
 │ OAuth2 singleton         │
@@ -252,8 +265,9 @@ When firing, the scheduler uses `getOrCreateSession` to get the active session, 
 6. Start proactive scheduler (restore timers from DB, start daily cleanup)
 7. Start reminder scheduler (polls every 60s, fires pending reminders)
 8. Start skill scheduler (reset stale locks, polls every 60s, executes due skills)
+9. Start watcher scheduler (reset stale locks, archive expired, polls every 60s, runs due detection ticks)
 
-Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, stop skill scheduler, shutdown browser, disconnect DB.
+Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, stop skill scheduler, stop watcher scheduler, shutdown browser, disconnect DB.
 
 ## Key Design Decisions
 

@@ -10,6 +10,7 @@ import {
   cleanupOldConversations,
   cleanupFiredReminders,
   cleanupOldSkillLogs,
+  cleanupOldWatcherLogs,
   cleanupOldLocations,
   getNextProactiveAt,
   setNextProactiveAt,
@@ -211,15 +212,23 @@ async function generateProactiveMessage(
 
 async function runDailyCleanup(): Promise<void> {
   try {
-    const [deletedReminders, deletedConvos, deletedLogs, deletedLocations] = await Promise.all([
-      cleanupFiredReminders(30),
-      cleanupOldConversations(90),
-      cleanupOldSkillLogs(90),
-      cleanupOldLocations(90),
-    ]);
-    if (deletedReminders > 0 || deletedConvos > 0 || deletedLogs > 0 || deletedLocations > 0) {
+    const [deletedReminders, deletedConvos, deletedLogs, deletedWatcherLogs, deletedLocations] =
+      await Promise.all([
+        cleanupFiredReminders(30),
+        cleanupOldConversations(90),
+        cleanupOldSkillLogs(90),
+        cleanupOldWatcherLogs(90),
+        cleanupOldLocations(90),
+      ]);
+    if (
+      deletedReminders > 0 ||
+      deletedConvos > 0 ||
+      deletedLogs > 0 ||
+      deletedWatcherLogs > 0 ||
+      deletedLocations > 0
+    ) {
       logger.info(
-        { deletedReminders, deletedConvos, deletedLogs, deletedLocations },
+        { deletedReminders, deletedConvos, deletedLogs, deletedWatcherLogs, deletedLocations },
         "Daily cleanup complete",
       );
     }
