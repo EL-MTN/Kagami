@@ -1,12 +1,12 @@
 import { CronExpressionParser } from "cron-parser";
 
-export interface SkillParameterLike {
+interface SkillParameterLike {
   name: string;
   required: boolean;
   default?: unknown;
 }
 
-export function isValidCron(cronSchedule: string): boolean {
+function isValidCron(cronSchedule: string): boolean {
   try {
     CronExpressionParser.parse(cronSchedule);
     return true;
@@ -23,10 +23,6 @@ export function computeNextRunAt(cronSchedule: string, from?: Date): Date {
     .toDate();
 }
 
-export function findMissingCronDefaults(parameters: SkillParameterLike[]): string[] {
-  return parameters.filter((p) => p.required && p.default === undefined).map((p) => p.name);
-}
-
 export type CronValidationError =
   | { kind: "invalid-cron"; message: string }
   | { kind: "missing-defaults"; missing: string[]; message: string };
@@ -39,7 +35,9 @@ export function validateCronAndDefaults(
   if (!isValidCron(cronSchedule)) {
     return { kind: "invalid-cron", message: `Invalid cron expression: "${cronSchedule}"` };
   }
-  const missing = findMissingCronDefaults(parameters);
+  const missing = parameters
+    .filter((p) => p.required && p.default === undefined)
+    .map((p) => p.name);
   if (missing.length > 0) {
     return {
       kind: "missing-defaults",

@@ -1,7 +1,7 @@
-import { config, logger } from "@mashiro/shared";
+import { config, logger, haversineMeters } from "@mashiro/shared";
 import { storeLocation, getLatestLocation, getLocationVisitCount } from "@mashiro/db";
 import * as engine from "@mashiro/memory";
-import { reverseGeocode, haversineMeters } from "./geocoding";
+import { reverseGeocode } from "./geocoding";
 
 export interface LocationEvent {
   type: "arrival";
