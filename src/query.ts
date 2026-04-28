@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import { generateText, hasToolCall, stepCountIs, tool } from 'ai';
+import { generateObject, generateText, hasToolCall, stepCountIs, tool } from 'ai';
 import { model } from './llm.js';
 import { paths } from './paths.js';
 
@@ -19,23 +19,31 @@ const ViewInput = z.object({
   path: z.string().describe('Relative path inside the vault, e.g. "entities/typescript.md".'),
 });
 
+const BailInput = z.object({
+  reason: z.string().describe('One short sentence explaining why no entity in the index could plausibly answer this.'),
+});
+
 const MAX_VIEW_CALLS = 5;
 const MAX_STEPS = MAX_VIEW_CALLS + 1;
 
 const SYSTEM_PROMPT = `You answer questions about the user from their personal memory vault.
 
 You receive:
-- _core.md: always-loaded user context.
+- _core.md: always-loaded canonical user state. If it states a current fact, USE IT DIRECTLY and call answer with citations: ["_core.md"]. Do not view further entities to "double-check" core.
 - index.md: the vault's table of contents — one line per entity with id, type, name, and aliases.
 
-You do NOT receive entity bodies up front. To read an entity, call view({ path: "entities/<id>.md" }). You may call view up to ${MAX_VIEW_CALLS} times. Pick entities from index.md whose name, type, or aliases relate to the question — even loosely.
+For anything not already in _core.md, call view({ path: "entities/<id>.md" }) to read entity bodies. You may call view up to ${MAX_VIEW_CALLS} times, but typically 1–3 is enough. Pick entities from index.md whose name, type, or aliases relate to the question — even loosely. Be liberal: a question about "editors" should make you check anything tool-shaped (Obsidian, etc.) even without lexical overlap.
 
-When you have enough context, call answer({ answer, citations }) exactly once. Do this even if you cannot answer; pass an empty citations array in that case.
+Termination — you MUST end with exactly one of these tool calls. A bare text response counts as failure:
+- answer({ answer, citations }) — when you have read enough to answer, or when _core.md alone contains it.
+- bail({ reason }) — only for clearly off-topic questions whose subject has no entity in index.md and no fact in _core.md ("favorite color", "manager at work"). Do NOT bail just because the question's wording does not appear in entity names; view first.
 
 Rules:
-- Cite exact relative paths of files you actually viewed (e.g., "entities/typescript.md"). Never cite a file you did not view.
-- Do not invent facts the files don't support. If the vault doesn't contain the answer, say so plainly in the answer field.
-- Always finish by calling the answer tool. Do not produce a bare text response.`;
+- Cite exact relative paths of files you actually viewed (e.g., "entities/typescript.md"), or "_core.md" when you used it. Never cite a file you did not view.
+- Do not invent facts the files don't support.
+- After 2–3 view calls, commit to an answer with what you have. Don't keep viewing.`;
+
+const FALLBACK_SYSTEM_PROMPT = `Answer the question using only the provided _core.md and viewed file contents. Cite the exact paths of files you reference. If the content does not contain the answer, say so plainly with empty citations.`;
 
 export function isVaultPath(rel: string): boolean {
   if (typeof rel !== 'string' || rel.length === 0) return false;
@@ -53,7 +61,7 @@ export async function query(question: string): Promise<QueryResult> {
   const index = await readSafe(paths.index, '(empty)');
 
   let captured: QueryResult | null = null;
-  const viewedPaths = new Set<string>();
+  const viewed = new Map<string, string>();
 
   const view = tool({
     description: `Read a single file from the vault. Path must start with "entities/" or "raw/". Returns the file contents. Limit: ${MAX_VIEW_CALLS} calls per query.`,
@@ -64,7 +72,7 @@ export async function query(question: string): Promise<QueryResult> {
       }
       try {
         const content = await readVaultFile(rel);
-        viewedPaths.add(rel);
+        viewed.set(rel, content);
         return { path: rel, content };
       } catch (err) {
         return { error: `Could not read "${rel}": ${(err as Error).message}` };
@@ -73,10 +81,19 @@ export async function query(question: string): Promise<QueryResult> {
   });
 
   const answer = tool({
-    description: 'Submit the final answer with citations. Call exactly once when ready. Citations must be paths you have viewed.',
+    description: 'Submit the final answer with citations. Call exactly once when ready. Citations must be paths you have viewed (or "_core.md").',
     inputSchema: AnswerInput,
     execute: async (input) => {
       captured = input;
+      return { ok: true };
+    },
+  });
+
+  const bail = tool({
+    description: 'Abort early when index.md and _core.md have no information about the question. Faster than calling answer with empty citations. Do NOT use this just because the question wording does not appear in entity names.',
+    inputSchema: BailInput,
+    execute: async ({ reason }) => {
+      captured = { answer: `No information in the vault: ${reason}`, citations: [] };
       return { ok: true };
     },
   });
@@ -93,8 +110,8 @@ export async function query(question: string): Promise<QueryResult> {
       model,
       system: SYSTEM_PROMPT,
       prompt: userPrompt,
-      tools: { view, answer },
-      stopWhen: [hasToolCall('answer'), stepCountIs(MAX_STEPS)],
+      tools: { view, answer, bail },
+      stopWhen: [hasToolCall('answer'), hasToolCall('bail'), stepCountIs(MAX_STEPS)],
       temperature: 0.2,
     });
     textFallback = result.text;
@@ -103,10 +120,47 @@ export async function query(question: string): Promise<QueryResult> {
   }
 
   if (captured) return captured;
-  return {
-    answer: textFallback || '(no answer — model did not call the answer tool)',
-    citations: [],
-  };
+
+  // Safety net: model exhausted steps or returned text without calling
+  // answer/bail. Synthesize a structured answer from _core.md + whatever
+  // entities it did view.
+  return await synthesizeFallback(question, core, viewed, textFallback);
+}
+
+async function synthesizeFallback(
+  question: string,
+  core: string,
+  viewed: Map<string, string>,
+  modelText: string,
+): Promise<QueryResult> {
+  const viewedSection =
+    viewed.size > 0
+      ? Array.from(viewed.entries())
+          .map(([p, c]) => `--- ${p} ---\n${c.trim()}`)
+          .join('\n\n')
+      : '(no files viewed)';
+
+  const prompt = [
+    `_core.md:\n\n${core.trim()}`,
+    `Viewed files:\n\n${viewedSection}`,
+    `Question: ${question}`,
+  ].join('\n\n');
+
+  try {
+    const result = await generateObject({
+      model,
+      schema: AnswerInput,
+      system: FALLBACK_SYSTEM_PROMPT,
+      prompt,
+      temperature: 0.2,
+    });
+    return result.object;
+  } catch {
+    return {
+      answer: modelText || '(no answer — model exhausted steps without finalizing)',
+      citations: [],
+    };
+  }
 }
 
 async function readSafe(p: string, fallback: string): Promise<string> {
