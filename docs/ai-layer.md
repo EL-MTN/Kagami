@@ -37,12 +37,12 @@ The `ModelTier` enum lets call sites declare intent rather than hardcoding model
 
 ## Context Assembly Pipeline
 
-Implemented in `apps/bot/src/ai/context-assembler.ts`. The system prompt is built from MongoDB and the personality card at generation time.
+Implemented in `apps/bot/src/ai/context-assembler.ts`. The system prompt is built from MongoDB and the soul file at generation time.
 
 ```
 assembleSystemPrompt(chatId, sessionId?)
     │
-    ├─ 1. Personality card       ← vault/personality/card.md
+    ├─ 1. Soul                   ← context/soul.md
     ├─ 2. User knowledge         ← engine.getTopFacts(30) — MongoDB
     ├─ 3. Milestones             ← engine.getRecentMilestones(5) — MongoDB
     ├─ 4. Daily episodes         ← engine.getRecentDailyEpisodes(3) — MongoDB
@@ -61,7 +61,7 @@ assembleSystemPrompt(chatId, sessionId?)
     All parts joined with "---" separator
 ```
 
-All dynamic memory content (facts, milestones, episodes, working memory, follow-ups) is loaded from MongoDB. The vault is only used for the personality card.
+All dynamic memory content (facts, milestones, episodes, working memory, follow-ups) is loaded from MongoDB. Only the soul (`apps/bot/context/soul.md`) is file-based.
 
 ### Datetime Context
 
@@ -103,7 +103,7 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 - **Purpose**: Save important facts or milestones directly to MongoDB
 - **Parameters**: `{ content: string, type: "fact" | "milestone", importance: 1-10 }`
 - **Returns**: `{ success: true, memoryId, type, content, importance }` or `{ success: false, reason, existing }` if duplicate
-- **Behavior**: Checks for duplicate facts (cosine similarity ≥ 0.85) before saving. If a similar fact exists, returns the existing content instead of creating a duplicate. Stores directly in Memory collection with embedding. No vault involvement.
+- **Behavior**: Checks for duplicate facts (cosine similarity ≥ 0.85) before saving. If a similar fact exists, returns the existing content instead of creating a duplicate. Stores directly in Memory collection with embedding.
 
 ### noteToSelf
 
@@ -114,7 +114,7 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 
 ### readMemory
 
-- **Purpose**: Read the personality card from vault, or a specific memory by ID from MongoDB
+- **Purpose**: Read a specific memory by ID from MongoDB
 - **Parameters**: `{ path?: string, memoryId?: string }`
 - **Returns**: `{ found: boolean, content?: string }` or `{ found: boolean, id, type, content, createdAt, importance }`
 - **Use case**: Recall stored personality definition, or inspect a specific memory found via search/list
@@ -222,7 +222,7 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 - **Returns**: `{ success: true, skillName, result }` or `{ success: false, reason }`
 - **Behavior**: Looks up skill by name, validates parameters (type checking, required params, defaults), then executes synchronously via `executeSkill()`. The result is returned to the calling LLM. Supports composition: skills can call other skills up to 3 levels deep. At `MAX_SKILL_DEPTH` (3), the `useSkill` tool is omitted from the tool set entirely.
 
-**Skill Execution**: Skills run via `generateText` with a lean context (executor identity + datetime + parameter injection — no personality card or conversational instructions). Step limits vary by trigger: cron = 20 steps at temp 0.4, manual (depth 0) = 10 steps at temp 0.5, composed (depth > 0) = 5 steps at temp 0.4. A separate execution log (`SkillLog`) tracks each run's status, trigger type, parameters, parent log (for composed calls), and timing. The scheduler polls every 60s, skips skills that are already running, and resets stale locks on startup.
+**Skill Execution**: Skills run via `generateText` with a lean context (executor identity + datetime + parameter injection — no soul or conversational instructions). Step limits vary by trigger: cron = 20 steps at temp 0.4, manual (depth 0) = 10 steps at temp 0.5, composed (depth > 0) = 5 steps at temp 0.4. A separate execution log (`SkillLog`) tracks each run's status, trigger type, parameters, parent log (for composed calls), and timing. The scheduler polls every 60s, skips skills that are already running, and resets stale locks on startup.
 
 **Architecture**: Executor service in `apps/bot/src/services/skill-executor.ts`, scheduler in `apps/bot/src/scheduler/skills.ts`, cron helper in `apps/bot/src/services/cron.ts`, tools in `apps/bot/src/ai/tools/manage-skills.ts` and `apps/bot/src/ai/tools/use-skill.ts`. DB models (`Skill`, `SkillLog`) in `packages/db/src/models/skill.ts`. See [skills.md](skills.md) for full documentation.
 

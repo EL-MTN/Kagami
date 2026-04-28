@@ -28,9 +28,3 @@ export interface PlatformAdapter {
   sendPhotoBuffer(chatId: string, buffer: Buffer, caption?: string): Promise<string | undefined>;
   sendVoiceBuffer(chatId: string, buffer: Buffer, duration?: number): Promise<void>;
 }
-
-export interface VaultFile {
-  path: string;
-  frontmatter: Record<string, unknown>;
-  content: string;
-}

@@ -1,5 +1,6 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { format, formatDistanceToNow } from "date-fns";
-import { readVaultFile } from "@mashiro/memory";
 import {
   getRecentMessages,
   readImage,
@@ -18,8 +19,19 @@ import {
   RESPONSE_FORMAT_INSTRUCTIONS,
   PROACTIVE_MESSAGE_INSTRUCTIONS,
 } from "./prompts";
-import { config, logger } from "@mashiro/shared";
+import { config, logger, parseMarkdown } from "@mashiro/shared";
 import type { ModelMessage, UserContent, ToolContent } from "ai";
+
+async function readSoul(): Promise<string | null> {
+  const soulPath = path.join(config.CONTEXT_PATH, "soul.md");
+  try {
+    const raw = await fs.readFile(soulPath, "utf-8");
+    return parseMarkdown(raw).content;
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
 
 async function assembleMemoryContext(sessionId?: string): Promise<string[]> {
   const parts: string[] = [];
@@ -97,12 +109,12 @@ async function assembleMemoryContext(sessionId?: string): Promise<string[]> {
 export async function assemblePromptShell(): Promise<string[]> {
   const parts: string[] = [];
 
-  // Personality card (from vault — hand-edited)
-  const personality = await readVaultFile("personality/card.md");
-  if (personality) {
-    parts.push(personality.content);
+  // Soul (hand-edited character definition)
+  const soul = await readSoul();
+  if (soul) {
+    parts.push(soul);
   } else {
-    logger.warn("Personality card not found at vault/personality/card.md");
+    logger.warn("Soul not found at context/soul.md");
     parts.push("You are Shiina Mashiro, a quiet and eccentric artist girlfriend.");
   }
 
@@ -131,7 +143,7 @@ export async function assemblePromptShell(): Promise<string[]> {
 async function assembleBasePrompt(sessionId?: string): Promise<string[]> {
   const parts = await assemblePromptShell();
 
-  // User knowledge (from MongoDB, not vault)
+  // User knowledge
   try {
     const facts = await engine.getTopFacts(30);
     if (facts.length > 0) {
@@ -142,7 +154,7 @@ async function assembleBasePrompt(sessionId?: string): Promise<string[]> {
     logger.warn({ error }, "Failed to load facts for context");
   }
 
-  // Milestones (from MongoDB, not vault)
+  // Milestones
   try {
     const milestones = await engine.getRecentMilestones(5);
     if (milestones.length > 0) {

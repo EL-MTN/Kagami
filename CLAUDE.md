@@ -10,16 +10,15 @@ Mashiro — a Telegram-based conversational AI that maintains persistent persona
 mashiro/
 ├── apps/
 │   ├── bot/          # Telegram bot (Grammy, AI tools, schedulers)
-│   │   ├── vault/    # Persistent memory store (personality card)
-│   │   └── context/  # Character reference images/settings
+│   │   └── context/  # soul.md (personality), reference images, settings
 │   └── dashboard/    # Next.js dashboard (skill management, observability, auth)
 ├── packages/
 │   ├── typescript-config/  # Shared tsconfig bases (JSON only)
 │   ├── eslint-config/      # Shared ESLint flat config
 │   ├── shared/             # config, logger, markdown, types
 │   ├── db/                 # MongoDB connection, models, GridFS
-│   └── memory/             # engine, embedding, vault
-├── scripts/          # Migration, seed, auth scripts
+│   └── memory/             # engine, embedding
+├── scripts/          # Migration, auth scripts
 └── docs/
 ```
 
@@ -34,7 +33,6 @@ npm run typecheck    # turbo run typecheck (all packages)
 npm run lint         # turbo run lint (all packages)
 npm run lint:fix     # turbo run lint:fix
 npm run format       # prettier --write all files
-npm run seed:vault   # Initialize vault directory
 npm run auth:google  # Google OAuth setup
 npm run migrate:memory # Memory system migration
 ```
@@ -49,7 +47,7 @@ npm run migrate:memory # Memory system migration
        ↑
 @mashiro/db      ← mongoose, models, GridFS
        ↑
-@mashiro/memory  ← engine, embedding, vault
+@mashiro/memory  ← engine, embedding
        ↑
 @mashiro/bot     ← AI layer, tools, platform adapter, schedulers
 @mashiro/dashboard ← Next.js (skill management, observability)
@@ -76,7 +74,6 @@ After any code change, update the relevant doc in `/docs` to reflect the change.
 See `/docs` for:
 
 - [architecture.md](docs/architecture.md) — system overview, message flow, module map
-- [vault.md](docs/vault.md) — memory system, curation pipeline, frontmatter schema
 - [telegram.md](docs/telegram.md) — platform adapter, bot handlers, rate limiting
 - [ai-layer.md](docs/ai-layer.md) — LLM integration, tools, image generation, context assembly
 - [memory-management.md](docs/memory-management.md) — deep dive into memory tiers, data flow, gaps, and roadmap
