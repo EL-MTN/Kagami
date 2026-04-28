@@ -57,7 +57,6 @@ const baseSchema = z.object({
   LOCATION_PROACTIVE_DELAY_MS: z.coerce.number().default(1_200_000),
   LOCATION_CONTEXT_MAX_AGE_H: z.coerce.number().default(12),
 
-  VAULT_PATH: z.string().default("./vault"),
   CONTEXT_PATH: z.string().default("./context"),
 
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),

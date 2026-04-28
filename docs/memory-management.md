@@ -10,9 +10,9 @@ Mashiro's memory operates in five tiers:
 | **Working** | MongoDB `memories` (type: `"working"`) | Session-scoped, 24h TTL | Temporary notes (auto-deleted by MongoDB TTL index)        |
 | **Warm**    | MongoDB `memories` collection          | All curated memories    | Embeddings, structured metadata, facts/episodes/milestones |
 | **Archive** | MongoDB `memories` (with `archivedAt`) | Soft-archived originals | Preserved after merge; excluded from search/context        |
-| **Static**  | `vault/personality/card.md`            | Hand-edited             | Character definition only                                  |
+| **Static**  | `context/soul.md`                      | Hand-edited             | Character definition only                                  |
 
-The personality card (`vault/personality/card.md`) is the only vault file — all facts, milestones, and episodes live exclusively in MongoDB.
+The soul (`context/soul.md`) is the only file-based memory — all facts, milestones, and episodes live exclusively in MongoDB.
 
 ### Data Flow Between Tiers
 
@@ -42,7 +42,7 @@ User sends message
        |
        v
 [ASSEMBLY] assembleSystemPrompt(chatId, sessionId?)
-  - [STATIC] personality/card.md         --+
+  - [STATIC] context/soul.md             --+
   - [WARM] top 30 facts (by importance)    |
   - [WARM] recent milestones (last 5)      |
   - [WARM] daily episodes (last 3)         +-- Always in system prompt
@@ -54,7 +54,6 @@ User sends message
 generateText() with tools
   - LLM may search [WARM] via searchMemory (semantic, type-filterable)
   - LLM may browse [WARM] via listMemories (excludes archived)
-  - LLM may read [STATIC] via readMemory (personality card)
   - LLM may read [WARM] via readMemory (by memory ID)
   - LLM may store [WARM] via rememberFact (direct-to-MongoDB)
   - LLM may store [WORKING] via noteToSelf (session-scoped, 24h TTL)
@@ -64,7 +63,7 @@ generateText() with tools
 
 **Always (system prompt):**
 
-- Full character definition (personality/card.md)
+- Full character definition (context/soul.md)
 - Top 30 facts about the user (from MongoDB, sorted by importance)
 - Recent milestones (last 5, from MongoDB)
 - Last 3 daily conversation summaries (from MongoDB, excludes weekly/monthly merges)
@@ -85,7 +84,7 @@ generateText() with tools
 
 - Semantic search results with optional type filter (searchMemory)
 - Memory discovery by type/date, excluding archived (listMemories)
-- Specific vault file or memory by ID (readMemory)
+- Specific memory by ID (readMemory)
 - Direct fact/milestone storage (rememberFact)
 - Session-scoped temporary notes (noteToSelf)
 
@@ -122,7 +121,6 @@ This eliminates "cross-midnight amnesia" — sessions naturally span day boundar
 
 - Stores facts or milestones directly in the Memory collection
 - Parameters: content, type (fact/milestone), importance (1-10)
-- No vault involvement
 
 **4. LLM-triggered noteToSelf tool (working memory)**
 
@@ -154,7 +152,7 @@ This eliminates "cross-midnight amnesia" — sessions naturally span day boundar
 - Loads separated episode types: 3 daily + 2 weekly
 - Loads working memory for current session
 - Loads active follow-ups (30-day age limit, deduplicated)
-- Reads personality/card.md from vault
+- Reads context/soul.md
 
 **2. Message history assembly (automatic, every generation)**
 
@@ -178,8 +176,7 @@ This eliminates "cross-midnight amnesia" — sessions naturally span day boundar
 
 **5. readMemory tool (LLM-initiated)**
 
-- Reads a specific vault file by path (personality card)
-- OR reads a specific memory by ID from MongoDB
+- Reads a specific memory by ID from MongoDB
 
 ### Archival Model
 

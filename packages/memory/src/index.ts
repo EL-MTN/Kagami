@@ -24,4 +24,3 @@ export {
   type EmotionalBaseline,
 } from "./engine";
 export { generateEmbedding, generateEmbeddings, cosineSimilarity } from "./embedding";
-export { readVaultFile, writeVaultFile } from "./vault";

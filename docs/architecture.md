@@ -18,16 +18,15 @@ mashiro/                          # npm workspaces + Turborepo
 │   │   │   ├── platform/telegram/
 │   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, cron, skill-executor
 │   │   │   └── scheduler/        # proactive, reminders, skills
-│   │   ├── vault/                # personality card (data)
-│   │   └── context/              # reference images/settings (data)
+│   │   └── context/              # soul (personality), reference images, settings (data)
 │   └── dashboard/                # Next.js dashboard (skill management, observability)
 ├── packages/
 │   ├── typescript-config/        # shared tsconfig bases (JSON only)
 │   ├── eslint-config/            # shared ESLint flat config
 │   ├── shared/                   # config, logger, markdown, types
 │   ├── db/                       # MongoDB connection, models, GridFS
-│   └── memory/                   # engine, embedding, vault
-├── scripts/                      # migrate, seed, auth
+│   └── memory/                   # engine, embedding
+├── scripts/                      # migrate, auth
 └── docs/
 ```
 
@@ -41,7 +40,7 @@ mashiro/                          # npm workspaces + Turborepo
        ↑
 @mashiro/db      ← MongoDB connection, models, GridFS (mongoose)
        ↑
-@mashiro/memory  ← engine, embedding, vault (@ai-sdk/google, ai)
+@mashiro/memory  ← engine, embedding (@ai-sdk/google, ai)
        ↑
 @mashiro/bot     ← AI layer, tools, platform, schedulers
 @mashiro/dashboard ← Next.js (placeholder)
@@ -225,9 +224,9 @@ When firing, the scheduler uses `getOrCreateSession` to get the active session, 
 
 | Package              | Purpose                                            | Key Exports                                                                                                                                                                      |
 | -------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@mashiro/shared`    | Config, logging, markdown, platform types          | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, `VaultFile`                                                                             |
+| `@mashiro/shared`    | Config, logging, markdown, platform types          | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, cron + skill validation helpers                                                         |
 | `@mashiro/db`        | MongoDB connection, all models, GridFS             | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `Skill`, `SkillLog`, `LocationHistory`, `readImage`, `writeImage`, all model CRUD functions |
-| `@mashiro/memory`    | Memory engine, embeddings, vault files             | `remember`, `recall`, `forget`, `readVaultFile`, `writeVaultFile`, `generateEmbedding`, episode/fact/milestone retrieval                                                         |
+| `@mashiro/memory`    | Memory engine, embeddings                          | `remember`, `recall`, `forget`, `generateEmbedding`, episode/fact/milestone retrieval                                                                                            |
 | `@mashiro/bot`       | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages                                                                                                                                 |
 | `@mashiro/dashboard` | Next.js dashboard (read-only data viewer)          | Overview, conversations, memories, reminders, skills pages                                                                                                                       |
 
@@ -270,7 +269,7 @@ Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop p
 - **Non-destructive merges** — weekly/monthly merges soft-archive originals instead of deleting them
 - **Working memory** — session-scoped temporary notes with 24h TTL, auto-cleaned by MongoDB
 - **Tool-augmented LLM** — the model reads/writes its own memory via tools, not hardcoded logic
-- **MongoDB as single source of truth** — vault reserved only for the hand-edited personality card
+- **MongoDB as single source of truth** — only the hand-edited soul (`apps/bot/context/soul.md`) lives outside MongoDB
 - **GridFS image storage** — user-sent photos stored in MongoDB GridFS (`images` bucket) instead of inline base64
 - **Semantic memory** — Google Gemini embeddings + cosine similarity for meaning-based retrieval with 200-candidate cap
 - **Smart fact management** — ADD/UPDATE/DELETE operations prevent stale fact accumulation
