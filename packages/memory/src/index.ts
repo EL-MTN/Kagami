@@ -23,4 +23,4 @@ export {
   type RecallResult,
   type EmotionalBaseline,
 } from "./engine";
-export { generateEmbedding, generateEmbeddings, cosineSimilarity } from "./embedding";
+export { generateEmbedding, cosineSimilarity } from "./embedding";

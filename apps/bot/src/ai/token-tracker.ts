@@ -36,7 +36,7 @@ interface TokenUsageData {
   totalTokens?: number;
 }
 
-export function estimateCost(model: string, usage: TokenUsageData): number {
+function estimateCost(model: string, usage: TokenUsageData): number {
   const pricing = MODEL_PRICING[model];
   if (!pricing) return 0;
 

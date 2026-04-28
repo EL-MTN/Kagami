@@ -65,6 +65,3 @@ export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeR
     return null;
   }
 }
-
-// Re-export for callers that already import from this module
-export { haversineMeters } from "@mashiro/shared";

@@ -11,11 +11,4 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   return embeddings[0];
 }
 
-export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
-  if (texts.length === 0) return [];
-  const { embeddings } = await embeddingModel.doEmbed({ values: texts });
-  logger.debug({ count: embeddings.length }, "Generated batch embeddings");
-  return embeddings;
-}
-
 export { cosineSimilarity };
