@@ -95,8 +95,15 @@ interface ToolContext {
   skillDepth?: number; // Current skill nesting depth (0 = top-level)
 }
 
-allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageSkills, searchSkills, useSkill? }
+allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageSkills, searchSkills, useSkill?, manageWatchers }
+
+watcherTools(ctx) → { readMemory, searchMemory, listMemories, reportWatcherResult, checkEmail?, listCalendarEvents?, browse? (read-only) }
 ```
+
+Two distinct tool sets are assembled depending on the calling context:
+
+- **`allTools(ctx)`** — full surface available to Mashiro in conversation and inside skill executors. Includes side-effecting tools (`sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, etc.).
+- **`watcherTools(ctx)`** — read-only subset for watcher executor ticks (`apps/bot/src/services/watcher-executor.ts`). Watchers observe; they never mutate external state. The browse tool here is the `createReadOnlyBrowseTool()` variant, which restricts actions to `search`/`visit`/`extract` and excludes `screenshot` (sends a photo), `act` (mutates page state), `agent`, and `login`. The calendar variant is `createManageCalendarTool({ mode: "readOnly" })`. `manageWatchers` is also excluded — watchers cannot create watchers.
 
 ### rememberFact
 
@@ -225,6 +232,24 @@ allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemo
 **Skill Execution**: Skills run via `generateText` with a lean context (executor identity + datetime + parameter injection — no soul or conversational instructions). Step limits vary by trigger: cron = 20 steps at temp 0.4, manual (depth 0) = 10 steps at temp 0.5, composed (depth > 0) = 5 steps at temp 0.4. A separate execution log (`SkillLog`) tracks each run's status, trigger type, parameters, parent log (for composed calls), and timing. The scheduler polls every 60s, skips skills that are already running, and resets stale locks on startup.
 
 **Architecture**: Executor service in `apps/bot/src/services/skill-executor.ts`, scheduler in `apps/bot/src/scheduler/skills.ts`, cron helper in `apps/bot/src/services/cron.ts`, tools in `apps/bot/src/ai/tools/manage-skills.ts` and `apps/bot/src/ai/tools/use-skill.ts`. DB models (`Skill`, `SkillLog`) in `packages/db/src/models/skill.ts`. See [skills.md](skills.md) for full documentation.
+
+### manageWatchers
+
+- **Purpose**: Manage watchers — scheduled detection jobs that observe a target, compare against `lastState`, and notify only when a user-defined condition is met
+- **Parameters**: `{ action: "create"|"list"|"update"|"delete"|"enable"|"disable", watcherId?, name?, description?, prompt?, cronSchedule?, expiresAt? }`
+- **Returns**: `{ success, watcherId? }` or `{ success, watchers? }` or `{ success: false, reason }`
+- **Behavior**: Creates, lists, updates, deletes, enables, or disables watchers. Cron expression and `expiresAt` are validated; `expiresAt` defaults to 30 days from creation. Names are unique per chat among non-archived watchers (partial unique index, so a name can be reused after archive). Available in main chat and inside skill executors — but explicitly **omitted from `watcherTools`** so watchers cannot author watchers.
+
+### reportWatcherResult (watcherTools only)
+
+- **Purpose**: Terminating tool the watcher executor parses to extract the structured detection result
+- **Parameters**: `{ triggered: boolean, summary: string, newState: string }`
+- **Returns**: `{ ok: true }`
+- **Behavior**: The executor reads the call's `input` (not the return value) from `result.steps`, persists `summary`/`newState` to the WatcherLog, updates `watcher.lastState`, and sends `summary` to the user only when `triggered === true`. Used as one of two `stopWhen` conditions on `generateText` (alongside `stepCountIs(10)`) so the LLM halts immediately after reporting.
+
+**Watcher Execution**: Watchers run via `generateText` with a lean context (detector identity + datetime + last state + watcher prompt — no soul). Stop conditions: `stepCountIs(10)` or `hasToolCall("reportWatcherResult")`, whichever fires first. Temperature 0.3 for determinism. Token usage is tracked under category `"watcher"`. The scheduler polls every 60s, archives expired watchers, and resets stale locks on startup. Notifications use `sendSegmented` and only fire when `triggered === true`.
+
+**Architecture**: Executor service in `apps/bot/src/services/watcher-executor.ts`, scheduler in `apps/bot/src/scheduler/watchers.ts`, tools in `apps/bot/src/ai/tools/manage-watchers.ts` and `apps/bot/src/ai/tools/report-watcher-result.ts`. DB models (`Watcher`, `WatcherLog`) in `packages/db/src/models/watcher.ts`. See [watchers.md](watchers.md) for full documentation.
 
 ## Image Generation
 

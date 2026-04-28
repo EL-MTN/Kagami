@@ -22,6 +22,82 @@ function normalizeUrl(raw: string): string {
   return raw;
 }
 
+/**
+ * Read-only browse tool for contexts that must not mutate external state
+ * (e.g. watcher executor ticks). Restricted to actions that observe but never
+ * send, click, type, or open interactive flows: search, visit, extract.
+ */
+export function createReadOnlyBrowseTool() {
+  return tool({
+    description:
+      "Browse the web (read-only). Search the web, visit pages, or extract structured data from the current page. Cannot click, type, take screenshots, log in, or run autonomous agents.",
+    inputSchema: z.object({
+      action: z.enum(["search", "visit", "extract"]),
+      query: z.string().optional().describe("Search query (for search action)"),
+      url: z.string().optional().describe("URL to visit (for visit action)"),
+      instruction: z
+        .string()
+        .optional()
+        .describe("Natural language instruction (for extract action)"),
+    }),
+    execute: async ({ action, query, url, instruction }) => {
+      return withBrowserLock(async () => {
+        try {
+          const stagehand = await acquireBrowser();
+          const page = stagehand.context.pages()[0];
+
+          switch (action) {
+            case "search": {
+              if (!query) return { success: false, reason: "query is required for search" };
+              logger.info({ query }, "Tool: browse-readonly (search)");
+              const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+              await page.goto(searchUrl);
+              const results = await stagehand.extract(
+                "Extract all search results with their title, URL, and snippet/description text",
+                SearchResultSchema,
+              );
+              releaseBrowser();
+              return { success: true, query, results: results.slice(0, 10) };
+            }
+
+            case "visit": {
+              if (!url) return { success: false, reason: "url is required for visit" };
+              const visitUrl = normalizeUrl(url);
+              logger.info({ url: visitUrl }, "Tool: browse-readonly (visit)");
+              await page.goto(visitUrl, { waitUntil: "domcontentloaded" });
+              const pageText = await page.evaluate(() => document.body.innerText).catch(() => "");
+              const truncated = pageText.slice(0, 4000);
+              releaseBrowser();
+              return {
+                success: true,
+                url: visitUrl,
+                text: truncated,
+                truncated: pageText.length > 4000,
+              };
+            }
+
+            case "extract": {
+              if (!instruction)
+                return { success: false, reason: "instruction is required for extract" };
+              logger.info({ instruction }, "Tool: browse-readonly (extract)");
+              const result = (await stagehand.extract(instruction)) as { extraction?: string };
+              releaseBrowser();
+              return { success: true, extraction: result.extraction ?? "" };
+            }
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Browser operation failed";
+          logger.error({ error, action }, "Tool: browse-readonly failed");
+          if (message.includes("Target closed") || message.includes("Browser closed")) {
+            resetBrowser();
+          }
+          return { success: false, reason: message };
+        }
+      });
+    },
+  });
+}
+
 export function createBrowseTool(chatId: string, adapter: PlatformAdapter) {
   return tool({
     description:
