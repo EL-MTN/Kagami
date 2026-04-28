@@ -5,3 +5,9 @@ dist/
 
 # The vault is its own git repo, initialized separately.
 memory/
+
+# Benchmark data and per-run artifacts. Code under bench/ is tracked;
+# downloaded datasets, per-item vaults, and result files are not.
+bench/longmemeval/data/
+bench/longmemeval/vaults/
+bench/longmemeval/results/
