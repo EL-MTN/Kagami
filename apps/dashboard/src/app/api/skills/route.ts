@@ -49,6 +49,7 @@ async function handleCreate(request: Request) {
       parameters: rest.parameters,
       cronSchedule: cronSchedule ?? null,
       reportMode: rest.reportMode,
+      purity: rest.purity,
       nextRunAt,
     });
 
@@ -63,6 +64,7 @@ async function handleCreate(request: Request) {
           parameters: skill.parameters,
           cronSchedule: skill.cronSchedule,
           reportMode: skill.reportMode,
+          purity: skill.purity,
           enabled: skill.enabled,
           version: skill.version,
           nextRunAt: skill.nextRunAt?.toISOString() ?? null,
@@ -127,7 +129,9 @@ async function handleImport(request: Request) {
         parameters: item.parameters,
         cronSchedule: item.cronSchedule ?? null,
         reportMode: item.reportMode,
+        purity: item.purity,
         nextRunAt,
+        enabled: item.enabled,
       });
       imported++;
     } catch (error) {

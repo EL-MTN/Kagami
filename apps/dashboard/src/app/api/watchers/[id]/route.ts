@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getSkillById, updateSkill, deleteSkill, isDuplicateKeyError } from "@mashiro/db";
+import { getWatcherById, updateWatcher, deleteWatcher, isDuplicateKeyError } from "@mashiro/db";
 import { computeNextRunAt, validateCronAndDefaults } from "@mashiro/shared";
 import { ensureDB } from "@/lib/db";
-import { getSkillDetail } from "@/lib/queries/skills";
-import { skillPatchSchema } from "@/lib/skill-schema";
+import { getWatcherDetail } from "@/lib/queries/watchers";
+import { watcherPatchSchema } from "@/lib/watcher-schema";
 import mongoose from "mongoose";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -15,27 +15,27 @@ function isValidObjectId(id: string): boolean {
 export async function GET(_request: Request, { params }: RouteParams) {
   const { id } = await params;
   if (!isValidObjectId(id)) {
-    return NextResponse.json({ error: "Invalid skill ID" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid watcher ID" }, { status: 400 });
   }
 
   await ensureDB();
-  const skill = await getSkillDetail(id);
+  const watcher = await getWatcherDetail(id);
 
-  if (!skill) {
+  if (!watcher) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ skill });
+  return NextResponse.json({ watcher });
 }
 
 export async function PATCH(request: Request, { params }: RouteParams) {
   const { id } = await params;
   if (!isValidObjectId(id)) {
-    return NextResponse.json({ error: "Invalid skill ID" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid watcher ID" }, { status: 400 });
   }
 
   const body: unknown = await request.json();
-  const parsed = skillPatchSchema.safeParse(body);
+  const parsed = watcherPatchSchema.safeParse(body);
 
   if (!parsed.success) {
     return NextResponse.json(
@@ -46,7 +46,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
   await ensureDB();
 
-  const existing = await getSkillById(id);
+  const existing = await getWatcherById(id);
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -57,40 +57,46 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   if (data.name !== undefined) patch.name = data.name;
   if (data.description !== undefined) patch.description = data.description;
   if (data.prompt !== undefined) patch.prompt = data.prompt;
-  if (data.reportMode !== undefined) patch.reportMode = data.reportMode;
-  if (data.purity !== undefined) patch.purity = data.purity;
   if (data.enabled !== undefined) patch.enabled = data.enabled;
-  if (data.parameters !== undefined) patch.parameters = data.parameters;
-
-  if (data.cronSchedule !== undefined) {
-    if (data.cronSchedule) {
-      const params = data.parameters ?? existing.parameters;
-      const cronErr = validateCronAndDefaults(data.cronSchedule, params);
-      if (cronErr) {
-        return NextResponse.json({ error: cronErr.message }, { status: 400 });
-      }
-      patch.cronSchedule = data.cronSchedule;
-      patch.nextRunAt = computeNextRunAt(data.cronSchedule);
-    } else {
-      patch.cronSchedule = null;
-      patch.nextRunAt = null;
-    }
+  if (data.oneShot !== undefined) patch.oneShot = data.oneShot;
+  if (data.maxFires !== undefined) patch.maxFires = data.maxFires;
+  if (data.cooldownMs !== undefined) patch.cooldownMs = data.cooldownMs;
+  if (data.snoozedUntil !== undefined) {
+    patch.snoozedUntil = data.snoozedUntil ? new Date(data.snoozedUntil) : null;
+  }
+  if (data.expiresAt !== undefined) {
+    patch.expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
   }
 
-  // Always increment version
+  if (data.cronSchedule !== undefined) {
+    const cronErr = validateCronAndDefaults(data.cronSchedule, []);
+    if (cronErr) {
+      return NextResponse.json({ error: cronErr.message }, { status: 400 });
+    }
+    patch.cronSchedule = data.cronSchedule;
+    patch.nextRunAt = computeNextRunAt(data.cronSchedule);
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: "No fields supplied to update" }, { status: 400 });
+  }
+
   patch.version = existing.version + 1;
 
   try {
-    const updated = await updateSkill(id, patch);
+    const updated = await updateWatcher(id, patch);
     if (!updated) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const detail = await getSkillDetail(id);
-    return NextResponse.json({ skill: detail });
+    const detail = await getWatcherDetail(id);
+    return NextResponse.json({ watcher: detail });
   } catch (error) {
     if (isDuplicateKeyError(error)) {
-      return NextResponse.json({ error: "A skill with that name already exists" }, { status: 409 });
+      return NextResponse.json(
+        { error: "A watcher with that name already exists" },
+        { status: 409 },
+      );
     }
     throw error;
   }
@@ -99,11 +105,11 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 export async function DELETE(_request: Request, { params }: RouteParams) {
   const { id } = await params;
   if (!isValidObjectId(id)) {
-    return NextResponse.json({ error: "Invalid skill ID" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid watcher ID" }, { status: 400 });
   }
 
   await ensureDB();
-  const deleted = await deleteSkill(id);
+  const deleted = await deleteWatcher(id);
 
   if (!deleted) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

@@ -29,6 +29,7 @@ export const skillCreateSchema = z
     parameters: z.array(skillParameterSchema).default([]),
     cronSchedule: z.string().nullable().default(null),
     reportMode: z.enum(["always", "alert"]),
+    purity: z.enum(["read", "action"]).default("action"),
   })
   .refine(
     (data) => {
@@ -59,6 +60,7 @@ export const skillPatchSchema = z
     parameters: z.array(skillParameterSchema).optional(),
     cronSchedule: z.string().nullable().optional(),
     reportMode: z.enum(["always", "alert"]).optional(),
+    purity: z.enum(["read", "action"]).optional(),
     enabled: z.boolean().optional(),
   })
   .refine(
@@ -90,6 +92,7 @@ export const skillImportItemSchema = z.object({
   parameters: z.array(skillParameterSchema).default([]),
   cronSchedule: z.string().nullable().default(null),
   reportMode: z.enum(["always", "alert"]),
+  purity: z.enum(["read", "action"]).default("action"),
   enabled: z.boolean().default(true),
 });
 
@@ -115,6 +118,7 @@ export interface SkillListItem {
   parameters: SkillParameter[];
   cronSchedule: string | null;
   reportMode: "always" | "alert";
+  purity: "read" | "action";
   enabled: boolean;
   version: number;
   nextRunAt: string | null;

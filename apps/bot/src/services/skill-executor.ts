@@ -1,6 +1,6 @@
 import { generateText, stepCountIs } from "ai";
 import { getModel } from "../ai/provider";
-import { allTools, type ToolContext } from "../ai/tools/index";
+import { allTools, skillToolsUnderWatcher, type ToolContext } from "../ai/tools/index";
 import {
   isSkillRunning,
   createSkillLog,
@@ -71,6 +71,13 @@ export interface ExecuteSkillOptions {
    * dashboard) can read the outcome.
    */
   silent?: boolean;
+  /**
+   * Propagates the watcher purity gate transitively. When a watcher invokes a
+   * read-purity skill via useSkill, that skill's executor must also assemble
+   * its tool set with `callingContext: "watcher"` so any nested useSkill call
+   * is gated against action-purity skills. Defaults to "main".
+   */
+  callingContext?: "main" | "watcher";
 }
 
 /**
@@ -89,6 +96,7 @@ export async function executeSkill(
     depth = 0,
     parentLogId,
     silent = false,
+    callingContext = "main",
   } = options;
   const skillId = skill._id.toString();
   const chatId = skill.chatId;
@@ -112,6 +120,7 @@ export async function executeSkill(
       adapter,
       sessionId: `skill-${skillId}`,
       skillDepth: depth,
+      callingContext,
     };
 
     // Step limits by context
@@ -128,11 +137,19 @@ export async function executeSkill(
       temperature = 0.5;
     }
 
+    // Under a watcher's calling context, the skill must run with the same
+    // read-only tool palette as the watcher itself — otherwise a "purity:
+    // read" skill could still mutate external state via rememberFact /
+    // sendEmail / manageCalendar / etc., and the watcher invariant would
+    // only hold for the watcher's direct tool surface.
+    const tools =
+      callingContext === "watcher" ? skillToolsUnderWatcher(toolContext) : allTools(toolContext);
+
     const result = await generateText({
       model: getModel(),
       system: systemPrompt,
       messages: [{ role: "user", content: skill.prompt }],
-      tools: allTools(toolContext),
+      tools,
       stopWhen: stepCountIs(maxSteps),
       temperature,
       abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),

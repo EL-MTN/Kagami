@@ -27,10 +27,18 @@ export interface ToolContext {
   sessionId: string;
   /** Current skill nesting depth. 0 = top-level conversation or manual skill trigger. */
   skillDepth?: number;
+  /**
+   * The execution context the tool set is being assembled for. "main" =
+   * conversational chat or skill executor. "watcher" = inside a watcher tick
+   * (read-only invariant). Used by `useSkill` to gate by skill purity.
+   * Defaults to "main" when omitted.
+   */
+  callingContext?: "main" | "watcher";
 }
 
 export function allTools(ctx: ToolContext) {
   const depth = ctx.skillDepth ?? 0;
+  const callingContext = ctx.callingContext ?? "main";
 
   const tools: ToolSet = {
     readMemory,
@@ -66,27 +74,30 @@ export function allTools(ctx: ToolContext) {
 
   // Only provide useSkill when below max depth (prevents infinite recursion)
   if (depth < MAX_SKILL_DEPTH) {
-    tools.useSkill = createUseSkillTool(ctx.chatId, ctx.adapter, depth);
+    tools.useSkill = createUseSkillTool(ctx.chatId, ctx.adapter, depth, callingContext);
   }
 
   return tools;
 }
 
 /**
- * Read-only tool subset for watcher executor ticks. Watchers observe; they
- * never mutate external state (sends, writes to memory, calendar/email writes,
- * skill creation, watcher creation). Action belongs to the trigger handler.
+ * Shared read-only tool subset used by both the watcher executor and any
+ * skill that runs under a watcher context. Excludes everything that mutates
+ * external state: sends (email/photo/voice), memory writes (rememberFact /
+ * noteToSelf / curateMemory), calendar/reminder writes, skill creation,
+ * watcher creation. `useSkill` IS included but `callingContext: "watcher"`
+ * is hardcoded so any nested skill invocation re-enters the gate.
  *
- * The `_ctx` parameter is kept for signature parity with `allTools` even
- * though none of the current read-only tools need chatId or adapter — future
- * read-only tools may.
+ * Does NOT include `reportWatcherResult` — that's the watcher executor's
+ * terminator, irrelevant to skills running under watcher context.
  */
-export function watcherTools(_ctx: ToolContext): ToolSet {
+function readOnlyToolSubset(ctx: ToolContext): ToolSet {
+  const depth = ctx.skillDepth ?? 0;
+
   const tools: ToolSet = {
     readMemory,
     searchMemory,
     listMemories,
-    reportWatcherResult,
   };
 
   if (config.GOOGLE_OAUTH_CLIENT_ID) {
@@ -98,5 +109,32 @@ export function watcherTools(_ctx: ToolContext): ToolSet {
     tools.browse = createReadOnlyBrowseTool();
   }
 
+  if (depth < MAX_SKILL_DEPTH) {
+    tools.useSkill = createUseSkillTool(ctx.chatId, ctx.adapter, depth, "watcher");
+  }
+
   return tools;
+}
+
+/**
+ * Tool set for watcher executor ticks. Watchers observe; they never mutate
+ * external state. Builds on the shared read-only subset and adds the
+ * required `reportWatcherResult` terminator.
+ */
+export function watcherTools(ctx: ToolContext): ToolSet {
+  return {
+    ...readOnlyToolSubset(ctx),
+    reportWatcherResult,
+  };
+}
+
+/**
+ * Tool set for a skill that's been invoked from a watcher. Same read-only
+ * subset as `watcherTools` minus the watcher-specific terminator. Ensures
+ * the watcher invariant is transitive: a read-purity skill called from a
+ * watcher cannot itself send emails, write memory, or otherwise mutate
+ * external state through its own tool palette.
+ */
+export function skillToolsUnderWatcher(ctx: ToolContext): ToolSet {
+  return readOnlyToolSubset(ctx);
 }

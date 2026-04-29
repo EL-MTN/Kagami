@@ -13,9 +13,18 @@ export interface IWatcher extends Document {
   lastFiredAt: Date | null;
   fireCount: number;
   nextRunAt: Date | null;
+  manualRunRequestedAt: Date | null;
   expiresAt: Date | null;
   enabled: boolean;
   archivedAt: Date | null;
+  /** When true, archive the watcher after the first real fire. */
+  oneShot: boolean;
+  /** When set, archive after this many real fires. */
+  maxFires: number | null;
+  /** Minimum milliseconds between notifications. Triggers within the window are suppressed. */
+  cooldownMs: number | null;
+  /** Suppress notifications until this date. Detection still runs. */
+  snoozedUntil: Date | null;
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -33,9 +42,14 @@ const watcherSchema = new Schema<IWatcher>(
     lastFiredAt: { type: Date, default: null },
     fireCount: { type: Number, default: 0 },
     nextRunAt: { type: Date, default: null },
+    manualRunRequestedAt: { type: Date, default: null },
     expiresAt: { type: Date, default: null },
     enabled: { type: Boolean, default: true },
     archivedAt: { type: Date, default: null },
+    oneShot: { type: Boolean, default: false },
+    maxFires: { type: Number, default: null },
+    cooldownMs: { type: Number, default: null },
+    snoozedUntil: { type: Date, default: null },
     version: { type: Number, default: 1 },
   },
   { timestamps: true },
@@ -48,6 +62,7 @@ watcherSchema.index(
   { unique: true, partialFilterExpression: { archivedAt: null } },
 );
 watcherSchema.index({ enabled: 1, archivedAt: 1, nextRunAt: 1 });
+watcherSchema.index({ manualRunRequestedAt: 1 });
 
 export const Watcher =
   (mongoose.models.Watcher as mongoose.Model<IWatcher>) ??
@@ -60,6 +75,8 @@ export interface IWatcherLog extends Document {
   trigger: "cron" | "manual";
   status: "running" | "completed" | "failed";
   triggered: boolean | null;
+  /** Set when triggered=true was demoted to a non-fire by cooldown or snooze. */
+  suppressed: boolean;
   summary: string | null;
   newState: string | null;
   startedAt: Date;
@@ -71,6 +88,7 @@ const watcherLogSchema = new Schema<IWatcherLog>({
   trigger: { type: String, enum: ["cron", "manual"], required: true },
   status: { type: String, enum: ["running", "completed", "failed"], required: true },
   triggered: { type: Boolean, default: null },
+  suppressed: { type: Boolean, default: false },
   summary: { type: String, default: null },
   newState: { type: String, default: null },
   startedAt: { type: Date, required: true },
@@ -99,6 +117,12 @@ export interface WatcherInput {
   cronSchedule: string;
   expiresAt?: Date | null;
   nextRunAt?: Date | null;
+  oneShot?: boolean;
+  maxFires?: number | null;
+  cooldownMs?: number | null;
+  snoozedUntil?: Date | null;
+  /** Defaults to true via schema. Pass false to import a disabled watcher. */
+  enabled?: boolean;
 }
 
 export async function createWatcher(chatId: string, input: WatcherInput): Promise<IWatcher> {
@@ -141,6 +165,10 @@ export async function updateWatcher(
       | "enabled"
       | "expiresAt"
       | "nextRunAt"
+      | "oneShot"
+      | "maxFires"
+      | "cooldownMs"
+      | "snoozedUntil"
       | "version"
     >
   >,
@@ -207,6 +235,33 @@ export async function recordWatcherObservation(
   }
 }
 
+/**
+ * Update only `lastState` without touching fire counters. Used when a tick's
+ * `triggered: true` outcome was demoted to a non-fire by cooldown or snooze,
+ * or when the tick resulted in `triggered: false` and we just want to roll
+ * forward the observation reference.
+ */
+export async function recordWatcherStateOnly(watcherId: string, newState: string): Promise<void> {
+  await Watcher.findByIdAndUpdate(watcherId, { $set: { lastState: newState } });
+}
+
+export async function requestManualWatcherRun(watcherId: string): Promise<IWatcher | null> {
+  return Watcher.findByIdAndUpdate(watcherId, { manualRunRequestedAt: new Date() }, { new: true });
+}
+
+/**
+ * Atomically claim the next pending manual-run request. Sets
+ * `manualRunRequestedAt` back to null so it isn't picked up twice. Also skips
+ * archived rows.
+ */
+export async function claimPendingManualWatcherRun(): Promise<IWatcher | null> {
+  return Watcher.findOneAndUpdate(
+    { manualRunRequestedAt: { $ne: null }, enabled: true, archivedAt: null },
+    { manualRunRequestedAt: null },
+    { sort: { manualRunRequestedAt: 1 }, new: false },
+  );
+}
+
 // --- Watcher Log Helpers ---
 
 export async function isWatcherRunning(watcherId: string): Promise<boolean> {
@@ -232,11 +287,12 @@ export async function createWatcherLog(
 
 export async function completeWatcherLog(
   logId: string,
-  data: { triggered: boolean; summary: string; newState: string },
+  data: { triggered: boolean; suppressed?: boolean; summary: string; newState: string },
 ): Promise<void> {
   await WatcherLog.findByIdAndUpdate(logId, {
     status: "completed",
     triggered: data.triggered,
+    suppressed: data.suppressed ?? false,
     summary: data.summary,
     newState: data.newState,
     completedAt: new Date(),

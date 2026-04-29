@@ -63,6 +63,12 @@ export function createManageSkillsTool(chatId: string) {
         .describe(
           "'always' sends summary every run, 'alert' only on failures/noteworthy events (required for create)",
         ),
+      purity: z
+        .enum(["read", "action"])
+        .optional()
+        .describe(
+          "'read' = skill only observes (search, summarize, query). Safe for watchers. 'action' = skill mutates external state (sends, writes, modifies). Watchers cannot invoke action skills. Optional on create — defaults to 'action' if omitted, the conservative choice.",
+        ),
     }),
     execute: async ({
       action,
@@ -73,6 +79,7 @@ export function createManageSkillsTool(chatId: string) {
       parameters,
       cronSchedule,
       reportMode,
+      purity,
     }) => {
       try {
         switch (action) {
@@ -87,7 +94,12 @@ export function createManageSkillsTool(chatId: string) {
             const cronError = validateCronAndDefaults(cronSchedule, parameters ?? []);
             if (cronError) return { success: false, reason: cronError.message };
 
-            logger.info({ chatId, name, cronSchedule, reportMode }, "Tool: manageSkills (create)");
+            const resolvedPurity = purity ?? "action";
+
+            logger.info(
+              { chatId, name, cronSchedule, reportMode, purity: resolvedPurity },
+              "Tool: manageSkills (create)",
+            );
 
             const nextRunAt = cronSchedule ? computeNextRunAt(cronSchedule) : null;
 
@@ -98,6 +110,7 @@ export function createManageSkillsTool(chatId: string) {
               parameters: parameters ?? [],
               cronSchedule: cronSchedule ?? null,
               reportMode,
+              purity: resolvedPurity,
               nextRunAt,
             });
             return {
@@ -107,6 +120,7 @@ export function createManageSkillsTool(chatId: string) {
               description,
               cronSchedule: cronSchedule ?? null,
               reportMode,
+              purity: resolvedPurity,
               parameterCount: (parameters ?? []).length,
               nextRunAt: nextRunAt?.toISOString() ?? null,
             };
@@ -126,6 +140,7 @@ export function createManageSkillsTool(chatId: string) {
                 parameters: s.parameters,
                 cronSchedule: s.cronSchedule,
                 reportMode: s.reportMode,
+                purity: s.purity,
                 enabled: s.enabled,
                 version: s.version,
                 nextRunAt: s.nextRunAt?.toISOString() ?? null,
@@ -149,6 +164,7 @@ export function createManageSkillsTool(chatId: string) {
             if (description) patch.description = description;
             if (prompt) patch.prompt = prompt;
             if (reportMode) patch.reportMode = reportMode;
+            if (purity !== undefined) patch.purity = purity;
             if (parameters) patch.parameters = parameters;
 
             if (cronSchedule !== undefined) {

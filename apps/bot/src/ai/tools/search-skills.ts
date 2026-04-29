@@ -58,6 +58,7 @@ export function createSearchSkillsTool(chatId: string) {
                 : [],
             cronSchedule: s.cronSchedule ?? null,
             reportMode: s.reportMode,
+            purity: s.purity,
           })),
         };
       } catch (error) {
