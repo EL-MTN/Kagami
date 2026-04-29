@@ -20,6 +20,8 @@ export type EntityType = z.infer<typeof EntityType>;
 
 // LLM wire-format: always strings, no unions/transforms — keeps the JSON
 // schema sent to the model simple (no `anyOf`, which trips strict mode).
+// event_date: empty string means "no specific date in the quote" — fall back
+// to the conversation date when building the timeline.
 export const Candidate = z.object({
   entity_name: z.string(),
   type: EntityType,
@@ -28,6 +30,7 @@ export const Candidate = z.object({
   quote: z.string(),
   turn_id: z.string(),
   date: z.string(),
+  event_date: z.string(),
 });
 export type Candidate = z.infer<typeof Candidate>;
 
@@ -51,6 +54,7 @@ export const Observation = z.object({
   headline: z.string(),
   quote: z.string(),
   source: z.string(),
+  event_date: z.string().default(''),
 });
 export type Observation = z.infer<typeof Observation>;
 

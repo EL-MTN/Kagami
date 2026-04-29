@@ -16,6 +16,7 @@ export const paths = {
   entities: path.join(vaultRoot, 'entities'),
   core: path.join(vaultRoot, '_core.md'),
   index: path.join(vaultRoot, 'index.md'),
+  timeline: path.join(vaultRoot, 'timeline.md'),
   internal: path.join(vaultRoot, '.memory'),
   log: path.join(vaultRoot, '.memory', 'log.jsonl'),
   llmFailures: path.join(vaultRoot, '.memory', 'llm-failures'),

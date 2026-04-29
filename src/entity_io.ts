@@ -228,11 +228,40 @@ function today(): string {
 }
 
 function renderObservation(obs: Observation): string {
+  const eventLine = obs.event_date ? `\n**event_date:** ${obs.event_date}` : '';
   return `### ${obs.date} — ${obs.headline}
 > "${escapeQuote(obs.quote)}"
 **source:** ${obs.source}
-**date:** ${obs.date}
+**date:** ${obs.date}${eventLine}
 `;
+}
+
+// Parses observation blocks out of an entity body. Used by the timeline
+// builder. Matches the exact shape emitted by renderObservation.
+export interface ParsedObservation {
+  date: string;
+  headline: string;
+  quote: string;
+  source: string;
+  event_date: string;
+}
+
+const OBS_BLOCK_RE = /^### (\d{4}-\d{2}-\d{2}) — (.+?)\n> "((?:[^"\\]|\\.)*?)"\n\*\*source:\*\* (.+?)\n\*\*date:\*\* (\d{4}-\d{2}-\d{2})(?:\n\*\*event_date:\*\* (\d{4}-\d{2}-\d{2}))?/gm;
+
+export function parseObservations(body: string): ParsedObservation[] {
+  const out: ParsedObservation[] = [];
+  let m: RegExpExecArray | null;
+  OBS_BLOCK_RE.lastIndex = 0;
+  while ((m = OBS_BLOCK_RE.exec(body)) !== null) {
+    out.push({
+      date: m[1]!,
+      headline: m[2]!.trim(),
+      quote: m[3]!.replace(/\\"/g, '"'),
+      source: m[4]!.trim(),
+      event_date: m[6] ?? '',
+    });
+  }
+  return out;
 }
 
 function escapeQuote(s: string): string {

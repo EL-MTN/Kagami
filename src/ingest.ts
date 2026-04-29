@@ -17,6 +17,7 @@ import {
 } from './types.js';
 import { entityPath, paths, slug, transcriptWikilink } from './paths.js';
 import { rebuildIndex } from './index_md.js';
+import { rebuildTimeline } from './timeline_md.js';
 
 export interface IngestResult {
   candidates: number;
@@ -92,6 +93,7 @@ export async function applyCandidates(
   }
 
   await rebuildIndex();
+  await rebuildTimeline();
   return result;
 }
 
@@ -105,10 +107,16 @@ async function extract(transcript: Transcript): Promise<Candidate[] | null> {
     .join('\n\n');
   const date = transcript.frontmatter.started_at.slice(0, 10);
 
+  // Pass the current index so the LLM can re-use existing entity_names
+  // instead of inventing new variants (semantic de-dup at extraction time).
+  // First ingestion in a vault → empty index.
+  const existingIndex = await readSafe(paths.index, '(no entities yet)');
+
   const userPrompt = userTemplate
     .replace('{{date}}', date)
     .replace('{{transcript_id}}', transcript.frontmatter.id)
-    .replace('{{turns}}', turns);
+    .replace('{{turns}}', turns)
+    .replace('{{existing_index}}', existingIndex.trim());
 
   const result = await callObject({
     stage: 'extraction',
@@ -141,6 +149,7 @@ function candidateToObservation(c: Candidate, transcriptId: string): Observation
     headline: c.headline,
     quote: c.quote,
     source: transcriptWikilink(transcriptId, c.turn_id),
+    event_date: c.event_date ?? '',
   };
 }
 
@@ -179,4 +188,12 @@ function unique(strings: string[]): string[] {
     }
   }
   return out;
+}
+
+async function readSafe(p: string, fallback: string): Promise<string> {
+  try {
+    return await fs.readFile(p, 'utf8');
+  } catch {
+    return fallback;
+  }
 }

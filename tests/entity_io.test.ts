@@ -38,6 +38,7 @@ test('create + read + append + alias union', async () => {
     headline: 'Pushed back on local-first',
     quote: 'sync story is always going to be the bottleneck',
     source: '[[raw/2026-04-27-1430#t-0003]]',
+    event_date: '',
   });
 
   const afterAppend = await readEntity('alex-smith');

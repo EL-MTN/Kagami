@@ -31,15 +31,16 @@ const SYSTEM_PROMPT = `You answer questions about the user from their personal m
 You receive:
 - _core.md: always-loaded canonical user state. If it states a current fact, USE IT DIRECTLY and call answer with citations: ["_core.md"]. Do not view further entities to "double-check" core.
 - index.md: the vault's table of contents — one line per entity with id, type, name, and aliases.
+- timeline.md: every observation in the vault sorted chronologically by event date. Each line is "<date> — <fact> [[<entity-id>]]". Use this for any question involving "when", "first/last", "before/after", duration, or ordering — the answer is often visible directly without viewing entities.
 
-For anything not already in _core.md, call view({ path: "entities/<id>.md" }) to read entity bodies. You may call view up to ${MAX_VIEW_CALLS} times, but typically 1–3 is enough. Pick entities from index.md whose name, type, or aliases relate to the question — even loosely. Be liberal: a question about "editors" should make you check anything tool-shaped (Obsidian, etc.) even without lexical overlap.
+For anything not already in _core.md or timeline.md, call view({ path: "entities/<id>.md" }) to read entity bodies. You may call view up to ${MAX_VIEW_CALLS} times, but typically 1–3 is enough. Pick entities from index.md whose name, type, or aliases relate to the question — even loosely. Be liberal: a question about "editors" should make you check anything tool-shaped (Obsidian, etc.) even without lexical overlap.
 
 Termination — you MUST end with exactly one of these tool calls. A bare text response counts as failure:
-- answer({ answer, citations }) — when you have read enough to answer, or when _core.md alone contains it.
-- bail({ reason }) — only for clearly off-topic questions whose subject has no entity in index.md and no fact in _core.md ("favorite color", "manager at work"). Do NOT bail just because the question's wording does not appear in entity names; view first.
+- answer({ answer, citations }) — when you have read enough to answer, or when _core.md / timeline.md alone contain it.
+- bail({ reason }) — only for clearly off-topic questions whose subject has no entity in index.md and no fact in _core.md or timeline.md ("favorite color", "manager at work"). Do NOT bail just because the question's wording does not appear in entity names; view first.
 
 Rules:
-- Cite exact relative paths of files you actually viewed (e.g., "entities/typescript.md"), or "_core.md" when you used it. Never cite a file you did not view.
+- Cite exact relative paths of files you actually viewed (e.g., "entities/typescript.md"), or "_core.md" / "timeline.md" when you used them. Never cite a file you did not view.
 - Do not invent facts the files don't support.
 - After 2–3 view calls, commit to an answer with what you have. Don't keep viewing.`;
 
@@ -59,6 +60,7 @@ export async function readVaultFile(rel: string): Promise<string> {
 export async function query(question: string): Promise<QueryResult> {
   const core = await readSafe(paths.core, '(empty)');
   const index = await readSafe(paths.index, '(empty)');
+  const timeline = await readSafe(paths.timeline, '(empty)');
 
   let captured: QueryResult | null = null;
   const viewed = new Map<string, string>();
@@ -101,6 +103,7 @@ export async function query(question: string): Promise<QueryResult> {
   const userPrompt = [
     `_core.md:\n\n${core.trim()}`,
     `index.md:\n\n${index.trim()}`,
+    `timeline.md:\n\n${timeline.trim()}`,
     `Question: ${question}`,
   ].join('\n\n');
 
@@ -122,14 +125,15 @@ export async function query(question: string): Promise<QueryResult> {
   if (captured) return captured;
 
   // Safety net: model exhausted steps or returned text without calling
-  // answer/bail. Synthesize a structured answer from _core.md + whatever
-  // entities it did view.
-  return await synthesizeFallback(question, core, viewed, textFallback);
+  // answer/bail. Synthesize a structured answer from _core.md + timeline.md +
+  // whatever entities it did view.
+  return await synthesizeFallback(question, core, timeline, viewed, textFallback);
 }
 
 async function synthesizeFallback(
   question: string,
   core: string,
+  timeline: string,
   viewed: Map<string, string>,
   modelText: string,
 ): Promise<QueryResult> {
@@ -142,6 +146,7 @@ async function synthesizeFallback(
 
   const prompt = [
     `_core.md:\n\n${core.trim()}`,
+    `timeline.md:\n\n${timeline.trim()}`,
     `Viewed files:\n\n${viewedSection}`,
     `Question: ${question}`,
   ].join('\n\n');

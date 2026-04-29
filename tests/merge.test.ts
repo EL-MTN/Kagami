@@ -42,12 +42,14 @@ test('merge moves observations, unions aliases, deletes source, rewrites wikilin
     headline: 'First obs on smith',
     quote: 'q1',
     source: '[[raw/2026-04-27#t-0001]]',
+    event_date: '',
   });
   await appendObservation('alex-s', {
     date: '2026-04-28',
     headline: 'Obs on the dup',
     quote: 'q2',
     source: '[[raw/2026-04-28#t-0001]]',
+    event_date: '',
   });
 
   // A third entity that wikilinks the soon-to-be-merged one.

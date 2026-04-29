@@ -24,6 +24,7 @@ const candidate = (over: Partial<Candidate> = {}): Candidate => ({
   quote: 'sync story is always going to be the bottleneck',
   turn_id: 't-0003',
   date: '2026-04-27',
+  event_date: '',
   ...over,
 });
 
