@@ -1,4 +1,4 @@
-import { Bot, InputFile } from "grammy";
+import { Bot, InputFile, InlineKeyboard } from "grammy";
 import type { IncomingMessage, PlatformAdapter } from "@mashiro/shared";
 import type { Context } from "grammy";
 import { logger } from "@mashiro/shared";
@@ -159,5 +159,43 @@ export class TelegramAdapter implements PlatformAdapter {
       logger.debug({ fileId }, "Cached telegram file_id from buffer");
     }
     return fileId;
+  }
+
+  async sendConfirmationPrompt(
+    chatId: string,
+    text: string,
+    confirmationId: string,
+  ): Promise<string | undefined> {
+    const keyboard = new InlineKeyboard()
+      .text("✓ Approve", `confirm:${confirmationId}:approve`)
+      .text("✗ Deny", `confirm:${confirmationId}:deny`);
+    try {
+      const sent = await this.bot.api.sendMessage(Number(chatId), markdownToTelegramHtml(text), {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      });
+      return String(sent.message_id);
+    } catch (error) {
+      logger.warn({ error }, "Confirmation prompt HTML send failed; retrying as plain text");
+      const sent = await this.bot.api.sendMessage(Number(chatId), text, {
+        reply_markup: keyboard,
+      });
+      return String(sent.message_id);
+    }
+  }
+
+  async editConfirmationPrompt(chatId: string, messageId: string, text: string): Promise<void> {
+    try {
+      // editMessageText leaves reply_markup untouched unless we explicitly
+      // pass it. Send an empty inline_keyboard so the [Approve][Deny]
+      // buttons disappear once the row hits a terminal state — otherwise
+      // the bubble body says "✓ Approved" but the buttons stay visible.
+      await this.bot.api.editMessageText(Number(chatId), Number(messageId), text, {
+        reply_markup: { inline_keyboard: [] },
+      });
+    } catch (error) {
+      // Tolerable: user may have deleted the message, or the body is unchanged.
+      logger.warn({ error, chatId, messageId }, "Failed to edit confirmation prompt");
+    }
   }
 }

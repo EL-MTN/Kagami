@@ -27,4 +27,22 @@ export interface PlatformAdapter {
   ): Promise<string | undefined>; // returns file_id if available
   sendPhotoBuffer(chatId: string, buffer: Buffer, caption?: string): Promise<string | undefined>;
   sendVoiceBuffer(chatId: string, buffer: Buffer, duration?: number): Promise<void>;
+  /**
+   * Send a message with [Approve][Deny] buttons attached. Returns the
+   * platform-native message id so the caller can later edit the bubble in
+   * place when the confirmation resolves. `confirmationId` is embedded in
+   * the button callback payload so the platform's callback handler can
+   * route the verdict back.
+   */
+  sendConfirmationPrompt(
+    chatId: string,
+    text: string,
+    confirmationId: string,
+  ): Promise<string | undefined>;
+  /**
+   * Edit a previously sent confirmation prompt to its terminal state. The
+   * inline keyboard is removed; the body is replaced with `text`. Tolerant
+   * of failures (the prompt may have been deleted by the user).
+   */
+  editConfirmationPrompt(chatId: string, messageId: string, text: string): Promise<void>;
 }

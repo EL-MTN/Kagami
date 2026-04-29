@@ -235,25 +235,25 @@ When firing, the scheduler uses `getOrCreateSession` to get the active session, 
 
 ## Package Boundaries
 
-| Package              | Purpose                                            | Key Exports                                                                                                                                                                      |
-| -------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@mashiro/shared`    | Config, logging, markdown, platform types          | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, cron + skill validation helpers                                                         |
-| `@mashiro/db`        | MongoDB connection, all models, GridFS             | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `Skill`, `SkillLog`, `LocationHistory`, `readImage`, `writeImage`, all model CRUD functions |
-| `@mashiro/memory`    | Memory engine, embeddings                          | `remember`, `recall`, `forget`, `generateEmbedding`, episode/fact/milestone retrieval                                                                                            |
-| `@mashiro/bot`       | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages                                                                                                                                 |
-| `@mashiro/dashboard` | Next.js dashboard (read + write CRUD)              | Overview, conversations, memories, reminders, skills, watchers, usage pages                                                                                                      |
+| Package              | Purpose                                            | Key Exports                                                                                                                                                                                             |
+| -------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@mashiro/shared`    | Config, logging, markdown, platform types          | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, cron + skill validation helpers                                                                                |
+| `@mashiro/db`        | MongoDB connection, all models, GridFS             | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `Skill`, `SkillLog`, `LocationHistory`, `PendingConfirmation`, `readImage`, `writeImage`, all model CRUD functions |
+| `@mashiro/memory`    | Memory engine, embeddings                          | `remember`, `recall`, `forget`, `generateEmbedding`, episode/fact/milestone retrieval                                                                                                                   |
+| `@mashiro/bot`       | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages                                                                                                                                                        |
+| `@mashiro/dashboard` | Next.js dashboard (read + write CRUD)              | Overview, conversations, memories, reminders, skills, watchers, usage pages                                                                                                                             |
 
 ### Bot-Internal Modules
 
-| Directory                         | Purpose                                                                           |
-| --------------------------------- | --------------------------------------------------------------------------------- |
-| `apps/bot/src/ai/`                | LLM integration, prompt assembly, tool orchestration                              |
-| `apps/bot/src/ai/tools/`          | Tool implementations available to the LLM                                         |
-| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup                                                      |
-| `apps/bot/src/memory/`            | Curator (tightly coupled to AI layer)                                             |
-| `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Cron, Skill executor, Geocoding, Location |
-| `apps/bot/src/scheduler/`         | Proactive, reminder, skill scheduling                                             |
-| `apps/bot/src/context/`           | Image reference loading + generation                                              |
+| Directory                         | Purpose                                                                                                    |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `apps/bot/src/ai/`                | LLM integration, prompt assembly, tool orchestration                                                       |
+| `apps/bot/src/ai/tools/`          | Tool implementations available to the LLM                                                                  |
+| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup                                                                               |
+| `apps/bot/src/memory/`            | Curator (tightly coupled to AI layer)                                                                      |
+| `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Cron, Skill executor, Geocoding, Location, Gated-action dispatcher |
+| `apps/bot/src/scheduler/`         | Proactive, reminder, skill scheduling                                                                      |
+| `apps/bot/src/context/`           | Image reference loading + generation                                                                       |
 
 ## Boot Sequence
 

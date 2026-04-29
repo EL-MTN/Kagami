@@ -8,6 +8,7 @@ import {
   getRecentlyFiredReminders,
   getLatestLocation,
   listSkillsForChat,
+  listPendingConfirmations,
 } from "@mashiro/db";
 import * as engine from "@mashiro/memory";
 import {
@@ -188,6 +189,28 @@ async function assembleSkillContext(chatId: string): Promise<string | null> {
   }
 }
 
+async function assemblePendingConfirmationsContext(chatId: string): Promise<string | null> {
+  try {
+    const pending = await listPendingConfirmations(chatId);
+    if (pending.length === 0) return null;
+
+    const lines = pending.map((row) => {
+      const ageMs = Date.now() - row.createdAt.getTime();
+      const ago = formatDistanceToNow(row.createdAt, { addSuffix: false });
+      const stale = ageMs > 60 * 60_000 ? " (stale — consider cancelling if no longer wanted)" : "";
+      return `- ${ago} ago — ${row.summary} (id: ${String(row._id)})${stale}`;
+    });
+    return (
+      "## Pending Approvals\n" +
+      lines.join("\n") +
+      "\nThese are tap-to-approve requests already sent to Goshujin-sama. Don't re-prompt for the same action; wait for him, or call cancelConfirmation with the id if he wants to abort."
+    );
+  } catch (error) {
+    logger.warn({ error }, "Failed to load pending confirmations for context");
+    return null;
+  }
+}
+
 async function assembleLocationContext(chatId: string): Promise<string | null> {
   if (!config.LOCATION_ENABLED) return null;
 
@@ -217,6 +240,9 @@ export async function assembleSystemPrompt(chatId: string, sessionId?: string): 
 
   const skillContext = await assembleSkillContext(chatId);
   if (skillContext) parts.push(skillContext);
+
+  const pendingContext = await assemblePendingConfirmationsContext(chatId);
+  if (pendingContext) parts.push(pendingContext);
 
   const locationContext = await assembleLocationContext(chatId);
   if (locationContext) parts.push(locationContext);
@@ -263,6 +289,9 @@ export async function assembleProactiveSystemPrompt(
   if (reminderContext) {
     parts.push(reminderContext);
   }
+
+  const pendingContext = await assemblePendingConfirmationsContext(chatId);
+  if (pendingContext) parts.push(pendingContext);
 
   const locationContext = await assembleLocationContext(chatId);
   if (locationContext) parts.push(locationContext);

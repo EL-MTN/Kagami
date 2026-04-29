@@ -80,6 +80,19 @@ export {
   type SkillPurity,
 } from "./models/skill";
 export {
+  PendingConfirmation,
+  createPendingConfirmation,
+  getPendingConfirmation,
+  setPromptMessageId,
+  resolvePendingConfirmation,
+  attachResultText,
+  listPendingConfirmations,
+  type IPendingConfirmation,
+  type PendingConfirmationStatus,
+  type PendingConfirmationOrigin,
+  type CreatePendingConfirmationInput,
+} from "./models/pending-confirmation";
+export {
   Watcher,
   WatcherLog,
   createWatcher,

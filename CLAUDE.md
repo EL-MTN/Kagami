@@ -78,3 +78,4 @@ See `/docs` for:
 - [ai-layer.md](docs/ai-layer.md) — LLM integration, tools, image generation, context assembly
 - [memory-management.md](docs/memory-management.md) — deep dive into memory tiers, data flow, gaps, and roadmap
 - [watchers.md](docs/watchers.md) — scheduled detection jobs (read-only, stateful, trigger-only notifications)
+- [confirmations.md](docs/confirmations.md) — approval primitive for gated tool calls (tap-to-approve actions)
