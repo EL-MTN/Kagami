@@ -29,6 +29,8 @@ const skillParameterSchema = new Schema<ISkillParameter>(
 
 // --- Skill ---
 
+export type SkillPurity = "read" | "action";
+
 export interface ISkill extends Document {
   chatId: string;
   name: string;
@@ -37,6 +39,15 @@ export interface ISkill extends Document {
   parameters: ISkillParameter[];
   cronSchedule: string | null;
   reportMode: "always" | "alert";
+  /**
+   * "read" = skill only observes (search, summarize, query). Safe to call from
+   * a watcher context.
+   * "action" = skill mutates external state (sends, writes, modifies). Watchers
+   * cannot invoke action skills.
+   * Defaults to "action" so existing skills remain conservatively gated until
+   * an author explicitly marks them safe.
+   */
+  purity: SkillPurity;
   nextRunAt: Date | null;
   manualRunRequestedAt: Date | null;
   enabled: boolean;
@@ -54,6 +65,7 @@ const skillSchema = new Schema<ISkill>(
     parameters: { type: [skillParameterSchema], default: [] },
     cronSchedule: { type: String, default: null },
     reportMode: { type: String, enum: ["always", "alert"], required: true },
+    purity: { type: String, enum: ["read", "action"], required: true, default: "action" },
     nextRunAt: { type: Date, default: null },
     manualRunRequestedAt: { type: Date, default: null },
     enabled: { type: Boolean, default: true },
@@ -109,7 +121,10 @@ export interface SkillInput {
   parameters?: ISkillParameter[];
   cronSchedule?: string | null;
   reportMode: "always" | "alert";
+  purity?: SkillPurity;
   nextRunAt?: Date | null;
+  /** Defaults to true via schema. Pass false to import a disabled skill. */
+  enabled?: boolean;
 }
 
 export async function createSkill(chatId: string, input: SkillInput): Promise<ISkill> {
@@ -141,6 +156,7 @@ export async function updateSkill(
       | "parameters"
       | "cronSchedule"
       | "reportMode"
+      | "purity"
       | "enabled"
       | "nextRunAt"
       | "version"
@@ -176,11 +192,7 @@ export async function advanceSkillNextRunAt(skillId: string, nextRunAt: Date): P
 }
 
 export async function requestManualRun(skillId: string): Promise<ISkill | null> {
-  return Skill.findByIdAndUpdate(
-    skillId,
-    { manualRunRequestedAt: new Date() },
-    { new: true },
-  );
+  return Skill.findByIdAndUpdate(skillId, { manualRunRequestedAt: new Date() }, { new: true });
 }
 
 /**

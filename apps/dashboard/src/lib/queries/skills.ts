@@ -17,6 +17,7 @@ interface SkillDoc {
   parameters: ISkillParameter[];
   cronSchedule: string | null;
   reportMode: "always" | "alert";
+  purity: "read" | "action";
   enabled: boolean;
   version: number;
   nextRunAt: Date | null;
@@ -44,6 +45,7 @@ function toSkillListItem(s: SkillDoc, lastLog?: LastLog): SkillListItem {
     parameters: s.parameters.map(serializeParameter),
     cronSchedule: s.cronSchedule,
     reportMode: s.reportMode,
+    purity: s.purity ?? "action",
     enabled: s.enabled,
     version: s.version,
     nextRunAt: s.nextRunAt?.toISOString() ?? null,

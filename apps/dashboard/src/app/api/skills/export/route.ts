@@ -20,6 +20,7 @@ export async function GET() {
       parameters: s.parameters.map(serializeParameter),
       cronSchedule: s.cronSchedule,
       reportMode: s.reportMode,
+      purity: s.purity ?? "action",
       enabled: s.enabled,
     })),
   };

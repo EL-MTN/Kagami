@@ -8,6 +8,8 @@ import {
   failWatcherLog,
   advanceWatcherNextRunAt,
   recordWatcherObservation,
+  recordWatcherStateOnly,
+  archiveWatcher,
   type IWatcher,
 } from "@mashiro/db";
 import { logger, computeNextRunAt } from "@mashiro/shared";
@@ -73,6 +75,33 @@ function formatTriggerMessage(watcher: IWatcher, summary: string): string {
   return `👀 ${watcher.name}\n\n${summary}`;
 }
 
+type TriggerOutcome = "fire" | "suppress" | "none";
+
+/**
+ * Decide what to do with a reported result given the watcher's lifecycle
+ * state. "suppress" means the condition was met but cooldown/snooze silences
+ * the notification — observation still rolls forward, but it does not count
+ * as a fire. Suppression rules apply in priority order: snooze, then cooldown.
+ */
+function evaluateTrigger(watcher: IWatcher, reported: WatcherResult, now: Date): TriggerOutcome {
+  if (!reported.triggered) return "none";
+  if (watcher.snoozedUntil && now < watcher.snoozedUntil) return "suppress";
+  if (
+    watcher.cooldownMs != null &&
+    watcher.lastFiredAt &&
+    now.getTime() - watcher.lastFiredAt.getTime() < watcher.cooldownMs
+  ) {
+    return "suppress";
+  }
+  return "fire";
+}
+
+function shouldAutoArchive(watcher: IWatcher, newFireCount: number): boolean {
+  if (watcher.oneShot) return true;
+  if (watcher.maxFires != null && newFireCount >= watcher.maxFires) return true;
+  return false;
+}
+
 export interface ExecuteWatcherOptions {
   trigger: "cron" | "manual";
   advanceSchedule?: boolean;
@@ -110,6 +139,7 @@ export async function executeWatcher(
       chatId,
       adapter,
       sessionId: `watcher-${watcherId}`,
+      callingContext: "watcher",
     };
 
     const result = await generateText({
@@ -144,11 +174,21 @@ export async function executeWatcher(
       return;
     }
 
-    await completeWatcherLog(logId, reported);
-    await recordWatcherObservation(watcherId, {
-      newState: reported.newState,
-      triggered: reported.triggered,
-    });
+    const now = new Date();
+    const outcome = evaluateTrigger(watcher, reported, now);
+    const suppressed = outcome === "suppress";
+
+    await completeWatcherLog(logId, { ...reported, suppressed });
+
+    if (outcome === "fire") {
+      await recordWatcherObservation(watcherId, {
+        newState: reported.newState,
+        triggered: true,
+      });
+    } else {
+      // "suppress" or "none" — roll lastState forward without touching counters.
+      await recordWatcherStateOnly(watcherId, reported.newState);
+    }
 
     await advanceCron(watcher, advanceSchedule);
 
@@ -157,13 +197,36 @@ export async function executeWatcher(
         watcherId,
         name: watcher.name,
         triggered: reported.triggered,
+        outcome,
         summaryLength: reported.summary.length,
       },
       "Watcher completed",
     );
 
-    if (reported.triggered && !silent) {
+    if (outcome === "fire" && !silent) {
       await sendSegmented(adapter, chatId, formatTriggerMessage(watcher, reported.summary));
+    }
+
+    if (outcome === "fire") {
+      const newFireCount = watcher.fireCount + 1;
+      if (shouldAutoArchive(watcher, newFireCount)) {
+        // Isolated try/catch: a transient archive failure must not corrupt the
+        // already-completed log or trigger a second cron advance via the outer
+        // catch. Worst case is the watcher fires again next tick, which is
+        // recoverable; corrupted state is not.
+        try {
+          await archiveWatcher(watcherId);
+          logger.info(
+            { watcherId, name: watcher.name, oneShot: watcher.oneShot, maxFires: watcher.maxFires },
+            "Watcher auto-archived after fire",
+          );
+        } catch (archiveError) {
+          logger.error(
+            { error: archiveError, watcherId, name: watcher.name },
+            "Failed to auto-archive watcher after fire",
+          );
+        }
+      }
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Watcher execution failed";

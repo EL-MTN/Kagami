@@ -77,6 +77,7 @@ export {
   type ISkillParameter,
   type SkillParameterType,
   type SkillInput,
+  type SkillPurity,
 } from "./models/skill";
 export {
   Watcher,
@@ -92,6 +93,9 @@ export {
   getDueWatchers,
   advanceWatcherNextRunAt,
   recordWatcherObservation,
+  recordWatcherStateOnly,
+  requestManualWatcherRun,
+  claimPendingManualWatcherRun,
   isWatcherRunning,
   createWatcherLog,
   completeWatcherLog,

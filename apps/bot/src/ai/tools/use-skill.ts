@@ -76,10 +76,19 @@ function validateParameters(
   return { valid: true, resolved: result.data };
 }
 
-export function createUseSkillTool(chatId: string, adapter: PlatformAdapter, depth = 0) {
+export type UseSkillCallingContext = "main" | "watcher";
+
+export function createUseSkillTool(
+  chatId: string,
+  adapter: PlatformAdapter,
+  depth = 0,
+  callingContext: UseSkillCallingContext = "main",
+) {
   return tool({
     description:
-      "Invoke a skill by name with optional parameters. The skill executes as a separate LLM call and returns its result synchronously.",
+      callingContext === "watcher"
+        ? 'Invoke a read-purity skill by name. Watchers can only invoke skills marked `purity: "read"` — action skills (sends, writes, mutations) are rejected. The skill executes as a separate LLM call and returns its result synchronously.'
+        : "Invoke a skill by name with optional parameters. The skill executes as a separate LLM call and returns its result synchronously.",
     inputSchema: z.object({
       skillName: z.string().describe("Name of the skill to invoke"),
       parameters: z
@@ -105,6 +114,14 @@ export function createUseSkillTool(chatId: string, adapter: PlatformAdapter, dep
           return { success: false, reason: `Skill "${skillName}" is disabled` };
         }
 
+        // Watchers may only invoke read-purity skills.
+        if (callingContext === "watcher" && skill.purity !== "read") {
+          return {
+            success: false,
+            reason: `Skill "${skillName}" has purity "${skill.purity}" and cannot be invoked from a watcher. Watchers can only call skills marked purity: "read".`,
+          };
+        }
+
         // Validate parameters
         const validation = validateParameters(parameters, skill.parameters);
         if (!validation.valid) {
@@ -120,6 +137,9 @@ export function createUseSkillTool(chatId: string, adapter: PlatformAdapter, dep
           trigger: "skill",
           parameters: validation.resolved,
           depth: depth + 1,
+          // Propagate the gate so a watcher → read-purity skill chain cannot
+          // call into action-purity skills on a deeper hop.
+          callingContext,
         });
 
         return {

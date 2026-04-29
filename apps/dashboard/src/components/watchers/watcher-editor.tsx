@@ -4,48 +4,47 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { ParameterEditor } from "./parameter-editor";
-import { SkillRunButton } from "./skill-run-button";
+import { WatcherRunButton } from "./watcher-run-button";
+import { SnoozeButton } from "./snooze-button";
 import { describeCron } from "@/lib/cron-format";
-import type { SkillListItem, SkillParameter } from "@/lib/skill-schema";
+import type { WatcherListItem } from "@/lib/watcher-schema";
 
 interface ApiErrorResponse {
   error?: string;
   issues?: { path?: string[]; message: string }[];
 }
 
-interface ApiSkillResponse extends ApiErrorResponse {
-  skill?: SkillListItem;
+interface ApiWatcherResponse extends ApiErrorResponse {
+  watcher?: WatcherListItem;
 }
 
-interface SkillEditorProps {
-  skill: SkillListItem;
+interface WatcherEditorProps {
+  watcher: WatcherListItem;
 }
 
 interface Draft {
   name: string;
   description: string;
   prompt: string;
-  parameters: SkillParameter[];
   cronSchedule: string;
-  reportMode: "always" | "alert";
-  purity: "read" | "action";
   enabled: boolean;
+  oneShot: boolean;
+  maxFires: number | null;
+  cooldownMinutes: number | null;
 }
 
-function skillToDraft(skill: SkillListItem): Draft {
+function watcherToDraft(w: WatcherListItem): Draft {
   return {
-    name: skill.name,
-    description: skill.description,
-    prompt: skill.prompt,
-    parameters: skill.parameters,
-    cronSchedule: skill.cronSchedule ?? "",
-    reportMode: skill.reportMode,
-    purity: skill.purity,
-    enabled: skill.enabled,
+    name: w.name,
+    description: w.description,
+    prompt: w.prompt,
+    cronSchedule: w.cronSchedule,
+    enabled: w.enabled,
+    oneShot: w.oneShot,
+    maxFires: w.maxFires,
+    cooldownMinutes: w.cooldownMs != null ? Math.round(w.cooldownMs / 60_000) : null,
   };
 }
 
@@ -53,9 +52,17 @@ function isDirty(draft: Draft, saved: Draft): boolean {
   return JSON.stringify(draft) !== JSON.stringify(saved);
 }
 
-export function SkillEditor({ skill }: SkillEditorProps) {
-  const [saved, setSaved] = useState<Draft>(() => skillToDraft(skill));
-  const [draft, setDraft] = useState<Draft>(() => skillToDraft(skill));
+function parseOptionalInt(value: string, min = 0): number | null {
+  if (!value.trim()) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const floored = Math.floor(n);
+  return floored >= min ? floored : null;
+}
+
+export function WatcherEditor({ watcher }: WatcherEditorProps) {
+  const [saved, setSaved] = useState<Draft>(() => watcherToDraft(watcher));
+  const [draft, setDraft] = useState<Draft>(() => watcherToDraft(watcher));
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [flash, setFlash] = useState<string | null>(null);
@@ -74,7 +81,6 @@ export function SkillEditor({ skill }: SkillEditorProps) {
     });
   }, []);
 
-  // Warn before navigating away with unsaved changes.
   useEffect(() => {
     if (!dirty) return;
     const handler = (e: BeforeUnloadEvent) => {
@@ -85,7 +91,6 @@ export function SkillEditor({ skill }: SkillEditorProps) {
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
 
-  // Cmd/Ctrl+S triggers save when dirty.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
@@ -105,21 +110,22 @@ export function SkillEditor({ skill }: SkillEditorProps) {
     if (draft.name !== saved.name) body.name = draft.name;
     if (draft.description !== saved.description) body.description = draft.description;
     if (draft.prompt !== saved.prompt) body.prompt = draft.prompt;
-    if (draft.reportMode !== saved.reportMode) body.reportMode = draft.reportMode;
-    if (draft.purity !== saved.purity) body.purity = draft.purity;
     if (draft.enabled !== saved.enabled) body.enabled = draft.enabled;
-    if (JSON.stringify(draft.parameters) !== JSON.stringify(saved.parameters))
-      body.parameters = draft.parameters;
-    if (draft.cronSchedule !== saved.cronSchedule) body.cronSchedule = draft.cronSchedule || null;
+    if (draft.cronSchedule !== saved.cronSchedule) body.cronSchedule = draft.cronSchedule;
+    if (draft.oneShot !== saved.oneShot) body.oneShot = draft.oneShot;
+    if (draft.maxFires !== saved.maxFires) body.maxFires = draft.maxFires;
+    if (draft.cooldownMinutes !== saved.cooldownMinutes) {
+      body.cooldownMs = draft.cooldownMinutes != null ? draft.cooldownMinutes * 60_000 : null;
+    }
 
     try {
-      const res = await fetch(`/api/skills/${skill.id}`, {
+      const res = await fetch(`/api/watchers/${watcher.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
-      const data = (await res.json()) as ApiSkillResponse;
+      const data = (await res.json()) as ApiWatcherResponse;
 
       if (!res.ok) {
         if (data.issues) {
@@ -135,7 +141,7 @@ export function SkillEditor({ skill }: SkillEditorProps) {
         return;
       }
 
-      const newSaved = skillToDraft(data.skill!);
+      const newSaved = watcherToDraft(data.watcher!);
       setSaved(newSaved);
       setDraft(newSaved);
       setFlash("Saved");
@@ -154,21 +160,22 @@ export function SkillEditor({ skill }: SkillEditorProps) {
   return (
     <div className="space-y-8">
       {/* Save bar */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {dirty && <span className="text-xs font-medium text-primary">Unsaved changes</span>}
         {flash && <span className="text-xs font-medium text-primary/60">{flash}</span>}
         {errors.general && (
           <span className="text-xs text-destructive-foreground">{errors.general}</span>
         )}
-        <div className="ml-auto flex items-center gap-4">
-          <SkillRunButton
-            skillId={skill.id}
+        <div className="ml-auto flex flex-wrap items-center gap-3">
+          <SnoozeButton watcherId={watcher.id} snoozedUntil={watcher.snoozedUntil} />
+          <WatcherRunButton
+            watcherId={watcher.id}
             disabled={dirty || !draft.enabled}
             disabledReason={
               dirty
                 ? "Save your changes before running"
                 : !draft.enabled
-                  ? "Enable the skill to run it"
+                  ? "Enable the watcher to run it"
                   : undefined
             }
           />
@@ -189,32 +196,32 @@ export function SkillEditor({ skill }: SkillEditorProps) {
       <div className="grid grid-cols-2 gap-6">
         <div className="space-y-2">
           <Label
-            htmlFor="skill-name"
+            htmlFor="watcher-name"
             className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
           >
             Name
           </Label>
           <Input
-            id="skill-name"
+            id="watcher-name"
             value={draft.name}
             onChange={(e) => update({ name: e.target.value })}
-            placeholder="skill-name"
+            placeholder="watcher-name"
             className="font-mono"
           />
           {errors.name && <p className="text-xs text-destructive-foreground">{errors.name}</p>}
         </div>
         <div className="space-y-2">
           <Label
-            htmlFor="skill-description"
+            htmlFor="watcher-description"
             className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
           >
             Description
           </Label>
           <Input
-            id="skill-description"
+            id="watcher-description"
             value={draft.description}
             onChange={(e) => update({ description: e.target.value })}
-            placeholder="What this skill does"
+            placeholder="What this watcher detects"
           />
           {errors.description && (
             <p className="text-xs text-destructive-foreground">{errors.description}</p>
@@ -226,108 +233,134 @@ export function SkillEditor({ skill }: SkillEditorProps) {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label
-            htmlFor="skill-prompt"
+            htmlFor="watcher-prompt"
             className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
           >
-            Prompt
+            Detection Prompt
           </Label>
           <span className="text-[10px] tabular-nums text-muted-foreground/40">
             {draft.prompt.length} chars
           </span>
         </div>
         <Textarea
-          id="skill-prompt"
+          id="watcher-prompt"
           value={draft.prompt}
           onChange={(e) => update({ prompt: e.target.value })}
-          placeholder="Execution instructions for the skill..."
+          placeholder="What to check, what to compare against, what counts as a trigger..."
           className="min-h-[200px] font-mono text-xs leading-relaxed"
           style={{ fieldSizing: "content" }}
         />
         {errors.prompt && <p className="text-xs text-destructive-foreground">{errors.prompt}</p>}
       </div>
 
-      {/* Cron + Report Mode */}
-      <div className="grid grid-cols-2 gap-6">
-        <div className="space-y-2">
-          <Label
-            htmlFor="skill-cron"
-            className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
-          >
-            Schedule
-          </Label>
-          <Input
-            id="skill-cron"
-            value={draft.cronSchedule}
-            onChange={(e) => update({ cronSchedule: e.target.value })}
-            placeholder="e.g. 0 9 * * * (leave empty for on-demand)"
-            className="font-mono"
-          />
-          {draft.cronSchedule && (
-            <p
-              className={`text-[11px] ${cronDesc ? "text-muted-foreground/60" : "text-destructive-foreground"}`}
-            >
-              {cronDesc ?? "Invalid cron expression"}
-            </p>
-          )}
-        </div>
-        <div className="space-y-2">
-          <Label
-            htmlFor="skill-report-mode"
-            className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
-          >
-            Report Mode
-          </Label>
-          <Select
-            id="skill-report-mode"
-            value={draft.reportMode}
-            onChange={(e) => update({ reportMode: e.target.value as "always" | "alert" })}
-          >
-            <option value="always">Always — report every run</option>
-            <option value="alert">Alert — only noteworthy events</option>
-          </Select>
-        </div>
-      </div>
-
-      {/* Purity */}
+      {/* Schedule */}
       <div className="space-y-2">
         <Label
-          htmlFor="skill-purity"
+          htmlFor="watcher-cron"
           className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
         >
-          Purity
+          Schedule
         </Label>
-        <Select
-          id="skill-purity"
-          value={draft.purity}
-          onChange={(e) => update({ purity: e.target.value as "read" | "action" })}
-        >
-          <option value="action">Action — sends, writes, modifies (watchers cannot invoke)</option>
-          <option value="read">
-            Read — observes only (search, summarize, query). Safe for watchers.
-          </option>
-        </Select>
-        <p className="text-[11px] text-muted-foreground/50">
-          Watchers can only compose with read-purity skills via useSkill. Action is the conservative
-          default.
-        </p>
+        <Input
+          id="watcher-cron"
+          value={draft.cronSchedule}
+          onChange={(e) => update({ cronSchedule: e.target.value })}
+          placeholder="e.g. 0 * * * *"
+          className="font-mono"
+        />
+        {draft.cronSchedule && (
+          <p
+            className={`text-[11px] ${cronDesc ? "text-muted-foreground/60" : "text-destructive-foreground"}`}
+          >
+            {cronDesc ?? "Invalid cron expression"}
+          </p>
+        )}
       </div>
 
-      {/* Parameters */}
-      <ParameterEditor
-        parameters={draft.parameters}
-        onChange={(parameters) => update({ parameters })}
-      />
-      {errors.parameters && (
-        <p className="text-xs text-destructive-foreground">{errors.parameters}</p>
-      )}
+      {/* Lifecycle controls */}
+      <div className="space-y-4 rounded-xl border border-border bg-card/40 p-5">
+        <div>
+          <h4 className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+            Lifecycle
+          </h4>
+          <p className="mt-1 text-[11px] text-muted-foreground/50">
+            Bound how often this watcher fires. Suppressed runs still detect and update state, but
+            send no notification.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-6">
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+              One-shot
+              <Switch
+                checked={draft.oneShot}
+                onCheckedChange={(checked) => update({ oneShot: !!checked })}
+              />
+            </Label>
+            <p className="text-[11px] text-muted-foreground/50">
+              Archive after the first real fire.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label
+              htmlFor="watcher-maxfires"
+              className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+            >
+              Max fires
+            </Label>
+            <Input
+              id="watcher-maxfires"
+              type="number"
+              min={1}
+              value={draft.maxFires ?? ""}
+              onChange={(e) => update({ maxFires: parseOptionalInt(e.target.value, 1) })}
+              placeholder="unlimited"
+              className="font-mono"
+              disabled={draft.oneShot}
+            />
+            <p className="text-[11px] text-muted-foreground/50">
+              Archive after this many fires. Empty = unlimited.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label
+              htmlFor="watcher-cooldown"
+              className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+            >
+              Cooldown (minutes)
+            </Label>
+            <Input
+              id="watcher-cooldown"
+              type="number"
+              min={1}
+              value={draft.cooldownMinutes ?? ""}
+              onChange={(e) => update({ cooldownMinutes: parseOptionalInt(e.target.value, 1) })}
+              placeholder="empty = no cooldown"
+              className="font-mono"
+            />
+            <p className="text-[11px] text-muted-foreground/50">
+              Min minutes between notifications. Empty = no cooldown.
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Metadata footer */}
       <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-border pt-6 text-[10px] uppercase tracking-[0.15em] text-muted-foreground/30">
-        <span>v{skill.version}</span>
-        <span>Chat: {skill.chatId}</span>
-        <span>Created: {new Date(skill.createdAt).toLocaleDateString()}</span>
-        <span>Updated: {new Date(skill.updatedAt).toLocaleDateString()}</span>
-        {skill.nextRunAt && <span>Next: {new Date(skill.nextRunAt).toLocaleString()}</span>}
+        <span>v{watcher.version}</span>
+        <span>Chat: {watcher.chatId}</span>
+        <span>Fires: {watcher.fireCount}</span>
+        <span>Created: {new Date(watcher.createdAt).toLocaleDateString()}</span>
+        {watcher.lastFiredAt && (
+          <span>Last fired: {new Date(watcher.lastFiredAt).toLocaleString()}</span>
+        )}
+        {watcher.nextRunAt && <span>Next: {new Date(watcher.nextRunAt).toLocaleString()}</span>}
+        {watcher.expiresAt && (
+          <span>Expires: {new Date(watcher.expiresAt).toLocaleDateString()}</span>
+        )}
       </div>
     </div>
   );

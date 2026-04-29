@@ -18,13 +18,13 @@ const isoDatetime = z
 export function createManageWatchersTool(chatId: string) {
   return tool({
     description:
-      "Manage watchers — scheduled detection jobs that monitor for change and notify Goshujin-sama only when a condition is met (price drops, listing matches, inbox events, etc.). Watchers are read-only by design: they observe and report. Create, list, update, delete, enable, or disable watchers.",
+      "Manage watchers — scheduled detection jobs that monitor for change and notify Goshujin-sama only when a condition is met (price drops, listing matches, inbox events, etc.). Watchers are read-only by design: they observe and report. Lifecycle controls (oneShot, maxFires, cooldownMinutes) bound how often a watcher fires. Use the `snooze` action to silence a watcher temporarily without disabling it.",
     inputSchema: z.object({
-      action: z.enum(["create", "list", "update", "delete", "enable", "disable"]),
+      action: z.enum(["create", "list", "update", "delete", "enable", "disable", "snooze"]),
       watcherId: z
         .string()
         .optional()
-        .describe("Watcher ID (required for update/delete/enable/disable)"),
+        .describe("Watcher ID (required for update/delete/enable/disable/snooze)"),
       name: z
         .string()
         .optional()
@@ -46,8 +46,43 @@ export function createManageWatchersTool(chatId: string) {
       expiresAt: isoDatetime
         .optional()
         .describe("ISO 8601 datetime when this watcher should auto-archive. Defaults to 30 days."),
+      oneShot: z
+        .boolean()
+        .optional()
+        .describe("If true, archive the watcher after the first real fire."),
+      maxFires: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Archive after this many real fires. Pass null/omit for unlimited."),
+      cooldownMinutes: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe(
+          "Minimum minutes between notifications. Triggers within the window are silenced (still logged).",
+        ),
+      untilHours: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Hours to snooze for, used with the `snooze` action."),
     }),
-    execute: async ({ action, watcherId, name, description, prompt, cronSchedule, expiresAt }) => {
+    execute: async ({
+      action,
+      watcherId,
+      name,
+      description,
+      prompt,
+      cronSchedule,
+      expiresAt,
+      oneShot,
+      maxFires,
+      cooldownMinutes,
+      untilHours,
+    }) => {
       try {
         switch (action) {
           case "create": {
@@ -76,7 +111,10 @@ export function createManageWatchersTool(chatId: string) {
               );
             }
 
-            logger.info({ chatId, name, cronSchedule }, "Tool: manageWatchers (create)");
+            logger.info(
+              { chatId, name, cronSchedule, oneShot, maxFires, cooldownMinutes },
+              "Tool: manageWatchers (create)",
+            );
 
             const nextRunAt = computeNextRunAt(cronSchedule);
             const expires = expiresAt ? new Date(expiresAt) : defaultExpiresAt();
@@ -88,6 +126,10 @@ export function createManageWatchersTool(chatId: string) {
               cronSchedule,
               nextRunAt,
               expiresAt: expires,
+              oneShot: oneShot ?? false,
+              maxFires: maxFires ?? null,
+              cooldownMs:
+                cooldownMinutes != null && cooldownMinutes > 0 ? cooldownMinutes * 60_000 : null,
             });
 
             return {
@@ -98,6 +140,9 @@ export function createManageWatchersTool(chatId: string) {
               cronSchedule,
               nextRunAt: nextRunAt.toISOString(),
               expiresAt: expires.toISOString(),
+              oneShot: watcher.oneShot,
+              maxFires: watcher.maxFires,
+              cooldownMs: watcher.cooldownMs,
             };
           }
 
@@ -119,6 +164,10 @@ export function createManageWatchersTool(chatId: string) {
                 lastFiredAt: w.lastFiredAt?.toISOString() ?? null,
                 nextRunAt: w.nextRunAt?.toISOString() ?? null,
                 expiresAt: w.expiresAt?.toISOString() ?? null,
+                oneShot: w.oneShot,
+                maxFires: w.maxFires,
+                cooldownMs: w.cooldownMs,
+                snoozedUntil: w.snoozedUntil?.toISOString() ?? null,
               })),
             };
           }
@@ -137,6 +186,11 @@ export function createManageWatchersTool(chatId: string) {
             if (description) patch.description = description;
             if (prompt) patch.prompt = prompt;
             if (expiresAt !== undefined) patch.expiresAt = new Date(expiresAt);
+            if (oneShot !== undefined) patch.oneShot = oneShot;
+            if (maxFires !== undefined) patch.maxFires = maxFires;
+            if (cooldownMinutes !== undefined) {
+              patch.cooldownMs = cooldownMinutes === 0 ? null : cooldownMinutes * 60_000;
+            }
 
             if (cronSchedule !== undefined) {
               if (!cronSchedule.trim()) {
@@ -190,6 +244,28 @@ export function createManageWatchersTool(chatId: string) {
             const disabled = await updateWatcher(watcherId, { enabled: false }, chatId);
             return disabled
               ? { success: true, watcherId, enabled: false }
+              : { success: false, reason: "Watcher not found" };
+          }
+
+          case "snooze": {
+            if (!watcherId) {
+              return { success: false, reason: "watcherId is required for snooze" };
+            }
+            if (untilHours == null || !Number.isFinite(untilHours) || untilHours <= 0) {
+              return {
+                success: false,
+                reason: "untilHours (positive finite number) is required for snooze",
+              };
+            }
+            const snoozedUntil = new Date(Date.now() + untilHours * 60 * 60 * 1000);
+            logger.info({ watcherId, untilHours, snoozedUntil }, "Tool: manageWatchers (snooze)");
+            const snoozed = await updateWatcher(watcherId, { snoozedUntil }, chatId);
+            return snoozed
+              ? {
+                  success: true,
+                  watcherId,
+                  snoozedUntil: snoozedUntil.toISOString(),
+                }
               : { success: false, reason: "Watcher not found" };
           }
         }

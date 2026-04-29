@@ -19,7 +19,7 @@ mashiro/                          # npm workspaces + Turborepo
 │   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, cron, skill-executor, watcher-executor
 │   │   │   └── scheduler/        # proactive, reminders, skills, watchers
 │   │   └── context/              # soul (personality), reference images, settings (data)
-│   └── dashboard/                # Next.js dashboard (skill management, observability)
+│   └── dashboard/                # Next.js dashboard (skill + watcher management, observability)
 ├── packages/
 │   ├── typescript-config/        # shared tsconfig bases (JSON only)
 │   ├── eslint-config/            # shared ESLint flat config
@@ -241,7 +241,7 @@ When firing, the scheduler uses `getOrCreateSession` to get the active session, 
 | `@mashiro/db`        | MongoDB connection, all models, GridFS             | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `Skill`, `SkillLog`, `LocationHistory`, `readImage`, `writeImage`, all model CRUD functions |
 | `@mashiro/memory`    | Memory engine, embeddings                          | `remember`, `recall`, `forget`, `generateEmbedding`, episode/fact/milestone retrieval                                                                                            |
 | `@mashiro/bot`       | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages                                                                                                                                 |
-| `@mashiro/dashboard` | Next.js dashboard (read-only data viewer)          | Overview, conversations, memories, reminders, skills pages                                                                                                                       |
+| `@mashiro/dashboard` | Next.js dashboard (read + write CRUD)              | Overview, conversations, memories, reminders, skills, watchers, usage pages                                                                                                      |
 
 ### Bot-Internal Modules
 

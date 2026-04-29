@@ -14,25 +14,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { ParameterEditor } from "./parameter-editor";
 import { Plus } from "lucide-react";
-import type { SkillListItem, SkillParameter } from "@/lib/skill-schema";
+import type { WatcherListItem } from "@/lib/watcher-schema";
 
-interface ApiSkillResponse {
+interface ApiWatcherResponse {
   error?: string;
   issues?: { path?: string[]; message: string }[];
-  skill?: SkillListItem;
+  watcher?: WatcherListItem;
 }
 
-interface SkillCreateDialogProps {
+interface WatcherCreateDialogProps {
   knownChatIds: string[];
-  onCreated: (skill: SkillListItem) => void;
+  onCreated: (watcher: WatcherListItem) => void;
 }
 
 const NEW_CHAT_SENTINEL = "__new__";
 
-export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialogProps) {
+export function WatcherCreateDialog({ knownChatIds, onCreated }: WatcherCreateDialogProps) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -41,10 +41,10 @@ export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialog
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [parameters, setParameters] = useState<SkillParameter[]>([]);
   const [cronSchedule, setCronSchedule] = useState("");
-  const [reportMode, setReportMode] = useState<"always" | "alert">("always");
-  const [purity, setPurity] = useState<"read" | "action">("action");
+  const [oneShot, setOneShot] = useState(false);
+  const [maxFiresRaw, setMaxFiresRaw] = useState("");
+  const [cooldownMinutesRaw, setCooldownMinutesRaw] = useState("");
   const [chatIdMode, setChatIdMode] = useState<string>(defaultChatId || NEW_CHAT_SENTINEL);
   const [newChatId, setNewChatId] = useState("");
 
@@ -54,10 +54,10 @@ export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialog
     setName("");
     setDescription("");
     setPrompt("");
-    setParameters([]);
     setCronSchedule("");
-    setReportMode("always");
-    setPurity("action");
+    setOneShot(false);
+    setMaxFiresRaw("");
+    setCooldownMinutesRaw("");
     setChatIdMode(defaultChatId || NEW_CHAT_SENTINEL);
     setNewChatId("");
     setErrors({});
@@ -67,8 +67,13 @@ export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialog
     setSaving(true);
     setErrors({});
 
+    const maxFires = maxFiresRaw.trim() ? Math.max(1, Math.floor(Number(maxFiresRaw))) : null;
+    const cooldownMs = cooldownMinutesRaw.trim()
+      ? Math.max(0, Math.floor(Number(cooldownMinutesRaw))) * 60_000
+      : null;
+
     try {
-      const res = await fetch("/api/skills", {
+      const res = await fetch("/api/watchers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -76,14 +81,14 @@ export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialog
           name,
           description,
           prompt,
-          parameters,
-          cronSchedule: cronSchedule || null,
-          reportMode,
-          purity,
+          cronSchedule,
+          oneShot,
+          maxFires,
+          cooldownMs,
         }),
       });
 
-      const data = (await res.json()) as ApiSkillResponse;
+      const data = (await res.json()) as ApiWatcherResponse;
 
       if (!res.ok) {
         if (data.issues) {
@@ -94,12 +99,12 @@ export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialog
           }
           setErrors(fieldErrors);
         } else {
-          setErrors({ general: data.error ?? "Failed to create skill" });
+          setErrors({ general: data.error ?? "Failed to create watcher" });
         }
         return;
       }
 
-      onCreated(data.skill!);
+      onCreated(data.watcher!);
       setOpen(false);
       reset();
     } catch {
@@ -110,7 +115,7 @@ export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialog
   }
 
   const cronDesc = describeCron(cronSchedule);
-  const canCreate = name && description && prompt && chatId;
+  const canCreate = name && description && prompt && cronSchedule && chatId;
 
   return (
     <Dialog
@@ -123,12 +128,12 @@ export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialog
       <DialogTrigger asChild>
         <Button size="sm">
           <Plus className="h-3.5 w-3.5" />
-          New Skill
+          New Watcher
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-display text-xl">Create Skill</DialogTitle>
+          <DialogTitle className="font-display text-xl">Create Watcher</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-5">
@@ -139,30 +144,30 @@ export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialog
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label
-                htmlFor="create-name"
+                htmlFor="watcher-create-name"
                 className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
               >
                 Name
               </Label>
               <Input
-                id="create-name"
+                id="watcher-create-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="my-skill"
+                placeholder="my-watcher"
                 className="font-mono"
               />
               {errors.name && <p className="text-xs text-destructive-foreground">{errors.name}</p>}
             </div>
             <div className="space-y-2">
               <Label
-                htmlFor="create-chatid"
+                htmlFor="watcher-create-chatid"
                 className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
               >
                 Chat ID
               </Label>
               {knownChatIds.length > 0 ? (
                 <Select
-                  id="create-chatid"
+                  id="watcher-create-chatid"
                   value={chatIdMode}
                   onChange={(e) => setChatIdMode(e.target.value)}
                   className="font-mono"
@@ -191,16 +196,16 @@ export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialog
 
           <div className="space-y-2">
             <Label
-              htmlFor="create-description"
+              htmlFor="watcher-create-description"
               className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
             >
               Description
             </Label>
             <Input
-              id="create-description"
+              id="watcher-create-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What this skill does"
+              placeholder="What this watcher detects"
             />
             {errors.description && (
               <p className="text-xs text-destructive-foreground">{errors.description}</p>
@@ -209,16 +214,16 @@ export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialog
 
           <div className="space-y-2">
             <Label
-              htmlFor="create-prompt"
+              htmlFor="watcher-create-prompt"
               className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
             >
-              Prompt
+              Detection Prompt
             </Label>
             <Textarea
-              id="create-prompt"
+              id="watcher-create-prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Execution instructions..."
+              placeholder="What to check, what to compare against, what counts as a trigger..."
               className="min-h-[120px] font-mono text-xs"
             />
             {errors.prompt && (
@@ -226,65 +231,72 @@ export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialog
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label
-                htmlFor="create-cron"
-                className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
-              >
-                Cron Schedule
-              </Label>
-              <Input
-                id="create-cron"
-                value={cronSchedule}
-                onChange={(e) => setCronSchedule(e.target.value)}
-                placeholder="optional"
-                className="font-mono"
-              />
-              {cronSchedule && (
-                <p
-                  className={`text-[11px] ${cronDesc ? "text-muted-foreground/60" : "text-destructive-foreground"}`}
-                >
-                  {cronDesc ?? "Invalid cron expression"}
-                </p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label
-                htmlFor="create-report-mode"
-                className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
-              >
-                Report Mode
-              </Label>
-              <Select
-                id="create-report-mode"
-                value={reportMode}
-                onChange={(e) => setReportMode(e.target.value as "always" | "alert")}
-              >
-                <option value="always">Always</option>
-                <option value="alert">Alert only</option>
-              </Select>
-            </div>
-          </div>
-
           <div className="space-y-2">
             <Label
-              htmlFor="create-purity"
+              htmlFor="watcher-create-cron"
               className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
             >
-              Purity
+              Schedule
             </Label>
-            <Select
-              id="create-purity"
-              value={purity}
-              onChange={(e) => setPurity(e.target.value as "read" | "action")}
-            >
-              <option value="action">Action — sends/writes (watchers cannot invoke)</option>
-              <option value="read">Read — observation only (safe for watchers)</option>
-            </Select>
+            <Input
+              id="watcher-create-cron"
+              value={cronSchedule}
+              onChange={(e) => setCronSchedule(e.target.value)}
+              placeholder="0 * * * *"
+              className="font-mono"
+            />
+            {cronSchedule && (
+              <p
+                className={`text-[11px] ${cronDesc ? "text-muted-foreground/60" : "text-destructive-foreground"}`}
+              >
+                {cronDesc ?? "Invalid cron expression"}
+              </p>
+            )}
           </div>
 
-          <ParameterEditor parameters={parameters} onChange={setParameters} />
+          <div className="grid grid-cols-3 gap-4 rounded-xl border border-border bg-card/40 p-4">
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                One-shot
+                <Switch checked={oneShot} onCheckedChange={(c) => setOneShot(!!c)} />
+              </Label>
+            </div>
+            <div className="space-y-2">
+              <Label
+                htmlFor="watcher-create-maxfires"
+                className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+              >
+                Max fires
+              </Label>
+              <Input
+                id="watcher-create-maxfires"
+                type="number"
+                min={1}
+                value={maxFiresRaw}
+                onChange={(e) => setMaxFiresRaw(e.target.value)}
+                placeholder="unlimited"
+                className="font-mono"
+                disabled={oneShot}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label
+                htmlFor="watcher-create-cooldown"
+                className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+              >
+                Cooldown (min)
+              </Label>
+              <Input
+                id="watcher-create-cooldown"
+                type="number"
+                min={1}
+                value={cooldownMinutesRaw}
+                onChange={(e) => setCooldownMinutesRaw(e.target.value)}
+                placeholder="empty"
+                className="font-mono"
+              />
+            </div>
+          </div>
         </div>
 
         <DialogFooter>
