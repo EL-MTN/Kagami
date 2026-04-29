@@ -82,6 +82,7 @@ export async function handleMessage(
     chatId: incoming.chatId,
     adapter,
     sessionId,
+    userId: incoming.userId,
   };
 
   // 5. Generate response with tools

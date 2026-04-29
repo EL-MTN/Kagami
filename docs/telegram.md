@@ -16,6 +16,13 @@ interface PlatformAdapter {
     caption?: string,
   ): Promise<string | undefined>;
   sendPhotoBuffer(chatId: string, buffer: Buffer, caption?: string): Promise<string | undefined>;
+  sendVoiceBuffer(chatId: string, buffer: Buffer, duration?: number): Promise<void>;
+  sendConfirmationPrompt(
+    chatId: string,
+    text: string,
+    confirmationId: string,
+  ): Promise<string | undefined>;
+  editConfirmationPrompt(chatId: string, messageId: string, text: string): Promise<void>;
 }
 ```
 
@@ -41,15 +48,18 @@ Implemented in `apps/bot/src/platform/telegram/adapter.ts`. Singleton accessed v
 
 ### Methods
 
-| Method                                     | Description                                                                               |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `normalize(ctx)`                           | Extract text message from Grammy context → `IncomingMessage`                              |
-| `normalizePhoto(ctx)`                      | Download photo from Telegram API, convert to base64, detect MIME type → `IncomingMessage` |
-| `normalizeLocation(ctx)`                   | Extract location from message → `IncomingMessage` with `location` field                   |
-| `normalizeLocationEdit(ctx)`               | Extract location from edited message (live location update) → `IncomingMessage`           |
-| `sendText(chatId, text)`                   | Send plain text message                                                                   |
-| `sendPhoto(chatId, photo, caption)`        | Send photo by file path or file_id. Returns file_id for caching.                          |
-| `sendPhotoBuffer(chatId, buffer, caption)` | Send photo from memory buffer. Returns file_id.                                           |
+| Method                                                 | Description                                                                                                                                                               |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `normalize(ctx)`                                       | Extract text message from Grammy context → `IncomingMessage`                                                                                                              |
+| `normalizePhoto(ctx)`                                  | Download photo from Telegram API, convert to base64, detect MIME type → `IncomingMessage`                                                                                 |
+| `normalizeLocation(ctx)`                               | Extract location from message → `IncomingMessage` with `location` field                                                                                                   |
+| `normalizeLocationEdit(ctx)`                           | Extract location from edited message (live location update) → `IncomingMessage`                                                                                           |
+| `sendText(chatId, text)`                               | Send plain text message                                                                                                                                                   |
+| `sendPhoto(chatId, photo, caption)`                    | Send photo by file path or file_id. Returns file_id for caching.                                                                                                          |
+| `sendPhotoBuffer(chatId, buffer, caption)`             | Send photo from memory buffer. Returns file_id.                                                                                                                           |
+| `sendVoiceBuffer(chatId, buffer, duration?)`           | Send voice message from buffer (used by the `sendVoice` tool).                                                                                                            |
+| `sendConfirmationPrompt(chatId, text, confirmationId)` | Send a message with `[✓ Approve][✗ Deny]` inline buttons. Callback data is `confirm:<confirmationId>:<approve\|deny>`. Returns the platform message id for later editing. |
+| `editConfirmationPrompt(chatId, messageId, text)`      | Replace a confirmation prompt's body with a terminal-state line and clear the inline keyboard. Tolerant of failures (user may have deleted the message).                  |
 
 ### Photo Handling
 
@@ -94,10 +104,21 @@ createBot(token)
     │   ├─ resetTimer(chatId)
     │   └─ If arrival event → triggerLocationProactive(chatId)
     │
-    └─ edited_message:location handler (gated on LOCATION_ENABLED)
-        ├─ normalizeLocationEdit(ctx) → IncomingMessage (live update)
-        ├─ processLocation() — silent store only (no AI pipeline)
-        └─ If arrival event → triggerLocationProactive(chatId)
+    ├─ edited_message:location handler (gated on LOCATION_ENABLED)
+    │   ├─ normalizeLocationEdit(ctx) → IncomingMessage (live update)
+    │   ├─ processLocation() — silent store only (no AI pipeline)
+    │   └─ If arrival event → triggerLocationProactive(chatId)
+    │
+    └─ callback_query:data handler (confirmation buttons)
+        ├─ Parse `confirm:<id>:<approve|deny>` callback data
+        ├─ Reject if no ctx.chat (defensive — single-user bot doesn't use inline mode)
+        ├─ Load PendingConfirmation, validate chat-scope + status + expiry
+        ├─ resolvePendingConfirmation(...) ← atomic, BEFORE dispatch
+        ├─ answerCallbackQuery({ text: "Working…" / "Denied" }) ← dismiss spinner
+        ├─ If approved: dispatchGatedAction(action.tool, action.args)
+        ├─ adapter.editConfirmationPrompt → terminal-state line, keyboard cleared
+        ├─ appendConfirmationResolution → bracketed event in conversation history
+        └─ generateAcknowledgment (fire-and-forget) → in-character one-bubble reply
 ```
 
 ### Allowlist Middleware

@@ -165,7 +165,7 @@ async function generateProactiveMessage(
     messages.push({ role: "user", content: "[Time has passed. Text him if you feel like it.]" });
   }
 
-  const toolContext: ToolContext = { chatId, adapter, sessionId };
+  const toolContext: ToolContext = { chatId, adapter, sessionId, userId };
 
   const result = await generateText({
     model: getModel(),

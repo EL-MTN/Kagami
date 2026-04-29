@@ -16,6 +16,8 @@ import { createUseSkillTool } from "./use-skill";
 import { createSendVoiceTool } from "./send-voice";
 import { createManageWatchersTool } from "./manage-watchers";
 import { reportWatcherResult } from "./report-watcher-result";
+import { createRequestConfirmationTool } from "./request-confirmation";
+import { createCancelConfirmationTool } from "./cancel-confirmation";
 import { MAX_SKILL_DEPTH } from "../../services/skill-executor";
 import { config } from "@mashiro/shared";
 import type { ToolSet } from "ai";
@@ -25,6 +27,13 @@ export interface ToolContext {
   chatId: string;
   adapter: PlatformAdapter;
   sessionId: string;
+  /**
+   * The user driving this turn. Set on conversational/proactive/acknowledgment
+   * paths (we know the Telegram user). Optional because cron-triggered skills
+   * have no active user. Used by tools that may need to materialize a session
+   * (e.g. `cancelConfirmation` → `appendConfirmationResolution`).
+   */
+  userId?: string;
   /** Current skill nesting depth. 0 = top-level conversation or manual skill trigger. */
   skillDepth?: number;
   /**
@@ -68,6 +77,16 @@ export function allTools(ctx: ToolContext) {
     tools.browse = createBrowseTool(ctx.chatId, ctx.adapter);
   }
 
+  // Approval-gated wrappers. Registered when any gated underlying tool is
+  // available — sendEmail/manageCalendar require Google OAuth, browseAgent
+  // requires the browser. The wrapper's enum is the same in both cases; the
+  // dispatcher fails at runtime if a tool is selected whose backing service
+  // isn't configured. Behavioral guidance steers the LLM correctly.
+  if (config.GOOGLE_OAUTH_CLIENT_ID || config.BROWSER_ENABLED) {
+    tools.requestConfirmation = createRequestConfirmationTool(ctx.chatId, ctx.adapter);
+    tools.cancelConfirmation = createCancelConfirmationTool(ctx.chatId, ctx.adapter, ctx.userId);
+  }
+
   tools.manageSkills = createManageSkillsTool(ctx.chatId);
   tools.searchSkills = createSearchSkillsTool(ctx.chatId);
   tools.manageWatchers = createManageWatchersTool(ctx.chatId);
@@ -85,8 +104,11 @@ export function allTools(ctx: ToolContext) {
  * skill that runs under a watcher context. Excludes everything that mutates
  * external state: sends (email/photo/voice), memory writes (rememberFact /
  * noteToSelf / curateMemory), calendar/reminder writes, skill creation,
- * watcher creation. `useSkill` IS included but `callingContext: "watcher"`
- * is hardcoded so any nested skill invocation re-enters the gate.
+ * watcher creation, and the confirmation primitive (requestConfirmation /
+ * cancelConfirmation — both write to the PendingConfirmation collection
+ * and the underlying messaging surface). `useSkill` IS included but
+ * `callingContext: "watcher"` is hardcoded so any nested skill invocation
+ * re-enters the gate.
  *
  * Does NOT include `reportWatcherResult` — that's the watcher executor's
  * terminator, irrelevant to skills running under watcher context.

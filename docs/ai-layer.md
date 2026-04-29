@@ -168,6 +168,20 @@ Two distinct tool sets are assembled depending on the calling context:
 - **Returns**: `{ success, count?, emails? }` or `{ success, email }` or `{ success: false, reason }`
 - **Behavior**: Lists unread emails or retrieves a specific email by ID. Only registered when `GOOGLE_OAUTH_CLIENT_ID` is configured.
 
+### requestConfirmation (conditional — requires `GOOGLE_OAUTH_CLIENT_ID` or `BROWSER_ENABLED`)
+
+- **Purpose**: Persist a pending action and ask Goshujin-sama to tap [Approve] / [Deny] before it runs
+- **Parameters**: `{ summary: string, action: { tool: GatedToolName, args: Record<string, unknown> } }`
+- **Returns**: `{ pending: true, confirmationId, message }` or `{ pending: false, success: false, reason }`
+- **Behavior**: Persists a `PendingConfirmation` row, sends a Telegram message with inline `[✓ Approve][✗ Deny]` buttons via `adapter.sendConfirmationPrompt`, and returns immediately. The action is **not** executed in this turn — the LLM is instructed to stop. When the user taps a button, the Telegram callback handler atomically transitions the row to a terminal status BEFORE dispatch (race-safe), answers the callback query immediately ("Working…" / "Denied"), then dispatches via `dispatchGatedAction(tool, args)` if approved, edits the prompt bubble in place, appends a `[goshujin-sama approved/denied: ...]` event into conversation history, and finally fires `generateAcknowledgment` so Mashiro speaks one short in-character bubble about the outcome. While a row is pending, it appears in the system prompt under `## Pending Approvals` so the LLM doesn't re-prompt. `action.tool` is a Zod enum bound to `GATED_TOOL_NAMES` (currently `["sendEmail", "manageCalendar", "browseAgent"]`); see `docs/confirmations.md`.
+
+### cancelConfirmation (conditional — registered alongside `requestConfirmation`)
+
+- **Purpose**: Cancel a pending approval request from chat (when Goshujin-sama changes his mind without tapping the Deny button)
+- **Parameters**: `{ confirmationId: string, reason?: string }`
+- **Returns**: `{ success: true, confirmationId }` or `{ success: false, reason }`
+- **Behavior**: Validates the confirmation belongs to the calling chat and is still pending, atomically transitions to `"cancelled"`, edits the prompt bubble in place to "✗ Cancelled · …", and appends a `[mashiro cancelled pending request: …]` event to conversation history. The id comes from the `## Pending Approvals` section of the system prompt.
+
 ### sendEmail (conditional — requires Google OAuth)
 
 - **Purpose**: Send an email or reply to a thread on behalf of Goshujin-sama
