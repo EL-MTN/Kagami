@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { generateObject } from 'ai';
+import { generateObject, wrapLanguageModel } from 'ai';
+import type { LanguageModelV3Middleware } from '@ai-sdk/provider';
 import { paths } from './paths.js';
 
 const baseURL = process.env.LMSTUDIO_URL ?? 'http://localhost:1234/v1';
@@ -26,7 +27,43 @@ const provider = createOpenAICompatible({
   supportsStructuredOutputs: true,
 } as Parameters<typeof createOpenAICompatible>[0]);
 
-export const model = provider(modelName);
+// Thinking-mode models (GLM-4.7-flash, Qwen3.6, etc.) sometimes emit their
+// final structured output into the `reasoning_content` field while leaving
+// the assistant `content` empty. The AI SDK reads only the text-typed
+// content parts, so generateObject sees nothing and throws
+// AI_NoObjectGeneratedError. This middleware repairs that case: when the
+// generate result has no non-empty text part but does have one or more
+// reasoning parts, promote the concatenated reasoning text to a text part.
+//
+// Tool-call results are untouched — when the model emits a tool_call
+// alongside reasoning, the tool_call part survives unchanged.
+const reasoningToContentMiddleware: LanguageModelV3Middleware = {
+  specificationVersion: 'v3',
+  wrapGenerate: async ({ doGenerate }) => {
+    const result = await doGenerate();
+    const hasText = result.content.some(
+      (p) => p.type === 'text' && p.text.trim().length > 0,
+    );
+    if (hasText) return result;
+    const reasoning = result.content
+      .filter((p): p is { type: 'reasoning'; text: string } => p.type === 'reasoning')
+      .map((p) => p.text)
+      .join('');
+    if (reasoning.trim().length === 0) return result;
+    return {
+      ...result,
+      content: [
+        ...result.content.filter((p) => p.type !== 'text' && p.type !== 'reasoning'),
+        { type: 'text', text: reasoning },
+      ],
+    };
+  },
+};
+
+export const model = wrapLanguageModel({
+  model: provider(modelName),
+  middleware: reasoningToContentMiddleware,
+});
 
 export interface ObjectCallOptions<T extends z.ZodTypeAny> {
   stage: string;
