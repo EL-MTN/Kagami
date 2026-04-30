@@ -1,5 +1,16 @@
 export { connectDB, disconnectDB, isDuplicateKeyError } from "./connection";
-export { generateImageKey, writeImage, readImage, removeImage, removeImages } from "./gridfs";
+export {
+  generateImageKey,
+  writeImage,
+  readImage,
+  removeImage,
+  removeImages,
+  generateAudioKey,
+  writeAudio,
+  readAudio,
+  removeAudio,
+  removeAudios,
+} from "./gridfs";
 export { Memory, type IMemory, type IMemoryMetadata } from "./models/memory";
 export {
   Conversation,

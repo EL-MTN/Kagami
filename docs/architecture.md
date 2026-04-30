@@ -256,6 +256,7 @@ When firing, the scheduler uses `getOrCreateSession` to get the active session, 
 | `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Cron, Skill executor, Geocoding, Location, Gated-action dispatcher |
 | `apps/bot/src/scheduler/`         | Proactive, reminder, skill scheduling                                                                      |
 | `apps/bot/src/context/`           | Image reference loading + generation                                                                       |
+| `apps/bot/src/stt/`               | Speech-to-text (Whisper-compatible API, cloud or local whisper.cpp); see docs/voice.md                     |
 
 ## Boot Sequence
 

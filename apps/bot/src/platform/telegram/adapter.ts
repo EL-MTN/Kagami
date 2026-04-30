@@ -66,6 +66,107 @@ export class TelegramAdapter implements PlatformAdapter {
     }
   }
 
+  /**
+   * Common shape for inbound voice/audio. Reads the file metadata, rejects
+   * outright if the file size exceeds the 25 MB STT cap (so we don't bother
+   * downloading a payload we can't transcribe), then downloads from
+   * Telegram's CDN. Returns IncomingMessage with audio fields populated;
+   * `handleMessage` does the GridFS write and STT call.
+   */
+  private async normalizeAudioFile(
+    ctx: Context,
+    fileId: string,
+    mimeType: string | undefined,
+    durationSeconds: number,
+    fileSize: number | undefined,
+    fallbackMime: string,
+  ): Promise<IncomingMessage | null> {
+    const msg = ctx.message;
+    if (!msg || !msg.from) return null;
+    const base = {
+      platform: "telegram",
+      chatId: String(msg.chat.id),
+      userId: String(msg.from.id),
+      userName: msg.from.first_name || "Unknown",
+      timestamp: new Date(msg.date * 1000),
+      replyToMessageId: msg.reply_to_message ? String(msg.reply_to_message.message_id) : undefined,
+    };
+
+    const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+    if (fileSize !== undefined && fileSize > MAX_AUDIO_BYTES) {
+      logger.warn({ fileId, fileSize }, "Voice/audio exceeds 25 MB cap; skipping download");
+      return {
+        ...base,
+        text: "[voice note too long to transcribe]",
+        audioDurationSeconds: durationSeconds,
+      };
+    }
+
+    try {
+      const file = await ctx.api.getFile(fileId);
+      const res = await fetch(
+        `https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`,
+      );
+      if (!res.ok) {
+        logger.error({ status: res.status, fileId }, "Failed to download voice/audio");
+        return null;
+      }
+      const buffer = Buffer.from(await res.arrayBuffer());
+      // Telegram's `file_size` field is documented optional. When the
+      // pre-download check above couldn't fire (size missing), re-check
+      // after download so we never feed an oversized buffer downstream.
+      if (buffer.length > MAX_AUDIO_BYTES) {
+        logger.warn(
+          { fileId, bytes: buffer.length },
+          "Downloaded voice/audio exceeds 25 MB cap; dropping buffer",
+        );
+        return {
+          ...base,
+          text: "[voice note too long to transcribe]",
+          audioDurationSeconds: durationSeconds,
+        };
+      }
+      return {
+        ...base,
+        text: "[voice note]",
+        audioBuffer: buffer,
+        audioMimeType: mimeType ?? fallbackMime,
+        audioDurationSeconds: durationSeconds,
+      };
+    } catch (error) {
+      logger.error({ error, fileId }, "Error downloading voice/audio");
+      return null;
+    }
+  }
+
+  /** Telegram voice notes (recorded in-app). Always OGG/Opus, has duration. */
+  async normalizeVoice(ctx: Context): Promise<IncomingMessage | null> {
+    const voice = ctx.message?.voice;
+    if (!voice) return null;
+    return this.normalizeAudioFile(
+      ctx,
+      voice.file_id,
+      voice.mime_type,
+      voice.duration,
+      voice.file_size,
+      "audio/ogg",
+    );
+  }
+
+  /** Telegram audio files (forwarded music or audio document). */
+  async normalizeAudio(ctx: Context): Promise<IncomingMessage | null> {
+    const audio = ctx.message?.audio;
+    if (!audio) return null;
+    return this.normalizeAudioFile(
+      ctx,
+      audio.file_id,
+      audio.mime_type,
+      audio.duration,
+      audio.file_size,
+      "audio/mpeg",
+    );
+  }
+
   normalizeLocation(ctx: Context): IncomingMessage | null {
     const msg = ctx.message;
     if (!msg?.location || !msg.from) return null;

@@ -2,10 +2,18 @@ import { generateText, stepCountIs } from "ai";
 import { getModel } from "./provider";
 import { assembleSystemPrompt, assembleMessages } from "./context-assembler";
 import { allTools, type ToolContext } from "./tools/index";
-import { getOrCreateSession, appendMessage, writeImage, generateImageKey } from "@mashiro/db";
+import {
+  getOrCreateSession,
+  appendMessage,
+  writeImage,
+  generateImageKey,
+  writeAudio,
+  generateAudioKey,
+} from "@mashiro/db";
 import { curateIfNeeded, curateClosedSession } from "../memory/curator";
 import type { IncomingMessage, PlatformAdapter } from "@mashiro/shared";
 import { logger } from "@mashiro/shared";
+import { transcribeAudio } from "../stt/transcriber";
 import {
   extractResponseText,
   collectToolCalls,
@@ -49,11 +57,58 @@ export async function handleMessage(
     );
   }
 
+  // Store inbound audio in GridFS and transcribe via STT (if configured).
+  // The platform adapters set incoming.text to "[voice note]" as a default;
+  // we overwrite it with the marker-prefixed transcript on success or with
+  // a more specific placeholder on failure / oversize / disabled.
+  //
+  // Defense-in-depth: both adapters pre-filter audio at 25 MB before
+  // populating audioBuffer, but we re-check here so an oversized buffer
+  // from any future adapter never produces an orphan GridFS blob with no
+  // transcript. transcribeAudio also has the same cap; this just makes
+  // the "no GridFS write on oversized" guarantee structural rather than
+  // adapter-coincidence.
+  const STT_BYTE_CAP = 25 * 1024 * 1024;
+  let audioRef: string | undefined;
+  let audioDurationSeconds = incoming.audioDurationSeconds;
+  let messageText = incoming.text;
+  if (incoming.audioBuffer) {
+    if (incoming.audioBuffer.length > STT_BYTE_CAP) {
+      logger.warn(
+        { bytes: incoming.audioBuffer.length, cap: STT_BYTE_CAP },
+        "Audio reached handleMessage over cap; skipping GridFS write + transcription",
+      );
+      messageText = "[voice note too long to transcribe]";
+    } else {
+      audioRef = generateAudioKey();
+      await writeAudio(audioRef, incoming.audioBuffer, incoming.audioMimeType ?? "audio/ogg");
+
+      const outcome = await transcribeAudio({
+        audio: incoming.audioBuffer,
+        mimeType: incoming.audioMimeType ?? "audio/ogg",
+        durationSeconds: incoming.audioDurationSeconds,
+      });
+
+      if (outcome.ok) {
+        messageText = `[voice] ${outcome.text}`;
+        audioDurationSeconds = outcome.durationSeconds ?? audioDurationSeconds;
+      } else if (outcome.reason === "too-large") {
+        messageText = "[voice note too long to transcribe]";
+      } else if (outcome.reason === "failed") {
+        messageText = "[voice note — transcription failed]";
+      }
+      // outcome.reason === "disabled": leave the adapter's "[voice note]" placeholder
+    }
+  }
+
   await appendMessage(convo, {
     role: "user",
-    content: incoming.text,
+    content: messageText,
     imageRef,
     imageMimeType: incoming.imageBase64 ? incoming.imageMimeType : undefined,
+    audioRef,
+    audioMimeType: audioRef ? incoming.audioMimeType : undefined,
+    audioDurationSeconds: audioRef ? audioDurationSeconds : undefined,
     timestamp: incoming.timestamp,
   });
 

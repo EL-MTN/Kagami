@@ -80,3 +80,4 @@ See `/docs` for:
 - [watchers.md](docs/watchers.md) — scheduled detection jobs (read-only, stateful, trigger-only notifications)
 - [confirmations.md](docs/confirmations.md) — approval primitive for gated tool calls (tap-to-approve actions)
 - [imessage.md](docs/imessage.md) — iMessage adapter via BlueBubbles (multi-platform setup, webhook, YES/NO confirmation UX)
+- [voice.md](docs/voice.md) — speech-to-text for inbound voice notes (local whisper.cpp default, cloud fallback)
