@@ -39,6 +39,9 @@ test('create + read + append + alias union', async () => {
     quote: 'sync story is always going to be the bottleneck',
     source: '[[raw/2026-04-27-1430#t-0003]]',
     event_date: '',
+    status: 'active',
+    invalidated_by: '',
+    invalidation_reason: '',
   });
 
   const afterAppend = await readEntity('alex-smith');

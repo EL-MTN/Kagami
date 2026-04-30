@@ -74,6 +74,11 @@ export interface ObjectCallOptions<T extends z.ZodTypeAny> {
   // Mitigation knob for Gemma 4's repetition-under-grammar tendency.
   // 0 by default; 0.3–0.5 if loops are observed.
   frequencyPenalty?: number;
+  // Per-call timeout in ms. Default 120s. Local thinking models can hang
+  // for hours on pathological inputs; this caps the damage. On timeout the
+  // call counts as a failure and the standard retry-then-quarantine path
+  // applies.
+  timeoutMs?: number;
 }
 
 // generateObject sends the Zod schema to the provider as a JSON schema; the
@@ -85,7 +90,9 @@ export async function callObject<T extends z.ZodTypeAny>(
   const { stage, schema, systemPrompt, userPrompt } = opts;
   const temperature = opts.temperature ?? 0.2;
   const frequencyPenalty = opts.frequencyPenalty ?? 0;
+  const timeoutMs = opts.timeoutMs ?? 120_000;
 
+  let lastErr: unknown = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const { object } = await generateObject({
@@ -95,9 +102,11 @@ export async function callObject<T extends z.ZodTypeAny>(
         prompt: userPrompt,
         temperature,
         frequencyPenalty,
+        abortSignal: AbortSignal.timeout(timeoutMs),
       });
       return object as z.infer<T>;
     } catch (err) {
+      lastErr = err;
       if (attempt === 2) {
         await quarantine(stage, {
           err: String(err),
@@ -108,6 +117,7 @@ export async function callObject<T extends z.ZodTypeAny>(
       }
     }
   }
+  void lastErr;
   return null;
 }
 

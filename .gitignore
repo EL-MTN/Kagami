@@ -11,3 +11,4 @@ memory/
 bench/longmemeval/data/
 bench/longmemeval/vaults/
 bench/longmemeval/results/
+bench/longmemeval/partial-predictions.json

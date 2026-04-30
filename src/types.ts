@@ -55,8 +55,12 @@ export const Observation = z.object({
   quote: z.string(),
   source: z.string(),
   event_date: z.string().default(''),
+  status: z.enum(['active', 'invalidated']).default('active'),
+  invalidated_by: z.string().default(''),
+  invalidation_reason: z.string().default(''),
 });
 export type Observation = z.infer<typeof Observation>;
+
 
 export const TranscriptFrontmatter = z.object({
   id: z.string(),

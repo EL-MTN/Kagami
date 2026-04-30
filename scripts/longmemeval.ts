@@ -21,6 +21,7 @@ interface CliArgs {
   data: string;
   judgeModel: string | null;
   cleanVaults: boolean;
+  resume: boolean;
 }
 
 interface WorkerResult {
@@ -58,7 +59,25 @@ function parseArgs(): CliArgs {
   const data = get('--data', path.join(benchRoot, 'data/longmemeval_oracle.json'))!;
   const judgeModel = get('--judge-model');
   const cleanVaults = args.includes('--clean-vaults');
-  return { limit, data, judgeModel, cleanVaults };
+  const resume = args.includes('--resume');
+  return { limit, data, judgeModel, cleanVaults, resume };
+}
+
+// Per-item predictions are persisted here as the bench progresses so a
+// killed run can resume with --resume. Cleared once the bench completes.
+const PARTIAL_PATH = path.join(benchRoot, 'partial-predictions.json');
+
+async function loadPartialPredictions(): Promise<WorkerResult[]> {
+  try {
+    return JSON.parse(await fs.readFile(PARTIAL_PATH, 'utf8')) as WorkerResult[];
+  } catch {
+    return [];
+  }
+}
+
+async function savePartialPredictions(predictions: WorkerResult[]): Promise<void> {
+  await fs.mkdir(benchRoot, { recursive: true });
+  await fs.writeFile(PARTIAL_PATH, JSON.stringify(predictions, null, 2));
 }
 
 async function main() {
@@ -90,10 +109,24 @@ async function main() {
   await fs.mkdir(vaultsRoot, { recursive: true });
   await fs.mkdir(itemsTmpRoot, { recursive: true });
 
-  const predictions: WorkerResult[] = [];
+  const predictions: WorkerResult[] = args.resume ? await loadPartialPredictions() : [];
+  const alreadyDone = new Set(predictions.map((p) => p.question_id));
+  if (args.resume) {
+    console.log(`Resuming from ${predictions.length} previously completed items.`);
+    console.log('');
+  } else {
+    // Fresh run wipes any stale partial state.
+    await fs.rm(PARTIAL_PATH, { force: true });
+  }
+
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const qid = item.question_id;
+    if (alreadyDone.has(qid)) {
+      console.log(`[${i + 1}/${items.length}] ${qid} (${item.question_type}) — SKIP (resumed)`);
+      console.log('');
+      continue;
+    }
     console.log(`[${i + 1}/${items.length}] ${qid} (${item.question_type})`);
 
     const vault = path.join(vaultsRoot, qid);
@@ -131,6 +164,8 @@ async function main() {
       if (args.cleanVaults) {
         await fs.rm(vault, { recursive: true, force: true });
       }
+      // Checkpoint after every item so killing the bench doesn't lose work.
+      await savePartialPredictions(predictions);
     }
     console.log('');
   }
@@ -177,6 +212,9 @@ async function main() {
   );
   console.log('');
   console.log(`Wrote ${outPath}`);
+
+  // Bench completed end-to-end — clear the resumable checkpoint.
+  await fs.rm(PARTIAL_PATH, { force: true });
 }
 
 function runWorker(itemFile: string, resultFile: string, vault: string): Promise<void> {

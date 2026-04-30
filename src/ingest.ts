@@ -150,6 +150,9 @@ function candidateToObservation(c: Candidate, transcriptId: string): Observation
     quote: c.quote,
     source: transcriptWikilink(transcriptId, c.turn_id),
     event_date: c.event_date ?? '',
+    status: 'active',
+    invalidated_by: '',
+    invalidation_reason: '',
   };
 }
 

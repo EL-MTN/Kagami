@@ -62,12 +62,14 @@ test('rebuildTimeline sorts by event_date with date fallback, includes wikilinks
     id: 'preference', name: 'shorter answers', aliases: [], type: 'preference', anchor: '', updated: '2023-04-10',
   });
 
+  const activeFields = { status: 'active' as const, invalidated_by: '', invalidation_reason: '' };
   await appendObservation('gps-system', {
     date: '2023-04-10',
     event_date: '2023-03-22',
     headline: 'GPS issue resolved',
     quote: 'q',
     source: '[[raw/abc#t-0003]]',
+    ...activeFields,
   });
   await appendObservation('car-service', {
     date: '2023-04-10',
@@ -75,6 +77,7 @@ test('rebuildTimeline sorts by event_date with date fallback, includes wikilinks
     headline: 'first car service',
     quote: 'q',
     source: '[[raw/abc#t-0001]]',
+    ...activeFields,
   });
   // No event_date — falls back to obs date.
   await appendObservation('preference', {
@@ -83,6 +86,7 @@ test('rebuildTimeline sorts by event_date with date fallback, includes wikilinks
     headline: 'wants shorter answers',
     quote: 'q',
     source: '[[raw/abc#t-0007]]',
+    ...activeFields,
   });
 
   await rebuildTimeline();

@@ -43,6 +43,9 @@ test('merge moves observations, unions aliases, deletes source, rewrites wikilin
     quote: 'q1',
     source: '[[raw/2026-04-27#t-0001]]',
     event_date: '',
+    status: 'active',
+    invalidated_by: '',
+    invalidation_reason: '',
   });
   await appendObservation('alex-s', {
     date: '2026-04-28',
@@ -50,6 +53,9 @@ test('merge moves observations, unions aliases, deletes source, rewrites wikilin
     quote: 'q2',
     source: '[[raw/2026-04-28#t-0001]]',
     event_date: '',
+    status: 'active',
+    invalidated_by: '',
+    invalidation_reason: '',
   });
 
   // A third entity that wikilinks the soon-to-be-merged one.
