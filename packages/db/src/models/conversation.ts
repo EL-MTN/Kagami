@@ -60,6 +60,10 @@ const conversationSchema = new Schema<IConversation>(
 
 conversationSchema.index({ chatId: 1, updatedAt: -1 });
 conversationSchema.index({ chatId: 1, status: 1, updatedAt: -1 });
+// Multi-platform scope: chatId can collide across platforms, so the
+// session-lookup query is scoped by both. Without this index, the find in
+// `getOrCreateSession` falls back to a less selective index.
+conversationSchema.index({ chatId: 1, platform: 1, status: 1, updatedAt: -1 });
 
 export const Conversation =
   (mongoose.models.Conversation as mongoose.Model<IConversation>) ??
@@ -77,8 +81,15 @@ export async function getOrCreateSession(
   userId: string,
   platform: string,
 ): Promise<SessionResult> {
+  // Scope the lookup by platform so a chatId that happens to exist on two
+  // platforms (e.g. a numeric Telegram id and an `imessage:`-prefixed
+  // BlueBubbles chatGuid that share substring) cannot return the wrong
+  // session. Telegram chatIds are always plain integers and iMessage
+  // chatIds are always prefixed, so collision is unreachable in practice;
+  // this is defense in depth and keeps the invariant clear.
   const active = await Conversation.findOne({
     chatId,
+    platform,
     status: "active",
   }).sort({ updatedAt: -1 });
 

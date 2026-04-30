@@ -1,6 +1,6 @@
 # Telegram Platform Adapter
 
-The platform layer abstracts messaging services behind a common interface. Currently only Telegram is implemented via Grammy.
+The platform layer abstracts messaging services behind a common interface. Telegram is implemented via Grammy long-polling. iMessage (via BlueBubbles) is also supported — see [imessage.md](imessage.md). Both adapters are registered in `apps/bot/src/platform/registry.ts::AdapterRegistry`, which the schedulers use to route messages by `platformForChatId(chatId)`.
 
 ## PlatformAdapter Interface
 

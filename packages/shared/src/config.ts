@@ -57,6 +57,21 @@ const baseSchema = z.object({
   LOCATION_PROACTIVE_DELAY_MS: z.coerce.number().default(1_200_000),
   LOCATION_CONTEXT_MAX_AGE_H: z.coerce.number().default(12),
 
+  BLUEBUBBLES_HOST: z.string().optional(),
+  BLUEBUBBLES_PASSWORD: z.string().optional(),
+  BLUEBUBBLES_WEBHOOK_PORT: z.coerce.number().default(4000),
+  ALLOWED_IMESSAGE_HANDLES: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        ? s
+            .split(",")
+            .map((h) => h.trim())
+            .filter(Boolean)
+        : [],
+    ),
+
   CONTEXT_PATH: z.string().default("./context"),
 
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
@@ -169,6 +184,13 @@ export function validateConfig(): void {
 
   if (config.LOCATION_ENABLED && !config.GOOGLE_MAPS_API_KEY) {
     errors.push("GOOGLE_MAPS_API_KEY is required when LOCATION_ENABLED is true");
+  }
+
+  if (config.BLUEBUBBLES_HOST && !config.BLUEBUBBLES_PASSWORD) {
+    errors.push("BLUEBUBBLES_PASSWORD is required when BLUEBUBBLES_HOST is set");
+  }
+  if (config.ALLOWED_IMESSAGE_HANDLES.length > 0 && !config.BLUEBUBBLES_HOST) {
+    errors.push("BLUEBUBBLES_HOST is required when ALLOWED_IMESSAGE_HANDLES is non-empty");
   }
 
   if (errors.length > 0) {

@@ -20,11 +20,12 @@ import type { PlatformAdapter } from "@mashiro/shared";
 import { extractResponseText, collectToolCalls, wasPhotoSent, sendSegmented } from "../ai/response";
 import { trackUsage } from "../ai/token-tracker";
 import { getModelName } from "../ai/provider";
+import { AdapterRegistry, platformForChatId, imessageChatId } from "../platform/registry";
 
 const LLM_TIMEOUT_MS = 120_000; // 2 minutes
 
 const timers = new Map<string, NodeJS.Timeout>();
-let _adapter: PlatformAdapter | null = null;
+let _registry: AdapterRegistry | null = null;
 
 function randomBetween(minMs: number, maxMs: number): number {
   return minMs + Math.random() * (maxMs - minMs);
@@ -98,7 +99,15 @@ function scheduleNext(chatId: string, userId: string, delayMs?: number): void {
 }
 
 async function fireProactive(chatId: string, userId: string): Promise<void> {
-  if (!_adapter) return;
+  if (!_registry) return;
+
+  const platform = platformForChatId(chatId);
+  const adapter = _registry.get(platform);
+  if (!adapter) {
+    logger.warn({ chatId, platform }, "Proactive fire skipped: adapter not registered");
+    scheduleNext(chatId, userId);
+    return;
+  }
 
   // Check active hours — if outside, reschedule to next 9am + jitter
   if (!isActiveHour()) {
@@ -126,7 +135,7 @@ async function fireProactive(chatId: string, userId: string): Promise<void> {
 
   // Generate and send
   try {
-    await generateProactiveMessage(chatId, userId, _adapter);
+    await generateProactiveMessage(chatId, userId, adapter);
   } catch (error) {
     logger.error({ error, chatId }, "Failed to send proactive message");
   }
@@ -150,7 +159,7 @@ async function generateProactiveMessage(
 ): Promise<void> {
   logger.info({ chatId }, "Generating proactive message");
 
-  const { conversation } = await getOrCreateSession(chatId, userId, "telegram");
+  const { conversation } = await getOrCreateSession(chatId, userId, platformForChatId(chatId));
   const sessionId = conversation.sessionId;
 
   const [systemPrompt, messages] = await Promise.all([
@@ -237,60 +246,84 @@ async function runDailyCleanup(): Promise<void> {
   }
 }
 
-export function resetTimer(chatId: string): void {
-  if (!_adapter) return;
-  // For Telegram private chats, chatId equals userId
-  scheduleNext(chatId, chatId);
+export function resetTimer(chatId: string, userId?: string): void {
+  if (!_registry) return;
+  // For Telegram private chats chatId numerically equals userId, so the
+  // legacy single-arg call is still correct for that path. iMessage
+  // callers must pass userId explicitly because the chatId is a chatGuid
+  // string and the userId is the participant handle.
+  scheduleNext(chatId, userId ?? chatId);
 }
 
-export function triggerLocationProactive(chatId: string): void {
-  if (!_adapter) return;
+export function triggerLocationProactive(chatId: string, userId?: string): void {
+  if (!_registry) return;
   const delay = config.LOCATION_PROACTIVE_DELAY_MS + randomBetween(0, 5 * 60_000);
   logger.debug(
     { chatId, delayMin: Math.round(delay / 60_000) },
     "Location-triggered proactive message scheduled",
   );
-  scheduleNext(chatId, chatId, delay);
+  // Same fallback shape as resetTimer: Telegram DM convention has
+  // chatId === userId, so omitting userId is correct on that path. Any
+  // future iMessage location handler must pass userId explicitly because
+  // the chatId is a chatGuid string and the userId is the participant
+  // handle.
+  scheduleNext(chatId, userId ?? chatId, delay);
 }
 
-export function startProactiveScheduler(adapter: PlatformAdapter): () => void {
-  _adapter = adapter;
-
-  for (const numericUserId of config.ALLOWED_USER_IDS) {
-    const chatId = String(numericUserId);
-    const userId = String(numericUserId);
-
-    // Restore persisted timer, falling back to last-message heuristic
-    getNextProactiveAt(chatId)
-      .then(async (savedAt) => {
-        if (savedAt) {
-          const remaining = savedAt.getTime() - Date.now();
-          if (remaining > 0) {
-            // Timer hasn't expired yet — resume exactly where we left off
-            scheduleNext(chatId, userId, remaining);
-            return;
-          }
-          // Timer expired while we were down — fire soon but not instantly
-          scheduleNext(chatId, userId, randomBetween(STARTUP_MIN, STARTUP_MAX));
+/**
+ * Initialize the persisted proactive timer for a single (chatId, userId)
+ * pair. Shared between the Telegram bootstrap loop (where chatId === userId
+ * by Telegram DM convention) and the iMessage bootstrap loop (where they
+ * differ).
+ */
+function bootstrapProactiveTimerFor(chatId: string, userId: string): void {
+  getNextProactiveAt(chatId)
+    .then(async (savedAt) => {
+      if (savedAt) {
+        const remaining = savedAt.getTime() - Date.now();
+        if (remaining > 0) {
+          // Timer hasn't expired yet — resume exactly where we left off
+          scheduleNext(chatId, userId, remaining);
           return;
         }
-
-        // No saved state — fall back to last message heuristic
-        const recent = await getRecentMessages(chatId, 1);
-        let delay: number;
-        if (recent.length === 0) {
-          delay = randomBetween(STARTUP_MIN, STARTUP_MAX);
-        } else {
-          const elapsed = Date.now() - recent[0].timestamp.getTime();
-          const remaining = randomBetween(MIN_INTERVAL, MAX_INTERVAL) - elapsed;
-          delay = remaining > 0 ? remaining : randomBetween(STARTUP_MIN, STARTUP_MAX);
-        }
-        scheduleNext(chatId, userId, delay);
-      })
-      .catch((error) => {
-        logger.error({ error, chatId }, "Failed to init proactive timer");
+        // Timer expired while we were down — fire soon but not instantly
         scheduleNext(chatId, userId, randomBetween(STARTUP_MIN, STARTUP_MAX));
-      });
+        return;
+      }
+
+      // No saved state — fall back to last message heuristic
+      const recent = await getRecentMessages(chatId, 1);
+      let delay: number;
+      if (recent.length === 0) {
+        delay = randomBetween(STARTUP_MIN, STARTUP_MAX);
+      } else {
+        const elapsed = Date.now() - recent[0].timestamp.getTime();
+        const remaining = randomBetween(MIN_INTERVAL, MAX_INTERVAL) - elapsed;
+        delay = remaining > 0 ? remaining : randomBetween(STARTUP_MIN, STARTUP_MAX);
+      }
+      scheduleNext(chatId, userId, delay);
+    })
+    .catch((error) => {
+      logger.error({ error, chatId }, "Failed to init proactive timer");
+      scheduleNext(chatId, userId, randomBetween(STARTUP_MIN, STARTUP_MAX));
+    });
+}
+
+export function startProactiveScheduler(registry: AdapterRegistry): () => void {
+  _registry = registry;
+
+  // Telegram chats: chatId === userId for DMs (Telegram convention)
+  for (const numericUserId of config.ALLOWED_USER_IDS) {
+    const id = String(numericUserId);
+    bootstrapProactiveTimerFor(id, id);
+  }
+
+  // iMessage chats: chatId is the namespaced chatGuid, userId is the handle
+  if (registry.has("imessage")) {
+    for (const handle of config.ALLOWED_IMESSAGE_HANDLES) {
+      const chatId = imessageChatId(`iMessage;-;${handle}`);
+      bootstrapProactiveTimerFor(chatId, handle);
+    }
   }
 
   // Schedule daily cleanup
@@ -307,7 +340,13 @@ export function startProactiveScheduler(adapter: PlatformAdapter): () => void {
     });
   }, 60_000);
 
-  logger.info({ chats: config.ALLOWED_USER_IDS.length }, "Proactive scheduler started");
+  logger.info(
+    {
+      telegramChats: config.ALLOWED_USER_IDS.length,
+      imessageChats: registry.has("imessage") ? config.ALLOWED_IMESSAGE_HANDLES.length : 0,
+    },
+    "Proactive scheduler started",
+  );
 
   return () => {
     for (const timeout of timers.values()) {
@@ -318,7 +357,7 @@ export function startProactiveScheduler(adapter: PlatformAdapter): () => void {
       clearInterval(cleanupTimer);
       cleanupTimer = null;
     }
-    _adapter = null;
+    _registry = null;
     logger.info("Proactive scheduler stopped");
   };
 }

@@ -1,6 +1,8 @@
 import { getDueSkills, claimPendingManualRun, resetStaleRunningSkillLogs } from "@mashiro/db";
 import { logger } from "@mashiro/shared";
+import type { ISkill } from "@mashiro/db";
 import type { PlatformAdapter } from "@mashiro/shared";
+import { AdapterRegistry, platformForChatId } from "../platform/registry";
 import { executeSkill } from "../services/skill-executor";
 
 const POLL_INTERVAL_MS = 60_000; // cron tick: 1 minute
@@ -9,7 +11,20 @@ const MANUAL_POLL_INTERVAL_MS = 3_000; // manual-run tick: 3 seconds
 let interval: NodeJS.Timeout | null = null;
 let manualInterval: NodeJS.Timeout | null = null;
 
-async function runDueSkills(adapter: PlatformAdapter): Promise<void> {
+function adapterForSkill(registry: AdapterRegistry, skill: ISkill): PlatformAdapter | null {
+  const platform = platformForChatId(skill.chatId);
+  const adapter = registry.get(platform);
+  if (!adapter) {
+    logger.warn(
+      { skillId: skill._id, name: skill.name, chatId: skill.chatId, platform },
+      "Skipping skill: adapter not registered",
+    );
+    return null;
+  }
+  return adapter;
+}
+
+async function runDueSkills(registry: AdapterRegistry): Promise<void> {
   try {
     const skills = await getDueSkills();
     if (skills.length === 0) return;
@@ -17,6 +32,8 @@ async function runDueSkills(adapter: PlatformAdapter): Promise<void> {
     logger.info({ count: skills.length }, "Executing due skills");
 
     for (const skill of skills) {
+      const adapter = adapterForSkill(registry, skill);
+      if (!adapter) continue;
       try {
         // Build default parameters from skill definition for cron triggers
         const defaults: Record<string, unknown> = {};
@@ -40,10 +57,13 @@ async function runDueSkills(adapter: PlatformAdapter): Promise<void> {
   }
 }
 
-async function runPendingManualRequest(adapter: PlatformAdapter): Promise<void> {
+async function runPendingManualRequest(registry: AdapterRegistry): Promise<void> {
   try {
     const skill = await claimPendingManualRun();
     if (!skill) return;
+
+    const adapter = adapterForSkill(registry, skill);
+    if (!adapter) return;
 
     const params: Record<string, unknown> = {};
     for (const p of skill.parameters) {
@@ -62,7 +82,7 @@ async function runPendingManualRequest(adapter: PlatformAdapter): Promise<void> 
   }
 }
 
-async function startupRecovery(adapter: PlatformAdapter): Promise<void> {
+async function startupRecovery(registry: AdapterRegistry): Promise<void> {
   // Clean up stale "running" logs from crashed executions first
   try {
     const count = await resetStaleRunningSkillLogs();
@@ -74,18 +94,18 @@ async function startupRecovery(adapter: PlatformAdapter): Promise<void> {
   }
 
   // Then run any due skills
-  await runDueSkills(adapter);
+  await runDueSkills(registry);
 }
 
-export function startSkillScheduler(adapter: PlatformAdapter): () => void {
+export function startSkillScheduler(registry: AdapterRegistry): () => void {
   // Startup recovery: await stale reset before first poll
-  void startupRecovery(adapter);
+  void startupRecovery(registry);
 
-  interval = setInterval(() => void runDueSkills(adapter), POLL_INTERVAL_MS);
+  interval = setInterval(() => void runDueSkills(registry), POLL_INTERVAL_MS);
   interval.unref();
 
   manualInterval = setInterval(
-    () => void runPendingManualRequest(adapter),
+    () => void runPendingManualRequest(registry),
     MANUAL_POLL_INTERVAL_MS,
   );
   manualInterval.unref();
