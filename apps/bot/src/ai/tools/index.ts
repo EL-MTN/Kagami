@@ -28,10 +28,13 @@ export interface ToolContext {
   adapter: PlatformAdapter;
   sessionId: string;
   /**
-   * The user driving this turn. Set on conversational/proactive/acknowledgment
-   * paths (we know the Telegram user). Optional because cron-triggered skills
-   * have no active user. Used by tools that may need to materialize a session
-   * (e.g. `cancelConfirmation` → `appendConfirmationResolution`).
+   * The user driving this turn. Set on conversational/proactive/
+   * acknowledgment paths regardless of platform — for Telegram DMs it's
+   * the numeric user id (which equals the chatId by convention); for
+   * iMessage it's the participant handle (phone number or email).
+   * Optional because cron-triggered skills have no active user. Used by
+   * tools that may need to materialize a session (e.g. `cancelConfirmation`
+   * → `appendConfirmationResolution`).
    */
   userId?: string;
   /** Current skill nesting depth. 0 = top-level conversation or manual skill trigger. */

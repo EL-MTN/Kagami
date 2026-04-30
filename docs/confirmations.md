@@ -124,6 +124,10 @@ Telegram implementation in `apps/bot/src/platform/telegram/adapter.ts` uses Gram
 
 The tool's underlying service stays untouched; the dispatcher calls it directly with validated args.
 
+## On non-button platforms
+
+iMessage has no inline buttons and no third-party message editing. The confirmation primitive degrades gracefully: `sendConfirmationPrompt` sends a plain text prompt asking the user to reply YES/NO; `editConfirmationPrompt` sends a new message instead of editing the original bubble. The pre-AI YES/NO parser in the iMessage webhook handler resolves the confirmation when there's exactly one pending in the chat. See [imessage.md](imessage.md) for the full UX and matching rules.
+
 ## What's deferred
 
 - **Dashboard surface.** No `/pending` page yet; pending rows are only visible via Mongo.

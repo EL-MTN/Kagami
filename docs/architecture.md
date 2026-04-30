@@ -9,13 +9,13 @@ Mashiro is a layered conversational AI system organized as a monorepo. Messages 
 ```
 mashiro/                          # npm workspaces + Turborepo
 ├── apps/
-│   ├── bot/                      # Telegram bot app
+│   ├── bot/                      # Telegram + iMessage bot app
 │   │   ├── src/
 │   │   │   ├── ai/               # provider, prompts, response, context-assembler, generate
 │   │   │   │   └── tools/        # all tool files
 │   │   │   ├── context/          # image generation (generator.ts, types.ts)
 │   │   │   ├── memory/           # curator.ts (tightly coupled to AI layer)
-│   │   │   ├── platform/telegram/
+│   │   │   ├── platform/         # registry.ts + telegram/ + imessage/ (multi-adapter)
 │   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, cron, skill-executor, watcher-executor
 │   │   │   └── scheduler/        # proactive, reminders, skills, watchers
 │   │   └── context/              # soul (personality), reference images, settings (data)
@@ -249,7 +249,9 @@ When firing, the scheduler uses `getOrCreateSession` to get the active session, 
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `apps/bot/src/ai/`                | LLM integration, prompt assembly, tool orchestration                                                       |
 | `apps/bot/src/ai/tools/`          | Tool implementations available to the LLM                                                                  |
-| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup                                                                               |
+| `apps/bot/src/platform/`          | `registry.ts` (AdapterRegistry + platformForChatId helper)                                                 |
+| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup (Grammy long-polling)                                                         |
+| `apps/bot/src/platform/imessage/` | BlueBubbles adapter + REST client + webhook server (opt-in, see docs/imessage.md)                          |
 | `apps/bot/src/memory/`            | Curator (tightly coupled to AI layer)                                                                      |
 | `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Cron, Skill executor, Geocoding, Location, Gated-action dispatcher |
 | `apps/bot/src/scheduler/`         | Proactive, reminder, skill scheduling                                                                      |

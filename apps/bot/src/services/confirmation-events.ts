@@ -1,5 +1,6 @@
 import { appendMessage, getOrCreateSession } from "@mashiro/db";
 import { logger } from "@mashiro/shared";
+import { platformForChatId } from "../platform/registry";
 
 export interface ConfirmationResolutionEvent {
   summary: string;
@@ -26,7 +27,7 @@ export async function appendConfirmationResolution(
   event: ConfirmationResolutionEvent,
 ): Promise<void> {
   try {
-    const { conversation } = await getOrCreateSession(chatId, userId, "telegram");
+    const { conversation } = await getOrCreateSession(chatId, userId, platformForChatId(chatId));
     const tail =
       event.verdict === "denied"
         ? `[goshujin-sama denied: "${event.summary}"]`

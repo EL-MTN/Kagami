@@ -287,7 +287,7 @@ export function createBot(token: string): Bot {
         resetTimer(incoming.chatId);
 
         if (event) {
-          triggerLocationProactive(incoming.chatId);
+          triggerLocationProactive(incoming.chatId, incoming.userId);
         }
       } catch (error) {
         logger.error({ error }, "Error handling location message");
@@ -320,7 +320,7 @@ export function createBot(token: string): Bot {
         );
 
         if (event) {
-          triggerLocationProactive(incoming.chatId);
+          triggerLocationProactive(incoming.chatId, incoming.userId);
         }
       } catch (error) {
         logger.error({ error }, "Error handling live location update");

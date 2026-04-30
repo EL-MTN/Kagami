@@ -5,7 +5,9 @@ import {
   resetStaleRunningWatcherLogs,
 } from "@mashiro/db";
 import { logger } from "@mashiro/shared";
+import type { IWatcher } from "@mashiro/db";
 import type { PlatformAdapter } from "@mashiro/shared";
+import { AdapterRegistry, platformForChatId } from "../platform/registry";
 import { executeWatcher } from "../services/watcher-executor";
 
 const POLL_INTERVAL_MS = 60_000; // cron tick: 1 minute
@@ -14,7 +16,20 @@ const MANUAL_POLL_INTERVAL_MS = 3_000; // manual-run tick: 3 seconds
 let interval: NodeJS.Timeout | null = null;
 let manualInterval: NodeJS.Timeout | null = null;
 
-async function runDueWatchers(adapter: PlatformAdapter): Promise<void> {
+function adapterForWatcher(registry: AdapterRegistry, watcher: IWatcher): PlatformAdapter | null {
+  const platform = platformForChatId(watcher.chatId);
+  const adapter = registry.get(platform);
+  if (!adapter) {
+    logger.warn(
+      { watcherId: watcher._id, name: watcher.name, chatId: watcher.chatId, platform },
+      "Skipping watcher: adapter not registered",
+    );
+    return null;
+  }
+  return adapter;
+}
+
+async function runDueWatchers(registry: AdapterRegistry): Promise<void> {
   try {
     const watchers = await getDueWatchers();
     if (watchers.length === 0) return;
@@ -22,6 +37,8 @@ async function runDueWatchers(adapter: PlatformAdapter): Promise<void> {
     logger.info({ count: watchers.length }, "Executing due watchers");
 
     for (const watcher of watchers) {
+      const adapter = adapterForWatcher(registry, watcher);
+      if (!adapter) continue;
       try {
         await executeWatcher(watcher, adapter, {
           trigger: "cron",
@@ -39,10 +56,13 @@ async function runDueWatchers(adapter: PlatformAdapter): Promise<void> {
   }
 }
 
-async function runPendingManualRequest(adapter: PlatformAdapter): Promise<void> {
+async function runPendingManualRequest(registry: AdapterRegistry): Promise<void> {
   try {
     const watcher = await claimPendingManualWatcherRun();
     if (!watcher) return;
+
+    const adapter = adapterForWatcher(registry, watcher);
+    if (!adapter) return;
 
     logger.info({ watcherId: watcher._id, name: watcher.name }, "Executing manual watcher run");
     await executeWatcher(watcher, adapter, {
@@ -55,7 +75,7 @@ async function runPendingManualRequest(adapter: PlatformAdapter): Promise<void> 
   }
 }
 
-async function startupRecovery(adapter: PlatformAdapter): Promise<void> {
+async function startupRecovery(registry: AdapterRegistry): Promise<void> {
   try {
     const reset = await resetStaleRunningWatcherLogs();
     if (reset > 0) logger.info({ count: reset }, "Reset stale running watcher logs");
@@ -70,11 +90,11 @@ async function startupRecovery(adapter: PlatformAdapter): Promise<void> {
     logger.error({ error }, "Failed to archive expired watchers");
   }
 
-  await runDueWatchers(adapter);
+  await runDueWatchers(registry);
 }
 
-export function startWatcherScheduler(adapter: PlatformAdapter): () => void {
-  void startupRecovery(adapter);
+export function startWatcherScheduler(registry: AdapterRegistry): () => void {
+  void startupRecovery(registry);
 
   interval = setInterval(() => {
     void (async () => {
@@ -83,13 +103,13 @@ export function startWatcherScheduler(adapter: PlatformAdapter): () => void {
       } catch (error) {
         logger.error({ error }, "Failed to archive expired watchers");
       }
-      await runDueWatchers(adapter);
+      await runDueWatchers(registry);
     })();
   }, POLL_INTERVAL_MS);
   interval.unref();
 
   manualInterval = setInterval(
-    () => void runPendingManualRequest(adapter),
+    () => void runPendingManualRequest(registry),
     MANUAL_POLL_INTERVAL_MS,
   );
   manualInterval.unref();

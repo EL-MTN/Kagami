@@ -79,3 +79,4 @@ See `/docs` for:
 - [memory-management.md](docs/memory-management.md) — deep dive into memory tiers, data flow, gaps, and roadmap
 - [watchers.md](docs/watchers.md) — scheduled detection jobs (read-only, stateful, trigger-only notifications)
 - [confirmations.md](docs/confirmations.md) — approval primitive for gated tool calls (tap-to-approve actions)
+- [imessage.md](docs/imessage.md) — iMessage adapter via BlueBubbles (multi-platform setup, webhook, YES/NO confirmation UX)

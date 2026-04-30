@@ -1,12 +1,12 @@
 import { getPendingReminders, markReminderFired } from "@mashiro/db";
 import { logger } from "@mashiro/shared";
-import type { PlatformAdapter } from "@mashiro/shared";
+import { AdapterRegistry, platformForChatId } from "../platform/registry";
 
 const POLL_INTERVAL_MS = 60_000; // 1 minute
 
 let interval: NodeJS.Timeout | null = null;
 
-async function firePendingReminders(adapter: PlatformAdapter): Promise<void> {
+async function firePendingReminders(registry: AdapterRegistry): Promise<void> {
   try {
     const reminders = await getPendingReminders();
     if (reminders.length === 0) return;
@@ -14,6 +14,15 @@ async function firePendingReminders(adapter: PlatformAdapter): Promise<void> {
     logger.info({ count: reminders.length }, "Firing pending reminders");
 
     for (const reminder of reminders) {
+      const platform = platformForChatId(reminder.chatId);
+      const adapter = registry.get(platform);
+      if (!adapter) {
+        logger.warn(
+          { reminderId: reminder._id, chatId: reminder.chatId, platform },
+          "Skipping reminder: adapter not registered",
+        );
+        continue;
+      }
       try {
         await adapter.sendText(reminder.chatId, reminder.message);
         await markReminderFired(reminder._id.toString());
@@ -27,11 +36,11 @@ async function firePendingReminders(adapter: PlatformAdapter): Promise<void> {
   }
 }
 
-export function startReminderScheduler(adapter: PlatformAdapter): () => void {
+export function startReminderScheduler(registry: AdapterRegistry): () => void {
   // Startup recovery: immediately fire any reminders that were due while down
-  void firePendingReminders(adapter);
+  void firePendingReminders(registry);
 
-  interval = setInterval(() => void firePendingReminders(adapter), POLL_INTERVAL_MS);
+  interval = setInterval(() => void firePendingReminders(registry), POLL_INTERVAL_MS);
   interval.unref();
 
   logger.info("Reminder scheduler started");

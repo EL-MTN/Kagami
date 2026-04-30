@@ -7,6 +7,7 @@ import { logger } from "@mashiro/shared";
 import type { PlatformAdapter } from "@mashiro/shared";
 import { sendSegmented } from "./response";
 import { trackUsage } from "./token-tracker";
+import { platformForChatId } from "../platform/registry";
 
 const LLM_TIMEOUT_MS = 60_000;
 
@@ -32,7 +33,7 @@ export async function generateAcknowledgment(
   userId: string,
   adapter: PlatformAdapter,
 ): Promise<void> {
-  const { conversation } = await getOrCreateSession(chatId, userId, "telegram");
+  const { conversation } = await getOrCreateSession(chatId, userId, platformForChatId(chatId));
   const sessionId = conversation.sessionId;
 
   const [baseSystemPrompt, messages] = await Promise.all([
