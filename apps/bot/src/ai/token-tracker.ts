@@ -30,6 +30,16 @@ const TTS_GENERATION_PRICING: Record<string, number> = {
   "gpt-4o-mini-tts": 0.015,
 };
 
+// Cost per minute of audio for STT (model-keyed). Local models (whisper.cpp
+// via STT_BASE_URL) reuse the model id "whisper-1" but cost $0 — the
+// caller can pass an empty/zero entry when the configured STT_BASE_URL is
+// non-default. Adjust these as providers update their pricing.
+const STT_TRANSCRIPTION_PRICING: Record<string, number> = {
+  "whisper-1": 0.006,
+  "gpt-4o-transcribe": 0.006,
+  "gpt-4o-mini-transcribe": 0.003,
+};
+
 interface TokenUsageData {
   promptTokens?: number;
   completionTokens?: number;
@@ -114,6 +124,61 @@ export function trackTtsGeneration(
     metadata,
   }).catch((error) => {
     logger.warn({ error }, "Failed to persist TTS usage");
+  });
+}
+
+export function trackSttTranscription(
+  model: string,
+  provider: string,
+  durationSeconds: number | undefined,
+  metadata?: TrackUsageMetadata,
+): void {
+  // Cost is zeroed whenever `STT_BASE_URL` is set, on the assumption the
+  // user is pointing at a self-hosted whisper.cpp server (the documented
+  // default local setup). If you've pointed `STT_BASE_URL` at a paid
+  // hosted whisper-compatible service, this tracker will under-report —
+  // check your provider's invoice for ground truth, or add a per-model
+  // entry to `STT_TRANSCRIPTION_PRICING` and remove this short-circuit.
+  const isCustomEndpoint = !!config.STT_BASE_URL;
+  const minutes = durationSeconds !== undefined ? durationSeconds / 60 : 0;
+  const perMinute = isCustomEndpoint ? 0 : (STT_TRANSCRIPTION_PRICING[model] ?? 0);
+  const cost = minutes * perMinute;
+
+  // Cloud transcription with no duration → silent $0. Warn so operators
+  // can spot the precision loss against their actual provider bill. This
+  // tends to fire when the STT response shape doesn't include duration
+  // (e.g. some local whisper.cpp builds, or future API quirks).
+  if (!isCustomEndpoint && durationSeconds === undefined && perMinute > 0) {
+    logger.warn(
+      { model, provider },
+      "STT call returned no duration; cost tracked as $0 (precision loss vs actual bill)",
+    );
+  }
+
+  logger.info(
+    {
+      category: "stt-transcription",
+      model,
+      provider,
+      durationSeconds,
+      customEndpoint: isCustomEndpoint,
+      estimatedCost: cost,
+    },
+    "STT usage tracked",
+  );
+
+  TokenUsage.create({
+    timestamp: new Date(),
+    category: "stt-transcription" as const,
+    modelName: model,
+    provider,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    estimatedCost: cost,
+    metadata,
+  }).catch((error) => {
+    logger.warn({ error }, "Failed to persist STT usage");
   });
 }
 

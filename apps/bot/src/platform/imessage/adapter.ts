@@ -182,12 +182,44 @@ export function normalizeWebhookEvent(
     }
   }
 
-  // Voice notes are recognised but not transcribed in v1 — the user is
-  // told via the text payload that we got audio, the acknowledgment is
-  // fine via the standard pipeline. STT lands as a separate feature.
+  // Voice notes / audio attachments. When BlueBubbles inlines `data`,
+  // decode the base64 and route through the STT pipeline. iMessage's
+  // attachment payload doesn't surface duration; the API response from
+  // Whisper provides it after transcription. The 25 MB cap mirrors the
+  // STT module's transcribeAudio cap — early reject so we don't write
+  // a doomed buffer to GridFS.
+  const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
   const isVoice = attachment && attachment.mimeType?.startsWith("audio/");
-  const effectiveText = isVoice ? "[voice note]" : !text && attachment ? "[attachment]" : text;
+  let audioBuffer: Buffer | undefined;
+  let audioMimeType: string | undefined;
+  let voicePlaceholder = "[voice note]";
+  if (isVoice) {
+    if (attachment.data) {
+      const buf = Buffer.from(attachment.data, "base64");
+      if (buf.length <= MAX_AUDIO_BYTES) {
+        audioBuffer = buf;
+        audioMimeType = attachment.mimeType ?? "audio/mp4";
+      } else {
+        voicePlaceholder = "[voice note too long to transcribe]";
+        logger.warn(
+          { attachmentGuid: attachment.guid, bytes: buf.length },
+          "iMessage voice attachment exceeded 25 MB cap; dropped",
+        );
+      }
+    } else {
+      logger.warn(
+        { attachmentGuid: attachment.guid, mimeType: attachment.mimeType },
+        "iMessage voice attachment had no inline data; voice dropped",
+      );
+    }
+  }
 
+  const effectiveText = isVoice ? voicePlaceholder : !text && attachment ? "[attachment]" : text;
+
+  // `audioBuffer` is only ever set inside the `isVoice` branch above, and
+  // that branch unconditionally sets `voicePlaceholder` as `effectiveText`.
+  // So a truthy `audioBuffer` always implies truthy `effectiveText`, and the
+  // null-return guard only needs to consider text + image presence.
   if (!effectiveText && !imageBase64) {
     return null;
   }
@@ -200,6 +232,8 @@ export function normalizeWebhookEvent(
     text: effectiveText,
     imageBase64,
     imageMimeType,
+    audioBuffer,
+    audioMimeType,
     timestamp: new Date(),
   };
 

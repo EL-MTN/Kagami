@@ -6,6 +6,15 @@ export interface IncomingMessage {
   text: string;
   imageBase64?: string;
   imageMimeType?: string;
+  /** Raw audio bytes for inbound voice notes / audio attachments. */
+  audioBuffer?: Buffer;
+  audioMimeType?: string;
+  /**
+   * Audio duration in integer seconds when known. Telegram surfaces this
+   * directly on Voice/Audio; iMessage doesn't, so it may be undefined and
+   * the STT API response duration will be used instead.
+   */
+  audioDurationSeconds?: number;
   timestamp: Date;
   replyToMessageId?: string;
   location?: {

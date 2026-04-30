@@ -1,12 +1,15 @@
 import mongoose, { Schema, type Document } from "mongoose";
 import crypto from "node:crypto";
-import { removeImages } from "../gridfs";
+import { removeImages, removeAudios } from "../gridfs";
 
 export interface IMessage {
   role: "user" | "assistant" | "system" | "tool";
   content: string;
   imageRef?: string;
   imageMimeType?: string;
+  audioRef?: string;
+  audioMimeType?: string;
+  audioDurationSeconds?: number;
   toolCalls?: Array<{
     toolName: string;
     args: Record<string, unknown>;
@@ -33,6 +36,9 @@ const messageSchema = new Schema<IMessage>(
     content: { type: String, required: true },
     imageRef: { type: String },
     imageMimeType: { type: String },
+    audioRef: { type: String },
+    audioMimeType: { type: String },
+    audioDurationSeconds: { type: Number },
     toolCalls: [
       {
         toolName: String,
@@ -182,7 +188,11 @@ export async function clearConversation(chatId: string): Promise<void> {
   const imageKeys = convos.flatMap((c) =>
     c.messages.filter((m) => m.imageRef).map((m) => m.imageRef!),
   );
+  const audioKeys = convos.flatMap((c) =>
+    c.messages.filter((m) => m.audioRef).map((m) => m.audioRef!),
+  );
   await removeImages(imageKeys);
+  await removeAudios(audioKeys);
   await Conversation.deleteMany({ chatId, status: "active" });
 }
 
@@ -193,7 +203,9 @@ export async function trimConversation(conversationId: string, keep = 40): Promi
   if (convo.messages.length > keep) {
     const trimmed = convo.messages.slice(0, -keep);
     const imageKeys = trimmed.filter((m) => m.imageRef).map((m) => m.imageRef!);
+    const audioKeys = trimmed.filter((m) => m.audioRef).map((m) => m.audioRef!);
     await removeImages(imageKeys);
+    await removeAudios(audioKeys);
     convo.messages = convo.messages.slice(-keep);
     await convo.save();
   }

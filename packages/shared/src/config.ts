@@ -33,6 +33,10 @@ const baseSchema = z.object({
   TTS_VOICE_ID: z.string().optional(),
   ELEVENLABS_API_KEY: z.string().optional(),
 
+  STT_PROVIDER: z.string().optional(),
+  STT_BASE_URL: z.string().optional(),
+  STT_API_KEY: z.string().optional(),
+
   BROWSER_ENABLED: z
     .string()
     .default("false")
@@ -191,6 +195,30 @@ export function validateConfig(): void {
   }
   if (config.ALLOWED_IMESSAGE_HANDLES.length > 0 && !config.BLUEBUBBLES_HOST) {
     errors.push("BLUEBUBBLES_HOST is required when ALLOWED_IMESSAGE_HANDLES is non-empty");
+  }
+
+  if (config.STT_PROVIDER) {
+    const slash = config.STT_PROVIDER.indexOf("/");
+    if (slash === -1) {
+      errors.push('STT_PROVIDER must be in "provider/model" format (e.g., "openai/whisper-1")');
+    } else {
+      const provider = config.STT_PROVIDER.slice(0, slash);
+      // Cloud OpenAI and local whisper.cpp both use the OpenAI-compatible
+      // /v1/audio/transcriptions endpoint, so the only "provider" surface
+      // we recognise today is "openai". Local mode is just `STT_BASE_URL`
+      // pointing at the local server.
+      if (provider !== "openai") {
+        errors.push(
+          `STT_PROVIDER unknown provider "${provider}" — only "openai" is supported (use STT_BASE_URL for local servers)`,
+        );
+      }
+      const hasKey = config.STT_API_KEY ?? config.OPENAI_API_KEY;
+      if (!hasKey) {
+        errors.push(
+          "STT_API_KEY or OPENAI_API_KEY is required when STT_PROVIDER is set (use any non-empty placeholder for local whisper.cpp servers that don't enforce auth)",
+        );
+      }
+    }
   }
 
   if (errors.length > 0) {

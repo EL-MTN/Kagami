@@ -96,6 +96,13 @@ createBot(token)
     │   ├─ handleMessage(incoming, adapter)
     │   └─ resetTimer(chatId)
     │
+    ├─ message:voice handler / message:audio handler (see docs/voice.md)
+    │   ├─ normalizeVoice/normalizeAudio(ctx) → IncomingMessage with audioBuffer + duration
+    │   ├─ Rate limit check
+    │   ├─ Send typing action
+    │   ├─ handleMessage(incoming, adapter) — transcribes via STT if configured
+    │   └─ resetTimer(chatId)
+    │
     ├─ message:location handler (gated on LOCATION_ENABLED)
     │   ├─ normalizeLocation(ctx) → IncomingMessage (with location)
     │   ├─ Rate limit check

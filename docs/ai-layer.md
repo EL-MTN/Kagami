@@ -397,21 +397,30 @@ The main `generateText()` call in `apps/bot/src/ai/generate.ts` uses:
 | `temperature` | 0.7                                                                                        |
 | `abortSignal` | `AbortSignal.timeout(120_000)` — 2 minute timeout (30s for Fast tier classification calls) |
 
+## Speech-to-Text (STT)
+
+When `STT_PROVIDER` is set, inbound voice notes (Telegram `message:voice` / `message:audio`, iMessage audio attachments) are transcribed before reaching the LLM. The user message arrives in conversation history as `[voice] <transcript>` so Mashiro knows the user spoke.
+
+Implementation lives at `apps/bot/src/stt/` mirroring the TTS module shape. A single OpenAI-compatible provider covers both cloud (`api.openai.com`) and local (whisper.cpp HTTP server) — only `STT_BASE_URL` differs. The transcribe call uses Vercel AI SDK's `experimental_transcribe` from the `ai` package with `createOpenAI({ baseURL })` from `@ai-sdk/openai`. 25 MB / 30-min cap; oversized audio surfaces as `[voice note too long to transcribe]` placeholder. See [voice.md](voice.md) for setup.
+
+The original audio is persisted to a separate GridFS bucket (`audio.files` / `audio.chunks`) so a future multimodal model can re-feed without a re-record. The `IMessage` schema gained `audioRef`, `audioMimeType`, `audioDurationSeconds` fields alongside the existing `imageRef` shape.
+
 ## Token Usage Observability
 
 All LLM call sites track token usage via `apps/bot/src/ai/token-tracker.ts`. Each call logs prompt/completion tokens and estimated cost via Pino, then persists to the `TokenUsage` MongoDB collection (fire-and-forget).
 
 ### Categories
 
-| Category           | Call Sites                                                           |
-| ------------------ | -------------------------------------------------------------------- |
-| `conversation`     | Main `generateText` in `generate.ts`                                 |
-| `proactive`        | Proactive message generation in `proactive.ts`                       |
-| `skill`            | Skill execution in `skill-executor.ts`                               |
-| `curation`         | All curator calls (summary, facts, follow-ups, weekly/monthly merge) |
-| `image-selection`  | Reference image selection (outfit, face, body, setting)              |
-| `image-generation` | Image generation via AI SDK (fixed cost per call, model-dependent)   |
-| `tts-generation`   | TTS voice generation (cost per 1K characters, model-dependent)       |
+| Category            | Call Sites                                                           |
+| ------------------- | -------------------------------------------------------------------- |
+| `conversation`      | Main `generateText` in `generate.ts`                                 |
+| `proactive`         | Proactive message generation in `proactive.ts`                       |
+| `skill`             | Skill execution in `skill-executor.ts`                               |
+| `curation`          | All curator calls (summary, facts, follow-ups, weekly/monthly merge) |
+| `image-selection`   | Reference image selection (outfit, face, body, setting)              |
+| `image-generation`  | Image generation via AI SDK (fixed cost per call, model-dependent)   |
+| `tts-generation`    | TTS voice generation (cost per 1K characters, model-dependent)       |
+| `stt-transcription` | STT transcription of inbound voice (cost per minute, $0 for local)   |
 
 ### Pricing
 

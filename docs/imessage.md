@@ -85,7 +85,7 @@ After the verdict resolves, the same code path as Telegram runs: `dispatchGatedA
 
 ## Voice notes inbound
 
-For v1, voice attachments are surfaced as `[voice note]` text — Mashiro acknowledges receipt without transcribing. Speech-to-text lands as a separate feature later, applied to both Telegram and iMessage at once.
+When `STT_PROVIDER` is configured (see [voice.md](voice.md)), inbound iMessage voice attachments are transcribed and the user message reaches Mashiro as `[voice] <transcript>`. The webhook decodes the inline base64 from `attachment.data`, applies the 25 MB cap, and stores the original audio in GridFS alongside the transcript. With STT disabled, voice attachments still surface as `[voice note]` placeholder and the AI pipeline runs normally.
 
 ## Inbox behavior summary
 

@@ -226,6 +226,69 @@ export function createBot(token: string): Bot {
     }
   });
 
+  // Voice notes (recorded in Telegram) and audio files (forwarded) both
+  // route through the same STT pipeline. The adapter populates audio
+  // fields on IncomingMessage; handleMessage does the transcription and
+  // either prefixes the transcript with "[voice]" or surfaces a
+  // placeholder when STT_PROVIDER is unset / fails / hits the cap.
+  bot.on("message:voice", async (ctx) => {
+    const incoming = await adapter.normalizeVoice(ctx);
+    if (!incoming) return;
+
+    if (isRateLimited(incoming.userId)) {
+      logger.warn({ userId: incoming.userId }, "Rate limited");
+      await ctx.reply("slow down babe, i can't keep up lol");
+      return;
+    }
+
+    logger.info(
+      {
+        userId: incoming.userId,
+        durationSeconds: incoming.audioDurationSeconds,
+        hasBuffer: !!incoming.audioBuffer,
+      },
+      "Incoming voice note",
+    );
+
+    try {
+      await ctx.replyWithChatAction("typing");
+      await handleMessage(incoming, adapter);
+      resetTimer(incoming.chatId);
+    } catch (error) {
+      logger.error({ error }, "Error handling voice message");
+      await ctx.reply("sorry something went wrong, give me a sec 💭");
+    }
+  });
+
+  bot.on("message:audio", async (ctx) => {
+    const incoming = await adapter.normalizeAudio(ctx);
+    if (!incoming) return;
+
+    if (isRateLimited(incoming.userId)) {
+      logger.warn({ userId: incoming.userId }, "Rate limited");
+      await ctx.reply("slow down babe, i can't keep up lol");
+      return;
+    }
+
+    logger.info(
+      {
+        userId: incoming.userId,
+        durationSeconds: incoming.audioDurationSeconds,
+        hasBuffer: !!incoming.audioBuffer,
+      },
+      "Incoming audio file",
+    );
+
+    try {
+      await ctx.replyWithChatAction("typing");
+      await handleMessage(incoming, adapter);
+      resetTimer(incoming.chatId);
+    } catch (error) {
+      logger.error({ error }, "Error handling audio message");
+      await ctx.reply("sorry something went wrong, give me a sec 💭");
+    }
+  });
+
   bot.on("message:text", async (ctx) => {
     const incoming = adapter.normalize(ctx);
     if (!incoming) return;
