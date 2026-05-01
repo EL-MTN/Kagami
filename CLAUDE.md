@@ -41,6 +41,8 @@ npm run auth:google  # Google OAuth setup
 npm run migrate:memory # Memory system migration
 ```
 
+The dashboard dev server runs under [Portless](https://github.com/vercel-labs/portless) at `https://mashiro.localhost` (HTTPS auto-trusted, port assigned dynamically). First run prompts once for sudo to install the local CA.
+
 ## Dependency Graph
 
 ```
