@@ -18,7 +18,7 @@ import { GATED_TOOL_NAMES, isGatedTool } from "../../services/gated-actions";
 export function createRequestConfirmationTool(
   chatId: string,
   adapter: PlatformAdapter,
-  origin: "conversation" | "skill" = "conversation",
+  origin: "conversation" | "routine" = "conversation",
   originRef?: string,
 ) {
   const gatedToolEnum = z.enum(GATED_TOOL_NAMES);

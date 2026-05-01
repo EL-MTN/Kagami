@@ -31,14 +31,14 @@ vi.mock("@mashiro/shared", async (orig) => ({
   },
 }));
 
-vi.mock("../../../src/services/skill-executor", () => ({
+vi.mock("../../../src/services/routine-executor", () => ({
   // Allow up to 3 levels of nesting; the registry uses this constant to gate
-  // useSkill registration.
-  MAX_SKILL_DEPTH: 3,
-  executeSkill: vi.fn(),
+  // useRoutine registration.
+  MAX_ROUTINE_DEPTH: 3,
+  executeRoutine: vi.fn(),
 }));
 
-import { allTools, watcherTools, skillToolsUnderWatcher } from "../../../src/ai/tools/index";
+import { allTools, watcherTools, routineToolsUnderWatcher } from "../../../src/ai/tools/index";
 
 const adapter = fakeAdapter();
 const baseCtx = {
@@ -60,21 +60,21 @@ afterEach(() => {
 });
 
 describe("allTools — minimum-config baseline", () => {
-  it("registers the always-on tools (memory, skill mgmt, watcher mgmt) with no flags set", () => {
+  it("registers the always-on tools (memory, routine mgmt, watcher mgmt) with no flags set", () => {
     const tools = allTools(baseCtx);
     const names = Object.keys(tools).sort();
     expect(names).toEqual(
       [
         "curateMemory",
         "listMemories",
-        "manageSkills",
+        "manageRoutines",
         "manageWatchers",
         "noteToSelf",
         "readMemory",
         "rememberFact",
         "searchMemory",
-        "searchSkills",
-        "useSkill",
+        "searchRoutines",
+        "useRoutine",
       ].sort(),
     );
   });
@@ -121,19 +121,19 @@ describe("allTools — feature flags", () => {
   });
 });
 
-describe("allTools — useSkill recursion gate", () => {
-  it("registers useSkill when depth < MAX_SKILL_DEPTH", () => {
-    expect(Object.keys(allTools({ ...baseCtx, skillDepth: 0 }))).toContain("useSkill");
-    expect(Object.keys(allTools({ ...baseCtx, skillDepth: 2 }))).toContain("useSkill");
+describe("allTools — useRoutine recursion gate", () => {
+  it("registers useRoutine when depth < MAX_ROUTINE_DEPTH", () => {
+    expect(Object.keys(allTools({ ...baseCtx, routineDepth: 0 }))).toContain("useRoutine");
+    expect(Object.keys(allTools({ ...baseCtx, routineDepth: 2 }))).toContain("useRoutine");
   });
 
-  it("excludes useSkill at MAX_SKILL_DEPTH (= 3)", () => {
-    expect(Object.keys(allTools({ ...baseCtx, skillDepth: 3 }))).not.toContain("useSkill");
+  it("excludes useRoutine at MAX_ROUTINE_DEPTH (= 3)", () => {
+    expect(Object.keys(allTools({ ...baseCtx, routineDepth: 3 }))).not.toContain("useRoutine");
   });
 });
 
 describe("watcherTools — read-only invariant", () => {
-  it("excludes every mutating tool — sends, memory writes, calendar writes, reminders, skill/watcher CRUD, confirmation primitives", () => {
+  it("excludes every mutating tool — sends, memory writes, calendar writes, reminders, routine/watcher CRUD, confirmation primitives", () => {
     mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
     mockConfig.BROWSER_ENABLED = true;
     mockConfig.IMAGE_GENERATION_MODEL = "stub";
@@ -149,11 +149,11 @@ describe("watcherTools — read-only invariant", () => {
       "curateMemory",
       "manageCalendar", // mutating; readOnly variant is `listCalendarEvents`
       "manageReminders",
-      "manageSkills",
+      "manageRoutines",
       "manageWatchers",
       "requestConfirmation",
       "cancelConfirmation",
-      "searchSkills",
+      "searchRoutines",
     ];
     for (const f of forbidden) {
       expect(names, `watcherTools must not include ${f}`).not.toContain(f);
@@ -173,34 +173,34 @@ describe("watcherTools — read-only invariant", () => {
         "checkEmail",
         "listCalendarEvents", // the readOnly variant exposed under this name
         "browse",
-        "useSkill",
+        "useRoutine",
         "reportWatcherResult",
       ]),
     );
   });
 
-  it("excludes useSkill at MAX_SKILL_DEPTH", () => {
+  it("excludes useRoutine at MAX_ROUTINE_DEPTH", () => {
     expect(
-      Object.keys(watcherTools({ ...baseCtx, skillDepth: 3 })),
-    ).not.toContain("useSkill");
+      Object.keys(watcherTools({ ...baseCtx, routineDepth: 3 })),
+    ).not.toContain("useRoutine");
   });
 });
 
-describe("skillToolsUnderWatcher — read-only invariant transitive", () => {
+describe("routineToolsUnderWatcher — read-only invariant transitive", () => {
   it("returns the same read-only subset as watcherTools — minus reportWatcherResult", () => {
     mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
     mockConfig.BROWSER_ENABLED = true;
 
     const watcher = Object.keys(watcherTools(baseCtx)).sort();
-    const skill = Object.keys(skillToolsUnderWatcher(baseCtx)).sort();
-    expect(skill).toEqual(watcher.filter((n) => n !== "reportWatcherResult"));
+    const routine = Object.keys(routineToolsUnderWatcher(baseCtx)).sort();
+    expect(routine).toEqual(watcher.filter((n) => n !== "reportWatcherResult"));
   });
 
   it("does not include any mutating surface", () => {
     mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
     mockConfig.BROWSER_ENABLED = true;
 
-    const names = Object.keys(skillToolsUnderWatcher(baseCtx));
+    const names = Object.keys(routineToolsUnderWatcher(baseCtx));
     expect(names).not.toContain("sendEmail");
     expect(names).not.toContain("rememberFact");
     expect(names).not.toContain("manageCalendar");

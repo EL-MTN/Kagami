@@ -58,7 +58,7 @@ export function createCancelConfirmationTool(
           );
         }
 
-        // userId may be missing if a cron-triggered skill calls this tool
+        // userId may be missing if a cron-triggered routine calls this tool
         // (no active user driving the turn). Fall back to chatId — for
         // private Telegram chats they're numerically equal, so session
         // creation still keys correctly.

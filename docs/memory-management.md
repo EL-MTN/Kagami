@@ -199,7 +199,7 @@ Merges use soft-archival instead of hard deletion:
 - **Working memory**: MongoDB TTL index auto-deletes expired entries
 - **Fired reminders**: Cleaned up daily (older than 30 days)
 - **Closed conversations**: Cleaned up daily (older than 90 days)
-- **Skill logs**: Cleaned up daily (older than 90 days)
+- **Routine logs**: Cleaned up daily (older than 90 days)
 
 ---
 

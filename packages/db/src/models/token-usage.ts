@@ -3,7 +3,7 @@ import mongoose, { Schema, type Document } from "mongoose";
 export type UsageCategory =
   | "conversation"
   | "proactive"
-  | "skill"
+  | "routine"
   | "watcher"
   | "curation"
   | "image-selection"
@@ -23,7 +23,7 @@ export interface ITokenUsage extends Document {
   metadata?: {
     chatId?: string;
     sessionId?: string;
-    skillId?: string;
+    routineId?: string;
     watcherId?: string;
     toolCalls?: number;
     steps?: number;
@@ -38,7 +38,7 @@ const tokenUsageSchema = new Schema<ITokenUsage>(
       enum: [
         "conversation",
         "proactive",
-        "skill",
+        "routine",
         "watcher",
         "curation",
         "image-selection",
@@ -57,7 +57,7 @@ const tokenUsageSchema = new Schema<ITokenUsage>(
     metadata: {
       chatId: { type: String },
       sessionId: { type: String },
-      skillId: { type: String },
+      routineId: { type: String },
       watcherId: { type: String },
       toolCalls: { type: Number },
       steps: { type: Number },

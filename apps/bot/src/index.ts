@@ -10,7 +10,7 @@ import { AdapterRegistry } from "./platform/registry";
 import { loadContext } from "./context/generator";
 import { startProactiveScheduler } from "./scheduler/proactive";
 import { startReminderScheduler } from "./scheduler/reminders";
-import { startSkillScheduler } from "./scheduler/skills";
+import { startRoutineScheduler } from "./scheduler/routines";
 import { startWatcherScheduler } from "./scheduler/watchers";
 import { shutdownBrowser } from "./services/browser";
 
@@ -27,7 +27,7 @@ const TELEGRAM_BOT_TOKEN = requireToken();
 
 let stopProactiveScheduler: (() => void) | null = null;
 let stopReminderScheduler: (() => void) | null = null;
-let stopSkillScheduler: (() => void) | null = null;
+let stopRoutineScheduler: (() => void) | null = null;
 let stopWatcherScheduler: (() => void) | null = null;
 let stopBlueBubblesWebhook: (() => void) | null = null;
 
@@ -67,7 +67,7 @@ async function main() {
 
   stopProactiveScheduler = startProactiveScheduler(registry);
   stopReminderScheduler = startReminderScheduler(registry);
-  stopSkillScheduler = startSkillScheduler(registry);
+  stopRoutineScheduler = startRoutineScheduler(registry);
   stopWatcherScheduler = startWatcherScheduler(registry);
 }
 
@@ -75,7 +75,7 @@ function shutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down...`);
   stopProactiveScheduler?.();
   stopReminderScheduler?.();
-  stopSkillScheduler?.();
+  stopRoutineScheduler?.();
   stopWatcherScheduler?.();
   stopBlueBubblesWebhook?.();
   void shutdownBrowser()

@@ -69,16 +69,16 @@ The browser has a persistent profile — cookies and logins survive across sessi
 Only take screenshots when explicitly asked. For simple questions, search is usually enough.
 `;
 
-export const SKILL_BEHAVIOR_INSTRUCTIONS = `
-## Skills
-You can create and invoke reusable skills — named capabilities with optional parameters.
-- Use searchSkills to discover available skills by keyword (or call with no query to list all)
-- Use useSkill to invoke a skill by name with parameters
-- Use manageSkills to create/update/delete skills
-- Skills can call other skills (up to 3 levels deep)
-- A skill with a cron schedule runs automatically; without one, it's on-demand only
-- Keep skill prompts clear and focused — they run as separate LLM calls
-- Don't create skills for one-off tasks — skills are for reusable automation
+export const ROUTINE_BEHAVIOR_INSTRUCTIONS = `
+## Routines
+You can create and invoke reusable routines — named capabilities with optional parameters.
+- Use searchRoutines to discover available routines by keyword (or call with no query to list all)
+- Use useRoutine to invoke a routine by name with parameters
+- Use manageRoutines to create/update/delete routines
+- Routines can call other routines (up to 3 levels deep)
+- A routine with a cron schedule runs automatically; without one, it's on-demand only
+- Keep routine prompts clear and focused — they run as separate LLM calls
+- Don't create routines for one-off tasks — routines are for reusable automation
 `;
 
 export const ACKNOWLEDGMENT_INSTRUCTIONS = `

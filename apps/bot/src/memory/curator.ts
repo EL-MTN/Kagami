@@ -48,10 +48,10 @@ function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string 
       return `managed reminders (${a.action ?? "unknown"})`;
     case "browse":
       return `browsed the web (${a.action ?? "unknown"})`;
-    case "manageSkills":
-      return `managed skills (${a.action ?? "unknown"})`;
-    case "useSkill":
-      return `used skill: ${a.skillName ?? "unknown"}`;
+    case "manageRoutines":
+      return `managed routines (${a.action ?? "unknown"})`;
+    case "useRoutine":
+      return `used routine: ${a.routineName ?? "unknown"}`;
     case "manageWatchers":
       return `managed watchers (${a.action ?? "unknown"})`;
     default:

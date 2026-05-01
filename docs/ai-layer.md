@@ -92,17 +92,17 @@ interface ToolContext {
   chatId: string;
   adapter: PlatformAdapter;
   sessionId: string;
-  skillDepth?: number; // Current skill nesting depth (0 = top-level)
+  routineDepth?: number; // Current routine nesting depth (0 = top-level)
 }
 
-allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageSkills, searchSkills, useSkill?, manageWatchers }
+allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageRoutines, searchRoutines, useRoutine?, manageWatchers }
 
 watcherTools(ctx) → { readMemory, searchMemory, listMemories, reportWatcherResult, checkEmail?, listCalendarEvents?, browse? (read-only) }
 ```
 
 Two distinct tool sets are assembled depending on the calling context:
 
-- **`allTools(ctx)`** — full surface available to Mashiro in conversation and inside skill executors. Includes side-effecting tools (`sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, etc.).
+- **`allTools(ctx)`** — full surface available to Mashiro in conversation and inside routine executors. Includes side-effecting tools (`sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, etc.).
 - **`watcherTools(ctx)`** — read-only subset for watcher executor ticks (`apps/bot/src/services/watcher-executor.ts`). Watchers observe; they never mutate external state. The browse tool here is the `createReadOnlyBrowseTool()` variant, which restricts actions to `search`/`visit`/`extract` and excludes `screenshot` (sends a photo), `act` (mutates page state), `agent`, and `login`. The calendar variant is `createManageCalendarTool({ mode: "readOnly" })`. `manageWatchers` is also excluded — watchers cannot create watchers.
 
 ### rememberFact
@@ -222,38 +222,38 @@ Two distinct tool sets are assembled depending on the calling context:
 
 **Architecture**: Two independent LLM streams — Mashiro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_ENV` (`local`/`cloud`), `BROWSER_DATA_DIR`, `BROWSER_HEADLESS`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
 
-### searchSkills
+### searchRoutines
 
-- **Purpose**: Search and discover available skills by keyword
+- **Purpose**: Search and discover available routines by keyword
 - **Parameters**: `{ query?: string }`
-- **Returns**: `{ success: true, count, skills: [{ name, description, parameters, cronSchedule, reportMode }] }` or `{ success: false, reason }`
-- **Behavior**: Searches enabled skills for the current chat by matching keywords against skill names and descriptions. Call with no query to list all enabled skills. This is the primary discovery mechanism — the system prompt only lists skill names, so the LLM uses this tool to get full details (parameters, schedules) before invoking a skill.
+- **Returns**: `{ success: true, count, routines: [{ name, description, parameters, cronSchedule, reportMode }] }` or `{ success: false, reason }`
+- **Behavior**: Searches enabled routines for the current chat by matching keywords against routine names and descriptions. Call with no query to list all enabled routines. This is the primary discovery mechanism — the system prompt only lists routine names, so the LLM uses this tool to get full details (parameters, schedules) before invoking a routine.
 
-### manageSkills
+### manageRoutines
 
-- **Purpose**: Manage reusable skills — named capabilities with optional parameters and optional cron schedules
-- **Parameters**: `{ action: "create"|"list"|"update"|"delete"|"enable"|"disable", skillId?, name?, description?, prompt?, parameters?, cronSchedule?, reportMode?, purity? }`
-- **Returns**: `{ success, skillId? }` or `{ success, skills? }` or `{ success: false, reason }`
-- **Behavior**: Creates, lists, updates, deletes, enables, or disables skills. Skills are named LLM-prompted capabilities stored in the database with typed parameters. Each skill has a `reportMode`: `"always"` sends a summary after every run, `"alert"` only messages when something noteworthy or an error occurs. Each skill also has a `purity` marker: `"read"` (skill only observes — search, summarize, query — and is safe to invoke from a watcher) or `"action"` (skill mutates external state — sends, writes, modifies — and watchers cannot invoke it). `purity` defaults to `"action"` if omitted on create, the conservative choice for backward-compat. Cron expressions are validated. Cron-scheduled skills require all required parameters to have defaults. Skill names are unique per chat (compound index). Version number increments on each update.
+- **Purpose**: Manage reusable routines — named capabilities with optional parameters and optional cron schedules
+- **Parameters**: `{ action: "create"|"list"|"update"|"delete"|"enable"|"disable", routineId?, name?, description?, prompt?, parameters?, cronSchedule?, reportMode?, purity? }`
+- **Returns**: `{ success, routineId? }` or `{ success, routines? }` or `{ success: false, reason }`
+- **Behavior**: Creates, lists, updates, deletes, enables, or disables routines. Routines are named LLM-prompted capabilities stored in the database with typed parameters. Each routine has a `reportMode`: `"always"` sends a summary after every run, `"alert"` only messages when something noteworthy or an error occurs. Each routine also has a `purity` marker: `"read"` (routine only observes — search, summarize, query — and is safe to invoke from a watcher) or `"action"` (routine mutates external state — sends, writes, modifies — and watchers cannot invoke it). `purity` defaults to `"action"` if omitted on create, the conservative choice for backward-compat. Cron expressions are validated. Cron-scheduled routines require all required parameters to have defaults. Routine names are unique per chat (compound index). Version number increments on each update.
 
-### useSkill (conditional — omitted at max depth)
+### useRoutine (conditional — omitted at max depth)
 
-- **Purpose**: Invoke a skill by name with optional parameters
-- **Parameters**: `{ skillName: string, parameters?: Record<string, unknown> }`
-- **Returns**: `{ success: true, skillName, result }` or `{ success: false, reason }`
-- **Behavior**: Looks up skill by name, validates parameters (type checking, required params, defaults), then executes synchronously via `executeSkill()`. The result is returned to the calling LLM. Supports composition: skills can call other skills up to 3 levels deep. At `MAX_SKILL_DEPTH` (3), the `useSkill` tool is omitted from the tool set entirely.
-- **Purity gate**: When the surrounding `ToolContext.callingContext === "watcher"`, `useSkill` rejects skills with `purity: "action"` before executing them. Watchers can only compose with skills marked `purity: "read"`. Additionally, when a skill _runs_ under `callingContext: "watcher"`, the skill executor swaps `allTools` for `skillToolsUnderWatcher` — a read-only tool subset that excludes `sendEmail`, `rememberFact`, `noteToSelf`, `manageReminders`, `sendPhoto`, `sendVoice`, `manageSkills`, `manageWatchers`, and the mutating browse actions. This makes the watcher invariant transitive: a read-purity skill spawned by a watcher cannot mutate external state through its own tool palette, even if its prompt instructs it to. Main chat and skill-executor contexts (`callingContext: "main"`, the default) are unrestricted.
+- **Purpose**: Invoke a routine by name with optional parameters
+- **Parameters**: `{ routineName: string, parameters?: Record<string, unknown> }`
+- **Returns**: `{ success: true, routineName, result }` or `{ success: false, reason }`
+- **Behavior**: Looks up routine by name, validates parameters (type checking, required params, defaults), then executes synchronously via `executeRoutine()`. The result is returned to the calling LLM. Supports composition: routines can call other routines up to 3 levels deep. At `MAX_ROUTINE_DEPTH` (3), the `useRoutine` tool is omitted from the tool set entirely.
+- **Purity gate**: When the surrounding `ToolContext.callingContext === "watcher"`, `useRoutine` rejects routines with `purity: "action"` before executing them. Watchers can only compose with routines marked `purity: "read"`. Additionally, when a routine _runs_ under `callingContext: "watcher"`, the routine executor swaps `allTools` for `routineToolsUnderWatcher` — a read-only tool subset that excludes `sendEmail`, `rememberFact`, `noteToSelf`, `manageReminders`, `sendPhoto`, `sendVoice`, `manageRoutines`, `manageWatchers`, and the mutating browse actions. This makes the watcher invariant transitive: a read-purity routine spawned by a watcher cannot mutate external state through its own tool palette, even if its prompt instructs it to. Main chat and routine-executor contexts (`callingContext: "main"`, the default) are unrestricted.
 
-**Skill Execution**: Skills run via `generateText` with a lean context (executor identity + datetime + parameter injection — no soul or conversational instructions). Step limits vary by trigger: cron = 20 steps at temp 0.4, manual (depth 0) = 10 steps at temp 0.5, composed (depth > 0) = 5 steps at temp 0.4. A separate execution log (`SkillLog`) tracks each run's status, trigger type, parameters, parent log (for composed calls), and timing. The scheduler polls every 60s, skips skills that are already running, and resets stale locks on startup.
+**Routine Execution**: Routines run via `generateText` with a lean context (executor identity + datetime + parameter injection — no soul or conversational instructions). Step limits vary by trigger: cron = 20 steps at temp 0.4, manual (depth 0) = 10 steps at temp 0.5, composed (depth > 0) = 5 steps at temp 0.4. A separate execution log (`RoutineLog`) tracks each run's status, trigger type, parameters, parent log (for composed calls), and timing. The scheduler polls every 60s, skips routines that are already running, and resets stale locks on startup.
 
-**Architecture**: Executor service in `apps/bot/src/services/skill-executor.ts`, scheduler in `apps/bot/src/scheduler/skills.ts`, cron helper in `apps/bot/src/services/cron.ts`, tools in `apps/bot/src/ai/tools/manage-skills.ts` and `apps/bot/src/ai/tools/use-skill.ts`. DB models (`Skill`, `SkillLog`) in `packages/db/src/models/skill.ts`. See [skills.md](skills.md) for full documentation.
+**Architecture**: Executor service in `apps/bot/src/services/routine-executor.ts`, scheduler in `apps/bot/src/scheduler/routines.ts`, cron helper in `apps/bot/src/services/cron.ts`, tools in `apps/bot/src/ai/tools/manage-routines.ts` and `apps/bot/src/ai/tools/use-routine.ts`. DB models (`Routine`, `RoutineLog`) in `packages/db/src/models/routine.ts`. See [routines.md](routines.md) for full documentation.
 
 ### manageWatchers
 
 - **Purpose**: Manage watchers — scheduled detection jobs that observe a target, compare against `lastState`, and notify only when a user-defined condition is met
 - **Parameters**: `{ action: "create"|"list"|"update"|"delete"|"enable"|"disable", watcherId?, name?, description?, prompt?, cronSchedule?, expiresAt? }`
 - **Returns**: `{ success, watcherId? }` or `{ success, watchers? }` or `{ success: false, reason }`
-- **Behavior**: Creates, lists, updates, deletes, enables, or disables watchers. Cron expression and `expiresAt` are validated; `expiresAt` defaults to 30 days from creation. Names are unique per chat among non-archived watchers (partial unique index, so a name can be reused after archive). Available in main chat and inside skill executors — but explicitly **omitted from `watcherTools`** so watchers cannot author watchers.
+- **Behavior**: Creates, lists, updates, deletes, enables, or disables watchers. Cron expression and `expiresAt` are validated; `expiresAt` defaults to 30 days from creation. Names are unique per chat among non-archived watchers (partial unique index, so a name can be reused after archive). Available in main chat and inside routine executors — but explicitly **omitted from `watcherTools`** so watchers cannot author watchers.
 
 ### reportWatcherResult (watcherTools only)
 
@@ -415,7 +415,7 @@ All LLM call sites track token usage via `apps/bot/src/ai/token-tracker.ts`. Eac
 | ------------------- | -------------------------------------------------------------------- |
 | `conversation`      | Main `generateText` in `generate.ts`                                 |
 | `proactive`         | Proactive message generation in `proactive.ts`                       |
-| `skill`             | Skill execution in `skill-executor.ts`                               |
+| `routine`           | Routine execution in `routine-executor.ts`                           |
 | `curation`          | All curator calls (summary, facts, follow-ups, weekly/monthly merge) |
 | `image-selection`   | Reference image selection (outfit, face, body, setting)              |
 | `image-generation`  | Image generation via AI SDK (fixed cost per call, model-dependent)   |

@@ -20,7 +20,7 @@ apps/bot/src/platform/imessage/adapter.ts  — BlueBubblesAdapter implements Pla
 apps/bot/src/platform/imessage/webhook.ts  — node:http server; pre-AI YES/NO parser
 ```
 
-Schedulers (`proactive`, `reminder`, `skill`, `watcher`) take an `AdapterRegistry` instead of a single `PlatformAdapter`. Each derives the platform from `chatId` via `platformForChatId(chatId)` and looks up the right adapter. Telegram chatIds are bare numeric strings; iMessage chatIds are stored with an `imessage:` prefix (e.g., `imessage:iMessage;-;+15551234567`). The prefix scheme means existing Telegram data needs no migration — the two namespaces can't collide.
+Schedulers (`proactive`, `reminder`, `routine`, `watcher`) take an `AdapterRegistry` instead of a single `PlatformAdapter`. Each derives the platform from `chatId` via `platformForChatId(chatId)` and looks up the right adapter. Telegram chatIds are bare numeric strings; iMessage chatIds are stored with an `imessage:` prefix (e.g., `imessage:iMessage;-;+15551234567`). The prefix scheme means existing Telegram data needs no migration — the two namespaces can't collide.
 
 The conversation model's `getOrCreateSession` is now scoped on `{chatId, platform}`. A new compound index `{chatId, platform, status, updatedAt}` backs the lookup.
 
@@ -107,4 +107,4 @@ When `STT_PROVIDER` is configured (see [voice.md](voice.md)), inbound iMessage v
 - **Group chats.** The webhook ignores `iMessage;+;…` chatGuids. Adding groups means deciding how Mashiro participates (mention-only? always?) and handling per-message handle vs. shared chatGuid.
 - **Reactions / tapbacks.** Could be surfaced as conversation context (`[goshujin-sama liked your message]`) but adds noise without clear value.
 - **Voice transcription.** Lands with the broader STT feature so both platforms get it together.
-- **Scheduler routing UI.** The dashboard treats reminders/skills/watchers as platform-agnostic — they work on either platform based on chatId prefix, but there's no UI surface to filter by platform yet.
+- **Scheduler routing UI.** The dashboard treats reminders/routines/watchers as platform-agnostic — they work on either platform based on chatId prefix, but there's no UI surface to filter by platform yet.

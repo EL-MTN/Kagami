@@ -16,10 +16,10 @@ mashiro/                          # npm workspaces + Turborepo
 │   │   │   ├── context/          # image generation (generator.ts, types.ts)
 │   │   │   ├── memory/           # curator.ts (tightly coupled to AI layer)
 │   │   │   ├── platform/         # registry.ts + telegram/ + imessage/ (multi-adapter)
-│   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, cron, skill-executor, watcher-executor
-│   │   │   └── scheduler/        # proactive, reminders, skills, watchers
+│   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, cron, routine-executor, watcher-executor
+│   │   │   └── scheduler/        # proactive, reminders, routines, watchers
 │   │   └── context/              # soul (personality), reference images, settings (data)
-│   └── dashboard/                # Next.js dashboard (skill + watcher management, observability)
+│   └── dashboard/                # Next.js dashboard (routine + watcher management, observability)
 ├── packages/
 │   ├── typescript-config/        # shared tsconfig bases (JSON only)
 │   ├── eslint-config/            # shared ESLint flat config
@@ -74,7 +74,7 @@ mashiro/                          # npm workspaces + Turborepo
 │  │ photo/email/  │                                    │
 │  │ cal/reminders/│                                    │
 │  │ browse/       │                                    │
-│  │ skills        │                                    │
+│  │ routines        │                                    │
 │  └──────┬───────┘                                    │
 └─────────┼────────────────────────────────────────────┘
           │
@@ -89,8 +89,8 @@ mashiro/                          # npm workspaces + Turborepo
 │ ality/ │  │ State       │
 │ card   │  │ Memory      │
 │        │  │ Reminder    │
-│        │  │ Skill       │
-│        │  │ SkillLog    │
+│        │  │ Routine       │
+│        │  │ RoutineLog    │
 │        │  │ TokenUsage  │
 │        │  │ Location    │
 │        │  │  History    │
@@ -130,7 +130,7 @@ mashiro/                          # npm workspaces + Turborepo
 └──────────────────────────┘
 
 ┌──────────────────────────┐
-│   Skill Scheduler        │    ← apps/bot/src/scheduler/skills.ts
+│   Routine Scheduler        │    ← apps/bot/src/scheduler/routines.ts
 │                          │
 │ poll 60s ─► due?         │
 │           ─► execute     │
@@ -229,34 +229,34 @@ The scheduler sends unprompted messages to maintain engagement:
 - **Persistence**: next-fire timestamps saved to MongoDB (survives restarts)
 - **Reset**: any user message reschedules the next proactive to 1.5–2.5h out
 - **Memory consolidation**: after each proactive fire, checks weekly merge and monthly consolidation (fire-and-forget)
-- **Daily cleanup**: removes fired reminders (>30 days), closed conversations (>90 days), old skill logs (>90 days), and old location history (>90 days)
+- **Daily cleanup**: removes fired reminders (>30 days), closed conversations (>90 days), old routine logs (>90 days), and old location history (>90 days)
 
 When firing, the scheduler uses `getOrCreateSession` to get the active session, assembles a proactive system prompt with sessionId, and injects a synthetic nudge if no recent user message exists.
 
 ## Package Boundaries
 
-| Package              | Purpose                                            | Key Exports                                                                                                                                                                                             |
-| -------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@mashiro/shared`    | Config, logging, markdown, platform types          | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, cron + skill validation helpers                                                                                |
-| `@mashiro/db`        | MongoDB connection, all models, GridFS             | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `Skill`, `SkillLog`, `LocationHistory`, `PendingConfirmation`, `readImage`, `writeImage`, all model CRUD functions |
-| `@mashiro/memory`    | Memory engine, embeddings                          | `remember`, `recall`, `forget`, `generateEmbedding`, episode/fact/milestone retrieval                                                                                                                   |
-| `@mashiro/bot`       | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages                                                                                                                                                        |
-| `@mashiro/dashboard` | Next.js dashboard (read + write CRUD)              | Overview, conversations, memories, reminders, skills, watchers, usage pages                                                                                                                             |
+| Package              | Purpose                                            | Key Exports                                                                                                                                                                                                 |
+| -------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@mashiro/shared`    | Config, logging, markdown, platform types          | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, cron + routine validation helpers                                                                                  |
+| `@mashiro/db`        | MongoDB connection, all models, GridFS             | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `Routine`, `RoutineLog`, `LocationHistory`, `PendingConfirmation`, `readImage`, `writeImage`, all model CRUD functions |
+| `@mashiro/memory`    | Memory engine, embeddings                          | `remember`, `recall`, `forget`, `generateEmbedding`, episode/fact/milestone retrieval                                                                                                                       |
+| `@mashiro/bot`       | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages                                                                                                                                                            |
+| `@mashiro/dashboard` | Next.js dashboard (read + write CRUD)              | Overview, conversations, memories, reminders, routines, watchers, usage pages                                                                                                                               |
 
 ### Bot-Internal Modules
 
-| Directory                         | Purpose                                                                                                    |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `apps/bot/src/ai/`                | LLM integration, prompt assembly, tool orchestration                                                       |
-| `apps/bot/src/ai/tools/`          | Tool implementations available to the LLM                                                                  |
-| `apps/bot/src/platform/`          | `registry.ts` (AdapterRegistry + platformForChatId helper)                                                 |
-| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup (Grammy long-polling)                                                         |
-| `apps/bot/src/platform/imessage/` | BlueBubbles adapter + REST client + webhook server (opt-in, see docs/imessage.md)                          |
-| `apps/bot/src/memory/`            | Curator (tightly coupled to AI layer)                                                                      |
-| `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Cron, Skill executor, Geocoding, Location, Gated-action dispatcher |
-| `apps/bot/src/scheduler/`         | Proactive, reminder, skill scheduling                                                                      |
-| `apps/bot/src/context/`           | Image reference loading + generation                                                                       |
-| `apps/bot/src/stt/`               | Speech-to-text (Whisper-compatible API, cloud or local whisper.cpp); see docs/voice.md                     |
+| Directory                         | Purpose                                                                                                      |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `apps/bot/src/ai/`                | LLM integration, prompt assembly, tool orchestration                                                         |
+| `apps/bot/src/ai/tools/`          | Tool implementations available to the LLM                                                                    |
+| `apps/bot/src/platform/`          | `registry.ts` (AdapterRegistry + platformForChatId helper)                                                   |
+| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup (Grammy long-polling)                                                           |
+| `apps/bot/src/platform/imessage/` | BlueBubbles adapter + REST client + webhook server (opt-in, see docs/imessage.md)                            |
+| `apps/bot/src/memory/`            | Curator (tightly coupled to AI layer)                                                                        |
+| `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Cron, Routine executor, Geocoding, Location, Gated-action dispatcher |
+| `apps/bot/src/scheduler/`         | Proactive, reminder, routine scheduling                                                                      |
+| `apps/bot/src/context/`           | Image reference loading + generation                                                                         |
+| `apps/bot/src/stt/`               | Speech-to-text (Whisper-compatible API, cloud or local whisper.cpp); see docs/voice.md                       |
 
 ## Boot Sequence
 
@@ -267,10 +267,10 @@ When firing, the scheduler uses `getOrCreateSession` to get the active session, 
 5. Start bot (long-polling)
 6. Start proactive scheduler (restore timers from DB, start daily cleanup)
 7. Start reminder scheduler (polls every 60s, fires pending reminders)
-8. Start skill scheduler (reset stale locks, polls every 60s, executes due skills)
+8. Start routine scheduler (reset stale locks, polls every 60s, executes due routines)
 9. Start watcher scheduler (reset stale locks, archive expired, polls every 60s, runs due detection ticks)
 
-Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, stop skill scheduler, stop watcher scheduler, shutdown browser, disconnect DB.
+Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, stop routine scheduler, stop watcher scheduler, shutdown browser, disconnect DB.
 
 ## Key Design Decisions
 

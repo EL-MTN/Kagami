@@ -64,12 +64,12 @@ describe("requestConfirmation tool", () => {
     expect(persisted?.promptMessageId).toBe("tg-msg-42");
   });
 
-  it("respects an explicit origin (skill/watcher) and originRef", async () => {
+  it("respects an explicit origin (routine/watcher) and originRef", async () => {
     const tool = createRequestConfirmationTool(
       "chat-1",
       adapter,
-      "skill",
-      "skill-log-7",
+      "routine",
+      "routine-log-7",
     ) as unknown as ExecutableTool;
 
     const result = await tool.execute({
@@ -77,8 +77,8 @@ describe("requestConfirmation tool", () => {
       action: { tool: "manageCalendar", args: { action: "delete", eventId: "ev-1" } },
     });
     const persisted = await PendingConfirmation.findById(result.confirmationId as string);
-    expect(persisted?.origin).toBe("skill");
-    expect(persisted?.originRef).toBe("skill-log-7");
+    expect(persisted?.origin).toBe("routine");
+    expect(persisted?.originRef).toBe("routine-log-7");
   });
 
   it("rejects an action.tool that is not in GATED_TOOL_NAMES (defense-in-depth check)", async () => {
