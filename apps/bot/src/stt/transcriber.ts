@@ -43,10 +43,10 @@ export async function transcribeAudio(req: SttRequest): Promise<SttOutcome> {
     return { ok: false, reason: "too-large" };
   }
 
-  const { provider, modelId } = parseProviderSpec(config.STT_PROVIDER);
   const start = Date.now();
 
   try {
+    const { provider, modelId } = parseProviderSpec(config.STT_PROVIDER);
     switch (provider) {
       case "openai": {
         const { transcribeWithOpenAi } = await import("./providers/openai-stt");
@@ -70,7 +70,7 @@ export async function transcribeAudio(req: SttRequest): Promise<SttOutcome> {
         throw new Error(`Unsupported STT provider "${provider}"`);
     }
   } catch (error) {
-    logger.error({ error, provider }, "STT transcription failed");
+    logger.error({ error, provider: config.STT_PROVIDER }, "STT transcription failed");
     return { ok: false, reason: "failed" };
   }
 }

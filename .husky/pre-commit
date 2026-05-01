@@ -1,1 +1,6 @@
 npx lint-staged
+
+# Run the full test suite. ~10 s on a laptop today; if it gets meaningfully
+# slower, move this to a pre-push hook instead. Use `git commit --no-verify`
+# to bypass for emergencies (and let CI catch the rest).
+npm run test --silent

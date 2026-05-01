@@ -1,15 +1,32 @@
 import mongoose, { mongo } from "mongoose";
 import { randomUUID } from "node:crypto";
-import { Readable } from "node:stream";
 import { logger } from "@mashiro/shared";
 
 const IMAGE_BUCKET = "images";
 const AUDIO_BUCKET = "audio";
 
+// Cache GridFSBucket instances per (db, bucketName). The mongo driver tracks
+// a `checkedIndexes` flag on each bucket — the very first upload runs a
+// 4-call cascade (`findOne` + `listIndexes` + `createIndex(background:false)`
+// against both `.files` and `.chunks`). Reusing the same bucket instance
+// skips that cascade on every subsequent write within the process. Keyed via
+// WeakMap so the cache auto-evicts when mongoose disconnects/reconnects.
+const bucketCache = new WeakMap<object, Map<string, mongo.GridFSBucket>>();
+
 function getBucket(name: string): mongo.GridFSBucket {
   const db = mongoose.connection.db;
   if (!db) throw new Error("MongoDB not connected — cannot access GridFS");
-  return new mongo.GridFSBucket(db, { bucketName: name });
+  let perDb = bucketCache.get(db);
+  if (!perDb) {
+    perDb = new Map();
+    bucketCache.set(db, perDb);
+  }
+  let bucket = perDb.get(name);
+  if (!bucket) {
+    bucket = new mongo.GridFSBucket(db, { bucketName: name });
+    perDb.set(name, bucket);
+  }
+  return bucket;
 }
 
 async function writeBlob(
@@ -20,9 +37,9 @@ async function writeBlob(
 ): Promise<void> {
   const bucket = getBucket(bucketName);
   const stream = bucket.openUploadStream(key, { metadata: { mimeType } });
-  const readable = Readable.from(data);
   await new Promise<void>((resolve, reject) => {
-    readable.pipe(stream).on("finish", resolve).on("error", reject);
+    stream.on("finish", resolve).on("error", reject);
+    stream.end(data);
   });
   logger.debug({ bucket: bucketName, key, size: data.length, mimeType }, "Blob written to GridFS");
 }

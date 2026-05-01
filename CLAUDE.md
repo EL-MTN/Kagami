@@ -17,7 +17,8 @@ mashiro/
 │   ├── eslint-config/      # Shared ESLint flat config
 │   ├── shared/             # config, logger, markdown, types
 │   ├── db/                 # MongoDB connection, models, GridFS
-│   └── memory/             # engine, embedding
+│   ├── memory/             # engine, embedding
+│   └── test-utils/         # Vitest harness (withTestDb, mockLLM, fakeAdapter, MSW)
 ├── scripts/          # Migration, auth scripts
 └── docs/
 ```
@@ -30,6 +31,9 @@ mashiro/
 npm run build        # turbo run build (all packages + apps)
 npm run dev          # turbo run dev (starts bot with tsx watch)
 npm run typecheck    # turbo run typecheck (all packages)
+npm run test         # vitest run (all projects, ~10s)
+npm run test:watch   # vitest watch mode
+npm run test:coverage # V8 coverage; HTML report at coverage/index.html
 npm run lint         # turbo run lint (all packages)
 npm run lint:fix     # turbo run lint:fix
 npm run format       # prettier --write all files
@@ -66,6 +70,7 @@ npm run migrate:memory # Memory system migration
 - **Within-package imports** — use relative paths without file extensions
 - **Internal packages** — libraries export raw `.ts` source (`exports: "./src/index.ts"`); only `bot` and `dashboard` have build steps
 - **`.env` location** — `apps/bot/.env` (not root)
+- **Tests as source of truth** — when a test fails because production behaves differently than the test expects, fix the bot, not the test. See `docs/testing.md` for the harness and coverage map.
 
 ## Doc Maintenance
 
@@ -81,3 +86,4 @@ See `/docs` for:
 - [confirmations.md](docs/confirmations.md) — approval primitive for gated tool calls (tap-to-approve actions)
 - [imessage.md](docs/imessage.md) — iMessage adapter via BlueBubbles (multi-platform setup, webhook, YES/NO confirmation UX)
 - [voice.md](docs/voice.md) — speech-to-text for inbound voice notes (local whisper.cpp default, cloud fallback)
+- [testing.md](docs/testing.md) — test harness, mocking strategy, per-module coverage map
