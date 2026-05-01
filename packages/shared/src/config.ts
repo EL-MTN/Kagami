@@ -212,7 +212,7 @@ export function validateConfig(): void {
           `STT_PROVIDER unknown provider "${provider}" — only "openai" is supported (use STT_BASE_URL for local servers)`,
         );
       }
-      const hasKey = config.STT_API_KEY ?? config.OPENAI_API_KEY;
+      const hasKey = config.STT_API_KEY || config.OPENAI_API_KEY;
       if (!hasKey) {
         errors.push(
           "STT_API_KEY or OPENAI_API_KEY is required when STT_PROVIDER is set (use any non-empty placeholder for local whisper.cpp servers that don't enforce auth)",

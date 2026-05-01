@@ -1,7 +1,4 @@
 {
   "extends": "@mashiro/typescript-config/library.json",
-  "compilerOptions": {
-    "rootDir": "src"
-  },
-  "include": ["src"]
+  "include": ["src", "tests"]
 }
