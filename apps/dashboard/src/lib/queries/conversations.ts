@@ -15,21 +15,37 @@ export interface ConversationListItem {
 
 const PAGE_SIZE = 20;
 
+export interface ConversationListOptions {
+  status?: "active" | "closed";
+  /** Substring match against chatId. */
+  search?: string;
+}
+
 export async function getConversationList(
   page = 1,
+  options: ConversationListOptions = {},
 ): Promise<{ items: ConversationListItem[]; total: number; pageSize: number }> {
   await ensureDB();
 
   const skip = (page - 1) * PAGE_SIZE;
 
+  const filter: Record<string, unknown> = {};
+  if (options.status) filter.status = options.status;
+  if (options.search) {
+    filter.chatId = {
+      $regex: options.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+      $options: "i",
+    };
+  }
+
   const [items, total] = await Promise.all([
-    Conversation.find()
+    Conversation.find(filter)
       .sort({ updatedAt: -1 })
       .skip(skip)
       .limit(PAGE_SIZE)
       .select("sessionId chatId platform status messages createdAt updatedAt")
       .lean(),
-    Conversation.countDocuments(),
+    Conversation.countDocuments(filter),
   ]);
 
   return {

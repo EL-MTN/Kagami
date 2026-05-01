@@ -6,48 +6,73 @@ interface ActivityFeedProps {
   items: RecentActivityItem[];
 }
 
+function formatRelative(date: Date): string {
+  const ms = Date.now() - date.getTime();
+  const mins = Math.round(ms / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.round(days / 7);
+  return `${weeks}w ago`;
+}
+
 export function ActivityFeed({ items }: ActivityFeedProps) {
   if (items.length === 0) {
-    return <p className="text-sm text-muted-foreground/60">No recent activity.</p>;
+    return <p className="text-sm text-faint">No recent activity.</p>;
   }
 
   return (
-    <div className="relative space-y-0">
+    <ol className="relative space-y-0">
       {/* Timeline line */}
-      <div className="absolute bottom-3 left-[15px] top-3 w-px bg-border" />
+      <div className="absolute bottom-3 left-[11px] top-3 w-px bg-border" />
 
-      {items.map((item) => (
-        <div key={`${item.type}-${item.id}`} className="relative flex gap-4 py-3">
-          <div
-            className={`relative z-10 mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${
-              item.type === "conversation"
-                ? "border-primary/25 bg-primary/5"
-                : "border-border bg-card"
-            }`}
-          >
-            {item.type === "conversation" ? (
-              <MessageSquare className="h-3.5 w-3.5 text-primary/60" />
-            ) : (
-              <Brain className="h-3.5 w-3.5 text-muted-foreground" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            {item.type === "conversation" ? (
-              <Link
-                href={`/conversations/${item.id}`}
-                className="text-sm text-foreground/90 transition-colors hover:text-primary"
-              >
-                {item.summary}
-              </Link>
-            ) : (
-              <p className="text-sm text-foreground/80">{item.summary}</p>
-            )}
-            <p className="mt-0.5 text-[10px] text-muted-foreground/50">
-              {item.timestamp.toLocaleString()}
-            </p>
-          </div>
-        </div>
-      ))}
-    </div>
+      {items.map((item) => {
+        const isConvo = item.type === "conversation";
+        return (
+          <li key={`${item.type}-${item.id}`} className="relative flex gap-3 py-2.5">
+            <div className="relative z-10 mt-1 flex h-[22px] w-[22px] shrink-0 items-center justify-center">
+              {isConvo ? (
+                <span
+                  className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-primary"
+                  aria-label="conversation"
+                >
+                  <MessageSquare className="h-3 w-3" strokeWidth={2} />
+                </span>
+              ) : (
+                <span
+                  className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-border bg-card text-muted-foreground"
+                  aria-label="memory"
+                >
+                  <Brain className="h-3 w-3" strokeWidth={1.75} />
+                </span>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline justify-between gap-3">
+                {isConvo ? (
+                  <Link
+                    href={`/conversations/${item.id}`}
+                    className="truncate text-sm text-foreground transition-colors hover:text-primary"
+                  >
+                    {item.summary}
+                  </Link>
+                ) : (
+                  <p className="truncate text-sm text-foreground">{item.summary}</p>
+                )}
+                <span
+                  className="shrink-0 text-[11px] tabular-nums text-faint"
+                  title={item.timestamp.toLocaleString()}
+                >
+                  {formatRelative(item.timestamp)}
+                </span>
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

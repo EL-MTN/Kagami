@@ -93,6 +93,62 @@ export async function getWatcherDetail(id: string): Promise<WatcherListItem | nu
   return toWatcherListItem(w, lastLog ?? undefined);
 }
 
+export interface WatcherStateChange {
+  logId: string;
+  newState: string;
+  /** State at the previous distinct change, or null for the first observation. */
+  prevState: string | null;
+  triggered: boolean | null;
+  suppressed: boolean;
+  summary: string | null;
+  observedAt: string;
+}
+
+/**
+ * Walk the most recent `limit` completed runs (newest-first window) and emit
+ * one point for each distinct state transition. Consecutive identical states
+ * are collapsed so the timeline shows only when the watcher's view of the
+ * world actually changed. Returns transitions in reverse-chronological order
+ * (newest first) for direct rendering.
+ */
+export async function getWatcherStateHistory(
+  watcherId: string,
+  limit = 100,
+): Promise<WatcherStateChange[]> {
+  await ensureDB();
+
+  // Fetch the newest `limit` logs first so a watcher with a long history
+  // doesn't silently drop its most recent transitions, then walk the window
+  // chronologically (oldest-to-newest) so prevState links correctly.
+  const recent = await WatcherLog.find({
+    watcherId,
+    status: "completed",
+    newState: { $ne: null },
+  })
+    .sort({ startedAt: -1 })
+    .limit(limit)
+    .lean();
+  const logs = recent.reverse();
+
+  const out: WatcherStateChange[] = [];
+  let prev: string | null = null;
+  for (const l of logs) {
+    if (l.newState == null) continue;
+    if (l.newState === prev) continue;
+    out.push({
+      logId: l._id.toString(),
+      newState: l.newState,
+      prevState: prev,
+      triggered: l.triggered ?? null,
+      suppressed: l.suppressed ?? false,
+      summary: l.summary,
+      observedAt: l.startedAt.toISOString(),
+    });
+    prev = l.newState;
+  }
+  return out.reverse();
+}
+
 export async function getWatcherLogList(
   watcherId: string,
   limit = 50,

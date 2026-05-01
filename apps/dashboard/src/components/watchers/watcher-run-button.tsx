@@ -107,10 +107,10 @@ export function WatcherRunButton({ watcherId, disabled, disabledReason }: Watche
   return (
     <div className="flex items-center gap-3">
       {status.state === "queued" && (
-        <span className="text-xs text-muted-foreground/60">Queued — waiting for bot…</span>
+        <span className="text-xs text-muted-foreground">Queued — waiting for bot…</span>
       )}
       {status.state === "running" && (
-        <span className="text-xs text-muted-foreground/60">Running…</span>
+        <span className="text-xs text-muted-foreground">Running…</span>
       )}
       {status.state === "completed" && (
         <span className="max-w-md truncate text-xs text-primary/70" title={status.message}>

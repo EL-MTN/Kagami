@@ -48,7 +48,7 @@ export function WatcherDeleteDialog({
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">Delete Watcher</DialogTitle>
-          <DialogDescription className="text-muted-foreground/70">
+          <DialogDescription className="text-muted-foreground">
             This will permanently delete &ldquo;{watcherName}&rdquo; and all its execution logs.
             This action cannot be undone.
           </DialogDescription>

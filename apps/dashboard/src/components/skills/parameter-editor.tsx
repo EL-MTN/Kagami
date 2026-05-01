@@ -54,9 +54,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
       </div>
 
       {parameters.length === 0 && (
-        <p className="text-xs text-muted-foreground/50">
-          No parameters. This skill takes no input.
-        </p>
+        <p className="text-xs text-faint">No parameters. This skill takes no input.</p>
       )}
 
       {parameters.map((param, i) => (
@@ -65,7 +63,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
           className="grid grid-cols-[1fr_100px_1fr_auto_auto] items-end gap-2 rounded-lg border border-border/60 p-3"
         >
           <div className="space-y-1">
-            <Label className="text-[10px] text-muted-foreground/60">Name</Label>
+            <Label className="text-[10px] text-muted-foreground">Name</Label>
             <Input
               value={param.name}
               onChange={(e) => updateParam(i, { name: e.target.value })}
@@ -74,7 +72,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-[10px] text-muted-foreground/60">Type</Label>
+            <Label className="text-[10px] text-muted-foreground">Type</Label>
             <Select
               value={param.type}
               onChange={(e) =>
@@ -93,7 +91,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-[10px] text-muted-foreground/60">Description</Label>
+            <Label className="text-[10px] text-muted-foreground">Description</Label>
             <Input
               value={param.description}
               onChange={(e) => updateParam(i, { description: e.target.value })}
@@ -102,7 +100,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
             />
           </div>
           <div className="flex flex-col items-center gap-1">
-            <Label className="text-[10px] text-muted-foreground/60">Required</Label>
+            <Label className="text-[10px] text-muted-foreground">Required</Label>
             <Switch
               checked={param.required}
               onCheckedChange={(checked) => updateParam(i, { required: !!checked })}
@@ -113,7 +111,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
             variant="ghost"
             size="icon-xs"
             onClick={() => removeParam(i)}
-            className="text-muted-foreground/30 hover:text-destructive-foreground"
+            className="text-faint hover:text-destructive-foreground"
           >
             <Trash2 className="h-3 w-3" />
           </Button>
@@ -122,7 +120,7 @@ export function ParameterEditor({ parameters, onChange }: ParameterEditorProps) 
           {!param.required && (
             <div className="col-span-5 mt-1">
               <div className="flex items-center gap-2">
-                <Label className="shrink-0 text-[10px] text-muted-foreground/50">Default:</Label>
+                <Label className="shrink-0 text-[10px] text-faint">Default:</Label>
                 {param.type === "boolean" ? (
                   <Select
                     value={param.default !== undefined ? stringifyDefault(param.default) : ""}

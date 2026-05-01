@@ -37,7 +37,7 @@ function formatDuration(start: string, end?: string): string {
 function verdictLabel(log: WatcherLogItem): { label: string; tone: string } {
   if (log.status === "running") return { label: "running", tone: "text-muted-foreground" };
   if (log.status === "failed") return { label: "failed", tone: "text-destructive-foreground" };
-  if (log.suppressed) return { label: "silenced", tone: "text-muted-foreground/70" };
+  if (log.suppressed) return { label: "silenced", tone: "text-muted-foreground" };
   if (log.triggered) return { label: "triggered", tone: "text-primary" };
   return { label: "no change", tone: "text-primary/40" };
 }
@@ -72,19 +72,19 @@ export function WatcherLogTable({ watcherId, initialLogs, initialHasMore }: Watc
         <Table>
           <TableHeader>
             <TableRow className="border-b border-border hover:bg-transparent">
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 Started
               </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 Duration
               </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 Trigger
               </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 Outcome
               </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 Summary
               </TableHead>
             </TableRow>
@@ -100,11 +100,11 @@ export function WatcherLogTable({ watcherId, initialLogs, initialHasMore }: Watc
                   <TableCell className="text-xs tabular-nums text-muted-foreground">
                     {new Date(log.startedAt).toLocaleString()}
                   </TableCell>
-                  <TableCell className="font-mono text-xs tabular-nums text-muted-foreground/60">
+                  <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
                     {formatDuration(log.startedAt, log.completedAt)}
                   </TableCell>
                   <TableCell>
-                    <span className="text-xs text-muted-foreground/60">{log.trigger}</span>
+                    <span className="text-xs text-muted-foreground">{log.trigger}</span>
                   </TableCell>
                   <TableCell>
                     <span className={`inline-flex items-center gap-1.5 text-xs ${verdict.tone}`}>
@@ -136,17 +136,17 @@ export function WatcherLogTable({ watcherId, initialLogs, initialHasMore }: Watc
                         </p>
                         {log.newState && (
                           <details className="mt-2">
-                            <summary className="cursor-pointer text-[10px] uppercase tracking-widest text-muted-foreground/40">
+                            <summary className="cursor-pointer text-[10px] uppercase tracking-widest text-faint">
                               State
                             </summary>
-                            <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground/70">
+                            <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
                               {log.newState}
                             </p>
                           </details>
                         )}
                       </details>
                     ) : (
-                      <span className="text-xs text-muted-foreground/30">&mdash;</span>
+                      <span className="text-xs text-faint">&mdash;</span>
                     )}
                   </TableCell>
                 </TableRow>
@@ -154,10 +154,7 @@ export function WatcherLogTable({ watcherId, initialLogs, initialHasMore }: Watc
             })}
             {logs.length === 0 && (
               <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="py-12 text-center text-sm text-muted-foreground/60"
-                >
+                <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
                   No executions yet.
                 </TableCell>
               </TableRow>

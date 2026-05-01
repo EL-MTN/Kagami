@@ -31,12 +31,12 @@ export default async function ConversationDetailPage({
         </Button>
         <div>
           <h2 className="font-display text-2xl text-foreground">Conversation</h2>
-          <p className="font-mono text-[10px] text-muted-foreground/40">{convo.sessionId}</p>
+          <p className="font-mono text-[10px] text-faint">{convo.sessionId}</p>
         </div>
       </div>
 
       <div className="rounded-xl border border-border bg-card p-5">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground/60">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
             <span
               className={`h-1.5 w-1.5 rounded-full ${convo.status === "active" ? "bg-primary/70" : "bg-muted-foreground/20"}`}
@@ -76,7 +76,7 @@ export default async function ConversationDetailPage({
             <MessageBubble key={i} message={msg} />
           ))}
           {convo.messages.length === 0 && (
-            <p className="py-12 text-center text-sm text-muted-foreground/50">No messages.</p>
+            <p className="py-12 text-center text-sm text-faint">No messages.</p>
           )}
         </div>
       </ScrollArea>

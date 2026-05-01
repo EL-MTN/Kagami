@@ -62,19 +62,19 @@ export function SkillLogTable({ skillId, initialLogs, initialHasMore }: SkillLog
         <Table>
           <TableHeader>
             <TableRow className="border-b border-border hover:bg-transparent">
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 Started
               </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 Duration
               </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 Trigger
               </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 Status
               </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 Summary
               </TableHead>
             </TableRow>
@@ -88,11 +88,11 @@ export function SkillLogTable({ skillId, initialLogs, initialHasMore }: SkillLog
                 <TableCell className="text-xs tabular-nums text-muted-foreground">
                   {new Date(log.startedAt).toLocaleString()}
                 </TableCell>
-                <TableCell className="font-mono text-xs tabular-nums text-muted-foreground/60">
+                <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
                   {formatDuration(log.startedAt, log.completedAt)}
                 </TableCell>
                 <TableCell>
-                  <span className="text-xs text-muted-foreground/60">{log.trigger}</span>
+                  <span className="text-xs text-muted-foreground">{log.trigger}</span>
                 </TableCell>
                 <TableCell>
                   <span
@@ -128,17 +128,14 @@ export function SkillLogTable({ skillId, initialLogs, initialHasMore }: SkillLog
                       </p>
                     </details>
                   ) : (
-                    <span className="text-xs text-muted-foreground/30">&mdash;</span>
+                    <span className="text-xs text-faint">&mdash;</span>
                   )}
                 </TableCell>
               </TableRow>
             ))}
             {logs.length === 0 && (
               <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="py-12 text-center text-sm text-muted-foreground/60"
-                >
+                <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
                   No executions yet.
                 </TableCell>
               </TableRow>

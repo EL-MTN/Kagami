@@ -1,4 +1,5 @@
-import { TokenUsage, type UsageSummary, type DailyUsage } from "@mashiro/db";
+import { TokenUsage, Skill, Watcher, type UsageSummary, type DailyUsage } from "@mashiro/db";
+import { Types } from "mongoose";
 import { ensureDB } from "../db";
 
 export interface UsageOverview {
@@ -73,6 +74,104 @@ export async function getUsageByCategory(days = 30): Promise<UsageSummary[]> {
     },
     { $sort: { totalCost: -1 } },
   ]);
+}
+
+export interface OriginUsage {
+  id: string;
+  name: string;
+  totalCost: number;
+  totalTokens: number;
+  count: number;
+}
+
+interface OriginAggResult {
+  _id: string;
+  totalCost: number;
+  totalTokens: number;
+  count: number;
+}
+
+async function aggregateByOrigin(
+  metadataField: "skillId" | "watcherId",
+  days: number,
+): Promise<OriginAggResult[]> {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const matchField = `metadata.${metadataField}`;
+
+  return TokenUsage.aggregate<OriginAggResult>([
+    {
+      $match: {
+        timestamp: { $gte: cutoff },
+        [matchField]: { $exists: true, $ne: null },
+      },
+    },
+    {
+      $group: {
+        _id: `$${matchField}`,
+        totalCost: { $sum: "$estimatedCost" },
+        totalTokens: { $sum: "$totalTokens" },
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        totalCost: { $round: ["$totalCost", 6] },
+        totalTokens: 1,
+        count: 1,
+      },
+    },
+    { $sort: { totalCost: -1 } },
+    { $limit: 20 },
+  ]);
+}
+
+function toObjectIds(ids: string[]): Types.ObjectId[] {
+  const out: Types.ObjectId[] = [];
+  for (const id of ids) {
+    if (Types.ObjectId.isValid(id)) out.push(new Types.ObjectId(id));
+  }
+  return out;
+}
+
+export async function getUsageBySkill(days = 30): Promise<OriginUsage[]> {
+  await ensureDB();
+  const rows = await aggregateByOrigin("skillId", days);
+  if (rows.length === 0) return [];
+
+  const ids = toObjectIds(rows.map((r) => r._id));
+  const skills = await Skill.find({ _id: { $in: ids } })
+    .select("_id name")
+    .lean<{ _id: Types.ObjectId; name: string }[]>();
+  const nameById = new Map(skills.map((s) => [s._id.toString(), s.name]));
+
+  return rows.map((r) => ({
+    id: r._id,
+    name: nameById.get(r._id) ?? "(deleted)",
+    totalCost: r.totalCost,
+    totalTokens: r.totalTokens,
+    count: r.count,
+  }));
+}
+
+export async function getUsageByWatcher(days = 30): Promise<OriginUsage[]> {
+  await ensureDB();
+  const rows = await aggregateByOrigin("watcherId", days);
+  if (rows.length === 0) return [];
+
+  const ids = toObjectIds(rows.map((r) => r._id));
+  const watchers = await Watcher.find({ _id: { $in: ids } })
+    .select("_id name")
+    .lean<{ _id: Types.ObjectId; name: string }[]>();
+  const nameById = new Map(watchers.map((w) => [w._id.toString(), w.name]));
+
+  return rows.map((r) => ({
+    id: r._id,
+    name: nameById.get(r._id) ?? "(deleted)",
+    totalCost: r.totalCost,
+    totalTokens: r.totalTokens,
+    count: r.count,
+  }));
 }
 
 export async function getDailyUsageTrend(days = 30): Promise<DailyUsage[]> {

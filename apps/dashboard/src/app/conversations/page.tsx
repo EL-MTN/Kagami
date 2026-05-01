@@ -1,114 +1,127 @@
 import Link from "next/link";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { TableCell } from "@/components/ui/table";
 import { Pagination } from "@/components/pagination";
+import {
+  DataRow,
+  DataTable,
+  DataToolbar,
+  LinkFilterPills,
+  PageHeader,
+  SearchInput,
+  type DataTableColumn,
+} from "@/components/shell";
 import { getConversationList } from "@/lib/queries/conversations";
+
+const STATUSES = ["all", "active", "closed"] as const;
+type StatusFilter = (typeof STATUSES)[number];
+
+const COLUMNS: DataTableColumn[] = [
+  { key: "session", label: "Session" },
+  { key: "chat", label: "Chat" },
+  { key: "status", label: "Status" },
+  { key: "messages", label: "Messages" },
+  { key: "platform", label: "Platform" },
+  { key: "created", label: "Created" },
+  { key: "updated", label: "Updated" },
+];
 
 export default async function ConversationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; status?: string; q?: string }>;
 }) {
-  const { page: pageParam } = await searchParams;
+  const { page: pageParam, status: statusParam, q } = await searchParams;
   const page = Math.max(1, Number(pageParam) || 1);
-  const { items, total, pageSize } = await getConversationList(page);
+  const status: StatusFilter = STATUSES.includes(statusParam as StatusFilter)
+    ? (statusParam as StatusFilter)
+    : "all";
+
+  const { items, total, pageSize } = await getConversationList(page, {
+    status: status === "all" ? undefined : status,
+    search: q || undefined,
+  });
   const totalPages = Math.ceil(total / pageSize);
+
+  function buildHref(nextStatus: StatusFilter): string {
+    const params = new URLSearchParams();
+    if (nextStatus !== "all") params.set("status", nextStatus);
+    if (q) params.set("q", q);
+    const qs = params.toString();
+    return qs ? `/conversations?${qs}` : "/conversations";
+  }
+
+  const statusOptions = STATUSES.map((v) => ({
+    value: v,
+    label: v,
+    href: buildHref(v),
+  }));
 
   return (
     <div className="space-y-8">
-      <div className="flex items-end justify-between">
-        <div>
-          <h2 className="font-display text-3xl text-foreground">Conversations</h2>
-          <p className="mt-1 text-sm text-muted-foreground/70">Message history and session logs</p>
-        </div>
-        <span className="text-xs tabular-nums text-muted-foreground/50">{total} total</span>
-      </div>
+      <PageHeader
+        title="Conversations"
+        description="Message history and session logs"
+        meta={<span className="text-xs tabular-nums text-faint">{total} total</span>}
+      />
 
-      <div className="overflow-hidden rounded-xl border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-b border-border hover:bg-transparent">
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
-                Session
-              </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
-                Status
-              </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
-                Messages
-              </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
-                Platform
-              </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
-                Created
-              </TableHead>
-              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
-                Updated
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((c) => (
-              <TableRow
-                key={c.id}
-                className="border-border/50 transition-colors hover:bg-primary/[0.02]"
+      <DataToolbar
+        filters={
+          <>
+            <SearchInput param="q" placeholder="Search by chat ID" />
+            <LinkFilterPills<StatusFilter> options={statusOptions} active={status} />
+          </>
+        }
+      />
+
+      <DataTable columns={COLUMNS} rowCount={items.length} empty="No conversations found.">
+        {items.map((c) => (
+          <DataRow key={c.id}>
+            <TableCell>
+              <Link
+                href={`/conversations/${c.id}`}
+                className="font-mono text-xs text-foreground/60 transition-colors hover:text-primary"
               >
-                <TableCell>
-                  <Link
-                    href={`/conversations/${c.id}`}
-                    className="font-mono text-xs text-foreground/60 transition-colors hover:text-primary"
-                  >
-                    {c.sessionId.slice(0, 8)}...
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <span
-                    className={`inline-flex items-center gap-1.5 text-xs ${
-                      c.status === "active" ? "text-primary/70" : "text-muted-foreground/50"
-                    }`}
-                  >
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        c.status === "active" ? "bg-primary/70" : "bg-muted-foreground/20"
-                      }`}
-                    />
-                    {c.status}
-                  </span>
-                </TableCell>
-                <TableCell className="font-mono text-xs tabular-nums text-muted-foreground/60">
-                  {c.messageCount}
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground/60">{c.platform}</TableCell>
-                <TableCell className="text-xs tabular-nums text-muted-foreground/40">
-                  {new Date(c.createdAt).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="text-xs tabular-nums text-muted-foreground/40">
-                  {new Date(c.updatedAt).toLocaleDateString()}
-                </TableCell>
-              </TableRow>
-            ))}
-            {items.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={6}
-                  className="py-12 text-center text-sm text-muted-foreground/50"
-                >
-                  No conversations found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                {c.sessionId.slice(0, 8)}...
+              </Link>
+            </TableCell>
+            <TableCell className="font-mono text-xs text-faint">{c.chatId}</TableCell>
+            <TableCell>
+              <span
+                className={`inline-flex items-center gap-1.5 text-xs ${
+                  c.status === "active" ? "text-primary/70" : "text-faint"
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    c.status === "active" ? "bg-primary/70" : "bg-muted-foreground/20"
+                  }`}
+                />
+                {c.status}
+              </span>
+            </TableCell>
+            <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
+              {c.messageCount}
+            </TableCell>
+            <TableCell className="text-xs text-muted-foreground">{c.platform}</TableCell>
+            <TableCell className="text-xs tabular-nums text-faint">
+              {new Date(c.createdAt).toLocaleDateString()}
+            </TableCell>
+            <TableCell className="text-xs tabular-nums text-faint">
+              {new Date(c.updatedAt).toLocaleDateString()}
+            </TableCell>
+          </DataRow>
+        ))}
+      </DataTable>
 
-      <Pagination currentPage={page} totalPages={totalPages} basePath="/conversations" />
+      <Pagination
+        currentPage={page}
+        totalPages={totalPages}
+        basePath="/conversations"
+        searchParams={{
+          ...(status !== "all" ? { status } : {}),
+          ...(q ? { q } : {}),
+        }}
+      />
     </div>
   );
 }

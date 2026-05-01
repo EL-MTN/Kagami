@@ -38,7 +38,7 @@ export function Pagination({
         </Button>
       )}
 
-      <span className="text-xs tabular-nums text-muted-foreground/60">
+      <span className="text-xs tabular-nums text-muted-foreground">
         {currentPage} of {totalPages}
       </span>
 

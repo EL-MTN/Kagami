@@ -243,7 +243,7 @@ export function SkillCreateDialog({ knownChatIds, onCreated }: SkillCreateDialog
               />
               {cronSchedule && (
                 <p
-                  className={`text-[11px] ${cronDesc ? "text-muted-foreground/60" : "text-destructive-foreground"}`}
+                  className={`text-[11px] ${cronDesc ? "text-muted-foreground" : "text-destructive-foreground"}`}
                 >
                   {cronDesc ?? "Invalid cron expression"}
                 </p>

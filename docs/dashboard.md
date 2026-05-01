@@ -4,37 +4,51 @@ Web dashboard for managing and inspecting Mashiro's data, built with Next.js 15 
 
 ## Design System
 
-The dashboard uses a **"Noir Atelier"** design language — a refined dark workspace with warm amber accents.
+The dashboard uses **"Mashiro Daylight" (白)** — a warm-paper light theme tuned for observability rather than mood. The earlier "Noir Atelier" dark palette was retired because it traded legibility for atmosphere, which is the wrong tradeoff for a surface whose job is scanning numbers and statuses.
 
 ### Typography
 
-- **Display**: Instrument Serif (Google Fonts) — used for page titles and large numbers via `font-display` Tailwind utility
-- **Body**: DM Sans (Google Fonts) — set as `--font-sans` in Tailwind theme
-- **Monospace**: JetBrains Mono (Google Fonts) — set as `--font-mono` in Tailwind theme
+- **Display**: Instrument Serif (Google Fonts) — page titles and the kanji wordmark only
+- **Body**: DM Sans (Google Fonts) — set as `--font-sans`
+- **Monospace**: JetBrains Mono (Google Fonts) — set as `--font-mono`. **Stat values, costs, tone scores, and timestamps use mono tabular numerals** — this is the single biggest legibility win and is the project default for any scannable number.
 
 All three fonts are loaded via `next/font/google` with CSS variable injection in `layout.tsx`.
 
 ### Color Palette (OKLch)
 
-- **Background**: Deep warm charcoal (`oklch(0.085 0.005 60)`)
-- **Card surfaces**: Slightly elevated (`oklch(0.115 0.005 60)`)
-- **Primary accent**: Warm amber/gold (`oklch(0.78 0.12 75)`) — used for active states, links, glows
-- **Destructive**: Warm red (`oklch(0.42 0.16 25)`)
-- **Borders**: Subtle warm gray (`oklch(0.185 0.005 60)`)
+- **Background**: warm vellum (`oklch(0.985 0.006 85)`)
+- **Card surfaces**: paper raised (`oklch(0.998 0.004 85)`)
+- **Foreground**: sumi ink (`oklch(0.22 0.015 60)`)
+- **Borders**: warm rule (`oklch(0.91 0.008 75)`); strong rule for emphasis (`oklch(0.84 0.010 75)`)
+- **Primary**: indigo (`oklch(0.52 0.13 245)`) — links, active states, primary actions
+- **Positive**: moss (`oklch(0.58 0.13 155)`) — rising tone, successful run
+- **Caution**: amber (`oklch(0.68 0.14 75)`) — pending approvals, share-of-total ≥40%, cooldown-suppressed watcher fires
+- **Critical**: terracotta (`oklch(0.55 0.18 25)`) — error, triggered watcher fires, share-of-total ≥70%
 
-All colors are defined as CSS custom properties in `globals.css` via Tailwind v4's `@theme inline` block.
+All colors live in `globals.css` under Tailwind v4's `@theme inline` block.
+
+### Text-level contract
+
+Three text levels only — no opacity ladder. Components must use one of:
+
+| Token                   | Use                                                           |
+| ----------------------- | ------------------------------------------------------------- |
+| `text-foreground`       | Primary content                                               |
+| `text-muted-foreground` | Secondary content (descriptions, captions, secondary cells)   |
+| `text-faint`            | Tertiary metadata (timestamps, counts, "30 days" annotations) |
+
+Avoid `text-muted-foreground/30..70` etc. The `/N` modifier antipattern was swept out in the Daylight switch and is regression-prone.
 
 ### Visual Details
 
-- Subtle ambient radial gradient glow (warm amber) at viewport top
-- Custom scrollbar styling (thin, warm gray)
+- `body::before` gradient wash — peach top-right, indigo bottom-left, very low alpha — adds atmosphere without noise
+- Custom scrollbar (warm rule, 8px)
 - Staggered fade-in animations on card grids (`.stagger` CSS class)
 - Shimmer loading skeletons (`.skeleton` CSS class)
-- Status indicators use small colored dots instead of badges
-- Importance ratings shown as bar visualizations
-- Activity feed uses timeline-style layout with vertical connector line
-- Sidebar active state: amber left-border glow with box-shadow
-- Dialog overlay: backdrop blur + semi-transparent black
+- `.kicker` utility for small-caps section headers (`text-[10px] uppercase tracking-[0.18em] text-muted-foreground`) — preferred over re-stating the classes per-section
+- Inline SVG sparklines (`components/sparkline.tsx`) for emotional trend (`/`) and daily cost trend (`/usage`)
+- Watcher state markers shape-coded: filled disc = triggered, hollow ring = silenced, hairline tick = observation
+- Activity feed: typed icons by event source, relative timestamps as primary label, full datetime in `title` attribute
 
 ## Environment
 
@@ -59,21 +73,30 @@ cd apps/dashboard && npm run dev   # dashboard only (port 3000)
 
 ## Pages
 
-| Route                   | Description                                                                                                    |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `/`                     | Overview — stat cards (conversations, memories, facts, reminders), emotional trend chart, recent activity feed |
-| `/conversations`        | Paginated table of all conversation sessions with status, message count, platform, dates                       |
-| `/conversations/[id]`   | Conversation detail — header metadata + scrollable message history with chat bubbles                           |
-| `/memories`             | Tabbed view by type (fact/episode/milestone/working) with count badges, paginated                              |
-| `/reminders`            | Reminder table with message, fire time, status (pending/fired), toggle to show fired                           |
-| `/skills`               | Skill management — table with enable/disable, create, import, export                                           |
-| `/skills/[id]`          | Skill detail — inline editor (prompt, params, cron, report mode) + execution log history                       |
-| `/api/skills`           | GET list, POST create, POST `?action=import` bulk import                                                       |
-| `/api/skills/export`    | GET — download all skills as versioned JSON bundle                                                             |
-| `/api/skills/[id]`      | GET detail, PATCH update, DELETE                                                                               |
-| `/api/skills/[id]/logs` | GET paginated execution logs (cursor-based via `?before=`)                                                     |
-| `/api/skills/[id]/run`  | POST — sets `manualRunRequestedAt` so the bot's scheduler picks the skill up on its next 3 s tick              |
-| `/api/images/[key]`     | GridFS image proxy — serves stored images by key with immutable cache headers                                  |
+| Route                     | Description                                                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `/`                       | Overview — pending-intent surface (preview of awaiting confirmations), stat cards, emotional trend chart, recent activity feed       |
+| `/conversations`          | Paginated table with status filter (all/active/closed) and chat-ID search; columns: session, chat, status, messages, platform, dates |
+| `/conversations/[id]`     | Conversation detail — header metadata + scrollable message history with chat bubbles                                                 |
+| `/memories`               | Type pills (fact/episode/milestone/working with counts) plus tone, importance, and source filters; paginated cards                   |
+| `/confirmations`          | Pending and recently-resolved approval-gated tool calls with origin (conversation/skill/watcher), tool name, args, expiry countdown  |
+| `/reminders`              | Reminder table with pending/fired/all pill filter (with counts), message, fire time, status, chat ID, created                        |
+| `/skills`                 | Skill management — table with enable/disable, create, import, export                                                                 |
+| `/skills/[id]`            | Skill detail — inline editor (prompt, params, cron, report mode) + execution log history                                             |
+| `/watchers`               | Watcher management — table with enable/disable, search, status filter, create, import, export                                        |
+| `/watchers/[id]`          | Watcher detail — editor + state-change timeline (de-duplicated observations, shape-coded markers) + execution log history            |
+| `/usage`                  | Cost overview, cost-by-skill / cost-by-watcher / cost-by-category breakdowns (30d), daily trend sparkline                            |
+| `/api/skills`             | GET list, POST create, POST `?action=import` bulk import                                                                             |
+| `/api/skills/export`      | GET — download all skills as versioned JSON bundle                                                                                   |
+| `/api/skills/[id]`        | GET detail, PATCH update, DELETE                                                                                                     |
+| `/api/skills/[id]/logs`   | GET paginated execution logs (cursor-based via `?before=`)                                                                           |
+| `/api/skills/[id]/run`    | POST — sets `manualRunRequestedAt` so the bot's scheduler picks the skill up on its next 3 s tick                                    |
+| `/api/watchers`           | GET list, POST create, POST `?action=import` bulk import                                                                             |
+| `/api/watchers/export`    | GET — download all watchers as versioned JSON bundle                                                                                 |
+| `/api/watchers/[id]`      | GET detail, PATCH update, DELETE                                                                                                     |
+| `/api/watchers/[id]/logs` | GET paginated execution logs (cursor-based via `?before=`)                                                                           |
+| `/api/watchers/[id]/run`  | POST — sets `manualRunRequestedAt` so the bot's 3 s manual-run poll claims and executes with `silent: true`                          |
+| `/api/images/[key]`       | GridFS image proxy — serves stored images by key with immutable cache headers                                                        |
 
 ## Architecture
 
@@ -94,10 +117,13 @@ Read-only pages are React Server Components. Skill management uses a hybrid mode
 All in `src/lib/queries/`:
 
 - `overview.ts` — `getOverviewStats()`, `getEmotionalTrend()`, `getRecentActivity()`
-- `conversations.ts` — `getConversationList(page)`, `getConversationDetail(id)`
-- `memories.ts` — `getMemoriesByType(type, page)`, `getMemoryTypeCounts()`
+- `conversations.ts` — `getConversationList(page, options?)` with `status` and `search` (chatId regex) filters; `getConversationDetail(id)`
+- `memories.ts` — `getMemoriesByType(type, page, options?)` with `tone` (positive/neutral/negative), `importance` (low/medium/high), and `source` (regex) filters; `getMemoryTypeCounts()`
+- `confirmations.ts` — `getPendingConfirmationList()`, `getRecentResolvedConfirmations(limit)`, `getPendingConfirmationCount()`
 - `reminders.ts` — `getReminderList(showFired?)`
 - `skills.ts` — `getSkillList()`, `getSkillDetail(id)`, `getSkillLogList(skillId, limit, before?)`
+- `watchers.ts` — `getWatcherList()`, `getWatcherDetail(id)`, `getWatcherLogList(...)`, `getWatcherStateHistory(watcherId, limit)` (collapses consecutive identical states into a transition timeline)
+- `usage.ts` — `getUsageOverview()`, `getUsageByCategory(days)`, `getUsageBySkill(days)`, `getUsageByWatcher(days)` (joins on `metadata.skillId` / `metadata.watcherId`), `getDailyUsageTrend(days)`
 
 Queries use `@mashiro/db` models directly. `@mashiro/memory` is **not** imported (it depends on Google AI SDK which is unnecessary for read-only display).
 
@@ -144,24 +170,52 @@ This allows the dashboard to import `@mashiro/db` → `@mashiro/shared` without 
 
 ## Components
 
-| Component                        | Type   | Purpose                                                                                                                                   |
-| -------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `sidebar.tsx`                    | Server | Nav sidebar with page links                                                                                                               |
-| `nav-link.tsx`                   | Client | Active route highlighting via `usePathname()`                                                                                             |
-| `stat-card.tsx`                  | Server | Reusable stats card (icon, label, value)                                                                                                  |
-| `emotional-indicator.tsx`        | Server | Trend badge (rising/falling/stable)                                                                                                       |
-| `activity-feed.tsx`              | Server | Recent conversations + memories interleaved by time                                                                                       |
-| `message-bubble.tsx`             | Server | Chat message with role-based styling, tool call display                                                                                   |
-| `memory-card.tsx`                | Server | Memory content with importance/type badges                                                                                                |
-| `pagination.tsx`                 | Server | Simple prev/next page links                                                                                                               |
-| `skills/skill-table.tsx`         | Client | Interactive skill list with name/description search, enabled/cron filters, enable/disable toggle (with rollback toast on failure), delete |
-| `skills/skill-editor.tsx`        | Client | Inline skill editing with live cron preview, dirty tracking, Cmd+S save, navigate-away guard                                              |
-| `skills/skill-run-button.tsx`    | Client | Triggers a manual run via `/api/skills/[id]/run` and polls logs for the result                                                            |
-| `skills/skill-create-dialog.tsx` | Client | New skill creation dialog (chatId picked from a select of known chats with a "+ New chat…" escape hatch)                                  |
-| `skills/skill-import-dialog.tsx` | Client | Drag-drop/paste JSON import with preview                                                                                                  |
-| `skills/skill-delete-dialog.tsx` | Client | Confirm delete dialog                                                                                                                     |
-| `skills/skill-log-table.tsx`     | Client | Execution logs with expandable summaries, load more                                                                                       |
-| `skills/parameter-editor.tsx`    | Client | Dynamic parameter list editor with type-aware defaults                                                                                    |
+| Component                            | Type           | Purpose                                                                                                                                   |
+| ------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `sidebar.tsx`                        | Server (async) | Nav sidebar with page links; fetches pending confirmation count and renders it as a badge on the Confirmations link                       |
+| `nav-link.tsx`                       | Client         | Active route highlighting via `usePathname()`; supports optional numeric `badge` prop                                                     |
+| `confirmation-card.tsx`              | Server         | Pending or resolved confirmation row — origin icon, summary, tool name, expandable args/result, expiry countdown or status pill           |
+| `watchers/state-timeline.tsx`        | Server         | Vertical timeline of distinct watcher state observations (collapsed against `prevState`) with triggered/silenced/observation tones        |
+| `stat-card.tsx`                      | Server         | Reusable stats card (icon, label, value)                                                                                                  |
+| `emotional-indicator.tsx`            | Server         | Trend badge (rising/falling/stable)                                                                                                       |
+| `activity-feed.tsx`                  | Server         | Recent conversations + memories interleaved by time                                                                                       |
+| `message-bubble.tsx`                 | Server         | Chat message with role-based styling, tool call display                                                                                   |
+| `memory-card.tsx`                    | Server         | Memory content with importance/type badges                                                                                                |
+| `pagination.tsx`                     | Server         | Simple prev/next page links                                                                                                               |
+| `skills/skill-table.tsx`             | Client         | Interactive skill list with name/description search, enabled/cron filters, enable/disable toggle (with rollback toast on failure), delete |
+| `skills/skill-editor.tsx`            | Client         | Inline skill editing with live cron preview, dirty tracking, Cmd+S save, navigate-away guard                                              |
+| `skills/skill-run-button.tsx`        | Client         | Triggers a manual run via `/api/skills/[id]/run` and polls logs for the result                                                            |
+| `skills/skill-create-dialog.tsx`     | Client         | New skill creation dialog (chatId picked from a select of known chats with a "+ New chat…" escape hatch)                                  |
+| `skills/skill-import-dialog.tsx`     | Client         | Drag-drop/paste JSON import with preview                                                                                                  |
+| `skills/skill-delete-dialog.tsx`     | Client         | Confirm delete dialog                                                                                                                     |
+| `skills/skill-log-table.tsx`         | Client         | Execution logs with expandable summaries, load more                                                                                       |
+| `skills/parameter-editor.tsx`        | Client         | Dynamic parameter list editor with type-aware defaults                                                                                    |
+| `sparkline.tsx`                      | Server         | Inline SVG sparkline (line + faint area + last-point dot, optional baseline). Used by Overview emotional trend and Usage daily-cost trend |
+| `watchers/watcher-table.tsx`         | Client         | Interactive watcher list — search, status filter (all/enabled/snoozed), enable/disable toggle, delete, create                             |
+| `watchers/watcher-editor.tsx`        | Client         | Inline watcher editing — prompt, cron, lifecycle controls (oneShot, maxFires, cooldownMinutes), snooze dropdown, dirty tracking           |
+| `watchers/watcher-run-button.tsx`    | Client         | Triggers a manual watcher run via `/api/watchers/[id]/run` and polls logs for the result                                                  |
+| `watchers/watcher-create-dialog.tsx` | Client         | New watcher creation dialog                                                                                                               |
+| `watchers/watcher-import-dialog.tsx` | Client         | Drag-drop/paste JSON import with preview                                                                                                  |
+| `watchers/watcher-delete-dialog.tsx` | Client         | Confirm delete dialog                                                                                                                     |
+| `watchers/watcher-log-table.tsx`     | Client         | Execution logs with expandable summaries, load more                                                                                       |
+| `watchers/snooze-button.tsx`         | Client         | Inline snooze dropdown for the watcher detail surface                                                                                     |
+
+### Shell Primitives
+
+`src/components/shell/` — composable building blocks every list/table page consumes so the visual language stays consistent. Import via `@/components/shell`.
+
+| Primitive         | Type   | Purpose                                                                                                                                                                                                          |
+| ----------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PageHeader`      | Server | Title + description + optional right-meta slot. Replaces the per-page `<h2><p>` block.                                                                                                                           |
+| `DataToolbar`     | Server | Flex row with `actions` (left) and `filters` (right) slots. Used above tables/grids.                                                                                                                             |
+| `FilterPills`     | Client | Controlled segmented pill bar (`value` + `onChange`) for client-state pages like `/skills` and `/watchers`.                                                                                                      |
+| `LinkFilterPills` | Server | Link-driven segmented pill bar — each option carries a resolved `href`. Used by URL-state pages. Separate from `FilterPills` because Next.js cannot serialize a function prop across the server/client boundary. |
+| `SearchInput`     | Client | Search box with icon. Two modes: controlled (`value`/`onChange`) or URL-synced (`param` — debounced replace).                                                                                                    |
+| `DataTable`       | Server | Wraps the shadcn `Table` in the standard rounded/border container, builds the header from a column array, renders an empty state when `rowCount === 0`.                                                          |
+| `DataRow`         | Server | Standard `<tr>` styling (border + hover) so callers don't restate it.                                                                                                                                            |
+| `EmptyState`      | Server | Empty-state messaging in dashed-border card or inline form.                                                                                                                                                      |
+
+`/conversations`, `/memories`, `/reminders`, `/confirmations` use `LinkFilterPills` + URL-synced `SearchInput` so filter state is shareable and survives reload. `/skills` and `/watchers` use the controlled `FilterPills` + controlled `SearchInput` because their interactive state (toggle, delete, create) lives in client-side React state.
 
 ## Dependencies
 

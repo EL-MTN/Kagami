@@ -128,9 +128,14 @@ The tool's underlying service stays untouched; the dispatcher calls it directly 
 
 iMessage has no inline buttons and no third-party message editing. The confirmation primitive degrades gracefully: `sendConfirmationPrompt` sends a plain text prompt asking the user to reply YES/NO; `editConfirmationPrompt` sends a new message instead of editing the original bubble. The pre-AI YES/NO parser in the iMessage webhook handler resolves the confirmation when there's exactly one pending in the chat. See [imessage.md](imessage.md) for the full UX and matching rules.
 
+## Dashboard surface
+
+`/confirmations` (`apps/dashboard/src/app/confirmations/page.tsx`) shows pending rows and the most recent resolved ones. Each card surfaces origin (conversation / skill / watcher), tool name, args (expandable JSON), expiry countdown for pending rows, and the resolution result for resolved rows. The sidebar Confirmations link carries a count badge sourced from `getPendingConfirmationCount()`. The Overview page (`/`) also previews the top three pending rows with a caution badge in the page header — see `apps/dashboard/src/app/page.tsx`.
+
+Queries live in `apps/dashboard/src/lib/queries/confirmations.ts`: `getPendingConfirmationList()`, `getRecentResolvedConfirmations(limit)`, `getPendingConfirmationCount()`.
+
 ## What's deferred
 
-- **Dashboard surface.** No `/pending` page yet; pending rows are only visible via Mongo.
 - **Skills as origin.** The `origin: "skill"` value exists in the schema but the skill executor doesn't yet pass it through `requestConfirmation`. Skills can still call the tool — they just currently report origin `"conversation"`.
 - **Idempotency window.** Two `requestConfirmation` calls with the same `(chatId, tool, hash(args))` produce two separate rows. Should dedupe within ~60s.
 - **Expiry notification.** TTL-expired rows rot silently; no message is posted to the user.

@@ -27,7 +27,7 @@ export default async function SkillDetailPage({ params }: { params: Promise<{ id
         </Button>
         <div>
           <h2 className="font-display text-2xl text-foreground">{skill.name}</h2>
-          <p className="text-xs text-muted-foreground/50">{skill.description}</p>
+          <p className="text-xs text-faint">{skill.description}</p>
         </div>
       </div>
 
