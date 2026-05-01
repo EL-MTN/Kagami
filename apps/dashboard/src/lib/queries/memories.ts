@@ -14,14 +14,69 @@ export interface MemoryListItem {
 
 const PAGE_SIZE = 20;
 
+export type ToneFilter = "positive" | "neutral" | "negative";
+export type ImportanceFilter = "low" | "medium" | "high";
+
+export interface MemoryFilterOptions {
+  tone?: ToneFilter;
+  importance?: ImportanceFilter;
+  /** Substring match against memory.source. */
+  source?: string;
+}
+
+const TONE_RANGES: Record<ToneFilter, { min?: number; max?: number }> = {
+  positive: { min: 0.2 },
+  neutral: { min: -0.2, max: 0.2 },
+  negative: { max: -0.2 },
+};
+
+const IMPORTANCE_RANGES: Record<ImportanceFilter, { min?: number; max?: number }> = {
+  low: { max: 3 },
+  medium: { min: 4, max: 6 },
+  high: { min: 7 },
+};
+
+function buildMemoryFilter(type: string, options: MemoryFilterOptions): Record<string, unknown> {
+  const filter: Record<string, unknown> = {
+    type,
+    "metadata.archivedAt": { $exists: false },
+  };
+
+  if (options.tone) {
+    const range = TONE_RANGES[options.tone];
+    const cmp: Record<string, number> = {};
+    if (range.min !== undefined) cmp.$gte = range.min;
+    if (range.max !== undefined) cmp.$lt = range.max;
+    filter["metadata.emotionalTone"] = cmp;
+  }
+
+  if (options.importance) {
+    const range = IMPORTANCE_RANGES[options.importance];
+    const cmp: Record<string, number> = {};
+    if (range.min !== undefined) cmp.$gte = range.min;
+    if (range.max !== undefined) cmp.$lte = range.max;
+    filter["metadata.importance"] = cmp;
+  }
+
+  if (options.source) {
+    filter.source = {
+      $regex: options.source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+      $options: "i",
+    };
+  }
+
+  return filter;
+}
+
 export async function getMemoriesByType(
   type: string,
   page = 1,
+  options: MemoryFilterOptions = {},
 ): Promise<{ items: MemoryListItem[]; total: number; pageSize: number }> {
   await ensureDB();
 
   const skip = (page - 1) * PAGE_SIZE;
-  const filter = { type, "metadata.archivedAt": { $exists: false } };
+  const filter = buildMemoryFilter(type, options);
 
   const [items, total] = await Promise.all([
     Memory.find(filter)

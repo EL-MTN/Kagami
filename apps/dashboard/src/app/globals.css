@@ -1,26 +1,45 @@
 @import "tailwindcss";
 
 @theme inline {
-  /* ── Color System: Noir Atelier ──────────────────────── */
-  --color-background: oklch(0.085 0.005 60);
-  --color-foreground: oklch(0.93 0.008 80);
-  --color-card: oklch(0.115 0.005 60);
-  --color-card-foreground: oklch(0.93 0.008 80);
-  --color-popover: oklch(0.13 0.005 60);
-  --color-popover-foreground: oklch(0.93 0.008 80);
-  --color-primary: oklch(0.78 0.12 75);
-  --color-primary-foreground: oklch(0.15 0.04 75);
-  --color-secondary: oklch(0.16 0.005 60);
-  --color-secondary-foreground: oklch(0.88 0.008 80);
-  --color-muted: oklch(0.16 0.005 60);
-  --color-muted-foreground: oklch(0.55 0.015 60);
-  --color-accent: oklch(0.18 0.008 60);
-  --color-accent-foreground: oklch(0.93 0.008 80);
-  --color-destructive: oklch(0.42 0.16 25);
-  --color-destructive-foreground: oklch(0.68 0.20 25);
-  --color-border: oklch(0.185 0.005 60);
-  --color-input: oklch(0.185 0.005 60);
-  --color-ring: oklch(0.78 0.12 75);
+  /* ── Color System: Mashiro Daylight (白) ────────────────
+     Warm-paper light theme. Three text levels only:
+     foreground / muted-foreground / faint. No opacity ladder.
+  */
+  --color-background: oklch(0.985 0.006 85);   /* vellum */
+  --color-foreground: oklch(0.22 0.015 60);    /* sumi ink */
+  --color-card: oklch(0.998 0.004 85);         /* paper raised */
+  --color-card-foreground: oklch(0.22 0.015 60);
+  --color-popover: oklch(0.998 0.004 85);
+  --color-popover-foreground: oklch(0.22 0.015 60);
+
+  --color-muted: oklch(0.955 0.008 85);
+  --color-muted-foreground: oklch(0.45 0.012 60);
+  --color-faint: oklch(0.62 0.010 60);         /* lowest legible text */
+
+  --color-accent: oklch(0.94 0.012 85);        /* hover surface */
+  --color-accent-foreground: oklch(0.22 0.015 60);
+
+  --color-secondary: oklch(0.94 0.012 85);
+  --color-secondary-foreground: oklch(0.22 0.015 60);
+
+  --color-border: oklch(0.91 0.008 75);        /* warm rule */
+  --color-rule-strong: oklch(0.84 0.010 75);
+  --color-input: oklch(0.91 0.008 75);
+
+  /* Semantic — used sparingly, only where state matters */
+  --color-primary: oklch(0.52 0.13 245);       /* indigo: links, primary action */
+  --color-primary-foreground: oklch(0.99 0.004 245);
+  --color-ring: oklch(0.52 0.13 245);
+
+  --color-positive: oklch(0.58 0.13 155);      /* moss: rising, success */
+  --color-positive-foreground: oklch(0.99 0.004 155);
+  --color-caution: oklch(0.68 0.14 75);        /* amber: warn, budget */
+  --color-caution-foreground: oklch(0.22 0.04 75);
+  --color-critical: oklch(0.55 0.18 25);       /* terracotta: error, triggered */
+  --color-critical-foreground: oklch(0.99 0.004 25);
+
+  --color-destructive: oklch(0.55 0.18 25);
+  --color-destructive-foreground: oklch(0.99 0.004 25);
 
   /* ── Radius ──────────────────────────────────────────── */
   --radius-sm: 0.375rem;
@@ -44,16 +63,14 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Subtle warm ambient glow */
+/* Vellum grain — barely-there warm wash to keep the page from feeling clinical */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
-  background: radial-gradient(
-    ellipse 70% 40% at 50% -10%,
-    oklch(0.78 0.12 75 / 0.03) 0%,
-    transparent 100%
-  );
+  background:
+    radial-gradient(ellipse 60% 50% at 100% 0%, oklch(0.68 0.14 75 / 0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 0% 100%, oklch(0.52 0.13 245 / 0.035) 0%, transparent 60%);
   pointer-events: none;
   z-index: 0;
 }
@@ -61,15 +78,15 @@ body::before {
 /* ── Selection ──────────────────────────────────────────── */
 
 ::selection {
-  background-color: oklch(0.78 0.12 75 / 0.25);
+  background-color: oklch(0.52 0.13 245 / 0.18);
   color: var(--color-foreground);
 }
 
 /* ── Scrollbar ──────────────────────────────────────────── */
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -77,12 +94,12 @@ body::before {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.25 0.005 60);
-  border-radius: 3px;
+  background: oklch(0.84 0.010 75);
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.35 0.005 60);
+  background: oklch(0.72 0.012 75);
 }
 
 /* ── Animations ─────────────────────────────────────────── */
@@ -107,6 +124,11 @@ body::before {
   }
 }
 
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .animate-in {
   animation: fade-in 0.4s ease-out both;
 }
@@ -114,9 +136,9 @@ body::before {
 .skeleton {
   background: linear-gradient(
     90deg,
-    oklch(0.13 0.005 60) 25%,
-    oklch(0.17 0.005 60) 50%,
-    oklch(0.13 0.005 60) 75%
+    oklch(0.955 0.008 85) 25%,
+    oklch(0.91 0.008 75) 50%,
+    oklch(0.955 0.008 85) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 2s ease-in-out infinite;
@@ -135,3 +157,15 @@ body::before {
 .stagger > *:nth-child(6) { animation-delay: 300ms; }
 .stagger > *:nth-child(7) { animation-delay: 360ms; }
 .stagger > *:nth-child(8) { animation-delay: 420ms; }
+
+/* ── Page kicker ───────────────────────────────────────────
+   The one place we use small-caps tracking. Reusable utility so
+   card headers don't all reach for text-[10px] uppercase.
+*/
+.kicker {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-muted-foreground);
+}

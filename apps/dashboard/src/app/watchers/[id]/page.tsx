@@ -4,11 +4,20 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WatcherEditor } from "@/components/watchers/watcher-editor";
 import { WatcherLogTable } from "@/components/watchers/watcher-log-table";
-import { getWatcherDetail, getWatcherLogList } from "@/lib/queries/watchers";
+import { StateTimeline } from "@/components/watchers/state-timeline";
+import {
+  getWatcherDetail,
+  getWatcherLogList,
+  getWatcherStateHistory,
+} from "@/lib/queries/watchers";
 
 export default async function WatcherDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [watcher, logResult] = await Promise.all([getWatcherDetail(id), getWatcherLogList(id, 50)]);
+  const [watcher, logResult, stateHistory] = await Promise.all([
+    getWatcherDetail(id),
+    getWatcherLogList(id, 50),
+    getWatcherStateHistory(id, 100),
+  ]);
 
   if (!watcher) notFound();
 
@@ -27,12 +36,24 @@ export default async function WatcherDetailPage({ params }: { params: Promise<{ 
         </Button>
         <div>
           <h2 className="font-display text-2xl text-foreground">{watcher.name}</h2>
-          <p className="text-xs text-muted-foreground/50">{watcher.description}</p>
+          <p className="text-xs text-faint">{watcher.description}</p>
         </div>
       </div>
 
       <div className="rounded-xl border border-border bg-card p-6">
         <WatcherEditor watcher={watcher} />
+      </div>
+
+      <div>
+        <div className="mb-4 flex items-baseline gap-3">
+          <h3 className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+            State Timeline
+          </h3>
+          <span className="text-[10px] tabular-nums text-faint">
+            {stateHistory.length} distinct observation{stateHistory.length === 1 ? "" : "s"}
+          </span>
+        </div>
+        <StateTimeline changes={stateHistory} />
       </div>
 
       <div>

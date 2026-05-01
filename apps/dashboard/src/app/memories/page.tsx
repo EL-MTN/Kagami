@@ -1,77 +1,151 @@
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MemoryCard } from "@/components/memory-card";
 import { Pagination } from "@/components/pagination";
+import {
+  DataToolbar,
+  EmptyState,
+  LinkFilterPills,
+  PageHeader,
+  SearchInput,
+} from "@/components/shell";
 import { getMemoriesByType, getMemoryTypeCounts } from "@/lib/queries/memories";
 
 const MEMORY_TYPES = ["fact", "episode", "milestone", "working"] as const;
+const TONES = ["all", "positive", "neutral", "negative"] as const;
+const IMPORTANCE = ["all", "low", "medium", "high"] as const;
+
+type MemoryType = (typeof MEMORY_TYPES)[number];
+type ToneOption = (typeof TONES)[number];
+type ImportanceOption = (typeof IMPORTANCE)[number];
+
+interface MemoryFilters {
+  type: MemoryType;
+  tone: ToneOption;
+  importance: ImportanceOption;
+  source: string;
+}
+
+function buildHref(overrides: Partial<MemoryFilters>): string {
+  const params = new URLSearchParams();
+  const next = {
+    type: "fact" as MemoryType,
+    tone: "all",
+    importance: "all",
+    source: "",
+    ...overrides,
+  };
+  if (next.type !== "fact") params.set("type", next.type);
+  if (next.tone !== "all") params.set("tone", next.tone);
+  if (next.importance !== "all") params.set("importance", next.importance);
+  if (next.source) params.set("source", next.source);
+  const qs = params.toString();
+  return qs ? `/memories?${qs}` : "/memories";
+}
 
 export default async function MemoriesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; page?: string }>;
+  searchParams: Promise<{
+    type?: string;
+    tone?: string;
+    importance?: string;
+    source?: string;
+    page?: string;
+  }>;
 }) {
-  const { type: typeParam, page: pageParam } = await searchParams;
-  const activeType = MEMORY_TYPES.includes(typeParam as (typeof MEMORY_TYPES)[number])
-    ? (typeParam as (typeof MEMORY_TYPES)[number])
+  const sp = await searchParams;
+  const type: MemoryType = MEMORY_TYPES.includes(sp.type as MemoryType)
+    ? (sp.type as MemoryType)
     : "fact";
-  const page = Math.max(1, Number(pageParam) || 1);
+  const tone: ToneOption = TONES.includes(sp.tone as ToneOption) ? (sp.tone as ToneOption) : "all";
+  const importance: ImportanceOption = IMPORTANCE.includes(sp.importance as ImportanceOption)
+    ? (sp.importance as ImportanceOption)
+    : "all";
+  const source = sp.source ?? "";
+  const page = Math.max(1, Number(sp.page) || 1);
 
   const [counts, { items, total, pageSize }] = await Promise.all([
     getMemoryTypeCounts(),
-    getMemoriesByType(activeType, page),
+    getMemoriesByType(type, page, {
+      tone: tone === "all" ? undefined : tone,
+      importance: importance === "all" ? undefined : importance,
+      source: source || undefined,
+    }),
   ]);
 
   const totalPages = Math.ceil(total / pageSize);
+  const filtered = tone !== "all" || importance !== "all" || source !== "";
+
+  const persistedParams: Record<string, string> = {};
+  if (type !== "fact") persistedParams.type = type;
+  if (tone !== "all") persistedParams.tone = tone;
+  if (importance !== "all") persistedParams.importance = importance;
+  if (source) persistedParams.source = source;
 
   return (
     <div className="space-y-8">
-      <div className="flex items-end justify-between">
-        <div>
-          <h2 className="font-display text-3xl text-foreground">Memories</h2>
-          <p className="mt-1 text-sm text-muted-foreground/70">Stored knowledge and experiences</p>
-        </div>
-        <span className="text-xs tabular-nums text-muted-foreground/50">
-          {total} {activeType}s
-        </span>
-      </div>
+      <PageHeader
+        title="Memories"
+        description="Stored knowledge and experiences"
+        meta={
+          <span className="text-xs tabular-nums text-faint">
+            {total} {filtered ? "filtered" : type}
+          </span>
+        }
+      />
 
-      <Tabs defaultValue={activeType}>
-        <TabsList>
-          {MEMORY_TYPES.map((type) => (
-            <TabsTrigger key={type} value={type} asChild>
-              <a href={`/memories?type=${type}`} className="gap-2 capitalize">
-                {type}
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground/60">
-                  {counts[type]}
-                </span>
-              </a>
-            </TabsTrigger>
+      <LinkFilterPills<MemoryType>
+        active={type}
+        options={MEMORY_TYPES.map((t) => ({
+          value: t,
+          label: t,
+          count: counts[t],
+          href: buildHref({ type: t, tone, importance, source }),
+        }))}
+      />
+
+      <DataToolbar
+        filters={
+          <>
+            <SearchInput param="source" placeholder="Filter by source" />
+            <LinkFilterPills<ToneOption>
+              active={tone}
+              options={TONES.map((v) => ({
+                value: v,
+                label: v,
+                href: buildHref({ type, tone: v, importance, source }),
+              }))}
+            />
+            <LinkFilterPills<ImportanceOption>
+              active={importance}
+              options={IMPORTANCE.map((v) => ({
+                value: v,
+                label: v,
+                href: buildHref({ type, tone, importance: v, source }),
+              }))}
+            />
+          </>
+        }
+      />
+
+      {items.length > 0 ? (
+        <div className="stagger space-y-4">
+          {items.map((memory) => (
+            <MemoryCard key={memory.id} memory={memory} />
           ))}
-        </TabsList>
-
-        {MEMORY_TYPES.map((type) => (
-          <TabsContent key={type} value={type}>
-            {type === activeType && (
-              <div className="stagger space-y-4">
-                {items.map((memory) => (
-                  <MemoryCard key={memory.id} memory={memory} />
-                ))}
-                {items.length === 0 && (
-                  <p className="py-12 text-center text-sm text-muted-foreground/50">
-                    No {type} memories found.
-                  </p>
-                )}
-              </div>
-            )}
-          </TabsContent>
-        ))}
-      </Tabs>
+        </div>
+      ) : (
+        <EmptyState>
+          {filtered
+            ? `No ${type} memories match the current filters.`
+            : `No ${type} memories found.`}
+        </EmptyState>
+      )}
 
       <Pagination
         currentPage={page}
         totalPages={totalPages}
         basePath="/memories"
-        searchParams={{ type: activeType }}
+        searchParams={persistedParams}
       />
     </div>
   );

@@ -188,8 +188,8 @@ export function WatcherImportDialog({ onImported }: WatcherImportDialogProps) {
               onDrop={handleDrop}
               onClick={() => fileRef.current?.click()}
             >
-              <Upload className="h-8 w-8 text-muted-foreground/30" />
-              <p className="text-xs text-muted-foreground/60">
+              <Upload className="h-8 w-8 text-faint" />
+              <p className="text-xs text-muted-foreground">
                 Drop a JSON file here or click to browse
               </p>
               <input
@@ -206,7 +206,7 @@ export function WatcherImportDialog({ onImported }: WatcherImportDialogProps) {
                 <span className="w-full border-t border-border" />
               </div>
               <div className="relative flex justify-center text-[10px]">
-                <span className="bg-background px-3 uppercase tracking-wider text-muted-foreground/40">
+                <span className="bg-background px-3 uppercase tracking-wider text-faint">
                   or paste JSON
                 </span>
               </div>

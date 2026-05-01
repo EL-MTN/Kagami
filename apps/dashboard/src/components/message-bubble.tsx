@@ -25,12 +25,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           <span
             className={cn(
               "text-[10px] font-semibold uppercase tracking-wider",
-              isUser ? "text-primary/60" : "text-muted-foreground/60",
+              isUser ? "text-primary/60" : "text-muted-foreground",
             )}
           >
             {message.role}
           </span>
-          <span className="text-[10px] text-muted-foreground/30">
+          <span className="text-[10px] text-faint">
             {new Date(message.timestamp).toLocaleTimeString()}
           </span>
         </div>
@@ -52,12 +52,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               <details key={i} className="group rounded-lg bg-background/50">
                 <summary className="flex cursor-pointer items-center gap-2 p-2 text-xs select-none">
                   <span className="font-semibold text-primary/70">{tc.toolName}</span>
-                  <span className="text-muted-foreground/40">
-                    ({Object.keys(tc.args).join(", ")})
-                  </span>
-                  <span className="ml-auto text-[10px] text-muted-foreground/20 group-open:hidden">
-                    expand
-                  </span>
+                  <span className="text-faint">({Object.keys(tc.args).join(", ")})</span>
+                  <span className="ml-auto text-[10px] text-faint group-open:hidden">expand</span>
                 </summary>
                 <div className="space-y-2 border-t border-border/20 p-2 font-mono">
                   <pre className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
@@ -65,9 +61,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                   </pre>
                   {tc.result && (
                     <>
-                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground/40">
-                        Result
-                      </div>
+                      <div className="text-[10px] uppercase tracking-wider text-faint">Result</div>
                       <pre className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
                         {tc.result}
                       </pre>

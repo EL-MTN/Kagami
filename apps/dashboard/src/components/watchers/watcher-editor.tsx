@@ -238,9 +238,7 @@ export function WatcherEditor({ watcher }: WatcherEditorProps) {
           >
             Detection Prompt
           </Label>
-          <span className="text-[10px] tabular-nums text-muted-foreground/40">
-            {draft.prompt.length} chars
-          </span>
+          <span className="text-[10px] tabular-nums text-faint">{draft.prompt.length} chars</span>
         </div>
         <Textarea
           id="watcher-prompt"
@@ -270,7 +268,7 @@ export function WatcherEditor({ watcher }: WatcherEditorProps) {
         />
         {draft.cronSchedule && (
           <p
-            className={`text-[11px] ${cronDesc ? "text-muted-foreground/60" : "text-destructive-foreground"}`}
+            className={`text-[11px] ${cronDesc ? "text-muted-foreground" : "text-destructive-foreground"}`}
           >
             {cronDesc ?? "Invalid cron expression"}
           </p>
@@ -283,7 +281,7 @@ export function WatcherEditor({ watcher }: WatcherEditorProps) {
           <h4 className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
             Lifecycle
           </h4>
-          <p className="mt-1 text-[11px] text-muted-foreground/50">
+          <p className="mt-1 text-[11px] text-faint">
             Bound how often this watcher fires. Suppressed runs still detect and update state, but
             send no notification.
           </p>
@@ -298,9 +296,7 @@ export function WatcherEditor({ watcher }: WatcherEditorProps) {
                 onCheckedChange={(checked) => update({ oneShot: !!checked })}
               />
             </Label>
-            <p className="text-[11px] text-muted-foreground/50">
-              Archive after the first real fire.
-            </p>
+            <p className="text-[11px] text-faint">Archive after the first real fire.</p>
           </div>
 
           <div className="space-y-2">
@@ -320,7 +316,7 @@ export function WatcherEditor({ watcher }: WatcherEditorProps) {
               className="font-mono"
               disabled={draft.oneShot}
             />
-            <p className="text-[11px] text-muted-foreground/50">
+            <p className="text-[11px] text-faint">
               Archive after this many fires. Empty = unlimited.
             </p>
           </div>
@@ -341,7 +337,7 @@ export function WatcherEditor({ watcher }: WatcherEditorProps) {
               placeholder="empty = no cooldown"
               className="font-mono"
             />
-            <p className="text-[11px] text-muted-foreground/50">
+            <p className="text-[11px] text-faint">
               Min minutes between notifications. Empty = no cooldown.
             </p>
           </div>
@@ -349,7 +345,7 @@ export function WatcherEditor({ watcher }: WatcherEditorProps) {
       </div>
 
       {/* Metadata footer */}
-      <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-border pt-6 text-[10px] uppercase tracking-[0.15em] text-muted-foreground/30">
+      <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-border pt-6 text-[10px] uppercase tracking-[0.15em] text-faint">
         <span>v{watcher.version}</span>
         <span>Chat: {watcher.chatId}</span>
         <span>Fires: {watcher.fireCount}</span>

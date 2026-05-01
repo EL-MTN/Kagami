@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/shell";
 import { getSkillList } from "@/lib/queries/skills";
 import { SkillTable } from "@/components/skills/skill-table";
 
@@ -6,12 +7,7 @@ export default async function SkillsPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="font-display text-3xl text-foreground">Skills</h2>
-        <p className="mt-1 text-sm text-muted-foreground/70">
-          Automated tasks and scheduled operations
-        </p>
-      </div>
+      <PageHeader title="Skills" description="Automated tasks and scheduled operations" />
       <SkillTable initialSkills={skills} />
     </div>
   );

@@ -231,9 +231,7 @@ export function SkillEditor({ skill }: SkillEditorProps) {
           >
             Prompt
           </Label>
-          <span className="text-[10px] tabular-nums text-muted-foreground/40">
-            {draft.prompt.length} chars
-          </span>
+          <span className="text-[10px] tabular-nums text-faint">{draft.prompt.length} chars</span>
         </div>
         <Textarea
           id="skill-prompt"
@@ -264,7 +262,7 @@ export function SkillEditor({ skill }: SkillEditorProps) {
           />
           {draft.cronSchedule && (
             <p
-              className={`text-[11px] ${cronDesc ? "text-muted-foreground/60" : "text-destructive-foreground"}`}
+              className={`text-[11px] ${cronDesc ? "text-muted-foreground" : "text-destructive-foreground"}`}
             >
               {cronDesc ?? "Invalid cron expression"}
             </p>
@@ -306,7 +304,7 @@ export function SkillEditor({ skill }: SkillEditorProps) {
             Read — observes only (search, summarize, query). Safe for watchers.
           </option>
         </Select>
-        <p className="text-[11px] text-muted-foreground/50">
+        <p className="text-[11px] text-faint">
           Watchers can only compose with read-purity skills via useSkill. Action is the conservative
           default.
         </p>
@@ -322,7 +320,7 @@ export function SkillEditor({ skill }: SkillEditorProps) {
       )}
 
       {/* Metadata footer */}
-      <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-border pt-6 text-[10px] uppercase tracking-[0.15em] text-muted-foreground/30">
+      <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-border pt-6 text-[10px] uppercase tracking-[0.15em] text-faint">
         <span>v{skill.version}</span>
         <span>Chat: {skill.chatId}</span>
         <span>Created: {new Date(skill.createdAt).toLocaleDateString()}</span>

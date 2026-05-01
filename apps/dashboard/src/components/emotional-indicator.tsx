@@ -8,7 +8,7 @@ interface EmotionalIndicatorProps {
 export function EmotionalIndicator({ trend }: EmotionalIndicatorProps) {
   if (trend.length === 0) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+      <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] font-medium text-faint">
         <Minus className="h-3 w-3" />
         No data
       </span>
@@ -27,30 +27,30 @@ export function EmotionalIndicator({ trend }: EmotionalIndicatorProps) {
 
   let icon;
   let label: string;
-  let colorClass: string;
+  let toneClass: string;
 
   if (diff > 0.3) {
     icon = <TrendingUp className="h-3 w-3" />;
     label = "Rising";
-    colorClass = "text-primary border-primary/25 bg-primary/5";
+    toneClass = "text-positive border-positive/30 bg-positive/8";
   } else if (diff < -0.3) {
     icon = <TrendingDown className="h-3 w-3" />;
     label = "Falling";
-    colorClass = "text-destructive-foreground border-destructive/25 bg-destructive/5";
+    toneClass = "text-critical border-critical/30 bg-critical/8";
   } else {
     icon = <Minus className="h-3 w-3" />;
     label = "Stable";
-    colorClass = "text-muted-foreground border-border";
+    toneClass = "text-muted-foreground border-border bg-muted";
   }
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${colorClass}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${toneClass}`}
     >
       {icon}
       {label}
-      <span className="font-normal normal-case tracking-normal text-muted-foreground/60">
-        ({overall.toFixed(1)})
+      <span className="font-mono text-[10px] font-normal normal-case tracking-normal text-faint">
+        {overall.toFixed(2)}
       </span>
     </span>
   );
