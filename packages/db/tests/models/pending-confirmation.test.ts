@@ -51,7 +51,7 @@ describe("createPendingConfirmation", () => {
   });
 
   it("accepts every PendingConfirmationOrigin value", async () => {
-    for (const origin of ["conversation", "skill", "watcher"] as const) {
+    for (const origin of ["conversation", "routine", "watcher"] as const) {
       const row = await createPendingConfirmation({ ...baseInput, origin });
       expect(row.origin).toBe(origin);
     }

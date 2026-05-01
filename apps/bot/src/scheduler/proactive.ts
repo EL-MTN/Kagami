@@ -9,7 +9,7 @@ import {
   getRecentMessages,
   cleanupOldConversations,
   cleanupFiredReminders,
-  cleanupOldSkillLogs,
+  cleanupOldRoutineLogs,
   cleanupOldWatcherLogs,
   cleanupOldLocations,
   getNextProactiveAt,
@@ -225,7 +225,7 @@ async function runDailyCleanup(): Promise<void> {
       await Promise.all([
         cleanupFiredReminders(30),
         cleanupOldConversations(90),
-        cleanupOldSkillLogs(90),
+        cleanupOldRoutineLogs(90),
         cleanupOldWatcherLogs(90),
         cleanupOldLocations(90),
       ]);

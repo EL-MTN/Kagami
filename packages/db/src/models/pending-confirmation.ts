@@ -1,7 +1,7 @@
 import mongoose, { Schema, type Document } from "mongoose";
 
 export type PendingConfirmationStatus = "pending" | "approved" | "denied" | "expired" | "cancelled";
-export type PendingConfirmationOrigin = "conversation" | "skill" | "watcher";
+export type PendingConfirmationOrigin = "conversation" | "routine" | "watcher";
 
 export interface IPendingConfirmation extends Document {
   chatId: string;
@@ -36,7 +36,7 @@ const pendingConfirmationSchema = new Schema<IPendingConfirmation>(
     },
     origin: {
       type: String,
-      enum: ["conversation", "skill", "watcher"],
+      enum: ["conversation", "routine", "watcher"],
       default: "conversation",
       required: true,
     },

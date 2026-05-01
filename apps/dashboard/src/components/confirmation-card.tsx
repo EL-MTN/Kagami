@@ -3,7 +3,7 @@ import type { ConfirmationListItem } from "@/lib/queries/confirmations";
 
 const ORIGIN_ICON = {
   conversation: MessageSquare,
-  skill: Zap,
+  routine: Zap,
   watcher: Eye,
 } as const;
 

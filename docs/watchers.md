@@ -1,18 +1,18 @@
 # Watchers
 
-Watchers are scheduled, stateful **detection** jobs. Where Skills are _actors_ (do things on a schedule), Watchers are _detectors_ — they observe the world, compare against a remembered last state, and notify Goshujin-sama only when a user-defined condition is met.
+Watchers are scheduled, stateful **detection** jobs. Where Routines are _actors_ (do things on a schedule), Watchers are _detectors_ — they observe the world, compare against a remembered last state, and notify Goshujin-sama only when a user-defined condition is met.
 
-## When to use a watcher vs a skill
+## When to use a watcher vs a routine
 
-|                       | Skill                    | Watcher                                           |
-| --------------------- | ------------------------ | ------------------------------------------------- |
-| Purpose               | Do work                  | Detect change                                     |
-| State across runs     | Stateless                | Stateful (`lastState`)                            |
-| Output                | Free-form text           | Structured `{triggered, summary, newState}`       |
-| Notification          | Always (or `alert` mode) | Only when `triggered === true`                    |
-| Tool access           | Full                     | Read-only subset                                  |
-| Composes other skills | Yes (`useSkill`)         | No (v1)                                           |
-| Lifecycle             | Evergreen until disabled | Auto-archives after `expiresAt` (default 30 days) |
+|                         | Routine                  | Watcher                                           |
+| ----------------------- | ------------------------ | ------------------------------------------------- |
+| Purpose                 | Do work                  | Detect change                                     |
+| State across runs       | Stateless                | Stateful (`lastState`)                            |
+| Output                  | Free-form text           | Structured `{triggered, summary, newState}`       |
+| Notification            | Always (or `alert` mode) | Only when `triggered === true`                    |
+| Tool access             | Full                     | Read-only subset                                  |
+| Composes other routines | Yes (`useRoutine`)       | No (v1)                                           |
+| Lifecycle               | Evergreen until disabled | Auto-archives after `expiresAt` (default 30 days) |
 
 Use a watcher when the question is **"tell me when X happens"** — price drops, new listings, inbox events, calendar pattern changes, "is the iPhone announcement out yet."
 
@@ -81,25 +81,25 @@ Suppression preserves observation accuracy (`lastState` still rolls forward) whi
 - `searchMemory`, `readMemory`, `listMemories`
 - `checkEmail` (gated on `GOOGLE_OAUTH_CLIENT_ID`)
 - `listCalendarEvents` — `createManageCalendarTool({ mode: "readOnly" })` returns a list-only tool
-- `useSkill` — gated to read-purity skills via `callingContext: "watcher"`. Action-purity skills are rejected with a clear error.
+- `useRoutine` — gated to read-purity routines via `callingContext: "watcher"`. Action-purity routines are rejected with a clear error.
 - `reportWatcherResult` — required terminator
 
-Explicitly excluded: `sendEmail`, `rememberFact`, `noteToSelf`, `manageReminders`, `sendPhoto`, `sendVoice`, `manageSkills`, `manageWatchers`. The principle: watchers observe; action belongs to the trigger handler. This bounds blast radius — a misfiring detection produces a spurious message, never a sent email or modified calendar.
+Explicitly excluded: `sendEmail`, `rememberFact`, `noteToSelf`, `manageReminders`, `sendPhoto`, `sendVoice`, `manageRoutines`, `manageWatchers`. The principle: watchers observe; action belongs to the trigger handler. This bounds blast radius — a misfiring detection produces a spurious message, never a sent email or modified calendar.
 
-### Skill purity
+### Routine purity
 
-Skills carry a `purity: "read" | "action"` marker (default `"action"` for backward-compat safety). The watcher invariant is enforced in two layers:
+Routines carry a `purity: "read" | "action"` marker (default `"action"` for backward-compat safety). The watcher invariant is enforced in two layers:
 
-- **`useSkill` gate** — only `purity: "read"` skills are invocable from `callingContext: "watcher"`. Action skills return `{ success: false, reason: "..." }` without executing.
-- **Tool-palette restriction** — when a skill _runs_ under `callingContext: "watcher"` (i.e., it was invoked by a watcher), the skill executor uses the read-only tool subset (`skillToolsUnderWatcher`) instead of `allTools`. The skill cannot send emails, write to memory, modify the calendar, or otherwise mutate external state through its own tool palette. This makes the read-only invariant **transitive**: a misbehaving read-purity skill can't leak mutations even if its prompt instructs otherwise.
+- **`useRoutine` gate** — only `purity: "read"` routines are invocable from `callingContext: "watcher"`. Action routines return `{ success: false, reason: "..." }` without executing.
+- **Tool-palette restriction** — when a routine _runs_ under `callingContext: "watcher"` (i.e., it was invoked by a watcher), the routine executor uses the read-only tool subset (`routineToolsUnderWatcher`) instead of `allTools`. The routine cannot send emails, write to memory, modify the calendar, or otherwise mutate external state through its own tool palette. This makes the read-only invariant **transitive**: a misbehaving read-purity routine can't leak mutations even if its prompt instructs otherwise.
 
-`callingContext` propagates through `executeSkill` → `useSkill` → next `executeSkill`, so the gate stays watcher-scoped at every hop.
+`callingContext` propagates through `executeRoutine` → `useRoutine` → next `executeRoutine`, so the gate stays watcher-scoped at every hop.
 
-Authors mark skills explicitly via `manageSkills` (LLM tool) or the dashboard skill editor's Purity field.
+Authors mark routines explicitly via `manageRoutines` (LLM tool) or the dashboard routine editor's Purity field.
 
 ## Creation
 
-Conversational creation through the `manageWatchers` tool, available in main chat and inside skill executors. Skills can create watchers; **watchers cannot create watchers** (the tool is omitted from `watcherTools`).
+Conversational creation through the `manageWatchers` tool, available in main chat and inside routine executors. Routines can create watchers; **watchers cannot create watchers** (the tool is omitted from `watcherTools`).
 
 ```
 Goshujin-sama: "Watch HN front page for posts about Anthropic, check hourly."
@@ -108,7 +108,7 @@ Mashiro:        manageWatchers({ action: "create", name: "hn-anthropic", ... })
 
 ### Dashboard
 
-The Next.js dashboard at `/watchers` mirrors the Skills surface:
+The Next.js dashboard at `/watchers` mirrors the Routines surface:
 
 - List view (`apps/dashboard/src/app/watchers/page.tsx`) — search, filter (all / enabled / snoozed), enabled toggle, delete, create, import, export.
 - Detail editor (`apps/dashboard/src/app/watchers/[id]/page.tsx`) — inline edits to name/description/prompt/cron, lifecycle controls (oneShot, maxFires, cooldownMinutes), snooze dropdown, manual "Run now" button (sets `manualRunRequestedAt`; the scheduler's 3s manual-run poll claims it and runs the watcher with `silent: true`), state-change timeline (see below), and full execution log with triggered/silenced/failed verdicts.
@@ -119,5 +119,5 @@ The Next.js dashboard at `/watchers` mirrors the Skills surface:
 
 Still on the backlog (not in v2):
 
-- `onTriggerSkill` field — invoke a named skill on trigger. Blocked on an approval-workflow shim for write tools; without it, a misfiring watcher could send unintended emails.
-- Extracted `ScheduledRunner` primitive shared with the skill scheduler — duplicate first, extract once a third caller arrives.
+- `onTriggerRoutine` field — invoke a named routine on trigger. Blocked on an approval-workflow shim for write tools; without it, a misfiring watcher could send unintended emails.
+- Extracted `ScheduledRunner` primitive shared with the routine scheduler — duplicate first, extract once a third caller arrives.

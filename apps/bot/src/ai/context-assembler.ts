@@ -7,7 +7,7 @@ import {
   listRemindersForChat,
   getRecentlyFiredReminders,
   getLatestLocation,
-  listSkillsForChat,
+  listRoutinesForChat,
   listPendingConfirmations,
 } from "@mashiro/db";
 import * as engine from "@mashiro/memory";
@@ -15,7 +15,7 @@ import {
   TOOL_BEHAVIOR_GUIDELINES,
   MAID_SERVICE_INSTRUCTIONS,
   BROWSER_INSTRUCTIONS,
-  SKILL_BEHAVIOR_INSTRUCTIONS,
+  ROUTINE_BEHAVIOR_INSTRUCTIONS,
   DATETIME_CONTEXT,
   RESPONSE_FORMAT_INSTRUCTIONS,
   PROACTIVE_MESSAGE_INSTRUCTIONS,
@@ -105,7 +105,7 @@ async function assembleMemoryContext(sessionId?: string): Promise<string[]> {
 
 /**
  * Shared prompt shell: personality card + datetime + tool/service instructions.
- * Used by conversation prompts and proactive prompts (not the skill executor).
+ * Used by conversation prompts and proactive prompts (not the routine executor).
  */
 export async function assemblePromptShell(): Promise<string[]> {
   const parts: string[] = [];
@@ -135,8 +135,8 @@ export async function assemblePromptShell(): Promise<string[]> {
     parts.push(BROWSER_INSTRUCTIONS);
   }
 
-  // Skill behavior instructions
-  parts.push(SKILL_BEHAVIOR_INSTRUCTIONS);
+  // Routine behavior instructions
+  parts.push(ROUTINE_BEHAVIOR_INSTRUCTIONS);
 
   return parts;
 }
@@ -175,16 +175,16 @@ async function assembleBasePrompt(sessionId?: string): Promise<string[]> {
   return parts;
 }
 
-async function assembleSkillContext(chatId: string): Promise<string | null> {
+async function assembleRoutineContext(chatId: string): Promise<string | null> {
   try {
-    const skills = await listSkillsForChat(chatId);
-    const enabled = skills.filter((s) => s.enabled);
+    const routines = await listRoutinesForChat(chatId);
+    const enabled = routines.filter((s) => s.enabled);
     if (enabled.length === 0) return null;
 
     const names = enabled.map((s) => s.name).join(", ");
-    return `## Available Skills\n${names}\nUse searchSkills to look up details or discover skills by keyword.`;
+    return `## Available Routines\n${names}\nUse searchRoutines to look up details or discover routines by keyword.`;
   } catch (error) {
-    logger.warn({ error }, "Failed to load skill context");
+    logger.warn({ error }, "Failed to load routine context");
     return null;
   }
 }
@@ -238,8 +238,8 @@ async function assembleLocationContext(chatId: string): Promise<string | null> {
 export async function assembleSystemPrompt(chatId: string, sessionId?: string): Promise<string> {
   const parts = await assembleBasePrompt(sessionId);
 
-  const skillContext = await assembleSkillContext(chatId);
-  if (skillContext) parts.push(skillContext);
+  const routineContext = await assembleRoutineContext(chatId);
+  if (routineContext) parts.push(routineContext);
 
   const pendingContext = await assemblePendingConfirmationsContext(chatId);
   if (pendingContext) parts.push(pendingContext);

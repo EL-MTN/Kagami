@@ -2,7 +2,7 @@
 
 ## Project
 
-Mashiro — a Telegram-based conversational AI that maintains persistent personality, memories, and proactive engagement. Built as a monorepo with TypeScript, Vercel AI SDK, MongoDB, and the Grammy Telegram framework. Includes a Next.js dashboard for skill management and observability.
+Mashiro — a Telegram-based conversational AI that maintains persistent personality, memories, and proactive engagement. Built as a monorepo with TypeScript, Vercel AI SDK, MongoDB, and the Grammy Telegram framework. Includes a Next.js dashboard for routine management and observability.
 
 ## Monorepo Structure
 
@@ -11,7 +11,7 @@ mashiro/
 ├── apps/
 │   ├── bot/          # Telegram bot (Grammy, AI tools, schedulers)
 │   │   └── context/  # soul.md (personality), reference images, settings
-│   └── dashboard/    # Next.js dashboard (skill management, observability, auth)
+│   └── dashboard/    # Next.js dashboard (routine management, observability, auth)
 ├── packages/
 │   ├── typescript-config/  # Shared tsconfig bases (JSON only)
 │   ├── eslint-config/      # Shared ESLint flat config
@@ -56,7 +56,7 @@ The dashboard dev server runs under [Portless](https://github.com/vercel-labs/po
 @mashiro/memory  ← engine, embedding
        ↑
 @mashiro/bot     ← AI layer, tools, platform adapter, schedulers
-@mashiro/dashboard ← Next.js (skill management, observability)
+@mashiro/dashboard ← Next.js (routine management, observability)
 ```
 
 ## Conventions

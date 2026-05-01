@@ -7,7 +7,7 @@ import {
   getUsageOverview,
   getUsageByCategory,
   getDailyUsageTrend,
-  getUsageBySkill,
+  getUsageByRoutine,
   getUsageByWatcher,
   type OriginUsage,
 } from "@/lib/queries/usage";
@@ -29,11 +29,11 @@ function barColorFor(tone: "neutral" | "caution" | "critical"): string {
 }
 
 export default async function UsagePage() {
-  const [overview, categories, dailyTrend, bySkill, byWatcher] = await Promise.all([
+  const [overview, categories, dailyTrend, byRoutine, byWatcher] = await Promise.all([
     getUsageOverview(),
     getUsageByCategory(30),
     getDailyUsageTrend(30),
-    getUsageBySkill(30),
+    getUsageByRoutine(30),
     getUsageByWatcher(30),
   ]);
 
@@ -54,10 +54,10 @@ export default async function UsagePage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <OriginBreakdown
-          title="Cost by skill"
-          rows={bySkill}
-          hrefBase="/skills"
-          empty="No skill activity in the last 30 days."
+          title="Cost by routine"
+          rows={byRoutine}
+          hrefBase="/routines"
+          empty="No routine activity in the last 30 days."
         />
         <OriginBreakdown
           title="Cost by watcher"

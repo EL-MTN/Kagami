@@ -67,7 +67,7 @@ describe("isGatedTool", () => {
 
   it("returns false for tools not in the gated set", () => {
     expect(isGatedTool("sendText")).toBe(false);
-    expect(isGatedTool("createSkill")).toBe(false);
+    expect(isGatedTool("createRoutine")).toBe(false);
     expect(isGatedTool("")).toBe(false);
   });
 

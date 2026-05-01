@@ -18,7 +18,7 @@ The gated allowlist is the single source of truth at `apps/bot/src/services/gate
 
 ## Why a primitive (vs. blanket gating)
 
-1. **Skills can't pause.** A skill's `generateText` call can't block waiting for a button press for hours. The primitive flips the model: persist the intent, return immediately, resume on approval. Skills exit cleanly with "pending"; the user's button press triggers dispatch out-of-band.
+1. **Routines can't pause.** A routine's `generateText` call can't block waiting for a button press for hours. The primitive flips the model: persist the intent, return immediately, resume on approval. Routines exit cleanly with "pending"; the user's button press triggers dispatch out-of-band.
 2. **The LLM picks the moment.** Self-addressed drafts, low-stakes replies, and high-stakes outbound mail all share the same `sendEmail` tool. Forcing every send through approval would be noise. Letting the LLM decide preserves natural flow while keeping a hard gate on the cases that matter.
 
 ## Flow
@@ -93,8 +93,8 @@ The tool is registered alongside `requestConfirmation` whenever any gated underl
 | `action.tool`     | `"sendEmail" \| "manageCalendar" \| "browseAgent"`                | Gated tool name (validated against `GATED_TOOL_NAMES` at both ends)    |
 | `action.args`     | mixed                                                             | Tool args; re-validated by Zod at dispatch time                        |
 | `status`          | `"pending" \| "approved" \| "denied" \| "expired" \| "cancelled"` | State machine                                                          |
-| `origin`          | `"conversation" \| "skill" \| "watcher"`                          | Where the request came from (watchers can't author, but reserved)      |
-| `originRef`       | string?                                                           | Reserved for skill/watcher id when those origins are wired             |
+| `origin`          | `"conversation" \| "routine" \| "watcher"`                        | Where the request came from (watchers can't author, but reserved)      |
+| `originRef`       | string?                                                           | Reserved for routine/watcher id when those origins are wired           |
 | `promptMessageId` | string?                                                           | Telegram message id, used for in-place editing                         |
 | `resultText`      | string?                                                           | Short outcome line, set after dispatch settles                         |
 | `expiresAt`       | Date                                                              | Default `+24h`; MongoDB TTL index auto-removes after this              |
@@ -104,7 +104,7 @@ Atomic transitions live in `resolvePendingConfirmation(id, verdict, resultText?)
 
 ## Tool surface
 
-`requestConfirmation({ summary, action: { tool, args } })` and `cancelConfirmation({ confirmationId, reason? })` are both registered in `allTools(ctx)` whenever any gated underlying tool is available (currently `GOOGLE_OAUTH_CLIENT_ID` or `BROWSER_ENABLED`). Excluded from `watcherTools` (watchers can't mutate) and `skillToolsUnderWatcher` (transitive read-only invariant).
+`requestConfirmation({ summary, action: { tool, args } })` and `cancelConfirmation({ confirmationId, reason? })` are both registered in `allTools(ctx)` whenever any gated underlying tool is available (currently `GOOGLE_OAUTH_CLIENT_ID` or `BROWSER_ENABLED`). Excluded from `watcherTools` (watchers can't mutate) and `routineToolsUnderWatcher` (transitive read-only invariant).
 
 ## Adapter contract
 
@@ -130,12 +130,12 @@ iMessage has no inline buttons and no third-party message editing. The confirmat
 
 ## Dashboard surface
 
-`/confirmations` (`apps/dashboard/src/app/confirmations/page.tsx`) shows pending rows and the most recent resolved ones. Each card surfaces origin (conversation / skill / watcher), tool name, args (expandable JSON), expiry countdown for pending rows, and the resolution result for resolved rows. The sidebar Confirmations link carries a count badge sourced from `getPendingConfirmationCount()`. The Overview page (`/`) also previews the top three pending rows with a caution badge in the page header — see `apps/dashboard/src/app/page.tsx`.
+`/confirmations` (`apps/dashboard/src/app/confirmations/page.tsx`) shows pending rows and the most recent resolved ones. Each card surfaces origin (conversation / routine / watcher), tool name, args (expandable JSON), expiry countdown for pending rows, and the resolution result for resolved rows. The sidebar Confirmations link carries a count badge sourced from `getPendingConfirmationCount()`. The Overview page (`/`) also previews the top three pending rows with a caution badge in the page header — see `apps/dashboard/src/app/page.tsx`.
 
 Queries live in `apps/dashboard/src/lib/queries/confirmations.ts`: `getPendingConfirmationList()`, `getRecentResolvedConfirmations(limit)`, `getPendingConfirmationCount()`.
 
 ## What's deferred
 
-- **Skills as origin.** The `origin: "skill"` value exists in the schema but the skill executor doesn't yet pass it through `requestConfirmation`. Skills can still call the tool — they just currently report origin `"conversation"`.
+- **Routines as origin.** The `origin: "routine"` value exists in the schema but the routine executor doesn't yet pass it through `requestConfirmation`. Routines can still call the tool — they just currently report origin `"conversation"`.
 - **Idempotency window.** Two `requestConfirmation` calls with the same `(chatId, tool, hash(args))` produce two separate rows. Should dedupe within ~60s.
 - **Expiry notification.** TTL-expired rows rot silently; no message is posted to the user.

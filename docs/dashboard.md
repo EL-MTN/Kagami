@@ -73,30 +73,30 @@ cd apps/dashboard && npm run dev   # dashboard only (port 3000)
 
 ## Pages
 
-| Route                     | Description                                                                                                                          |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `/`                       | Overview — pending-intent surface (preview of awaiting confirmations), stat cards, emotional trend chart, recent activity feed       |
-| `/conversations`          | Paginated table with status filter (all/active/closed) and chat-ID search; columns: session, chat, status, messages, platform, dates |
-| `/conversations/[id]`     | Conversation detail — header metadata + scrollable message history with chat bubbles                                                 |
-| `/memories`               | Type pills (fact/episode/milestone/working with counts) plus tone, importance, and source filters; paginated cards                   |
-| `/confirmations`          | Pending and recently-resolved approval-gated tool calls with origin (conversation/skill/watcher), tool name, args, expiry countdown  |
-| `/reminders`              | Reminder table with pending/fired/all pill filter (with counts), message, fire time, status, chat ID, created                        |
-| `/skills`                 | Skill management — table with enable/disable, create, import, export                                                                 |
-| `/skills/[id]`            | Skill detail — inline editor (prompt, params, cron, report mode) + execution log history                                             |
-| `/watchers`               | Watcher management — table with enable/disable, search, status filter, create, import, export                                        |
-| `/watchers/[id]`          | Watcher detail — editor + state-change timeline (de-duplicated observations, shape-coded markers) + execution log history            |
-| `/usage`                  | Cost overview, cost-by-skill / cost-by-watcher / cost-by-category breakdowns (30d), daily trend sparkline                            |
-| `/api/skills`             | GET list, POST create, POST `?action=import` bulk import                                                                             |
-| `/api/skills/export`      | GET — download all skills as versioned JSON bundle                                                                                   |
-| `/api/skills/[id]`        | GET detail, PATCH update, DELETE                                                                                                     |
-| `/api/skills/[id]/logs`   | GET paginated execution logs (cursor-based via `?before=`)                                                                           |
-| `/api/skills/[id]/run`    | POST — sets `manualRunRequestedAt` so the bot's scheduler picks the skill up on its next 3 s tick                                    |
-| `/api/watchers`           | GET list, POST create, POST `?action=import` bulk import                                                                             |
-| `/api/watchers/export`    | GET — download all watchers as versioned JSON bundle                                                                                 |
-| `/api/watchers/[id]`      | GET detail, PATCH update, DELETE                                                                                                     |
-| `/api/watchers/[id]/logs` | GET paginated execution logs (cursor-based via `?before=`)                                                                           |
-| `/api/watchers/[id]/run`  | POST — sets `manualRunRequestedAt` so the bot's 3 s manual-run poll claims and executes with `silent: true`                          |
-| `/api/images/[key]`       | GridFS image proxy — serves stored images by key with immutable cache headers                                                        |
+| Route                     | Description                                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                       | Overview — pending-intent surface (preview of awaiting confirmations), stat cards, emotional trend chart, recent activity feed        |
+| `/conversations`          | Paginated table with status filter (all/active/closed) and chat-ID search; columns: session, chat, status, messages, platform, dates  |
+| `/conversations/[id]`     | Conversation detail — header metadata + scrollable message history with chat bubbles                                                  |
+| `/memories`               | Type pills (fact/episode/milestone/working with counts) plus tone, importance, and source filters; paginated cards                    |
+| `/confirmations`          | Pending and recently-resolved approval-gated tool calls with origin (conversation/routine/watcher), tool name, args, expiry countdown |
+| `/reminders`              | Reminder table with pending/fired/all pill filter (with counts), message, fire time, status, chat ID, created                         |
+| `/routines`               | Routine management — table with enable/disable, create, import, export                                                                |
+| `/routines/[id]`          | Routine detail — inline editor (prompt, params, cron, report mode) + execution log history                                            |
+| `/watchers`               | Watcher management — table with enable/disable, search, status filter, create, import, export                                         |
+| `/watchers/[id]`          | Watcher detail — editor + state-change timeline (de-duplicated observations, shape-coded markers) + execution log history             |
+| `/usage`                  | Cost overview, cost-by-routine / cost-by-watcher / cost-by-category breakdowns (30d), daily trend sparkline                           |
+| `/api/routines`           | GET list, POST create, POST `?action=import` bulk import                                                                              |
+| `/api/routines/export`    | GET — download all routines as versioned JSON bundle                                                                                  |
+| `/api/routines/[id]`      | GET detail, PATCH update, DELETE                                                                                                      |
+| `/api/routines/[id]/logs` | GET paginated execution logs (cursor-based via `?before=`)                                                                            |
+| `/api/routines/[id]/run`  | POST — sets `manualRunRequestedAt` so the bot's scheduler picks the routine up on its next 3 s tick                                   |
+| `/api/watchers`           | GET list, POST create, POST `?action=import` bulk import                                                                              |
+| `/api/watchers/export`    | GET — download all watchers as versioned JSON bundle                                                                                  |
+| `/api/watchers/[id]`      | GET detail, PATCH update, DELETE                                                                                                      |
+| `/api/watchers/[id]/logs` | GET paginated execution logs (cursor-based via `?before=`)                                                                            |
+| `/api/watchers/[id]/run`  | POST — sets `manualRunRequestedAt` so the bot's 3 s manual-run poll claims and executes with `silent: true`                           |
+| `/api/images/[key]`       | GridFS image proxy — serves stored images by key with immutable cache headers                                                         |
 
 ## Architecture
 
@@ -106,7 +106,7 @@ cd apps/dashboard && npm run dev   # dashboard only (port 3000)
 MongoDB ← ensureDB() ← query functions ← server components (pages)
 ```
 
-Read-only pages are React Server Components. Skill management uses a hybrid model: pages are server components for initial render, with interactive client components (`SkillTable`, `SkillEditor`, dialogs) for mutation. Client components call `/api/skills/*` route handlers via `fetch()`.
+Read-only pages are React Server Components. Routine management uses a hybrid model: pages are server components for initial render, with interactive client components (`RoutineTable`, `RoutineEditor`, dialogs) for mutation. Client components call `/api/routines/*` route handlers via `fetch()`.
 
 ### DB Connection
 
@@ -121,32 +121,32 @@ All in `src/lib/queries/`:
 - `memories.ts` — `getMemoriesByType(type, page, options?)` with `tone` (positive/neutral/negative), `importance` (low/medium/high), and `source` (regex) filters; `getMemoryTypeCounts()`
 - `confirmations.ts` — `getPendingConfirmationList()`, `getRecentResolvedConfirmations(limit)`, `getPendingConfirmationCount()`
 - `reminders.ts` — `getReminderList(showFired?)`
-- `skills.ts` — `getSkillList()`, `getSkillDetail(id)`, `getSkillLogList(skillId, limit, before?)`
+- `routines.ts` — `getRoutineList()`, `getRoutineDetail(id)`, `getRoutineLogList(routineId, limit, before?)`
 - `watchers.ts` — `getWatcherList()`, `getWatcherDetail(id)`, `getWatcherLogList(...)`, `getWatcherStateHistory(watcherId, limit)` (collapses consecutive identical states into a transition timeline)
-- `usage.ts` — `getUsageOverview()`, `getUsageByCategory(days)`, `getUsageBySkill(days)`, `getUsageByWatcher(days)` (joins on `metadata.skillId` / `metadata.watcherId`), `getDailyUsageTrend(days)`
+- `usage.ts` — `getUsageOverview()`, `getUsageByCategory(days)`, `getUsageByRoutine(days)`, `getUsageByWatcher(days)` (joins on `metadata.routineId` / `metadata.watcherId`), `getDailyUsageTrend(days)`
 
 Queries use `@mashiro/db` models directly. `@mashiro/memory` is **not** imported (it depends on Google AI SDK which is unnecessary for read-only display).
 
 ### Validation
 
-`src/lib/skill-schema.ts` — Zod schemas shared between API route handlers (server-side validation) and client components (live validation). Exports: `skillCreateSchema`, `skillPatchSchema`, `skillExportBundleSchema`, and inferred TypeScript types. Zero Node.js-specific imports so it works in both runtimes.
+`src/lib/routine-schema.ts` — Zod schemas shared between API route handlers (server-side validation) and client components (live validation). Exports: `routineCreateSchema`, `routinePatchSchema`, `routineExportBundleSchema`, and inferred TypeScript types. Zero Node.js-specific imports so it works in both runtimes.
 
-Cron validation (parse + required-defaults check) lives in `@mashiro/shared` (`validateCronAndDefaults`, `computeNextRunAt`) so the bot's `manageSkills` tool and the dashboard API routes share one implementation.
+Cron validation (parse + required-defaults check) lives in `@mashiro/shared` (`validateCronAndDefaults`, `computeNextRunAt`) so the bot's `manageRoutines` tool and the dashboard API routes share one implementation.
 
 ### Editor UX
 
-`SkillEditor` (`src/components/skills/skill-editor.tsx`) supports Cmd/Ctrl+S to save, a `beforeunload` guard while dirty, and an inline Run button (disabled while dirty) that drives the run-now flow described above. Cron preview helpers live in `src/lib/cron-format.ts` (`describeCron`, `cronLabel`).
+`RoutineEditor` (`src/components/routines/routine-editor.tsx`) supports Cmd/Ctrl+S to save, a `beforeunload` guard while dirty, and an inline Run button (disabled while dirty) that drives the run-now flow described above. Cron preview helpers live in `src/lib/cron-format.ts` (`describeCron`, `cronLabel`).
 
 ### Export/Import Format
 
-Skills are exported as a versioned JSON bundle:
+Routines are exported as a versioned JSON bundle:
 
 ```json
 {
   "version": 1,
   "exportedAt": "2026-03-16T12:00:00.000Z",
   "count": 3,
-  "skills": [
+  "routines": [
     { "name": "...", "description": "...", "prompt": "...", "parameters": [...], ... }
   ]
 }
@@ -170,35 +170,35 @@ This allows the dashboard to import `@mashiro/db` → `@mashiro/shared` without 
 
 ## Components
 
-| Component                            | Type           | Purpose                                                                                                                                   |
-| ------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `sidebar.tsx`                        | Server (async) | Nav sidebar with page links; fetches pending confirmation count and renders it as a badge on the Confirmations link                       |
-| `nav-link.tsx`                       | Client         | Active route highlighting via `usePathname()`; supports optional numeric `badge` prop                                                     |
-| `confirmation-card.tsx`              | Server         | Pending or resolved confirmation row — origin icon, summary, tool name, expandable args/result, expiry countdown or status pill           |
-| `watchers/state-timeline.tsx`        | Server         | Vertical timeline of distinct watcher state observations (collapsed against `prevState`) with triggered/silenced/observation tones        |
-| `stat-card.tsx`                      | Server         | Reusable stats card (icon, label, value)                                                                                                  |
-| `emotional-indicator.tsx`            | Server         | Trend badge (rising/falling/stable)                                                                                                       |
-| `activity-feed.tsx`                  | Server         | Recent conversations + memories interleaved by time                                                                                       |
-| `message-bubble.tsx`                 | Server         | Chat message with role-based styling, tool call display                                                                                   |
-| `memory-card.tsx`                    | Server         | Memory content with importance/type badges                                                                                                |
-| `pagination.tsx`                     | Server         | Simple prev/next page links                                                                                                               |
-| `skills/skill-table.tsx`             | Client         | Interactive skill list with name/description search, enabled/cron filters, enable/disable toggle (with rollback toast on failure), delete |
-| `skills/skill-editor.tsx`            | Client         | Inline skill editing with live cron preview, dirty tracking, Cmd+S save, navigate-away guard                                              |
-| `skills/skill-run-button.tsx`        | Client         | Triggers a manual run via `/api/skills/[id]/run` and polls logs for the result                                                            |
-| `skills/skill-create-dialog.tsx`     | Client         | New skill creation dialog (chatId picked from a select of known chats with a "+ New chat…" escape hatch)                                  |
-| `skills/skill-import-dialog.tsx`     | Client         | Drag-drop/paste JSON import with preview                                                                                                  |
-| `skills/skill-delete-dialog.tsx`     | Client         | Confirm delete dialog                                                                                                                     |
-| `skills/skill-log-table.tsx`         | Client         | Execution logs with expandable summaries, load more                                                                                       |
-| `skills/parameter-editor.tsx`        | Client         | Dynamic parameter list editor with type-aware defaults                                                                                    |
-| `sparkline.tsx`                      | Server         | Inline SVG sparkline (line + faint area + last-point dot, optional baseline). Used by Overview emotional trend and Usage daily-cost trend |
-| `watchers/watcher-table.tsx`         | Client         | Interactive watcher list — search, status filter (all/enabled/snoozed), enable/disable toggle, delete, create                             |
-| `watchers/watcher-editor.tsx`        | Client         | Inline watcher editing — prompt, cron, lifecycle controls (oneShot, maxFires, cooldownMinutes), snooze dropdown, dirty tracking           |
-| `watchers/watcher-run-button.tsx`    | Client         | Triggers a manual watcher run via `/api/watchers/[id]/run` and polls logs for the result                                                  |
-| `watchers/watcher-create-dialog.tsx` | Client         | New watcher creation dialog                                                                                                               |
-| `watchers/watcher-import-dialog.tsx` | Client         | Drag-drop/paste JSON import with preview                                                                                                  |
-| `watchers/watcher-delete-dialog.tsx` | Client         | Confirm delete dialog                                                                                                                     |
-| `watchers/watcher-log-table.tsx`     | Client         | Execution logs with expandable summaries, load more                                                                                       |
-| `watchers/snooze-button.tsx`         | Client         | Inline snooze dropdown for the watcher detail surface                                                                                     |
+| Component                            | Type           | Purpose                                                                                                                                     |
+| ------------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sidebar.tsx`                        | Server (async) | Nav sidebar with page links; fetches pending confirmation count and renders it as a badge on the Confirmations link                         |
+| `nav-link.tsx`                       | Client         | Active route highlighting via `usePathname()`; supports optional numeric `badge` prop                                                       |
+| `confirmation-card.tsx`              | Server         | Pending or resolved confirmation row — origin icon, summary, tool name, expandable args/result, expiry countdown or status pill             |
+| `watchers/state-timeline.tsx`        | Server         | Vertical timeline of distinct watcher state observations (collapsed against `prevState`) with triggered/silenced/observation tones          |
+| `stat-card.tsx`                      | Server         | Reusable stats card (icon, label, value)                                                                                                    |
+| `emotional-indicator.tsx`            | Server         | Trend badge (rising/falling/stable)                                                                                                         |
+| `activity-feed.tsx`                  | Server         | Recent conversations + memories interleaved by time                                                                                         |
+| `message-bubble.tsx`                 | Server         | Chat message with role-based styling, tool call display                                                                                     |
+| `memory-card.tsx`                    | Server         | Memory content with importance/type badges                                                                                                  |
+| `pagination.tsx`                     | Server         | Simple prev/next page links                                                                                                                 |
+| `routines/routine-table.tsx`         | Client         | Interactive routine list with name/description search, enabled/cron filters, enable/disable toggle (with rollback toast on failure), delete |
+| `routines/routine-editor.tsx`        | Client         | Inline routine editing with live cron preview, dirty tracking, Cmd+S save, navigate-away guard                                              |
+| `routines/routine-run-button.tsx`    | Client         | Triggers a manual run via `/api/routines/[id]/run` and polls logs for the result                                                            |
+| `routines/routine-create-dialog.tsx` | Client         | New routine creation dialog (chatId picked from a select of known chats with a "+ New chat…" escape hatch)                                  |
+| `routines/routine-import-dialog.tsx` | Client         | Drag-drop/paste JSON import with preview                                                                                                    |
+| `routines/routine-delete-dialog.tsx` | Client         | Confirm delete dialog                                                                                                                       |
+| `routines/routine-log-table.tsx`     | Client         | Execution logs with expandable summaries, load more                                                                                         |
+| `routines/parameter-editor.tsx`      | Client         | Dynamic parameter list editor with type-aware defaults                                                                                      |
+| `sparkline.tsx`                      | Server         | Inline SVG sparkline (line + faint area + last-point dot, optional baseline). Used by Overview emotional trend and Usage daily-cost trend   |
+| `watchers/watcher-table.tsx`         | Client         | Interactive watcher list — search, status filter (all/enabled/snoozed), enable/disable toggle, delete, create                               |
+| `watchers/watcher-editor.tsx`        | Client         | Inline watcher editing — prompt, cron, lifecycle controls (oneShot, maxFires, cooldownMinutes), snooze dropdown, dirty tracking             |
+| `watchers/watcher-run-button.tsx`    | Client         | Triggers a manual watcher run via `/api/watchers/[id]/run` and polls logs for the result                                                    |
+| `watchers/watcher-create-dialog.tsx` | Client         | New watcher creation dialog                                                                                                                 |
+| `watchers/watcher-import-dialog.tsx` | Client         | Drag-drop/paste JSON import with preview                                                                                                    |
+| `watchers/watcher-delete-dialog.tsx` | Client         | Confirm delete dialog                                                                                                                       |
+| `watchers/watcher-log-table.tsx`     | Client         | Execution logs with expandable summaries, load more                                                                                         |
+| `watchers/snooze-button.tsx`         | Client         | Inline snooze dropdown for the watcher detail surface                                                                                       |
 
 ### Shell Primitives
 
@@ -208,14 +208,14 @@ This allows the dashboard to import `@mashiro/db` → `@mashiro/shared` without 
 | ----------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PageHeader`      | Server | Title + description + optional right-meta slot. Replaces the per-page `<h2><p>` block.                                                                                                                           |
 | `DataToolbar`     | Server | Flex row with `actions` (left) and `filters` (right) slots. Used above tables/grids.                                                                                                                             |
-| `FilterPills`     | Client | Controlled segmented pill bar (`value` + `onChange`) for client-state pages like `/skills` and `/watchers`.                                                                                                      |
+| `FilterPills`     | Client | Controlled segmented pill bar (`value` + `onChange`) for client-state pages like `/routines` and `/watchers`.                                                                                                    |
 | `LinkFilterPills` | Server | Link-driven segmented pill bar — each option carries a resolved `href`. Used by URL-state pages. Separate from `FilterPills` because Next.js cannot serialize a function prop across the server/client boundary. |
 | `SearchInput`     | Client | Search box with icon. Two modes: controlled (`value`/`onChange`) or URL-synced (`param` — debounced replace).                                                                                                    |
 | `DataTable`       | Server | Wraps the shadcn `Table` in the standard rounded/border container, builds the header from a column array, renders an empty state when `rowCount === 0`.                                                          |
 | `DataRow`         | Server | Standard `<tr>` styling (border + hover) so callers don't restate it.                                                                                                                                            |
 | `EmptyState`      | Server | Empty-state messaging in dashed-border card or inline form.                                                                                                                                                      |
 
-`/conversations`, `/memories`, `/reminders`, `/confirmations` use `LinkFilterPills` + URL-synced `SearchInput` so filter state is shareable and survives reload. `/skills` and `/watchers` use the controlled `FilterPills` + controlled `SearchInput` because their interactive state (toggle, delete, create) lives in client-side React state.
+`/conversations`, `/memories`, `/reminders`, `/confirmations` use `LinkFilterPills` + URL-synced `SearchInput` so filter state is shareable and survives reload. `/routines` and `/watchers` use the controlled `FilterPills` + controlled `SearchInput` because their interactive state (toggle, delete, create) lives in client-side React state.
 
 ## Dependencies
 
@@ -226,6 +226,6 @@ Dashboard-specific (beyond monorepo shared):
 - `lucide-react` — icons
 - `radix-ui` — shadcn/ui primitives (card, badge, table, tabs, scroll-area, separator, dialog, switch)
 - `zod` — request/response validation (shared between API routes and client components)
-- `cron-parser` — computing `nextRunAt` from cron expressions on skill create/update
+- `cron-parser` — computing `nextRunAt` from cron expressions on routine create/update
 - `cronstrue` — human-readable cron descriptions
 - `next/font/google` — Instrument Serif, DM Sans, JetBrains Mono fonts (no extra npm packages)

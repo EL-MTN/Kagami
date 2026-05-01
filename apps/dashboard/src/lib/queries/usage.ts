@@ -1,4 +1,4 @@
-import { TokenUsage, Skill, Watcher, type UsageSummary, type DailyUsage } from "@mashiro/db";
+import { TokenUsage, Routine, Watcher, type UsageSummary, type DailyUsage } from "@mashiro/db";
 import { Types } from "mongoose";
 import { ensureDB } from "../db";
 
@@ -92,7 +92,7 @@ interface OriginAggResult {
 }
 
 async function aggregateByOrigin(
-  metadataField: "skillId" | "watcherId",
+  metadataField: "routineId" | "watcherId",
   days: number,
 ): Promise<OriginAggResult[]> {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -134,16 +134,16 @@ function toObjectIds(ids: string[]): Types.ObjectId[] {
   return out;
 }
 
-export async function getUsageBySkill(days = 30): Promise<OriginUsage[]> {
+export async function getUsageByRoutine(days = 30): Promise<OriginUsage[]> {
   await ensureDB();
-  const rows = await aggregateByOrigin("skillId", days);
+  const rows = await aggregateByOrigin("routineId", days);
   if (rows.length === 0) return [];
 
   const ids = toObjectIds(rows.map((r) => r._id));
-  const skills = await Skill.find({ _id: { $in: ids } })
+  const routines = await Routine.find({ _id: { $in: ids } })
     .select("_id name")
     .lean<{ _id: Types.ObjectId; name: string }[]>();
-  const nameById = new Map(skills.map((s) => [s._id.toString(), s.name]));
+  const nameById = new Map(routines.map((s) => [s._id.toString(), s.name]));
 
   return rows.map((r) => ({
     id: r._id,
