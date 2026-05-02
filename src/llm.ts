@@ -65,6 +65,12 @@ export const model = wrapLanguageModel({
   middleware: reasoningToContentMiddleware,
 });
 
+export function getEmbeddingModel() {
+  const name =
+    process.env.EMBEDDING_MODEL ?? 'text-embedding-nomic-embed-text-v1.5';
+  return provider.textEmbeddingModel(name);
+}
+
 export interface ObjectCallOptions<T extends z.ZodTypeAny> {
   stage: string;
   schema: T;

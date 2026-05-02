@@ -63,7 +63,8 @@ async function main() {
 
   // Lazy-import after env is set so paths.ts picks up BRAINIAC_VAULT.
   const { consolidate } = await import('../src/ingest.js');
-  const { query } = await import('../src/query.js');
+  const { query, queryFlat } = await import('../src/query.js');
+  const useFlat = process.env.BRAINIAC_FLAT === '1';
 
   const rawDir = path.join(vault, 'raw');
   await fs.mkdir(rawDir, { recursive: true });
@@ -94,7 +95,7 @@ async function main() {
   let citations: string[] = [];
   let err: string | undefined;
   try {
-    const r = await query(item.question);
+    const r = useFlat ? await queryFlat(item.question) : await query(item.question);
     prediction = r.answer;
     citations = r.citations;
   } catch (e) {

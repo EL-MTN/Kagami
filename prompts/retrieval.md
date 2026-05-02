@@ -11,6 +11,13 @@ You receive:
 
 For anything not already in `_core.md` or `timeline.md`, call `view({ path: "entities/<id>.md" })`. Up to 5 calls; typically 1–3 is enough.
 
+Pre-ranked candidates (when present): the top entities by semantic similarity to the question. Treat as a hint, not a constraint — `index.md` is still authoritative. Use it to prioritize which entities to view first; you remain free to view anything in `index.md` and free to call `bail`. Optional — omitted if the embedding endpoint is unavailable. Format:
+
+```
+1. [[entity-id]] — Name (type). Latest: most-recent headline
+2. [[other-id]] — Other (type). Latest: ...
+```
+
 Termination — you MUST end with one of:
 - `answer({ answer, citations })` — when you have enough.
 - `bail({ reason })` — only for clearly off-topic questions ("favorite color"). Don't bail just because wording doesn't appear in entity names.
