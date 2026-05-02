@@ -15,11 +15,15 @@ import { paths } from './paths.js';
 export interface Fact {
   id: string;
   text: string;
+  // Pre-lemmatized text used by the BM25 hybrid ranker. Older facts that
+  // predate the hybrid layer may be missing this field; readers should
+  // tolerate absence and recompute via lemmatizeForBm25(text) on the fly.
+  text_lemmatized?: string;
   user_id: string;
   created_at: string;       // ISO timestamp of ingestion
   event_date: string;       // session timestamp the fact was extracted from
   source_session: string;   // e.g. "raw/answer_4be1b6b4_1"
-  hash: string;             // sha-1 of text for dedup checks
+  hash: string;             // md5 of text for dedup checks
   embedding: number[];
 }
 

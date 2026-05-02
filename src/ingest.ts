@@ -11,6 +11,7 @@ import {
   readFacts,
   type Fact,
 } from './facts.js';
+import { lemmatizeForBm25 } from './text.js';
 
 // Mem0-faithful atomic-fact extraction. Uses the verbatim
 // ADDITIVE_EXTRACTION_PROMPT from mem0/configs/prompts.py (saved at
@@ -221,6 +222,7 @@ export async function consolidate(
       facts.push({
         id: newFactId(),
         text: m.text,
+        text_lemmatized: lemmatizeForBm25(m.text),
         user_id: 'default',
         created_at: new Date().toISOString(),
         event_date: sessionDate,
