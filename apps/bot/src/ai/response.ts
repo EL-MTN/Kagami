@@ -25,7 +25,7 @@ export function collectToolCalls(steps: Step[]) {
       const tr = step.toolResults?.find((r) => r.toolCallId === tc.toolCallId);
       return {
         toolName: tc.toolName,
-        args: tc.input as Record<string, unknown>,
+        args: (tc.input ?? {}) as Record<string, unknown>,
         result: tr ? JSON.stringify(tr.output) : undefined,
       };
     });
