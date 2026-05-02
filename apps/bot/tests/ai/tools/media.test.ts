@@ -53,7 +53,7 @@ describe("sendPhoto tool", () => {
     expect(mockGenerateImage).toHaveBeenCalledTimes(1);
     const args = mockGenerateImage.mock.calls[0]![0] as { aspectRatio: string; prompt: string };
     expect(args.aspectRatio).toBe("3:4");
-    expect(args.prompt).toContain("Scene: selfie at a coffee shop");
+    expect(args.prompt).toBe("selfie at a coffee shop");
     expect(adapter.calls.sendPhotoBuffer).toEqual([
       { chatId: "chat-1", bytes: buffer.length, caption: undefined },
     ]);
