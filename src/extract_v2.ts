@@ -125,6 +125,9 @@ export async function ingestTranscriptV2(
   }));
 
   const existingFacts = await readFacts();
+  // mem0/memory/main.py:Phase 5 — md5 hash dedup. Skip facts whose text
+  // is byte-identical to one already on disk or seen earlier in this run.
+  const seenHashes = new Set<string>(existingFacts.map((f) => f.hash));
   const recentlyExtracted: RecentFact[] = [];
   const systemPrompt = await getSystemPrompt();
 
@@ -209,17 +212,25 @@ export async function ingestTranscriptV2(
       continue;
     }
 
-    const facts: Fact[] = extraction.memory.map((m, j) => ({
-      id: newFactId(),
-      text: m.text,
-      user_id: 'default',
-      created_at: new Date().toISOString(),
-      event_date: sessionDate,
-      source_session: `raw/${sessionId}`,
-      hash: createHash('sha1').update(m.text).digest('hex'),
-      embedding: embeddings[j]!,
-    }));
+    const facts: Fact[] = [];
+    for (let j = 0; j < extraction.memory.length; j++) {
+      const m = extraction.memory[j]!;
+      const hash = createHash('md5').update(m.text).digest('hex');
+      if (seenHashes.has(hash)) continue;
+      seenHashes.add(hash);
+      facts.push({
+        id: newFactId(),
+        text: m.text,
+        user_id: 'default',
+        created_at: new Date().toISOString(),
+        event_date: sessionDate,
+        source_session: `raw/${sessionId}`,
+        hash,
+        embedding: embeddings[j]!,
+      });
+    }
 
+    if (facts.length === 0) continue;
     await appendFacts(facts);
     for (const f of facts) {
       recentlyExtracted.push({
