@@ -2,7 +2,7 @@ import { fakeAdapter, withTestDb } from "@mashiro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@mashiro/shared", async (orig) => ({
-  ...((await orig()) as object),
+  ...((await orig())),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -91,7 +91,7 @@ describe("requestConfirmation tool", () => {
       summary: "delete event ev-1",
       action: { tool: "manageCalendar", args: { action: "delete", eventId: "ev-1" } },
     });
-    const persisted = await PendingConfirmation.findById(result.confirmationId as string);
+    const persisted = await PendingConfirmation.findById(result.confirmationId);
     expect(persisted?.origin).toBe("routine");
     expect(persisted?.originRef).toBe("routine-log-7");
   });
@@ -128,7 +128,8 @@ describe("cancelConfirmation tool", () => {
   it("cancels a pending row, edits the prompt bubble, and appends a resolution event", async () => {
     const adapter = fakeAdapter();
     const row = await seedPending();
-    await setPromptMessageId(row.id as string, "tg-99");
+    const confirmationId = String(row.id);
+    await setPromptMessageId(confirmationId, "tg-99");
     const tool = createCancelConfirmationTool(
       "chat-1",
       adapter,
@@ -136,11 +137,11 @@ describe("cancelConfirmation tool", () => {
     ) as unknown as ExecutableTool;
 
     const result = await tool.execute({
-      confirmationId: row.id as string,
+      confirmationId,
       reason: "changed my mind",
     });
 
-    expect(result).toEqual({ success: true, confirmationId: row.id });
+    expect(result).toEqual({ success: true, confirmationId });
     const reloaded = await PendingConfirmation.findById(row._id);
     expect(reloaded?.status).toBe("cancelled");
     expect(reloaded?.resultText).toBe("changed my mind");

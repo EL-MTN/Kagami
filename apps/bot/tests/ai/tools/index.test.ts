@@ -15,11 +15,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const { mockConfig } = vi.hoisted(() => ({
-  mockConfig: {} as Record<string, unknown>,
+  mockConfig: {},
 }));
 
 vi.mock("@mashiro/shared", async (orig) => ({
-  ...((await orig()) as object),
+  ...((await orig())),
   config: mockConfig,
   logger: {
     info: vi.fn(),

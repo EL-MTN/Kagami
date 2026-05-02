@@ -2,7 +2,7 @@ import { withTestDb } from "@mashiro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@mashiro/shared", async (orig) => ({
-  ...((await orig()) as object),
+  ...((await orig())),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -79,11 +79,12 @@ describe("readMemory tool", () => {
       metadata: { createdAt, updatedAt: createdAt, importance: 7 },
     });
 
-    const result = await tool.execute({ memoryId: m.id as string });
+    const memoryId = String(m.id);
+    const result = await tool.execute({ memoryId });
 
     expect(result).toEqual({
       found: true,
-      id: m.id,
+      id: memoryId,
       type: "fact",
       content: "Eric prefers oat milk",
       createdAt,
@@ -141,7 +142,7 @@ describe("searchMemory tool", () => {
       score: 0.46,
       type: "fact",
     });
-    expect(results[1]!.score).toBe(1);
+    expect(results[1].score).toBe(1);
   });
 });
 
@@ -206,7 +207,7 @@ describe("listMemories tool", () => {
     const result = await tool.execute({ type: "episode", limit: 10 });
     const memories = result.memories as Array<Record<string, unknown>>;
     expect(memories).toHaveLength(1);
-    expect(memories[0]!.type).toBe("episode");
+    expect(memories[0].type).toBe("episode");
   });
 
   it("respects the limit", async () => {
@@ -230,15 +231,15 @@ describe("listMemories tool", () => {
     await seed("episode", "x", { createdAt, followUps: ["check tomorrow"] });
     const result = await tool.execute({ limit: 10 });
     const memories = result.memories as Array<Record<string, unknown>>;
-    expect(memories[0]!.date).toBe("2026-04-15");
-    expect(memories[0]!.hasFollowUps).toBe(true);
+    expect(memories[0].date).toBe("2026-04-15");
+    expect(memories[0].hasFollowUps).toBe(true);
   });
 
   it("truncates preview to 200 chars", async () => {
     await seed("fact", "x".repeat(300));
     const result = await tool.execute({ limit: 10 });
     const memories = result.memories as Array<Record<string, unknown>>;
-    expect((memories[0]!.preview as string).length).toBe(200);
+    expect((memories[0].preview as string).length).toBe(200);
   });
 });
 

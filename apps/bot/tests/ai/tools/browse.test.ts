@@ -2,7 +2,7 @@ import { fakeAdapter } from "@mashiro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@mashiro/shared", async (orig) => ({
-  ...((await orig()) as object),
+  ...((await orig())),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -76,7 +76,7 @@ describe("browse — readOnly", () => {
     sh.extract.mockResolvedValue([
       { title: "t1", url: "https://x", snippet: "s1" },
     ]);
-    mockAcquireBrowser.mockResolvedValue(sh as unknown as Awaited<ReturnType<typeof mockAcquireBrowser>>);
+    mockAcquireBrowser.mockResolvedValue(sh);
 
     const result = await tool.execute({ action: "search", query: "node testing" });
     expect(result.success).toBe(true);
@@ -86,7 +86,7 @@ describe("browse — readOnly", () => {
   });
 
   it("requires query for search", async () => {
-    mockAcquireBrowser.mockResolvedValue(fakeStagehand() as unknown as Awaited<ReturnType<typeof mockAcquireBrowser>>);
+    mockAcquireBrowser.mockResolvedValue(fakeStagehand());
     const result = await tool.execute({ action: "search" });
     expect(result).toEqual({ success: false, reason: "query is required for search" });
   });
@@ -94,7 +94,7 @@ describe("browse — readOnly", () => {
   it("visit normalizes a bare URL with https:// and truncates body to 4000 chars", async () => {
     const sh = fakeStagehand();
     sh.context.pages()[0].evaluate = vi.fn(() => Promise.resolve("a".repeat(5000)));
-    mockAcquireBrowser.mockResolvedValue(sh as unknown as Awaited<ReturnType<typeof mockAcquireBrowser>>);
+    mockAcquireBrowser.mockResolvedValue(sh);
 
     const result = await tool.execute({ action: "visit", url: "example.com" });
     expect(result.url).toBe("https://example.com");
@@ -119,7 +119,7 @@ describe("browse — readOnly", () => {
 describe("browse — full mode", () => {
   it("act delegates to stagehand.act and releases", async () => {
     const sh = fakeStagehand();
-    mockAcquireBrowser.mockResolvedValue(sh as unknown as Awaited<ReturnType<typeof mockAcquireBrowser>>);
+    mockAcquireBrowser.mockResolvedValue(sh);
     const adapter = fakeAdapter();
     const tool = createBrowseTool("chat-1", adapter) as unknown as ExecutableTool;
 
@@ -134,14 +134,14 @@ describe("browse — full mode", () => {
 
   it("screenshot sends the photo via the adapter", async () => {
     const sh = fakeStagehand();
-    mockAcquireBrowser.mockResolvedValue(sh as unknown as Awaited<ReturnType<typeof mockAcquireBrowser>>);
+    mockAcquireBrowser.mockResolvedValue(sh);
     const adapter = fakeAdapter();
     const tool = createBrowseTool("chat-1", adapter) as unknown as ExecutableTool;
 
     const result = await tool.execute({ action: "screenshot" });
     expect(result).toEqual({ success: true, sent: true });
     expect(adapter.calls.sendPhotoBuffer).toHaveLength(1);
-    expect(adapter.calls.sendPhotoBuffer[0]!.chatId).toBe("chat-1");
+    expect(adapter.calls.sendPhotoBuffer[0].chatId).toBe("chat-1");
   });
 
   it("agent runs the autonomous flow and truncates the result to 4000 chars", async () => {
@@ -150,7 +150,7 @@ describe("browse — full mode", () => {
     sh.agent = () => ({
       execute: vi.fn(() => Promise.resolve(longResult)),
     });
-    mockAcquireBrowser.mockResolvedValue(sh as unknown as Awaited<ReturnType<typeof mockAcquireBrowser>>);
+    mockAcquireBrowser.mockResolvedValue(sh);
     const tool = createBrowseTool(
       "chat-1",
       fakeAdapter(),
@@ -165,7 +165,7 @@ describe("browse — full mode", () => {
   it("login keeps the browser alive and returns waitingForUser:true", async () => {
     const sh = fakeStagehand();
     sh.context.pages()[0].evaluate = vi.fn(() => Promise.resolve("Login Page"));
-    mockAcquireBrowser.mockResolvedValue(sh as unknown as Awaited<ReturnType<typeof mockAcquireBrowser>>);
+    mockAcquireBrowser.mockResolvedValue(sh);
     const tool = createBrowseTool(
       "chat-1",
       fakeAdapter(),
@@ -182,7 +182,7 @@ describe("browse — full mode", () => {
   });
 
   it("each action requires its specific input", async () => {
-    mockAcquireBrowser.mockResolvedValue(fakeStagehand() as unknown as Awaited<ReturnType<typeof mockAcquireBrowser>>);
+    mockAcquireBrowser.mockResolvedValue(fakeStagehand());
     const tool = createBrowseTool(
       "chat-1",
       fakeAdapter(),

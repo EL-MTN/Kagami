@@ -2,7 +2,7 @@ import { fakeAdapter } from "@mashiro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@mashiro/shared", async (orig) => ({
-  ...((await orig()) as object),
+  ...((await orig())),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -51,7 +51,7 @@ describe("sendPhoto tool", () => {
 
     expect(result).toEqual({ sent: true, caption: undefined });
     expect(mockGenerateImage).toHaveBeenCalledTimes(1);
-    const args = mockGenerateImage.mock.calls[0]![0] as { aspectRatio: string; prompt: string };
+    const args = mockGenerateImage.mock.calls[0][0] as { aspectRatio: string; prompt: string };
     expect(args.aspectRatio).toBe("3:4");
     expect(args.prompt).toBe("selfie at a coffee shop");
     expect(adapter.calls.sendPhotoBuffer).toEqual([
@@ -70,9 +70,9 @@ describe("sendPhoto tool", () => {
       aspectRatio: "16:9",
     });
 
-    const args = mockGenerateImage.mock.calls[0]![0] as { aspectRatio: string };
+    const args = mockGenerateImage.mock.calls[0][0] as { aspectRatio: string };
     expect(args.aspectRatio).toBe("16:9");
-    expect(adapter.calls.sendPhotoBuffer[0]!.caption).toBe("afternoon walk");
+    expect(adapter.calls.sendPhotoBuffer[0].caption).toBe("afternoon walk");
   });
 
   it("returns sent:false when image generation fails — adapter is not invoked", async () => {
