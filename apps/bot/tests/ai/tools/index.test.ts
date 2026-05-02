@@ -14,9 +14,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * scenario's config.
  */
 
-const { mockConfig } = vi.hoisted(() => ({
-  mockConfig: {},
-}));
+const { mockConfig } = vi.hoisted(() => {
+  const mockConfig: Record<string, unknown> = {};
+  return { mockConfig };
+});
 
 vi.mock("@mashiro/shared", async (orig) => ({
   ...((await orig())),
