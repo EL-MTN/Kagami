@@ -12,6 +12,7 @@ import {
   type Fact,
 } from './facts.js';
 import { lemmatizeForBm25 } from './text.js';
+import { upsertEntitiesFromFacts } from './entities.js';
 
 // Mem0-faithful atomic-fact extraction. Uses the verbatim
 // ADDITIVE_EXTRACTION_PROMPT from mem0/configs/prompts.py (saved at
@@ -234,6 +235,14 @@ export async function consolidate(
 
     if (facts.length === 0) continue;
     await appendFacts(facts);
+    // Mem0 Phase 7: extract entities from each new fact and upsert into
+    // the per-vault entity store, linking memory_ids to entities for
+    // boost-at-retrieval.
+    try {
+      await upsertEntitiesFromFacts(facts);
+    } catch (err) {
+      console.error('[ingest] entity upsert failed:', (err as Error).message);
+    }
     for (const f of facts) {
       recentlyExtracted.push({
         id: f.id,

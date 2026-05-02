@@ -71,6 +71,30 @@ export function getEmbeddingModel() {
   return provider.textEmbeddingModel(name);
 }
 
+// Embedding helpers live in llm.ts (alongside the model factory) to
+// avoid a circular import between embeddings.ts and entities.ts.
+import { embed, embedMany } from 'ai';
+
+export async function embedQuestion(q: string): Promise<number[]> {
+  const { embedding } = await embed({
+    model: getEmbeddingModel(),
+    value: q,
+    abortSignal: AbortSignal.timeout(5_000),
+  });
+  return embedding;
+}
+
+export async function embedTexts(texts: string[]): Promise<number[][]> {
+  if (texts.length === 0) return [];
+  const { embeddings } = await embedMany({
+    model: getEmbeddingModel(),
+    values: texts,
+    maxParallelCalls: 8,
+    abortSignal: AbortSignal.timeout(15_000),
+  });
+  return embeddings;
+}
+
 export interface ObjectCallOptions<T extends z.ZodTypeAny> {
   stage: string;
   schema: T;

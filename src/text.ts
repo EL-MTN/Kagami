@@ -31,6 +31,14 @@ const _GENERIC_CAPS = new Set<string>([
   'examples', 'details', 'notes', 'instructions', 'guidelines',
   'recommendations', 'suggestions', 'overview', 'summary', 'conclusion',
   'introduction', 'pros', 'cons', 'advantages', 'disadvantages',
+  // Mem0's facts always lead with "User..." — drop it as an entity since
+  // it links to ~every memory and provides zero discriminative signal.
+  // Also bare month/day names that the answerer's prompt-level date
+  // arithmetic handles separately.
+  'user', 'assistant',
+  'january', 'february', 'march', 'april', 'may', 'june', 'july',
+  'august', 'september', 'october', 'november', 'december',
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
 ]);
 
 // Porter-lite: catches the common cases mem0's spaCy lemmatizer also

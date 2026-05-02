@@ -1,5 +1,5 @@
-import { embed, embedMany, cosineSimilarity } from 'ai';
-import { getEmbeddingModel } from './llm.js';
+import { cosineSimilarity } from 'ai';
+import { embedQuestion, embedTexts } from './llm.js';
 import { readFacts, type Fact } from './facts.js';
 import { Bm25Index } from './bm25.js';
 import {
@@ -8,32 +8,13 @@ import {
   normalizeBm25,
   scoreAndRank,
 } from './scoring.js';
-import { lemmatizeForBm25 } from './text.js';
+import { extractEntities, lemmatizeForBm25 } from './text.js';
+import { readEntities, type Entity } from './entities.js';
 
-// Embedding helpers used by the ingest pipeline (per-batch dedup-context
-// lookup against existing facts) and by query (top-K fact retrieval).
-
-export async function embedQuestion(q: string): Promise<number[]> {
-  const { embedding } = await embed({
-    model: getEmbeddingModel(),
-    value: q,
-    abortSignal: AbortSignal.timeout(5_000),
-  });
-  return embedding;
-}
-
-export async function embedTexts(
-  texts: string[],
-): Promise<number[][]> {
-  if (texts.length === 0) return [];
-  const { embeddings } = await embedMany({
-    model: getEmbeddingModel(),
-    values: texts,
-    maxParallelCalls: 8,
-    abortSignal: AbortSignal.timeout(15_000),
-  });
-  return embeddings;
-}
+// Re-export so callers (ingest, query) can import the embed helpers
+// from a single module. Implementations live in llm.ts to avoid a
+// circular dependency between embeddings.ts and entities.ts.
+export { embedQuestion, embedTexts };
 
 export interface RankedFact {
   id: string;
@@ -99,9 +80,10 @@ export const defaultFactRanker: FactRanker = async (question, k) => {
     bm25Scores.set(h.id, normalizeBm25(h.score, midpoint, steepness));
   }
 
-  // Step 6: entity boost — reserved for Phase 4b. Empty map until then.
-  const entityBoosts = new Map<string, number>();
-  void ENTITY_BOOST_WEIGHT; // referenced by score_and_rank's max_possible
+  // Step 6: entity boost — extract entities from query, embed each (max
+  // 8, deduped), search the per-vault entity store, boost linked
+  // memories. Mirrors mem0/memory/main.py:_compute_entity_boosts.
+  const entityBoosts = await computeEntityBoosts(question);
 
   // Step 7-8: combine + rank
   const ranked = scoreAndRank(
@@ -124,3 +106,60 @@ export const defaultFactRanker: FactRanker = async (question, k) => {
       createdAt: fact.created_at,
     }));
 };
+
+// Verbatim port of mem0/memory/main.py:_compute_entity_boosts.
+//
+//   For each query entity (max 8, deduped):
+//     1. Embed entity text
+//     2. Cosine-search the entity store
+//     3. For each match with sim >= 0.5, boost its linked_memory_ids by
+//          sim * ENTITY_BOOST_WEIGHT * (1 / (1 + 0.001 * (n_linked - 1)^2))
+//     4. Per-memory boost is the max across query entities.
+//
+// Returns Map<memory_id, boost in [0, ENTITY_BOOST_WEIGHT]>.
+const ENTITY_SIM_THRESHOLD = 0.5;
+const MAX_QUERY_ENTITIES = 8;
+
+async function computeEntityBoosts(question: string): Promise<Map<string, number>> {
+  const queryEntities = extractEntities(question);
+  if (queryEntities.length === 0) return new Map();
+
+  // Dedup by lower-cased text, take first MAX_QUERY_ENTITIES.
+  const seen = new Set<string>();
+  const dedup: string[] = [];
+  for (const e of queryEntities) {
+    const key = e.text.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    dedup.push(e.text);
+    if (dedup.length >= MAX_QUERY_ENTITIES) break;
+  }
+  if (dedup.length === 0) return new Map();
+
+  const store = await readEntities();
+  if (store.length === 0) return new Map();
+
+  let qEmbeddings: number[][];
+  try {
+    qEmbeddings = await embedTexts(dedup);
+  } catch (err) {
+    console.error(`[entities] query-entity embed failed: ${(err as Error).message}`);
+    return new Map();
+  }
+
+  const boosts = new Map<string, number>();
+  for (const qEmb of qEmbeddings) {
+    for (const ent of store as Entity[]) {
+      const sim = cosineSimilarity(qEmb, ent.embedding);
+      if (sim < ENTITY_SIM_THRESHOLD) continue;
+      const nLinked = Math.max(ent.linked_memory_ids.length, 1);
+      const memoryCountWeight = 1.0 / (1.0 + 0.001 * (nLinked - 1) ** 2);
+      const boost = sim * ENTITY_BOOST_WEIGHT * memoryCountWeight;
+      for (const mid of ent.linked_memory_ids) {
+        const cur = boosts.get(mid) ?? 0;
+        if (boost > cur) boosts.set(mid, boost);
+      }
+    }
+  }
+  return boosts;
+}
