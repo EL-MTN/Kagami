@@ -7,13 +7,6 @@ import { logger } from "@mashiro/shared";
 
 // ─── sendPhoto ───────────────────────────────────────────────────────────────
 
-const APPEARANCE_PREFIX =
-  "Generate a realistic smartphone photo of the same woman shown in the reference images. She has long blonde hair and amber eyes — match her face, hair color, and features exactly to the face/identity references. The photo must look like it was taken with a phone camera — natural lighting, slight depth of field, realistic perspective. No studio lighting, no artificial poses, no illustration style. CAMERA LOGIC: For selfies, one arm extends toward the camera (holding the phone that is taking the photo) — the phone itself is behind the camera and NOT visible in the frame. Only the extended arm/hand is seen, cropped at the edge. The other hand is free for posing or holding scene-relevant items. For mirror selfies, the phone is visible in the reflection only. For non-selfie shots, both hands are free. Never show a phone screen or a second phone anywhere in the image. ";
-
-function buildImagePrompt(description: string): string {
-  return APPEARANCE_PREFIX + "Scene: " + description;
-}
-
 export function createSendPhotoTool(chatId: string, adapter: PlatformAdapter) {
   return tool({
     description:
@@ -31,11 +24,9 @@ export function createSendPhotoTool(chatId: string, adapter: PlatformAdapter) {
         .describe("Photo aspect ratio, defaults to 3:4 portrait"),
     }),
     execute: async ({ description, caption, aspectRatio }) => {
-      const prompt = buildImagePrompt(description);
-
       try {
         const image = await generateImage({
-          prompt,
+          prompt: description,
           aspectRatio: aspectRatio || "3:4",
         });
 

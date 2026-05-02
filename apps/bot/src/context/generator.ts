@@ -21,10 +21,11 @@ interface RefImage {
   dataUri: string; // "data:image/jpeg;base64,..."
 }
 
-const faceRefs: RefImage[] = [];
-const bodyRefs: RefImage[] = [];
+let faceRefs: RefImage[] = [];
+let bodyRefs: RefImage[] = [];
 const outfitMap = new Map<string, RefImage>();
 const settingsMap = new Map<string, string>();
+let imagePrefix = "";
 
 async function loadDir(dirPath: string): Promise<RefImage[]> {
   let files: string[];
@@ -53,6 +54,8 @@ async function loadDir(dirPath: string): Promise<RefImage[]> {
 }
 
 async function loadSettings(): Promise<void> {
+  settingsMap.clear();
+
   const settingsDir = path.join(config.CONTEXT_PATH, "settings");
   let files: string[];
   try {
@@ -73,6 +76,16 @@ async function loadSettings(): Promise<void> {
   logger.info({ settings: settingsMap.size }, "Loaded settings");
 }
 
+async function loadImagePrefix(): Promise<void> {
+  const prefixPath = path.join(config.CONTEXT_PATH, "image-prefix.md");
+  try {
+    imagePrefix = (await fs.readFile(prefixPath, "utf-8")).trim();
+    logger.info({ length: imagePrefix.length }, "Loaded image prefix");
+  } catch {
+    imagePrefix = "";
+  }
+}
+
 export async function loadContext(): Promise<void> {
   const refDir = path.join(config.CONTEXT_PATH, "references");
 
@@ -82,8 +95,9 @@ export async function loadContext(): Promise<void> {
     loadDir(path.join(refDir, "outfits")),
   ]);
 
-  faceRefs.push(...face);
-  bodyRefs.push(...body);
+  faceRefs = face;
+  bodyRefs = body;
+  outfitMap.clear();
   for (const ref of outfits) {
     outfitMap.set(ref.filename, ref);
   }
@@ -93,32 +107,32 @@ export async function loadContext(): Promise<void> {
     "Loaded reference images",
   );
 
-  await loadSettings();
+  await Promise.all([loadSettings(), loadImagePrefix()]);
 }
 
-interface OutfitSelection {
-  filename: string;
-  dataUri: string;
-}
+async function selectReference(
+  category: string,
+  refs: RefImage[],
+  sceneDescription: string,
+  guidance: string,
+): Promise<RefImage | null> {
+  if (refs.length === 0) return null;
 
-async function selectOutfit(sceneDescription: string): Promise<OutfitSelection | null> {
-  if (outfitMap.size === 0) return null;
-
-  const filenames = [...outfitMap.keys()];
+  const filenames = refs.map((r) => r.filename);
 
   try {
     const { text, usage } = await generateText({
       model: getModel(ModelTier.Fast),
       temperature: 0,
       abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
-      prompt: `You are selecting an outfit reference image for AI image generation.
+      prompt: `You are selecting a ${category} reference image for AI image generation.
 
 Scene to generate: "${sceneDescription}"
 
-Available outfits:
+Available ${category} references:
 ${filenames.join("\n")}
 
-Pick the single most appropriate outfit for this scene, or "none" if none of the outfits fit the scenario.
+${guidance} Say "none" if none of the references fit the scenario.
 Return ONLY the filename or "none", nothing else.`,
     });
 
@@ -133,108 +147,16 @@ Return ONLY the filename or "none", nothing else.`,
 
     if (!original) {
       logger.warn(
-        { picked, available: filenames },
-        "Outfit selection returned unknown filename — skipping",
+        { category, picked, available: filenames },
+        "Reference selection returned unknown filename — skipping",
       );
       return null;
     }
 
-    logger.info({ selected: original, total: outfitMap.size }, "Selected outfit for scene");
-    return { filename: original, dataUri: outfitMap.get(original)!.dataUri };
+    logger.info({ category, selected: original, total: refs.length }, "Selected reference");
+    return refs.find((r) => r.filename === original)!;
   } catch (error) {
-    logger.warn({ error }, "Outfit selection failed — skipping");
-    return null;
-  }
-}
-
-async function selectFaceRef(sceneDescription: string): Promise<RefImage | null> {
-  if (faceRefs.length === 0) return null;
-
-  const filenames = faceRefs.map((r) => r.filename);
-
-  try {
-    const { text, usage } = await generateText({
-      model: getModel(ModelTier.Fast),
-      temperature: 0,
-      abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
-      prompt: `You are selecting a face reference image for AI image generation.
-
-Scene to generate: "${sceneDescription}"
-
-Available face references:
-${filenames.join("\n")}
-
-Pick the single most appropriate face reference for this scene — consider expression (smiling vs neutral), angle, and mood. Say "none" if none of the references fit the scenario.
-Return ONLY the filename or "none", nothing else.`,
-    });
-
-    trackUsage("image-selection", getModelName(ModelTier.Fast), usage);
-
-    const picked = text.trim().toLowerCase();
-
-    if (picked === "none") return null;
-
-    const filenameMap = new Map(filenames.map((f) => [f.toLowerCase(), f]));
-    const original = filenameMap.get(picked);
-
-    if (!original) {
-      logger.warn(
-        { picked, available: filenames },
-        "Face ref selection returned unknown filename — skipping",
-      );
-      return null;
-    }
-
-    logger.info({ selected: original, total: faceRefs.length }, "Selected face ref for scene");
-    return faceRefs.find((r) => r.filename === original)!;
-  } catch (error) {
-    logger.warn({ error }, "Face ref selection failed — skipping");
-    return null;
-  }
-}
-
-async function selectBodyRef(sceneDescription: string): Promise<RefImage | null> {
-  if (bodyRefs.length === 0) return null;
-
-  const filenames = bodyRefs.map((r) => r.filename);
-
-  try {
-    const { text, usage } = await generateText({
-      model: getModel(ModelTier.Fast),
-      temperature: 0,
-      abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
-      prompt: `You are selecting a body reference image for AI image generation.
-
-Scene to generate: "${sceneDescription}"
-
-Available body references:
-${filenames.join("\n")}
-
-Pick the single most appropriate body reference for this scene — consider pose, framing, and body language. Say "none" if none of the references fit the scenario.
-Return ONLY the filename or "none", nothing else.`,
-    });
-
-    trackUsage("image-selection", getModelName(ModelTier.Fast), usage);
-
-    const picked = text.trim().toLowerCase();
-
-    if (picked === "none") return null;
-
-    const filenameMap = new Map(filenames.map((f) => [f.toLowerCase(), f]));
-    const original = filenameMap.get(picked);
-
-    if (!original) {
-      logger.warn(
-        { picked, available: filenames },
-        "Body ref selection returned unknown filename — skipping",
-      );
-      return null;
-    }
-
-    logger.info({ selected: original, total: bodyRefs.length }, "Selected body ref for scene");
-    return bodyRefs.find((r) => r.filename === original)!;
-  } catch (error) {
-    logger.warn({ error }, "Body ref selection failed — skipping");
+    logger.warn({ category, error }, "Reference selection failed — skipping");
     return null;
   }
 }
@@ -318,11 +240,25 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
       refImages.push(await readFileAsBase64(p));
     }
   } else {
-    // Select face, body, and outfit refs in parallel (all use LLM selection)
     const [face, body, outfit] = await Promise.all([
-      selectFaceRef(request.prompt),
-      selectBodyRef(request.prompt),
-      selectOutfit(request.prompt),
+      selectReference(
+        "face",
+        faceRefs,
+        request.prompt,
+        "Pick the single most appropriate face reference for this scene — consider expression (smiling vs neutral), angle, and mood.",
+      ),
+      selectReference(
+        "body",
+        bodyRefs,
+        request.prompt,
+        "Pick the single most appropriate body reference for this scene — consider pose, framing, and body language.",
+      ),
+      selectReference(
+        "outfit",
+        [...outfitMap.values()],
+        request.prompt,
+        "Pick the single most appropriate outfit for this scene.",
+      ),
     ]);
 
     if (face) {
@@ -345,8 +281,14 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Ge
     }
   }
 
-  const instructions = [outfitInstruction, settingInstruction].filter(Boolean).join("\n\n");
-  const fullPrompt = instructions ? `${request.prompt}\n\n${instructions}` : request.prompt;
+  const fullPrompt = [
+    imagePrefix,
+    `Scene: ${request.prompt}`,
+    outfitInstruction,
+    settingInstruction,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   logger.info(
     {

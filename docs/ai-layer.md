@@ -152,7 +152,7 @@ Two distinct tool sets are assembled depending on the calling context:
 - **Purpose**: Generate and send an AI photo/selfie
 - **Parameters**: `{ description: string, caption?: string, aspectRatio?: "1:1" | "3:4" | "4:3" | "9:16" | "16:9" }`
 - **Returns**: `{ sent: true, caption } | { sent: false, reason }`
-- **Behavior**: Builds prompt with appearance prefix, calls image generation, sends via adapter. On failure, the provider's error message is returned in `reason` so the LLM can explain what went wrong to the user.
+- **Behavior**: Forwards the description to `generateImage`, which assembles the full prompt (appearance prefix from `context/image-prefix.md`, scene, outfit/setting instructions) and sends via adapter. On failure, the provider's error message is returned in `reason` so the LLM can explain what went wrong to the user.
 
 ### sendVoice (conditional — requires TTS_PROVIDER)
 
@@ -302,15 +302,15 @@ Loaded from `context/settings/` — plain-text `.md` files describing locations 
 ```
 sendPhoto tool invoked with description
     │
-    ├─ 1. Build prompt with APPEARANCE_PREFIX
-    │      (realistic phone photo, match face/hair/features from references)
-    │
-    ├─ 2. Select references (all via LLM, in parallel):
+    ├─ 1. Select references (all via the generic selectReference helper, in parallel):
     │      ├─ Face reference (LLM picks best expression/angle)
     │      ├─ Body reference (LLM picks best pose/framing)
     │      └─ Outfit (LLM picks best match from available options)
     │
-    ├─ 3. LLM selects setting/location if relevant
+    ├─ 2. LLM selects setting/location if relevant
+    │
+    ├─ 3. Assemble prompt: imagePrefix (loaded from context/image-prefix.md)
+    │      + "Scene: <description>" + outfit/setting instructions
     │
     ├─ 4. AI SDK generateImage():
     │      ├─ Model: getImageModel() (from IMAGE_GENERATION_MODEL env)
