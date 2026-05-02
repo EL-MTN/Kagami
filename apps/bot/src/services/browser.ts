@@ -5,25 +5,72 @@ import { resolve } from "node:path";
 
 const isCloud = config.BROWSER_ENV === "cloud";
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_ACTION_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes — circuit breaker, not an SLO
+
+export interface BrowserLockOptions {
+  /** Wall-clock cap for the inner fn. Defaults to 2 minutes; agent flows pass longer. */
+  timeoutMs?: number;
+  /** Label included in the timeout error message for log triage. */
+  label?: string;
+}
 
 let instance: Stagehand | null = null;
 let initPromise: Promise<Stagehand> | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 let lockChain: Promise<void> = Promise.resolve();
 
+function raceWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string | undefined,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const tag = label ? ` (${label})` : "";
+      reject(new Error(`Browser action timed out after ${timeoutMs}ms${tag}`));
+    }, timeoutMs);
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 /**
  * Serialize access to the browser. Parallel tool calls from the same LLM step
  * share one page — concurrent goto() calls cancel each other. This lock ensures
  * only one browse action navigates at a time.
+ *
+ * `timeoutMs` is a wall-clock circuit breaker so a wedged page can't pin the
+ * lock indefinitely. When the timeout fires we tear the browser down here —
+ * the inner fn() is still running but unobservable, so its own catch can't
+ * reset the singleton. The next caller acquires a fresh instance.
  */
-export function withBrowserLock<T>(fn: () => Promise<T>): Promise<T> {
+export function withBrowserLock<T>(
+  fn: () => Promise<T>,
+  options: BrowserLockOptions = {},
+): Promise<T> {
+  const { timeoutMs = DEFAULT_ACTION_TIMEOUT_MS, label } = options;
   let release: () => void;
   const next = new Promise<void>((r) => {
     release = r;
   });
   const prev = lockChain;
   lockChain = next;
-  return prev.then(fn).finally(() => release!());
+  return prev
+    .then(() => raceWithTimeout(fn(), timeoutMs, label))
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("timed out")) {
+        // Synchronous part of shutdownBrowser nulls `instance` immediately so
+        // the next acquireBrowser re-inits; the async close fires in the
+        // background to actually release the wedged Chromium process.
+        void shutdownBrowser();
+      }
+      throw error;
+    })
+    .finally(() => release!());
 }
 
 // --- Directory helpers ---

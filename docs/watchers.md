@@ -77,7 +77,8 @@ Suppression preserves observation accuracy (`lastState` still rolls forward) whi
 
 `watcherTools(ctx)` exposes:
 
-- `browse` — read-only variant (`createReadOnlyBrowseTool()`); only `search`/`visit`/`extract` are permitted (no `screenshot`, `act`, `agent`, `login`)
+- `webSearch` — gated on `BRAVE_SEARCH_API_KEY`; Brave-backed lookups return titles/URLs/snippets without spinning the browser. When the API tool is registered, the read-only `browse` tool drops its `search` action so lookups land here.
+- `browse` — read-only variant (`createReadOnlyBrowseTool()`); only `search`/`visit`/`extract` are permitted (no `screenshot`, `act`, `agent`, `login`). The `search` action falls back to a DuckDuckGo HTML scrape via Stagehand when `BRAVE_SEARCH_API_KEY` is unset.
 - `searchMemory`, `readMemory`, `listMemories`
 - `checkEmail` (gated on `GOOGLE_OAUTH_CLIENT_ID`)
 - `listCalendarEvents` — `createManageCalendarTool({ mode: "readOnly" })` returns a list-only tool

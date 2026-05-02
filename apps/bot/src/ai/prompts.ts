@@ -62,11 +62,16 @@ hey what are you up to
 i was just thinking about you
 `;
 
+export const WEB_SEARCH_INSTRUCTIONS = `
+## Web Search
+For quick factual lookups, use \`webSearch\` — it's a single API call with no browser, fast and cheap. Reach for \`browse\` only when you actually need to visit a page (read full content, interact, log in, take a screenshot, run an autonomous agent).
+`;
+
 export const BROWSER_INSTRUCTIONS = `
 ## Web Browsing
-For quick lookups: search → visit → extract. For complex multi-step tasks, use the agent action with a clear goal.
+For visiting and extracting from pages: visit → extract. For complex multi-step tasks, use the agent action with a clear goal.
 The browser has a persistent profile — cookies and logins survive across sessions. To log into a new site, use the login action and wait for Goshujin-sama to enter credentials manually.
-Only take screenshots when explicitly asked. For simple questions, search is usually enough.
+Only take screenshots when explicitly asked.
 `;
 
 export const ROUTINE_BEHAVIOR_INSTRUCTIONS = `

@@ -37,6 +37,8 @@ const baseSchema = z.object({
   STT_BASE_URL: z.string().optional(),
   STT_API_KEY: z.string().optional(),
 
+  BRAVE_SEARCH_API_KEY: z.string().optional(),
+
   BROWSER_ENABLED: z
     .string()
     .default("false")

@@ -130,38 +130,47 @@ export async function dispatchGatedAction(tool: string, rawArgs: unknown): Promi
       case "browseAgent": {
         const args = parsed.data as z.infer<typeof browseAgentArgs>;
         logger.info({ goal: args.goal.slice(0, 80) }, "Dispatching approved browseAgent");
-        return await withBrowserLock(async () => {
-          let acquired = false;
-          let resetDone = false;
-          try {
-            const stagehand = await acquireBrowser();
-            acquired = true;
-            const agent = stagehand.agent();
-            const result = await agent.execute({ instruction: args.goal, maxSteps: 25 });
-            const text = typeof result === "string" ? result : JSON.stringify(result);
-            return {
-              success: true,
-              summary: `agent finished: ${text.slice(0, 200)}`,
-              detail: { result: text.slice(0, 4000) },
-            };
-          } catch (error) {
-            const message = error instanceof Error ? error.message : "browser agent failed";
-            if (message.includes("Target closed") || message.includes("Browser closed")) {
-              resetBrowser();
-              resetDone = true;
+        return await withBrowserLock(
+          async () => {
+            let acquired = false;
+            let resetDone = false;
+            try {
+              const stagehand = await acquireBrowser();
+              acquired = true;
+              const agent = stagehand.agent();
+              const result = await agent.execute({ instruction: args.goal, maxSteps: 25 });
+              const text = typeof result === "string" ? result : JSON.stringify(result);
+              return {
+                success: true,
+                summary: `agent finished: ${text.slice(0, 200)}`,
+                detail: { result: text.slice(0, 4000) },
+              };
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "browser agent failed";
+              if (
+                message.includes("Target closed") ||
+                message.includes("Browser closed") ||
+                message.includes("timed out")
+              ) {
+                resetBrowser();
+                resetDone = true;
+              }
+              throw error;
+            } finally {
+              // releaseBrowser arms the 5-minute idle-shutdown timer. Only
+              // call it when we actually have a live instance to release —
+              // otherwise we'd schedule a shutdown that resets `lockChain`
+              // for nothing, potentially orphaning queued callers. Skip
+              // also when resetBrowser already tore the singleton down.
+              if (acquired && !resetDone) {
+                releaseBrowser();
+              }
             }
-            throw error;
-          } finally {
-            // releaseBrowser arms the 5-minute idle-shutdown timer. Only
-            // call it when we actually have a live instance to release —
-            // otherwise we'd schedule a shutdown that resets `lockChain`
-            // for nothing, potentially orphaning queued callers. Skip
-            // also when resetBrowser already tore the singleton down.
-            if (acquired && !resetDone) {
-              releaseBrowser();
-            }
-          }
-        });
+          },
+          // Autonomous 25-step runs can legitimately take many minutes;
+          // override the default 2-min circuit breaker.
+          { timeoutMs: 10 * 60 * 1000, label: "browseAgent" },
+        );
       }
     }
   } catch (error) {

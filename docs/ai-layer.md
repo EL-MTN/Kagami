@@ -54,9 +54,10 @@ assembleSystemPrompt(chatId, sessionId?)
     ├─ 10. Datetime context      ← current time + time-of-day label
     ├─ 11. Tool behavior guidelines← compact behavioral rules in prompts.ts (tool schemas are self-describing)
     ├─ 12. Maid service instructions← conditional on Google OAuth config (prompts.ts, condensed)
-    ├─ 13. Browser instructions   ← conditional on BROWSER_ENABLED (prompts.ts, condensed)
-    ├─ 14. Response format        ← message style rules in prompts.ts
-    └─ 15. Active reminders       ← pending + recently fired (proactive only)
+    ├─ 13. Web search instructions← conditional on BRAVE_SEARCH_API_KEY (prompts.ts, condensed)
+    ├─ 14. Browser instructions   ← conditional on BROWSER_ENABLED (prompts.ts, condensed)
+    ├─ 15. Response format        ← message style rules in prompts.ts
+    └─ 16. Active reminders       ← pending + recently fired (proactive only)
 
     All parts joined with "---" separator
 ```
@@ -95,9 +96,9 @@ interface ToolContext {
   routineDepth?: number; // Current routine nesting depth (0 = top-level)
 }
 
-allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, browse?, manageRoutines, searchRoutines, useRoutine?, manageWatchers }
+allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, webSearch?, browse?, manageRoutines, searchRoutines, useRoutine?, manageWatchers }
 
-watcherTools(ctx) → { readMemory, searchMemory, listMemories, reportWatcherResult, checkEmail?, listCalendarEvents?, browse? (read-only) }
+watcherTools(ctx) → { readMemory, searchMemory, listMemories, reportWatcherResult, checkEmail?, listCalendarEvents?, webSearch?, browse? (read-only) }
 ```
 
 Two distinct tool sets are assembled depending on the calling context:
@@ -203,22 +204,29 @@ Two distinct tool sets are assembled depending on the calling context:
 - **Returns**: `{ success, reminderId? }` or `{ success, reminders? }` or `{ success: false, reason }`
 - **Behavior**: Creates, lists, or deletes reminders. The LLM composes the reminder message at creation time — it's sent as-is when fired by the reminder scheduler.
 
+### webSearch (conditional — requires BRAVE_SEARCH_API_KEY)
+
+- **Purpose**: Quick factual web lookups via the Brave Search API — no browser, no lock, no LLM extraction
+- **Parameters**: `{ query: string, count?: number (1–10, default 5) }`
+- **Returns**: `{ success: true, query, results: [{ title, url, snippet }] }` or `{ success: false, reason }`
+- **Behavior**: Single HTTP call to `https://api.search.brave.com/res/v1/web/search` with `X-Subscription-Token`. Maps Brave's `{title, url, description}` to the project's snippet shape and strips inline `<strong>` highlight tags. 10s request timeout via AbortController. 401/429/5xx surface as a clean `reason` string the LLM can react to. Service in `apps/bot/src/services/web-search.ts`, tool in `apps/bot/src/ai/tools/web-search.ts`. Available to both `allTools` and `watcherTools` — gives memory-only watchers a cheap external-observation capability without the browser.
+
 ### browse (conditional — requires BROWSER_ENABLED=true)
 
-- **Purpose**: Browse the web — search, visit pages, extract data, interact with elements, take screenshots, or complete multi-step autonomous tasks
-- **Parameters**: `{ action: "search"|"visit"|"extract"|"act"|"screenshot"|"agent", query?, url?, instruction?, goal? }`
+- **Purpose**: Browse the web — visit pages, extract data, interact with elements, take screenshots, or complete multi-step autonomous tasks. When `BRAVE_SEARCH_API_KEY` is also set, the `search` action is dropped from the action enum so the LLM uses `webSearch` for lookups instead.
+- **Parameters**: `{ action: "search"?|"visit"|"extract"|"act"|"screenshot"|"agent"|"login", query?, url?, instruction?, goal? }`
 - **Returns**: Varies by action. Always includes `{ success: boolean }`.
-- **Behavior**: Uses Stagehand (LLM-driven browser automation on accessibility tree). Supports two environments controlled by `BROWSER_ENV`: `local` runs a singleton Chromium instance with a persistent user profile, `cloud` delegates to Browserbase (requires `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID`). Lazy-initialized on first call, auto-shuts down after 5 minutes idle.
+- **Behavior**: Uses Stagehand (LLM-driven browser automation on accessibility tree). Supports two environments controlled by `BROWSER_ENV`: `local` runs a singleton Chromium instance with a persistent user profile, `cloud` delegates to Browserbase (requires `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID`). Lazy-initialized on first call, auto-shuts down after 5 minutes idle. Every action is wrapped in `withBrowserLock` with a wall-clock timeout (2 min default, 10 min for `agent`); on timeout the singleton is reset so the next call re-inits.
 
-| Action       | Required param | What it does                                                 | Stagehand method                            |
-| ------------ | -------------- | ------------------------------------------------------------ | ------------------------------------------- |
-| `search`     | `query`        | DuckDuckGo search → structured results (title, URL, snippet) | `page.goto()` + `extract()` with Zod schema |
-| `visit`      | `url`          | Navigate + extract readable text (truncated 4000 chars)      | `page.goto()` + `extract()` raw pageText    |
-| `extract`    | `instruction`  | Structured extraction from current page                      | `stagehand.extract(instruction)`            |
-| `act`        | `instruction`  | Interact with page (click, type, scroll)                     | `stagehand.act(instruction)`                |
-| `screenshot` | —              | Capture page → send as photo                                 | `page.screenshot()`                         |
-| `agent`      | `goal`         | Autonomous multi-step task (up to 25 steps)                  | `stagehand.agent().execute()`               |
-| `login`      | `url`          | Opens login page for manual credential entry                 | `page.goto()` (no browser release)          |
+| Action       | Required param | What it does                                                                                | Stagehand method                            |
+| ------------ | -------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `search`     | `query`        | DuckDuckGo search → structured results (fallback only when `BRAVE_SEARCH_API_KEY` is unset) | `page.goto()` + `extract()` with Zod schema |
+| `visit`      | `url`          | Navigate + extract readable text (truncated 4000 chars)                                     | `page.goto()` + `page.evaluate(innerText)`  |
+| `extract`    | `instruction`  | Structured extraction from current page                                                     | `stagehand.extract(instruction)`            |
+| `act`        | `instruction`  | Interact with page (click, type, scroll)                                                    | `stagehand.act(instruction)`                |
+| `screenshot` | —              | Capture page → send as photo                                                                | `page.screenshot()`                         |
+| `agent`      | `goal`         | Autonomous multi-step task (up to 25 steps)                                                 | `stagehand.agent().execute()`               |
+| `login`      | `url`          | Opens login page for manual credential entry                                                | `page.goto()` (no browser release)          |
 
 **Architecture**: Two independent LLM streams — Mashiro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_ENV` (`local`/`cloud`), `BROWSER_DATA_DIR`, `BROWSER_HEADLESS`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
 
