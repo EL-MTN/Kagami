@@ -107,7 +107,7 @@ const sessionId = path
 
 await fs.promises.mkdir(paths.raw, { recursive: true });
 
-const totals = { candidates: 0, appended: 0, created: 0, duplicated: 0 };
+const totals = { added: 0, batches: 0 };
 const chunkCount = Math.ceil(all.length / args.chunkSize);
 
 for (let i = 0; i < all.length; i += args.chunkSize) {
@@ -125,10 +125,8 @@ for (let i = 0; i < all.length; i += args.chunkSize) {
   const r = await consolidate(file);
   const ms = ((Date.now() - t0) / 1000).toFixed(1);
   console.log(`  ${ms}s, ${JSON.stringify(r)}`);
-  totals.candidates += r.candidates;
-  totals.appended += r.appended;
-  totals.created += r.created;
-  totals.duplicated += r.duplicated;
+  totals.added += r.added;
+  totals.batches += r.batches;
 }
 
 console.log('TOTAL:', JSON.stringify(totals));
