@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { paths } from './paths.js';
 import { consolidate } from './ingest.js';
 import { query } from './query.js';
-import { readFacts } from './facts.js';
+import { readFacts } from './storage/facts.js';
 
 function ok(text: string) {
   return { content: [{ type: 'text' as const, text }] };

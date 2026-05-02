@@ -1,16 +1,16 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { paths } from './paths.js';
-import { embedTexts } from './embeddings.js';
-import { extractEntities } from './text.js';
+import { paths } from '../paths.js';
+import { embedTexts } from '../llm.js';
+import { extractEntities } from '../retrieval/text.js';
 import type { Fact } from './facts.js';
 
-// Per-vault entity store, mirroring mem0's entity_store collection.
-// Each row: an entity text + embedding + the set of memory_ids that
-// mention it. At query time, query entities are embedded and matched
-// against this store; matches with sim >= 0.5 boost their linked
-// memories via score_and_rank's entity_boost channel.
+// Per-vault entity store. Each row: an entity text + embedding + the
+// set of fact ids that mention it. At query time, query entities are
+// embedded and matched against this store; matches with similarity
+// >= 0.5 contribute an additive boost to the score of their linked
+// facts via the hybrid scoring layer.
 
 export interface Entity {
   id: string;
@@ -43,7 +43,7 @@ export async function writeEntities(entities: Entity[]): Promise<void> {
 // For each fact, extract entities and either link the fact_id to an
 // existing entity (case-insensitive text match) or create a new one.
 // Embeds new entities in a single batched call to amortize the API
-// round-trip. Mirrors mem0/memory/main.py:Phase 7 entity linking.
+// round-trip.
 export async function upsertEntitiesFromFacts(
   facts: Fact[],
 ): Promise<{ created: number; linked: number }> {

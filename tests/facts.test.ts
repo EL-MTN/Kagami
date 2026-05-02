@@ -16,12 +16,12 @@ after(async () => {
 });
 
 test('readFacts returns empty array when file missing', async () => {
-  const { readFacts } = await import('../src/facts.ts');
+  const { readFacts } = await import('../src/storage/facts.ts');
   assert.deepEqual(await readFacts(), []);
 });
 
 test('appendFacts then readFacts roundtrips', async () => {
-  const { appendFacts, readFacts, newFactId } = await import('../src/facts.ts');
+  const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
   const a = {
     id: newFactId(),
     text: 'User likes coffee',
@@ -52,7 +52,7 @@ test('appendFacts then readFacts roundtrips', async () => {
 });
 
 test('rewriteFacts replaces all facts', async () => {
-  const { rewriteFacts, readFacts, newFactId } = await import('../src/facts.ts');
+  const { rewriteFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
   const c = {
     id: newFactId(),
     text: 'Updated fact',
@@ -70,7 +70,7 @@ test('rewriteFacts replaces all facts', async () => {
 });
 
 test('newFactId returns unique uuid-shaped strings', async () => {
-  const { newFactId } = await import('../src/facts.ts');
+  const { newFactId } = await import('../src/storage/facts.ts');
   const ids = new Set([newFactId(), newFactId(), newFactId()]);
   assert.equal(ids.size, 3);
   for (const id of ids) {
@@ -78,7 +78,7 @@ test('newFactId returns unique uuid-shaped strings', async () => {
   }
 });
 
-test('buildExtractionUserPrompt assembles all sections in mem0 order', async () => {
+test('buildExtractionUserPrompt assembles all required sections in order', async () => {
   const { buildExtractionUserPrompt } = await import('../src/ingest.ts');
   const prompt = buildExtractionUserPrompt({
     newMessages: [{ role: 'user', content: 'hi' }],

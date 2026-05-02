@@ -1,5 +1,5 @@
 // Convert a Claude Code session into N-turn chunks and run consolidate on each.
-// Mem0-style md5 dedup at ingest collapses byte-identical text duplicates
+// md5 hash dedup at ingest collapses byte-identical text duplicates
 // across chunks automatically.
 //
 // Usage:

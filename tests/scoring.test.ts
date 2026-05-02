@@ -5,9 +5,9 @@ import {
   getBm25Params,
   normalizeBm25,
   scoreAndRank,
-} from '../src/scoring.ts';
-import { lemmatizeForBm25, extractEntities } from '../src/text.ts';
-import { Bm25Index } from '../src/bm25.ts';
+} from '../src/retrieval/scoring.ts';
+import { lemmatizeForBm25, extractEntities } from '../src/retrieval/text.ts';
+import { Bm25Index } from '../src/retrieval/bm25.ts';
 
 test('lemmatizeForBm25 lowercases, drops stopwords, stems suffixes', () => {
   const out = lemmatizeForBm25('I was meeting with Alex about the meetings');
@@ -113,6 +113,6 @@ test('scoreAndRank divisor adapts to active signals', () => {
   assert.ok(Math.abs(r1[0]!.score - 0.5) < 1e-9);
 });
 
-test('ENTITY_BOOST_WEIGHT matches mem0 default', () => {
+test('ENTITY_BOOST_WEIGHT is 0.5', () => {
   assert.equal(ENTITY_BOOST_WEIGHT, 0.5);
 });

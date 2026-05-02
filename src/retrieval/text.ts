@@ -1,19 +1,16 @@
-// Text utilities for hybrid retrieval. Adapted from mem0's spaCy-based
-// pipeline to pure TypeScript — same algorithm shape, lossier on edge
-// cases (no POS tagging, no NER) but faithful enough for BM25 keyword
-// matching and entity-boost on our scale.
+// Text utilities for Brainiac's hybrid retrieval layer.
 //
-// Lemmatization mirrors mem0/utils/lemmatization.py:
-//   - lowercase + strip punctuation/stopwords
-//   - reduce common suffixes (Porter-lite)
-//   - preserve original -ing variant alongside the stem (mem0's trick
-//     for noun/verb ambiguity: "meeting" the noun vs "meet" the verb)
+// lemmatizeForBm25 collapses surface variation so BM25 keyword matching
+// catches "attending" / "attended" / "attends" as the same term:
+//   - lowercase + strip punctuation and stopwords
+//   - Porter-lite suffix reduction (plurals, -ing, -ed, -ly)
+//   - preserve the original -ing form alongside the stem so noun uses
+//     ("meeting" the noun) still match document occurrences
 //
-// Entity extraction mirrors mem0/utils/entity_extraction.py for the two
-// shapes that survive without spaCy:
+// extractEntities pulls two cheap-to-detect entity shapes used by the
+// entity-boost ranker:
 //   - PROPER:  sequences of capitalized words
 //   - QUOTED:  text inside single or double quotes
-// COMPOUND and NOUN entity types require spaCy POS tagging — skipped.
 
 const STOPWORDS = new Set<string>([
   'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'but', 'by', 'do',
@@ -31,19 +28,19 @@ const _GENERIC_CAPS = new Set<string>([
   'examples', 'details', 'notes', 'instructions', 'guidelines',
   'recommendations', 'suggestions', 'overview', 'summary', 'conclusion',
   'introduction', 'pros', 'cons', 'advantages', 'disadvantages',
-  // Mem0's facts always lead with "User..." — drop it as an entity since
-  // it links to ~every memory and provides zero discriminative signal.
-  // Also bare month/day names that the answerer's prompt-level date
-  // arithmetic handles separately.
+  // The extraction prompt always leads facts with "User..." — drop it
+  // as an entity since it would link to ~every memory and provide zero
+  // discriminative signal. Bare month/day names go too; the answerer's
+  // prompt-level date arithmetic handles them separately.
   'user', 'assistant',
   'january', 'february', 'march', 'april', 'may', 'june', 'july',
   'august', 'september', 'october', 'november', 'december',
   'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
 ]);
 
-// Porter-lite: catches the common cases mem0's spaCy lemmatizer also
-// reduces (plurals, -ing, -ed, -ly). Lossier on irregular forms but
-// fine for keyword matching at our scale.
+// Porter-lite: collapses the common English suffixes that BM25 keyword
+// matching cares about (plurals, -ing, -ed, -ly). Lossier than a
+// proper Porter stemmer on irregular forms; fine for keyword matching.
 function stem(word: string): string {
   if (word.length < 4) return word;
   if (word.endsWith('sses')) return word.slice(0, -2);            // classes → class
@@ -65,8 +62,8 @@ export function lemmatizeForBm25(text: string): string {
     if (STOPWORDS.has(tok)) continue;
     const stemmed = stem(tok);
     if (stemmed.length > 0) tokens.push(stemmed);
-    // mem0's "-ing variant" trick: keep the original -ing form so noun
-    // uses ("meeting") still match document occurrences.
+    // Keep the original -ing form alongside the stem so noun uses
+    // ("meeting") still match document occurrences without POS tagging.
     if (tok.endsWith('ing') && tok !== stemmed && tok.length > 4) {
       tokens.push(tok);
     }

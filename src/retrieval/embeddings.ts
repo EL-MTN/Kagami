@@ -1,6 +1,6 @@
 import { cosineSimilarity } from 'ai';
-import { embedQuestion, embedTexts } from './llm.js';
-import { readFacts, type Fact } from './facts.js';
+import { embedQuestion, embedTexts } from '../llm.js';
+import { readFacts, type Fact } from '../storage/facts.js';
 import { Bm25Index } from './bm25.js';
 import {
   ENTITY_BOOST_WEIGHT,
@@ -9,7 +9,7 @@ import {
   scoreAndRank,
 } from './scoring.js';
 import { extractEntities, lemmatizeForBm25 } from './text.js';
-import { readEntities, type Entity } from './entities.js';
+import { readEntities, type Entity } from '../storage/entities.js';
 
 // Re-export so callers (ingest, query) can import the embed helpers
 // from a single module. Implementations live in llm.ts to avoid a
@@ -29,12 +29,12 @@ export type FactRanker = (
   k: number,
 ) => Promise<RankedFact[]>;
 
-// Hybrid retrieval, port of mem0/memory/main.py:_search_vector_store.
+// Brainiac's hybrid fact retrieval. Three signals fused into one rank:
 //
-//   semantic search → top max(k*4, 60) by cosine
-//   BM25 search     → over lemmatized fact text
-//   entity boost    → reserved for the entity-store layer (Phase 4b)
-//   score_and_rank  → fuse via mem0's additive scoring, return top-K
+//   semantic search → top max(k*4, 60) by cosine over fact embeddings
+//   BM25 search     → keyword matches over lemmatized fact text
+//   entity boost    → query entities matched against the entity store
+//   scoreAndRank    → additive fusion, return top-K
 //
 // Lemmatization is computed lazily for facts that predate the hybrid
 // layer (text_lemmatized field is optional on Fact).
@@ -50,7 +50,8 @@ export const defaultFactRanker: FactRanker = async (question, k) => {
   // Step 2: embed query
   const qEmb = await embedQuestion(question);
 
-  // Step 3: semantic search — over-fetch like mem0 (max(k*4, 60))
+  // Step 3: semantic search — over-fetch (max(k*4, 60)) so the BM25
+  // and entity passes have room to re-rank below the eventual top-K.
   const internalLimit = Math.max(k * 4, 60);
   const semanticAll = facts
     .map((f: Fact) => ({
@@ -63,8 +64,7 @@ export const defaultFactRanker: FactRanker = async (question, k) => {
 
   // Step 4: keyword search — BM25 over lemmatized text. Build the index
   // from the same internal-limit pool so BM25 only scores candidates the
-  // semantic search surfaced (matches mem0's separate-keyword-search
-  // shape closely enough at our scale).
+  // semantic search has already surfaced.
   const bm25Docs = semanticResults.map(({ id, fact }) => ({
     id,
     lemmatized: fact.text_lemmatized ?? lemmatizeForBm25(fact.text),
@@ -80,9 +80,9 @@ export const defaultFactRanker: FactRanker = async (question, k) => {
     bm25Scores.set(h.id, normalizeBm25(h.score, midpoint, steepness));
   }
 
-  // Step 6: entity boost — extract entities from query, embed each (max
-  // 8, deduped), search the per-vault entity store, boost linked
-  // memories. Mirrors mem0/memory/main.py:_compute_entity_boosts.
+  // Step 6: entity boost — extract entities from the query, embed each
+  // (max 8, deduped), match against the per-vault entity store, boost
+  // linked facts. See computeEntityBoosts below.
   const entityBoosts = await computeEntityBoosts(question);
 
   // Step 7-8: combine + rank
@@ -107,7 +107,7 @@ export const defaultFactRanker: FactRanker = async (question, k) => {
     }));
 };
 
-// Verbatim port of mem0/memory/main.py:_compute_entity_boosts.
+// Per-fact entity boost.
 //
 //   For each query entity (max 8, deduped):
 //     1. Embed entity text

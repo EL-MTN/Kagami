@@ -2,13 +2,14 @@ import fs from 'node:fs/promises';
 import { generateText } from 'ai';
 import { model } from './llm.js';
 import { paths } from './paths.js';
-import { defaultFactRanker, type FactRanker, type RankedFact } from './embeddings.js';
+import { defaultFactRanker, type FactRanker, type RankedFact } from './retrieval/embeddings.js';
 
-// Single-shot answerer over atomic facts retrieved by cosine similarity.
-// Mirrors mem0's LongMemEval pipeline: top-K facts grouped by date
-// (newest-first) → mem0's verbatim ANSWER_GENERATION_PROMPT → free-text
-// answer with <mem_thinking>...</mem_thinking> reasoning stripped before
-// returning.
+// Single-shot answerer over Brainiac's atomic-fact store. The hybrid
+// ranker (cosine + BM25 + entity boost) returns top-K facts; we group
+// them by date (newest-first) and feed them to the answerer prompt at
+// prompts/answer.md. The model emits free text with a
+// <mem_thinking>...</mem_thinking> reasoning block which we strip
+// before returning.
 
 export interface QueryResult {
   answer: string;
@@ -26,14 +27,15 @@ let cachedAnswerPromptTemplate: string | null = null;
 async function getAnswerPromptTemplate(): Promise<string> {
   if (cachedAnswerPromptTemplate) return cachedAnswerPromptTemplate;
   cachedAnswerPromptTemplate = await fs.readFile(
-    `${paths.prompts}/mem0_longmemeval_answer.md`,
+    `${paths.prompts}/answer.md`,
     'utf8',
   );
   return cachedAnswerPromptTemplate;
 }
 
-// Mem0's harness composes search results as `--- {date} ---` headers
-// followed by `- {fact}` lines, sorted newest-first. Match that exactly.
+// Format facts as `--- {date} ---` headers followed by `- {fact}`
+// lines, sorted newest-first. Date headers give the answerer a
+// scannable temporal layout for "when" / "first/last" questions.
 export function formatFactsGroupedByDateNewestFirst(
   facts: RankedFact[],
 ): string {
@@ -61,7 +63,8 @@ export function stripMemThinking(text: string): string {
 }
 
 // `today` defaults to the latest fact's event_date, falling back to wall
-// clock when the vault is empty. Matches mem0's `question_date` semantics.
+// clock when the vault is empty. Used as the anchor for the answerer's
+// relative-date arithmetic ("last year", "two months ago").
 export function deriveQuestionDate(facts: RankedFact[]): string {
   let max = '';
   for (const f of facts) {

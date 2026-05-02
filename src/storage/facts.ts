@@ -1,16 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { paths } from './paths.js';
+import { paths } from '../paths.js';
 
-// Mem0-faithful atomic-fact storage. One Fact per line in .memory/facts.jsonl.
-// Each fact carries its embedding so retrieval is just embed(question) +
-// in-memory cosine — no vector DB required at our scale.
-//
-// Mirrors mem0's memory schema:
-//   id, text (the fact), user_id, created_at (ingestion ts),
-//   metadata (event_date, source session, hash for dedup).
-// embedding is persisted alongside so we don't re-embed at query time.
+// Atomic-fact storage. One Fact per line in .memory/facts.jsonl. Each
+// row carries its embedding so retrieval is just embed(question) +
+// in-memory cosine — no vector DB required at Brainiac's scale.
 
 export interface Fact {
   id: string;
@@ -50,8 +45,7 @@ export async function appendFacts(facts: Fact[]): Promise<void> {
   await fs.appendFile(paths.facts, lines);
 }
 
-// Phase 2 — rewrites the entire JSONL after a manage step decides
-// UPDATE/DELETE. Cheap at our scale (≤10K facts).
+// Rewrites the entire JSONL. Cheap at Brainiac's scale (≤10K facts).
 export async function rewriteFacts(facts: Fact[]): Promise<void> {
   await fs.mkdir(path.dirname(paths.facts), { recursive: true });
   const lines = facts.map((f) => JSON.stringify(f)).join('\n') + (facts.length > 0 ? '\n' : '');

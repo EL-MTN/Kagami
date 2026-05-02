@@ -10,23 +10,27 @@ import {
   newFactId,
   readFacts,
   type Fact,
-} from './facts.js';
-import { lemmatizeForBm25 } from './text.js';
-import { upsertEntitiesFromFacts } from './entities.js';
+} from './storage/facts.js';
+import { lemmatizeForBm25 } from './retrieval/text.js';
+import { upsertEntitiesFromFacts } from './storage/entities.js';
 
-// Mem0-faithful atomic-fact extraction. Uses the verbatim
-// ADDITIVE_EXTRACTION_PROMPT from mem0/configs/prompts.py (saved at
-// prompts/mem0_additive_extraction.md), chunks transcripts into
-// 2-message batches, looks up the top-K most-similar existing facts as
-// dedup context, and persists each new fact with its embedding into
-// .memory/facts.jsonl.
+// Brainiac's atomic-fact extraction pipeline.
+//
+//   For each transcript:
+//     - chunk into 2-message batches (one user + one assistant turn)
+//     - look up the top-K most-similar existing facts as dedup context
+//     - call the extraction prompt (prompts/extraction.md) for that batch
+//     - md5-dedup each new fact against existing + within-batch hashes
+//     - embed + persist surviving facts to .memory/facts.jsonl
+//     - upsert mentioned entities into .memory/entities.jsonl with
+//       linked fact ids for the entity-boost retrieval channel
 
 const BATCH_SIZE = 2;
 const TOP_K_EXISTING = 10;
 const RECENTLY_EXTRACTED_LIMIT = 20;
 const LAST_K_MESSAGES = 20;
 
-// Mem0's mem0_additive_extraction.md describes a richer per-memory shape
+// The extraction prompt describes a richer per-memory shape
 // (`attributed_to`, optional `linked_memory_ids`). We only use `text` at
 // retrieval time, so the wire schema stays minimal — fewer fields means
 // fewer ways for the model to fail strict structured-output validation.
@@ -53,7 +57,7 @@ interface RecentFact {
 let cachedSystemPrompt: string | null = null;
 async function getSystemPrompt(): Promise<string> {
   if (cachedSystemPrompt) return cachedSystemPrompt;
-  const promptPath = `${paths.prompts}/mem0_additive_extraction.md`;
+  const promptPath = `${paths.prompts}/extraction.md`;
   cachedSystemPrompt = await fs.readFile(promptPath, 'utf8');
   return cachedSystemPrompt;
 }
@@ -127,7 +131,7 @@ export async function consolidate(
   }));
 
   const existingFacts = await readFacts();
-  // mem0/memory/main.py:Phase 5 — md5 hash dedup. Skip facts whose text
+  // md5 hash dedup. Skip facts whose text
   // is byte-identical to one already on disk or seen earlier in this run.
   const seenHashes = new Set<string>(existingFacts.map((f) => f.hash));
   const recentlyExtracted: RecentFact[] = [];
@@ -235,9 +239,8 @@ export async function consolidate(
 
     if (facts.length === 0) continue;
     await appendFacts(facts);
-    // Mem0 Phase 7: extract entities from each new fact and upsert into
-    // the per-vault entity store, linking memory_ids to entities for
-    // boost-at-retrieval.
+    // Extract entities from each new fact and upsert into the per-vault
+    // entity store, linking fact ids to entities for boost-at-retrieval.
     try {
       await upsertEntitiesFromFacts(facts);
     } catch (err) {

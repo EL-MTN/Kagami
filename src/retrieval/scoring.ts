@@ -1,14 +1,13 @@
-// Verbatim port of mem0/utils/scoring.py.
+// Hybrid retrieval scoring. Combines three signals additively, each
+// in [0, 1]:
+//   semantic — cosine similarity over fact embeddings
+//   bm25     — sigmoid-normalized BM25 over lemmatized fact text
+//   entity   — entity-store similarity to query entities, attenuated
+//              by how many facts the matched entity links to
 //
-// Hybrid retrieval combines three signals additively, each in [0, 1]:
-//   semantic (cosine over embeddings)
-//   bm25     (sigmoid-normalized BM25 over lemmatized text)
-//   entity   (entity-store similarity to query entities, attenuated by
-//             how many memories the matched entity links to)
-//
-// score_and_rank divides by max_possible (which adapts to which signals
-// are present) so the combined score stays in [0, 1] regardless of which
-// of the three signals fired.
+// scoreAndRank divides by max_possible (which adapts to which signals
+// fired) so the combined score stays in [0, 1] regardless of which
+// channels are active for a given query.
 
 import { lemmatizeForBm25 } from './text.js';
 
@@ -48,9 +47,9 @@ export interface RankedResult {
   score: number;            // combined score in [0, 1]
 }
 
-// Mem0's score_and_rank: gate by semantic threshold, then add BM25 and
-// entity boost (each already normalized to [0, 1]) and divide by
-// max_possible (which adapts to which signals are non-empty).
+// Gate by semantic threshold, then add BM25 and entity boost (each
+// already normalized to [0, 1]) and divide by max_possible (which
+// adapts to which signals fired).
 export function scoreAndRank(
   semanticResults: SemanticCandidate[],
   bm25Scores: Map<string, number>,

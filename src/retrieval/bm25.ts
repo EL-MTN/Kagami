@@ -1,6 +1,6 @@
-// In-memory BM25 over lemmatized text. Standard Okapi BM25 (k1=1.5,
-// b=0.75 — the rank_bm25 library defaults that mem0 inherits).
-// At our scale (~5K facts/vault) building the index per query is fast.
+// In-memory BM25 over lemmatized text. Standard Okapi BM25 with the
+// usual defaults (k1=1.5, b=0.75). At Brainiac's scale (~5K facts per
+// vault) building the index per query is fast enough to skip caching.
 
 const K1 = 1.5;
 const B = 0.75;

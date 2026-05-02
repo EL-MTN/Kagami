@@ -5,7 +5,7 @@ import {
   formatFactsGroupedByDateNewestFirst,
   stripMemThinking,
 } from '../src/query.ts';
-import type { RankedFact } from '../src/embeddings.ts';
+import type { RankedFact } from '../src/retrieval/embeddings.ts';
 
 const fact = (overrides: Partial<RankedFact>): RankedFact => ({
   id: 'id',
