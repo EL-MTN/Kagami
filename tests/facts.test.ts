@@ -79,7 +79,7 @@ test('newFactId returns unique uuid-shaped strings', async () => {
 });
 
 test('buildExtractionUserPrompt assembles all sections in mem0 order', async () => {
-  const { buildExtractionUserPrompt } = await import('../src/extract_v2.ts');
+  const { buildExtractionUserPrompt } = await import('../src/ingest.ts');
   const prompt = buildExtractionUserPrompt({
     newMessages: [{ role: 'user', content: 'hi' }],
     observationDate: '2023-05-04',

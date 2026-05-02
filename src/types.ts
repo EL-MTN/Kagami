@@ -6,62 +6,6 @@ const dateString = z
   .union([z.string(), z.date()])
   .transform((v) => (v instanceof Date ? v.toISOString() : v));
 
-export const EntityType = z.enum([
-  'person',
-  'belief',
-  'preference',
-  'project',
-  'place',
-  'concept',
-  'event',
-  'skill',
-]);
-export type EntityType = z.infer<typeof EntityType>;
-
-// LLM wire-format: always strings, no unions/transforms — keeps the JSON
-// schema sent to the model simple (no `anyOf`, which trips strict mode).
-// event_date: empty string means "no specific date in the quote" — fall back
-// to the conversation date when building the timeline.
-export const Candidate = z.object({
-  entity_name: z.string(),
-  type: EntityType,
-  aliases_seen: z.array(z.string()),
-  headline: z.string(),
-  quote: z.string(),
-  turn_id: z.string(),
-  date: z.string(),
-  event_date: z.string(),
-});
-export type Candidate = z.infer<typeof Candidate>;
-
-export const ExtractionResult = z.object({
-  candidates: z.array(Candidate),
-});
-export type ExtractionResult = z.infer<typeof ExtractionResult>;
-
-export const EntityFrontmatter = z.object({
-  id: z.string(),
-  name: z.string(),
-  aliases: z.array(z.string()),
-  type: z.string(),
-  anchor: z.string().default(''),
-  updated: dateString,
-});
-export type EntityFrontmatter = z.infer<typeof EntityFrontmatter>;
-
-export const Observation = z.object({
-  date: z.string(),
-  headline: z.string(),
-  quote: z.string(),
-  source: z.string(),
-  event_date: z.string().default(''),
-  status: z.enum(['active', 'invalidated']).default('active'),
-  invalidated_by: z.string().default(''),
-  invalidation_reason: z.string().default(''),
-});
-export type Observation = z.infer<typeof Observation>;
-
-
 export const TranscriptFrontmatter = z.object({
   id: z.string(),
   started_at: dateString,
@@ -80,13 +24,3 @@ export const Transcript = z.object({
   turns: z.array(Turn),
 });
 export type Transcript = z.infer<typeof Transcript>;
-
-export const LogEntry = z.object({
-  ts: z.string(),
-  entity_id: z.string(),
-  observation: Observation,
-  source_turn: z.string(),
-  candidate_subject: z.string(),
-  decision: z.enum(['matched', 'created', 'duplicated']),
-});
-export type LogEntry = z.infer<typeof LogEntry>;

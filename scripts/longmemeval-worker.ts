@@ -63,9 +63,7 @@ async function main() {
 
   // Lazy-import after env is set so paths.ts picks up BRAINIAC_VAULT.
   const { consolidate } = await import('../src/ingest.js');
-  const { ingestTranscriptV2 } = await import('../src/extract_v2.js');
-  const { query, queryFlat } = await import('../src/query.js');
-  const useFlat = process.env.BRAINIAC_FLAT === '1';
+  const { query } = await import('../src/query.js');
 
   const rawDir = path.join(vault, 'raw');
   await fs.mkdir(rawDir, { recursive: true });
@@ -85,13 +83,11 @@ async function main() {
   // paying for re-extraction.
   const factsPath = path.join(vault, '.memory', 'facts.jsonl');
   let skipIngest = false;
-  if (useFlat) {
-    try {
-      const stat = await fs.stat(factsPath);
-      skipIngest = stat.size > 0;
-    } catch {
-      skipIngest = false;
-    }
+  try {
+    const stat = await fs.stat(factsPath);
+    skipIngest = stat.size > 0;
+  } catch {
+    skipIngest = false;
   }
   if (!skipIngest) {
     for (let i = 0; i < sessions.length; i++) {
@@ -100,11 +96,7 @@ async function main() {
       const transcriptPath = path.join(rawDir, `${sid}.md`);
       await fs.writeFile(transcriptPath, transcript);
       process.stderr.write(`[worker ${item.question_id}] ingesting ${sid} (${sessions[i]!.length} turns)\n`);
-      if (useFlat) {
-        await ingestTranscriptV2(transcriptPath);
-      } else {
-        await consolidate(transcriptPath);
-      }
+      await consolidate(transcriptPath);
     }
   } else {
     process.stderr.write(`[worker ${item.question_id}] ingest skipped (facts.jsonl exists)\n`);
@@ -117,7 +109,7 @@ async function main() {
   let citations: string[] = [];
   let err: string | undefined;
   try {
-    const r = useFlat ? await queryFlat(item.question) : await query(item.question);
+    const r = await query(item.question);
     prediction = r.answer;
     citations = r.citations;
   } catch (e) {

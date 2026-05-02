@@ -1,202 +1,246 @@
 import fs from 'node:fs/promises';
-import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { z } from 'zod';
+import { embed, embedMany, cosineSimilarity, generateObject } from 'ai';
 import { readTranscript } from './transcript.js';
-import { callObject } from './llm.js';
+import { getEmbeddingModel, model } from './llm.js';
+import { paths } from './paths.js';
 import {
-  appendObservation,
-  createEntity,
-  findByNameOrAlias,
-  unionAliases,
-} from './entity_io.js';
-import {
-  ExtractionResult,
-  type Candidate,
-  type LogEntry,
-  type Observation,
-  type Transcript,
-} from './types.js';
-import { entityPath, paths, slug, transcriptWikilink } from './paths.js';
-import { rebuildIndex } from './index_md.js';
-import { rebuildTimeline } from './timeline_md.js';
+  appendFacts,
+  newFactId,
+  readFacts,
+  type Fact,
+} from './facts.js';
 
-export interface IngestResult {
-  candidates: number;
-  appended: number;
-  created: number;
-  duplicated: number;
+// Mem0-faithful atomic-fact extraction. Uses the verbatim
+// ADDITIVE_EXTRACTION_PROMPT from mem0/configs/prompts.py (saved at
+// prompts/mem0_additive_extraction.md), chunks transcripts into
+// 2-message batches, looks up the top-K most-similar existing facts as
+// dedup context, and persists each new fact with its embedding into
+// .memory/facts.jsonl.
+
+const BATCH_SIZE = 2;
+const TOP_K_EXISTING = 10;
+const RECENTLY_EXTRACTED_LIMIT = 20;
+const LAST_K_MESSAGES = 20;
+
+// Mem0's mem0_additive_extraction.md describes a richer per-memory shape
+// (`attributed_to`, optional `linked_memory_ids`). We only use `text` at
+// retrieval time, so the wire schema stays minimal — fewer fields means
+// fewer ways for the model to fail strict structured-output validation.
+const ExtractionResult = z.object({
+  memory: z.array(
+    z.object({
+      id: z.string(),
+      text: z.string(),
+    }),
+  ),
+});
+
+interface Message {
+  role: string;
+  content: string;
 }
 
-const EMPTY: IngestResult = {
-  candidates: 0,
-  appended: 0,
-  created: 0,
-  duplicated: 0,
-};
-
-export async function consolidate(transcriptFile: string): Promise<IngestResult> {
-  const transcript = await readTranscript(transcriptFile);
-  const candidates = await extract(transcript);
-  if (!candidates) return { ...EMPTY };
-  return applyCandidates(candidates, transcript.frontmatter.id);
+interface RecentFact {
+  id: string;
+  text: string;
+  embedding: number[];
 }
 
-// Pure-deterministic post-extraction step. Tested directly without an LLM.
-export async function applyCandidates(
-  candidates: Candidate[],
-  transcriptId: string,
-): Promise<IngestResult> {
-  const result: IngestResult = { ...EMPTY, candidates: candidates.length };
+let cachedSystemPrompt: string | null = null;
+async function getSystemPrompt(): Promise<string> {
+  if (cachedSystemPrompt) return cachedSystemPrompt;
+  const promptPath = `${paths.prompts}/mem0_additive_extraction.md`;
+  cachedSystemPrompt = await fs.readFile(promptPath, 'utf8');
+  return cachedSystemPrompt;
+}
 
-  for (const cand of candidates) {
-    const obs = candidateToObservation(cand, transcriptId);
-    const targets = await findByNameOrAlias(cand.entity_name);
+function formatMessages(msgs: Message[]): string {
+  if (msgs.length === 0) return '[]';
+  return JSON.stringify(msgs);
+}
 
-    if (targets.length === 0) {
-      const id = await uniqueSlug(cand.entity_name);
-      const aliases = unique([cand.entity_name, ...cand.aliases_seen]);
-      await createEntity({
-        id,
-        name: cand.entity_name,
-        aliases,
-        type: cand.type,
-        anchor: '',
-        updated: cand.date,
+function formatMemories(mems: Array<{ id: string; text: string }>): string {
+  if (mems.length === 0) return '[]';
+  return JSON.stringify(mems);
+}
+
+export function buildExtractionUserPrompt(opts: {
+  newMessages: Message[];
+  observationDate: string;
+  currentDate: string;
+  lastKMessages?: Message[];
+  recentlyExtracted?: Array<{ id: string; text: string }>;
+  existingMemories?: Array<{ id: string; text: string }>;
+}): string {
+  const sections: string[] = [];
+  sections.push(`## Summary\n`);
+  sections.push(
+    `## Last k Messages\n${formatMessages(opts.lastKMessages ?? [])}`,
+  );
+  sections.push(
+    `## Recently Extracted Memories\n${formatMemories(opts.recentlyExtracted ?? [])}`,
+  );
+  sections.push(
+    `## Existing Memories\n${formatMemories(opts.existingMemories ?? [])}`,
+  );
+  sections.push(`## New Messages\n${formatMessages(opts.newMessages)}`);
+  sections.push(`## Observation Date\n${opts.observationDate}`);
+  sections.push(`## Current Date\n${opts.currentDate}`);
+  sections.push('# Output:');
+  return sections.join('\n\n');
+}
+
+function topKByCosine(
+  qEmb: number[],
+  candidates: Array<{ id: string; text: string; embedding: number[] }>,
+  k: number,
+): Array<{ id: string; text: string }> {
+  if (candidates.length === 0) return [];
+  const scored = candidates.map((c) => ({
+    id: c.id,
+    text: c.text,
+    sim: cosineSimilarity(qEmb, c.embedding),
+  }));
+  scored.sort((a, b) => b.sim - a.sim);
+  return scored.slice(0, k).map(({ id, text }) => ({ id, text }));
+}
+
+function normalizeRole(role: string): string {
+  return role.toLowerCase() === 'user' ? 'user' : 'assistant';
+}
+
+export async function consolidate(
+  transcriptPath: string,
+): Promise<{ added: number; batches: number }> {
+  const transcript = await readTranscript(transcriptPath);
+  const sessionId = transcript.frontmatter.id;
+  const sessionDate = String(transcript.frontmatter.started_at).slice(0, 10);
+  const currentDate = new Date().toISOString().slice(0, 10);
+
+  const messages: Message[] = transcript.turns.map((t) => ({
+    role: normalizeRole(t.role),
+    content: t.text,
+  }));
+
+  const existingFacts = await readFacts();
+  // mem0/memory/main.py:Phase 5 — md5 hash dedup. Skip facts whose text
+  // is byte-identical to one already on disk or seen earlier in this run.
+  const seenHashes = new Set<string>(existingFacts.map((f) => f.hash));
+  const recentlyExtracted: RecentFact[] = [];
+  const systemPrompt = await getSystemPrompt();
+
+  let added = 0;
+  let batches = 0;
+  for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+    const batch = messages.slice(i, i + BATCH_SIZE);
+    if (batch.every((m) => !m.content.trim())) continue;
+    batches += 1;
+
+    const lastK = messages.slice(Math.max(0, i - LAST_K_MESSAGES), i);
+    const batchText = batch.map((m) => m.content).join(' ');
+
+    let batchEmb: number[];
+    try {
+      const r = await embed({
+        model: getEmbeddingModel(),
+        value: batchText,
+        abortSignal: AbortSignal.timeout(15_000),
       });
-      await appendObservation(id, obs);
-      await writeLog({
-        ts: new Date().toISOString(),
-        entity_id: id,
-        observation: obs,
-        source_turn: cand.turn_id,
-        candidate_subject: cand.entity_name,
-        decision: 'created',
-      });
-      result.created += 1;
-      result.appended += 1;
+      batchEmb = r.embedding;
+    } catch (err) {
+      console.error('[ingest] step failed:', (err as Error).message);
       continue;
     }
 
-    if (targets.length > 1) result.duplicated += 1;
-    for (const target of targets) {
-      await unionAliases(target.id, cand.aliases_seen);
-      await appendObservation(target.id, obs);
-      await writeLog({
-        ts: new Date().toISOString(),
-        entity_id: target.id,
-        observation: obs,
-        source_turn: cand.turn_id,
-        candidate_subject: cand.entity_name,
-        decision: targets.length === 1 ? 'matched' : 'duplicated',
+    const candidates = [
+      ...existingFacts.map((f) => ({
+        id: f.id,
+        text: f.text,
+        embedding: f.embedding,
+      })),
+      ...recentlyExtracted.map((f) => ({
+        id: f.id,
+        text: f.text,
+        embedding: f.embedding,
+      })),
+    ];
+    const existingMemories = topKByCosine(batchEmb, candidates, TOP_K_EXISTING);
+
+    const userPrompt = buildExtractionUserPrompt({
+      newMessages: batch,
+      observationDate: sessionDate,
+      currentDate,
+      lastKMessages: lastK.length > 0 ? lastK : undefined,
+      recentlyExtracted: recentlyExtracted
+        .slice(-RECENTLY_EXTRACTED_LIMIT)
+        .map(({ id, text }) => ({ id, text })),
+      existingMemories,
+    });
+
+    let extraction: z.infer<typeof ExtractionResult>;
+    try {
+      const r = await generateObject({
+        model,
+        schema: ExtractionResult,
+        system: systemPrompt,
+        prompt: userPrompt,
+        temperature: 0,
+        abortSignal: AbortSignal.timeout(120_000),
       });
-      result.appended += 1;
+      extraction = r.object;
+    } catch (err) {
+      console.error('[ingest] step failed:', (err as Error).message);
+      continue;
     }
-  }
 
-  await rebuildIndex();
-  await rebuildTimeline();
-  return result;
-}
+    if (extraction.memory.length === 0) continue;
 
-async function extract(transcript: Transcript): Promise<Candidate[] | null> {
-  const promptFile = path.join(paths.prompts, 'extraction.md');
-  const promptText = await fs.readFile(promptFile, 'utf8');
-  const { system, userTemplate } = parsePrompt(promptText);
-
-  const turns = transcript.turns
-    .map((t) => `## ${t.id} ${t.role}\n${t.text}`)
-    .join('\n\n');
-  const date = transcript.frontmatter.started_at.slice(0, 10);
-
-  // Pass the current index so the LLM can re-use existing entity_names
-  // instead of inventing new variants (semantic de-dup at extraction time).
-  // First ingestion in a vault → empty index.
-  const existingIndex = await readSafe(paths.index, '(no entities yet)');
-
-  const userPrompt = userTemplate
-    .replace('{{date}}', date)
-    .replace('{{transcript_id}}', transcript.frontmatter.id)
-    .replace('{{turns}}', turns)
-    .replace('{{existing_index}}', existingIndex.trim());
-
-  const result = await callObject({
-    stage: 'extraction',
-    schema: ExtractionResult,
-    systemPrompt: system,
-    userPrompt,
-    // Mitigation against Gemma 4's repetition-under-grammar tendency.
-    frequencyPenalty: 0.3,
-  });
-  return result?.candidates ?? null;
-}
-
-export function parsePrompt(raw: string): {
-  system: string;
-  userTemplate: string;
-} {
-  const sys = raw.match(/^##\s+System\s*\n([\s\S]*?)(?=^##\s+User\b)/m);
-  const usr = raw.match(/^##\s+User[^\n]*\n([\s\S]*)$/m);
-  if (!sys || !usr) {
-    throw new Error(
-      'Prompt file must contain "## System" and "## User" sections',
-    );
-  }
-  return { system: sys[1]!.trim(), userTemplate: usr[1]!.trim() };
-}
-
-function candidateToObservation(c: Candidate, transcriptId: string): Observation {
-  return {
-    date: c.date,
-    headline: c.headline,
-    quote: c.quote,
-    source: transcriptWikilink(transcriptId, c.turn_id),
-    event_date: c.event_date ?? '',
-    status: 'active',
-    invalidated_by: '',
-    invalidation_reason: '',
-  };
-}
-
-async function uniqueSlug(name: string): Promise<string> {
-  const base = slug(name) || 'entity';
-  let candidate = base;
-  let n = 2;
-  while (await fileExists(entityPath(candidate))) {
-    candidate = `${base}-${n}`;
-    n += 1;
-  }
-  return candidate;
-}
-
-async function fileExists(p: string): Promise<boolean> {
-  try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function writeLog(entry: LogEntry): Promise<void> {
-  await fs.mkdir(paths.internal, { recursive: true });
-  await fs.appendFile(paths.log, JSON.stringify(entry) + '\n');
-}
-
-function unique(strings: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const s of strings) {
-    if (s && !seen.has(s)) {
-      seen.add(s);
-      out.push(s);
+    const newTexts = extraction.memory.map((m) => m.text);
+    let embeddings: number[][];
+    try {
+      const r = await embedMany({
+        model: getEmbeddingModel(),
+        values: newTexts,
+        maxParallelCalls: 8,
+        abortSignal: AbortSignal.timeout(30_000),
+      });
+      embeddings = r.embeddings;
+    } catch (err) {
+      console.error('[ingest] step failed:', (err as Error).message);
+      continue;
     }
-  }
-  return out;
-}
 
-async function readSafe(p: string, fallback: string): Promise<string> {
-  try {
-    return await fs.readFile(p, 'utf8');
-  } catch {
-    return fallback;
+    const facts: Fact[] = [];
+    for (let j = 0; j < extraction.memory.length; j++) {
+      const m = extraction.memory[j]!;
+      const hash = createHash('md5').update(m.text).digest('hex');
+      if (seenHashes.has(hash)) continue;
+      seenHashes.add(hash);
+      facts.push({
+        id: newFactId(),
+        text: m.text,
+        user_id: 'default',
+        created_at: new Date().toISOString(),
+        event_date: sessionDate,
+        source_session: `raw/${sessionId}`,
+        hash,
+        embedding: embeddings[j]!,
+      });
+    }
+
+    if (facts.length === 0) continue;
+    await appendFacts(facts);
+    for (const f of facts) {
+      recentlyExtracted.push({
+        id: f.id,
+        text: f.text,
+        embedding: f.embedding,
+      });
+    }
+    added += facts.length;
   }
+
+  return { added, batches };
 }

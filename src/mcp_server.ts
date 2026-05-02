@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { paths } from './paths.js';
 import { consolidate } from './ingest.js';
 import { query } from './query.js';
-import { mergeEntities } from './entity_io.js';
+import { readFacts } from './facts.js';
 
 function ok(text: string) {
   return { content: [{ type: 'text' as const, text }] };
@@ -105,7 +105,7 @@ server.registerTool(
   'consolidate',
   {
     description:
-      'Run ingestion on a transcript. Path is vault-relative (e.g. raw/2026-04-27-1430.md) or absolute.',
+      'Extract atomic facts from a transcript into the vault. Path is vault-relative (e.g. raw/2026-04-27-1430.md) or absolute. Returns {added, batches}.',
     inputSchema: { transcript_path: z.string() },
   },
   async ({ transcript_path }) => {
@@ -125,7 +125,7 @@ server.registerTool(
   'query',
   {
     description:
-      'Answer a question from the memory vault. Returns {answer, citations}.',
+      'Answer a question from the memory vault using top-K atomic facts. Returns {answer, citations}.',
     inputSchema: { question: z.string() },
   },
   async ({ question }) => {
@@ -139,16 +139,15 @@ server.registerTool(
 );
 
 server.registerTool(
-  'merge',
+  'fact_count',
   {
-    description:
-      "Merge entity `from_id` into `to_id`: union aliases, append from's observations to to's, delete from, rewrite wikilinks vault-wide.",
-    inputSchema: { from_id: z.string(), to_id: z.string() },
+    description: 'Return the number of atomic facts currently stored in the vault.',
+    inputSchema: {},
   },
-  async ({ from_id, to_id }) => {
+  async () => {
     try {
-      const result = await mergeEntities(from_id, to_id);
-      return ok(JSON.stringify(result));
+      const facts = await readFacts();
+      return ok(String(facts.length));
     } catch (e) {
       return fail(String(e));
     }

@@ -1,5 +1,6 @@
 // Convert a Claude Code session into N-turn chunks and run consolidate on each.
-// Duplicates across chunks are expected; resolve via the merge tool afterward.
+// Mem0-style md5 dedup at ingest collapses byte-identical text duplicates
+// across chunks automatically.
 //
 // Usage:
 //   tsx scripts/cc-ingest-chunked.ts <session.jsonl> [--chunk-size N] [--char-cap N]
