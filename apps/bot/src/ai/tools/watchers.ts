@@ -105,11 +105,16 @@ export function createManageWatchersTool(chatId: string) {
 
             // External observation tools aren't strictly required (memory-only
             // watchers can detect new facts), but most useful watchers need
-            // browse or email. Warn so misconfigured deployments surface it.
-            if (!config.BROWSER_ENABLED && !config.GOOGLE_OAUTH_CLIENT_ID) {
+            // webSearch, browse, or email. Warn so misconfigured deployments
+            // surface it.
+            if (
+              !config.BRAVE_SEARCH_API_KEY &&
+              !config.BROWSER_ENABLED &&
+              !config.GOOGLE_OAUTH_CLIENT_ID
+            ) {
               logger.warn(
                 { chatId, name },
-                "Creating watcher with no external observation tools (BROWSER_ENABLED and GOOGLE_OAUTH_CLIENT_ID both unset). Watcher will only see memory.",
+                "Creating watcher with no external observation tools (BRAVE_SEARCH_API_KEY, BROWSER_ENABLED, GOOGLE_OAUTH_CLIENT_ID all unset). Watcher will only see memory.",
               );
             }
 

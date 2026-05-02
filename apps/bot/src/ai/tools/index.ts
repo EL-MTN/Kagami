@@ -10,6 +10,7 @@ import { createSendPhotoTool, createSendVoiceTool } from "./media";
 import { createCheckEmailTool, createSendEmailTool } from "./email";
 import { createManageCalendarTool, createManageRemindersTool } from "./calendar";
 import { createBrowseTool, createReadOnlyBrowseTool } from "./browse";
+import { createWebSearchTool } from "./web-search";
 import {
   createManageRoutinesTool,
   createSearchRoutinesTool,
@@ -75,8 +76,16 @@ export function allTools(ctx: ToolContext) {
     tools.manageReminders = createManageRemindersTool(ctx.chatId);
   }
 
+  if (config.BRAVE_SEARCH_API_KEY) {
+    tools.webSearch = createWebSearchTool();
+  }
+
   if (config.BROWSER_ENABLED) {
-    tools.browse = createBrowseTool(ctx.chatId, ctx.adapter);
+    // When a standalone webSearch tool is registered, drop the in-browser
+    // `search` action so the LLM has one obvious way to do lookups.
+    tools.browse = createBrowseTool(ctx.chatId, ctx.adapter, {
+      includeSearch: !config.BRAVE_SEARCH_API_KEY,
+    });
   }
 
   // Approval-gated wrappers. Registered when any gated underlying tool is
@@ -129,8 +138,14 @@ function readOnlyToolSubset(ctx: ToolContext): ToolSet {
     tools.listCalendarEvents = createManageCalendarTool({ mode: "readOnly" });
   }
 
+  if (config.BRAVE_SEARCH_API_KEY) {
+    tools.webSearch = createWebSearchTool();
+  }
+
   if (config.BROWSER_ENABLED) {
-    tools.browse = createReadOnlyBrowseTool();
+    tools.browse = createReadOnlyBrowseTool({
+      includeSearch: !config.BRAVE_SEARCH_API_KEY,
+    });
   }
 
   if (depth < MAX_ROUTINE_DEPTH) {

@@ -14,6 +14,7 @@ import * as engine from "@mashiro/memory";
 import {
   TOOL_BEHAVIOR_GUIDELINES,
   MAID_SERVICE_INSTRUCTIONS,
+  WEB_SEARCH_INSTRUCTIONS,
   BROWSER_INSTRUCTIONS,
   ROUTINE_BEHAVIOR_INSTRUCTIONS,
   DATETIME_CONTEXT,
@@ -128,6 +129,12 @@ export async function assemblePromptShell(): Promise<string[]> {
   // Maid service instructions (only when Google credentials are configured)
   if (config.GOOGLE_OAUTH_CLIENT_ID) {
     parts.push(MAID_SERVICE_INSTRUCTIONS);
+  }
+
+  // Web search instructions — gated independently of the browser, since
+  // the API path works without BROWSER_ENABLED.
+  if (config.BRAVE_SEARCH_API_KEY) {
+    parts.push(WEB_SEARCH_INSTRUCTIONS);
   }
 
   // Browser instructions (only when browser is enabled)

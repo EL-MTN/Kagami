@@ -46,6 +46,8 @@ function formatToolCall(tc: NonNullable<IMessage["toolCalls"]>[number]): string 
       return `managed calendar (${a.action ?? "unknown"})`;
     case "manageReminders":
       return `managed reminders (${a.action ?? "unknown"})`;
+    case "webSearch":
+      return `searched the web for "${a.query ?? ""}"`;
     case "browse":
       return `browsed the web (${a.action ?? "unknown"})`;
     case "manageRoutines":
