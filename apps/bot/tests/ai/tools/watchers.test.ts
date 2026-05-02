@@ -2,7 +2,7 @@ import { withTestDb } from "@mashiro/test-utils";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@mashiro/shared", async (orig) => ({
-  ...((await orig()) as object),
+  ...((await orig())),
   config: {
     BROWSER_ENABLED: false,
     GOOGLE_OAUTH_CLIENT_ID: "stub",
@@ -128,7 +128,7 @@ describe("manageWatchers — update", () => {
     });
     const result = await tool.execute({
       action: "update",
-      watcherId: created.watcherId as string,
+      watcherId: created.watcherId,
     });
     expect(result).toEqual({ success: false, reason: "No fields supplied to update" });
   });
@@ -200,7 +200,7 @@ describe("manageWatchers — snooze", () => {
     expect(
       await tool.execute({
         action: "snooze",
-        watcherId: created.watcherId as string,
+        watcherId: created.watcherId,
         untilHours: 0,
       }),
     ).toEqual({
@@ -220,7 +220,7 @@ describe("manageWatchers — snooze", () => {
     const before = Date.now();
     await tool.execute({
       action: "snooze",
-      watcherId: created.watcherId as string,
+      watcherId: created.watcherId,
       untilHours: 2,
     });
     const reloaded = await getWatcherById(created.watcherId as string);

@@ -2,7 +2,7 @@ import { fakeAdapter, withTestDb } from "@mashiro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@mashiro/shared", async (orig) => ({
-  ...((await orig()) as object),
+  ...((await orig())),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -153,9 +153,9 @@ describe("manageRoutines — list", () => {
     const result = await tool.execute({ action: "list" });
     expect(result.count).toBe(1);
     const routines = result.routines as Array<Record<string, unknown>>;
-    expect(routines[0]!.name).toBe("a");
-    expect(routines[0]!.enabled).toBe(true);
-    expect(routines[0]!.version).toBe(1);
+    expect(routines[0].name).toBe("a");
+    expect(routines[0].enabled).toBe(true);
+    expect(routines[0].version).toBe(1);
   });
 });
 
@@ -229,7 +229,7 @@ describe("manageRoutines — delete / enable / disable", () => {
     });
     const ok = await tool.execute({
       action: "delete",
-      routineId: created.routineId as string,
+      routineId: created.routineId,
     });
     expect(ok).toEqual({ success: true, deleted: created.routineId });
     expect(await Routine.findById(created.routineId)).toBeNull();
@@ -288,7 +288,7 @@ describe("searchRoutines tool", () => {
     const result = await tool.execute({});
     expect(result.count).toBe(1);
     const routines = result.routines as Array<Record<string, unknown>>;
-    expect(routines[0]!.name).toBe("live");
+    expect(routines[0].name).toBe("live");
   });
 
   it("scopes to chatId — same name in another chat is invisible", async () => {
@@ -349,7 +349,7 @@ describe("searchRoutines tool", () => {
       ],
     });
     const result = await tool.execute({ query: "param" });
-    const s = (result.routines as Array<Record<string, unknown>>)[0]!;
+    const s = (result.routines as Array<Record<string, unknown>>)[0];
     expect(s.cronSchedule).toBe("0 * * * *");
     expect(s.reportMode).toBe("alert");
     expect(s.parameters).toEqual([
@@ -396,7 +396,7 @@ describe("useRoutine tool — invocation", () => {
     const result = await tool.execute({ routineName: "greet" });
 
     expect(result).toEqual({ success: true, routineName: "greet", result: "hello world" });
-    const call = mockExecuteRoutine.mock.calls[0]!;
+    const call = mockExecuteRoutine.mock.calls[0];
     expect(call[2]).toEqual(
       expect.objectContaining({
         trigger: "routine",
@@ -439,7 +439,7 @@ describe("useRoutine tool — invocation", () => {
     await seedRoutine("deeper");
     mockExecuteRoutine.mockResolvedValue("ok");
     await tool.execute({ routineName: "deeper" });
-    const call = mockExecuteRoutine.mock.calls[0]!;
+    const call = mockExecuteRoutine.mock.calls[0];
     expect(call[2]).toEqual(expect.objectContaining({ depth: 2, callingContext: "main" }));
   });
 
@@ -483,7 +483,7 @@ describe("useRoutine tool — purity gate (watcher context)", () => {
       routineName: "read-only",
       result: "watched",
     });
-    const call = mockExecuteRoutine.mock.calls[0]!;
+    const call = mockExecuteRoutine.mock.calls[0];
     expect(call[2]).toEqual(expect.objectContaining({ callingContext: "watcher" }));
   });
 });
@@ -506,7 +506,7 @@ describe("useRoutine tool — parameter validation", () => {
     });
     mockExecuteRoutine.mockResolvedValue("ok");
     await tool.execute({ routineName: "nums", parameters: { n: "42" } });
-    const call = mockExecuteRoutine.mock.calls[0]!;
+    const call = mockExecuteRoutine.mock.calls[0];
     expect(call[2]).toEqual(expect.objectContaining({ parameters: { n: 42 } }));
   });
 
@@ -519,7 +519,7 @@ describe("useRoutine tool — parameter validation", () => {
     });
     mockExecuteRoutine.mockResolvedValue("ok");
     await tool.execute({ routineName: "topic", parameters: { topic: 42 } });
-    const call = mockExecuteRoutine.mock.calls[0]!;
+    const call = mockExecuteRoutine.mock.calls[0];
     expect(call[2]).toEqual(expect.objectContaining({ parameters: { topic: "42" } }));
   });
 
@@ -530,7 +530,7 @@ describe("useRoutine tool — parameter validation", () => {
     });
     mockExecuteRoutine.mockResolvedValue("ok");
     await tool.execute({ routineName: "flag", parameters: { flag: true } });
-    const call = mockExecuteRoutine.mock.calls[0]!;
+    const call = mockExecuteRoutine.mock.calls[0];
     expect(call[2]).toEqual(expect.objectContaining({ parameters: { flag: "true" } }));
   });
 
@@ -549,7 +549,7 @@ describe("useRoutine tool — parameter validation", () => {
     });
     mockExecuteRoutine.mockResolvedValue("ok");
     await tool.execute({ routineName: "withdef", parameters: {} });
-    const call = mockExecuteRoutine.mock.calls[0]!;
+    const call = mockExecuteRoutine.mock.calls[0];
     expect(call[2]).toEqual(expect.objectContaining({ parameters: { topic: "news" } }));
   });
 
@@ -572,7 +572,7 @@ describe("useRoutine tool — parameter validation", () => {
     });
     mockExecuteRoutine.mockResolvedValue("ok");
     await tool.execute({ routineName: "numdef", parameters: {} });
-    const call = mockExecuteRoutine.mock.calls[0]!;
+    const call = mockExecuteRoutine.mock.calls[0];
     expect(call[2]).toEqual(expect.objectContaining({ parameters: { topic: "42" } }));
   });
 
@@ -591,7 +591,7 @@ describe("useRoutine tool — parameter validation", () => {
     });
     mockExecuteRoutine.mockResolvedValue("ok");
     await tool.execute({ routineName: "strdef", parameters: {} });
-    const call = mockExecuteRoutine.mock.calls[0]!;
+    const call = mockExecuteRoutine.mock.calls[0];
     expect(call[2]).toEqual(expect.objectContaining({ parameters: { limit: 10 } }));
   });
 });

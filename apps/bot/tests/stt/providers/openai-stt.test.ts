@@ -90,9 +90,7 @@ describe("transcribeWithOpenAi — apiKey fallback", () => {
     mockCreateOpenAI.mockClear();
     mockConfig.STT_BASE_URL = undefined;
     await transcribeWithOpenAi(Buffer.from("a"), "audio/ogg", "whisper-1");
-    expect(mockCreateOpenAI).toHaveBeenCalledWith(
-      expect.not.objectContaining({ baseURL: expect.anything() }),
-    );
+    expect(mockCreateOpenAI).toHaveBeenCalledWith({ apiKey: "k" });
   });
 
   it("returns text + durationSeconds from the SDK call", async () => {

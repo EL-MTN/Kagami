@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 // Silence the Pino logger so logSteps' debug calls don't leak into test output;
 // also gives the logSteps test a spy to assert against.
 vi.mock("@mashiro/shared", async (orig) => ({
-  ...((await orig()) as object),
+  ...((await orig())),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -307,7 +307,7 @@ describe("logSteps", () => {
       ),
     );
     expect(debugSpy).toHaveBeenCalledTimes(1);
-    const [payload, message] = debugSpy.mock.calls[0]!;
+    const [payload, message] = debugSpy.mock.calls[0];
     expect(message).toBe("LLM step 0");
     expect(payload).toMatchObject({
       step: 0,
@@ -323,7 +323,7 @@ describe("logSteps", () => {
     const debugSpy = vi.mocked(logger.debug);
     debugSpy.mockClear();
     logSteps(steps(step({})));
-    const [payload] = debugSpy.mock.calls[0]!;
+    const [payload] = debugSpy.mock.calls[0];
     expect(payload).toMatchObject({ hasText: false, textPreview: "(empty)" });
   });
 });

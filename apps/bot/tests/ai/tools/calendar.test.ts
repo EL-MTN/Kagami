@@ -2,7 +2,7 @@ import { withTestDb } from "@mashiro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@mashiro/shared", async (orig) => ({
-  ...((await orig()) as object),
+  ...((await orig())),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -192,8 +192,8 @@ describe("manageReminders tool — list", () => {
     const result = await remindersTool.execute({ action: "list" });
     expect(result.count).toBe(1);
     const reminders = result.reminders as Array<Record<string, unknown>>;
-    expect(reminders[0]!.message).toBe("in chat 1");
-    expect(reminders[0]!.fireAt).toBe("2026-06-01T12:00:00.000Z");
+    expect(reminders[0].message).toBe("in chat 1");
+    expect(reminders[0].fireAt).toBe("2026-06-01T12:00:00.000Z");
   });
 });
 
@@ -207,8 +207,9 @@ describe("manageReminders tool — delete", () => {
 
   it("returns success:true when removed, false when missing", async () => {
     const r = await createReminder("chat-1", "x", new Date());
-    const ok = await remindersTool.execute({ action: "delete", reminderId: r.id as string });
-    expect(ok).toEqual({ success: true, deleted: r.id });
+    const reminderId = String(r.id);
+    const ok = await remindersTool.execute({ action: "delete", reminderId });
+    expect(ok).toEqual({ success: true, deleted: reminderId });
     const missing = await remindersTool.execute({
       action: "delete",
       reminderId: "000000000000000000000000",
