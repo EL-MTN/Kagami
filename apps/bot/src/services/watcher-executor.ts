@@ -21,7 +21,7 @@ import {
   REPORT_WATCHER_RESULT_TOOL_NAME,
   reportWatcherResultInputSchema,
   type WatcherResult,
-} from "../ai/tools/report-watcher-result";
+} from "../ai/tools/watchers";
 
 const LLM_TIMEOUT_MS = 180_000; // 3 minutes
 const MAX_STEPS = 10;

@@ -1,23 +1,22 @@
-import { readMemory } from "./read-memory";
-import { rememberFact } from "./remember-fact";
-import { createNoteToSelfTool } from "./note-to-self";
-import { searchMemory } from "./search-memory";
-import { listMemories } from "./list-memories";
-import { createCurateMemoryTool } from "./curate-memory";
-import { createSendPhotoTool } from "./send-photo";
-import { createCheckEmailTool } from "./check-email";
-import { createSendEmailTool } from "./send-email";
-import { createManageCalendarTool } from "./manage-calendar";
-import { createManageRemindersTool } from "./manage-reminders";
+import {
+  readMemory,
+  rememberFact,
+  createNoteToSelfTool,
+  searchMemory,
+  listMemories,
+  createCurateMemoryTool,
+} from "./memory";
+import { createSendPhotoTool, createSendVoiceTool } from "./media";
+import { createCheckEmailTool, createSendEmailTool } from "./email";
+import { createManageCalendarTool, createManageRemindersTool } from "./calendar";
 import { createBrowseTool, createReadOnlyBrowseTool } from "./browse";
-import { createManageRoutinesTool } from "./manage-routines";
-import { createSearchRoutinesTool } from "./search-routines";
-import { createUseRoutineTool } from "./use-routine";
-import { createSendVoiceTool } from "./send-voice";
-import { createManageWatchersTool } from "./manage-watchers";
-import { reportWatcherResult } from "./report-watcher-result";
-import { createRequestConfirmationTool } from "./request-confirmation";
-import { createCancelConfirmationTool } from "./cancel-confirmation";
+import {
+  createManageRoutinesTool,
+  createSearchRoutinesTool,
+  createUseRoutineTool,
+} from "./routines";
+import { createManageWatchersTool, reportWatcherResult } from "./watchers";
+import { createRequestConfirmationTool, createCancelConfirmationTool } from "./confirmations";
 import { MAX_ROUTINE_DEPTH } from "../../services/routine-executor";
 import { config } from "@mashiro/shared";
 import type { ToolSet } from "ai";

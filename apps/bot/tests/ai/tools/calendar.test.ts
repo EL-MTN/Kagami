@@ -1,3 +1,4 @@
+import { withTestDb } from "@mashiro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@mashiro/shared", async (orig) => ({
@@ -25,7 +26,13 @@ vi.mock("../../../src/services/google-calendar", () => ({
   deleteEvent: mockDelete,
 }));
 
-import { createManageCalendarTool } from "../../../src/ai/tools/manage-calendar";
+import { Reminder, createReminder } from "@mashiro/db";
+import {
+  createManageCalendarTool,
+  createManageRemindersTool,
+} from "../../../src/ai/tools/calendar";
+
+withTestDb({ syncIndexes: false });
 
 interface ExecutableTool {
   execute: (
@@ -40,6 +47,8 @@ beforeEach(() => {
   mockUpdate.mockReset();
   mockDelete.mockReset();
 });
+
+// ─── manageCalendar (full mode) ──────────────────────────────────────────────
 
 describe("manageCalendar tool — full mode", () => {
   const tool = createManageCalendarTool() as unknown as ExecutableTool;
@@ -119,6 +128,8 @@ describe("manageCalendar tool — full mode", () => {
   });
 });
 
+// ─── manageCalendar (readOnly mode) ──────────────────────────────────────────
+
 describe("manageCalendar tool — readOnly mode", () => {
   const tool = createManageCalendarTool({ mode: "readOnly" }) as unknown as ExecutableTool;
 
@@ -140,5 +151,68 @@ describe("manageCalendar tool — readOnly mode", () => {
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockList).toHaveBeenCalled();
+  });
+});
+
+// ─── manageReminders ─────────────────────────────────────────────────────────
+
+const remindersTool = createManageRemindersTool("chat-1") as unknown as ExecutableTool;
+
+describe("manageReminders tool — create", () => {
+  it("rejects when message or fireAt are missing", async () => {
+    expect(await remindersTool.execute({ action: "create" })).toEqual({
+      success: false,
+      reason: "message and fireAt are required to create a reminder",
+    });
+    expect(await remindersTool.execute({ action: "create", message: "x" })).toEqual({
+      success: false,
+      reason: "message and fireAt are required to create a reminder",
+    });
+  });
+
+  it("creates the reminder for the configured chat", async () => {
+    const fireAt = new Date("2026-06-01T12:00:00Z");
+    const result = await remindersTool.execute({
+      action: "create",
+      message: "buy milk",
+      fireAt: fireAt.toISOString(),
+    });
+    expect(result.success).toBe(true);
+    expect(result.message).toBe("buy milk");
+    const persisted = await Reminder.findById(result.reminderId);
+    expect(persisted?.chatId).toBe("chat-1");
+    expect(persisted?.message).toBe("buy milk");
+  });
+});
+
+describe("manageReminders tool — list", () => {
+  it("returns scoped, formatted entries; ISO-formats fireAt", async () => {
+    await createReminder("chat-1", "in chat 1", new Date("2026-06-01T12:00:00Z"));
+    await createReminder("chat-2", "other chat", new Date("2026-06-01T12:00:00Z"));
+    const result = await remindersTool.execute({ action: "list" });
+    expect(result.count).toBe(1);
+    const reminders = result.reminders as Array<Record<string, unknown>>;
+    expect(reminders[0]!.message).toBe("in chat 1");
+    expect(reminders[0]!.fireAt).toBe("2026-06-01T12:00:00.000Z");
+  });
+});
+
+describe("manageReminders tool — delete", () => {
+  it("requires reminderId", async () => {
+    expect(await remindersTool.execute({ action: "delete" })).toEqual({
+      success: false,
+      reason: "reminderId is required for delete",
+    });
+  });
+
+  it("returns success:true when removed, false when missing", async () => {
+    const r = await createReminder("chat-1", "x", new Date());
+    const ok = await remindersTool.execute({ action: "delete", reminderId: r.id as string });
+    expect(ok).toEqual({ success: true, deleted: r.id });
+    const missing = await remindersTool.execute({
+      action: "delete",
+      reminderId: "000000000000000000000000",
+    });
+    expect(missing).toEqual({ success: false, reason: "Reminder not found" });
   });
 });
