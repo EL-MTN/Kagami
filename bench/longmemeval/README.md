@@ -17,18 +17,27 @@ The full S subset (`longmemeval_s_cleaned.json`, 277 MB) and M subset (`longmeme
 ## Run
 
 ```sh
-# Smoke test: 5 items, default model from .env, judge with the same model.
-MODEL=qwen/qwen-3-32b npx tsx scripts/longmemeval.ts --limit 5
+# Local LM Studio + GLM-4.7-flash
+MODEL=zai-org/glm-4.7-flash npx tsx scripts/longmemeval.ts --limit 5
 
-# Full Oracle run.
-MODEL=qwen/qwen-3-32b npx tsx scripts/longmemeval.ts --limit 500
+# OpenAI gpt-4o-mini (the most-tested config)
+LMSTUDIO_URL=https://api.openai.com/v1 \
+  LMSTUDIO_API_KEY=$OPENAI_API_KEY \
+  MODEL=gpt-4o-mini \
+  EMBEDDING_MODEL=text-embedding-3-small \
+  npx tsx scripts/longmemeval.ts --limit 100
+
+# Reuse vaults from a prior run (skips ingest if facts.jsonl exists)
+... --limit 100 --keep-vaults
 ```
 
 Flags:
 - `--limit N` — number of items to run (default: 5)
-- `--judge-model <id>` — override the LM Studio model used for judging (default: same as `MODEL`)
+- `--judge-model <id>` — override the model used for judging (default: same as `MODEL`)
 - `--data <path>` — dataset JSON path (default: `bench/longmemeval/data/longmemeval_oracle.json`)
-- `--keep-vaults` — keep per-item vaults under `bench/longmemeval/vaults/` for inspection (default: kept; use `--clean-vaults` to delete after each item)
+- `--keep-vaults` — skip the per-item vault wipe; reuse existing `facts.jsonl` for the query/judge passes (saves ingest cost on prompt iterations)
+- `--clean-vaults` — delete each vault after its item finishes (default: kept on disk)
+- `--resume` — pick up from `partial-predictions.json` if a prior run was interrupted
 
 ## Output
 
@@ -36,46 +45,17 @@ Flags:
 bench/longmemeval/results/<timestamp>.json
 ```
 
-Schema:
-
-```json
-{
-  "model": "qwen/qwen-3-32b",
-  "judge_model": "qwen/qwen-3-32b",
-  "started_at": "2026-04-28T...",
-  "duration_ms": 0,
-  "summary": {
-    "total": 5,
-    "correct": 0,
-    "accuracy": 0.0,
-    "by_type": { "multi-session": { "correct": 0, "total": 0 } }
-  },
-  "items": [
-    {
-      "question_id": "...",
-      "question_type": "multi-session",
-      "question": "...",
-      "ground_truth": "...",
-      "prediction": "...",
-      "citations": ["entities/..."],
-      "judge_verdict": true,
-      "judge_raw": "yes",
-      "ingestion_ms": 0,
-      "query_ms": 0
-    }
-  ]
-}
-```
+Per-item record includes the question, ground truth, Brainiac's prediction, judge verdict + raw text, and ingest/query latencies.
 
 ## Architecture
 
 - `scripts/longmemeval.ts` — orchestrator. Iterates items, spawns one worker subprocess per item with an isolated `BRAINIAC_VAULT`, then runs the judge pass.
-- `scripts/longmemeval-worker.ts` — single-item worker. Writes each `haystack_session` as a `raw/<session_id>.md` transcript, calls `consolidate()` on each, then `query()`. Writes a JSON result file.
+- `scripts/longmemeval-worker.ts` — single-item worker. Writes each `haystack_session` as `raw/<session_id>.md`, calls `consolidate()` to extract atomic facts into `.memory/facts.jsonl` + `.memory/entities.jsonl`, then `query()`. Auto-skips ingest when `facts.jsonl` already has content (lets `--keep-vaults` cycle the query/judge layer cheaply).
 
 Per-item subprocesses give clean vault isolation without refactoring `paths.ts` (which freezes the vault root at module load).
 
 ## Caveats
 
-- **Self-judging bias**: by default the judge model is the same as the answerer. Cheap but biased — use `--judge-model` with a stronger model for the headline number.
-- **Citation recall is not computed.** Brainiac cites entity files (`entities/<slug>.md`); LongMemEval's `answer_session_ids` references sessions. Bridging requires reading observation `source:` lines out of cited entities — TODO.
-- **Local-model latency** is the binding constraint. Expect ~15s/query + ~10s/session ingestion. A 5-item smoke run with average-sized haystacks is roughly 5–15 minutes.
+- **Self-judging bias**: by default the judge model is the same as the answerer. Cheap but biased — use `--judge-model` with a stronger model for headline numbers.
+- **Citation recall is not computed.** Brainiac currently returns empty citations from `query()`; LongMemEval's `answer_session_ids` references sessions, but mapping is TODO.
+- **Latency profile**: with OpenAI gpt-4o-mini, expect ~30–50s per item end-to-end (ingest dominates); a full 100-item run is ~50 min and ~$5–7 in API. With local GLM-4.7-flash via LM Studio it's bound by local model speed.
