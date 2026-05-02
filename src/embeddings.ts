@@ -187,3 +187,42 @@ export const defaultRanker: Ranker = async (question, k) => {
 // Persistent .memory/embeddings.jsonl cache deferred — current vaults
 // (10–27 entities) embed in ~0.5–1s on demand. Add a cache when entity
 // counts grow into the hundreds; the keying is (entity id, body hash).
+
+// ---------------------------------------------------------------------------
+// Fact-level ranker — reads atomic facts from facts.jsonl, embeds the
+// question, and returns top-K by cosine. Used by queryFlat after the
+// mem0-style ingest pipeline writes pre-embedded facts.
+// ---------------------------------------------------------------------------
+
+import { readFacts, type Fact } from './facts.js';
+
+export interface RankedFact {
+  id: string;
+  text: string;
+  eventDate: string;
+  sourceSession: string;
+  createdAt: string;
+}
+
+export type FactRanker = (
+  question: string,
+  k: number,
+) => Promise<RankedFact[]>;
+
+export const defaultFactRanker: FactRanker = async (question, k) => {
+  const facts = await readFacts();
+  if (facts.length === 0) return [];
+  const qEmb = await embedQuestion(question);
+  const scored = facts.map((f: Fact) => ({
+    fact: f,
+    sim: cosineSimilarity(qEmb, f.embedding),
+  }));
+  scored.sort((a, b) => b.sim - a.sim);
+  return scored.slice(0, k).map(({ fact }) => ({
+    id: fact.id,
+    text: fact.text,
+    eventDate: fact.event_date,
+    sourceSession: fact.source_session,
+    createdAt: fact.created_at,
+  }));
+};

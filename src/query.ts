@@ -5,10 +5,13 @@ import { generateObject, generateText, hasToolCall, stepCountIs, tool } from 'ai
 import { model } from './llm.js';
 import { paths } from './paths.js';
 import {
+  defaultFactRanker,
   defaultObservationRanker,
   defaultRanker,
+  type FactRanker,
   type ObservationRanker,
   type RankedCandidate,
+  type RankedFact,
   type RankedObservation,
   type Ranker,
 } from './embeddings.js';
@@ -346,27 +349,27 @@ async function readSafe(p: string, fallback: string): Promise<string> {
 // Lives alongside query() so we can A/B without breaking the agentic path.
 // ---------------------------------------------------------------------------
 
-const FLAT_TOP_K = Number.parseInt(process.env.BRAINIAC_FLAT_K ?? '20', 10);
+const FLAT_TOP_K = Number.parseInt(process.env.BRAINIAC_FLAT_K ?? '50', 10);
 
-const FLAT_SYSTEM_PROMPT = `You answer questions about the user from their personal memory vault. You receive _core.md (canonical user state) and the top observations retrieved by semantic similarity to the question, formatted as "<event_date>: <headline> [[entity-id]]".
-
-IMPORTANT: All relative time expressions MUST be computed relative to today's date (provided in the user prompt).
-
-IMPORTANT: If observations contradict, prioritize the most recent (by event_date). The vault keeps both for audit; the answer reflects the latest.
-
-IMPORTANT: If observations contain numbers needed to compute the answer (ages to subtract, dates to diff, prices), DO the computation. Don't refuse just because the answer requires arithmetic.
-
-IMPORTANT: If the topic is genuinely unmentioned, answer "The information provided is not enough." For comparison questions, BOTH items must appear as completed events; otherwise answer that there's not enough information.
-
-IMPORTANT: Keep answers under 10 words unless the question demands a list. Cite the entity wikilinks ([[entity-id]]) of the observations you actually used as the citations array.
-
-For temporal questions: identify the relevant observation's event_date, compute the interval from today.
-For yes/no: "Did I ever do X?" with no matching observation = "No."
-For "most recent" of a changing fact: use the latest event_date.
-
-Output a single JSON object with shape { answer: string, citations: string[] }.`;
+// Mem0's verbatim ANSWER_GENERATION_PROMPT (saved at
+// prompts/mem0_longmemeval_answer.md), templated with {memories},
+// {question_date}, {question}. Loaded lazily and cached. Free-text output
+// with <mem_thinking>...</mem_thinking> + final answer; we strip the
+// thinking block before returning.
+let cachedAnswerPromptTemplate: string | null = null;
+async function getAnswerPromptTemplate(): Promise<string> {
+  if (cachedAnswerPromptTemplate) return cachedAnswerPromptTemplate;
+  cachedAnswerPromptTemplate = await fs.readFile(
+    `${paths.prompts}/mem0_longmemeval_answer.md`,
+    'utf8',
+  );
+  return cachedAnswerPromptTemplate;
+}
 
 export interface QueryFlatDeps {
+  factRank?: FactRanker;
+  // Legacy: ranks observations parsed from entity files. Kept for the
+  // pre-Phase-1 vault shape; new path uses factRank against facts.jsonl.
   observationRank?: ObservationRanker;
   topK?: number;
 }
@@ -380,45 +383,105 @@ export function formatObservations(obs: RankedObservation[]): string {
     .join('\n');
 }
 
+export function formatFacts(facts: RankedFact[]): string {
+  return facts.map((f) => `${f.eventDate}: ${f.text}`).join('\n');
+}
+
+// Mem0's ANSWER_GENERATION_PROMPT format: facts grouped under date headers,
+// sorted newest-first. Mirrors how mem0's harness composes search results
+// before sending to GPT-4o-mini.
+export function formatFactsGroupedByDateNewestFirst(
+  facts: RankedFact[],
+): string {
+  const sorted = [...facts].sort((a, b) =>
+    (b.eventDate || '').localeCompare(a.eventDate || ''),
+  );
+  const lines: string[] = [];
+  let currentDate = '';
+  for (const f of sorted) {
+    const date = f.eventDate || f.createdAt.slice(0, 10);
+    if (date !== currentDate) {
+      currentDate = date;
+      lines.push(`\n--- ${date} ---`);
+    }
+    lines.push(`- ${f.text}`);
+  }
+  return lines.join('\n').trim();
+}
+
+// Mem0's prompt asks the model to think inside <mem_thinking>...</mem_thinking>
+// tags before the answer. Strip the thinking block; trim residual leader text.
+export function stripMemThinking(text: string): string {
+  return text
+    .replace(/<mem_thinking>[\s\S]*?<\/mem_thinking>/gi, '')
+    .replace(/^[\s:.\-]+/, '')
+    .trim();
+}
+
 export async function queryFlat(
   question: string,
   deps: QueryFlatDeps = {},
 ): Promise<QueryResult> {
-  const core = await readSafe(paths.core, '(empty)');
-  const timeline = await readSafe(paths.timeline, '');
-  const ranker = deps.observationRank ?? defaultObservationRanker;
   const k = deps.topK ?? FLAT_TOP_K;
 
-  let observations: RankedObservation[] = [];
-  try {
-    observations = await ranker(question, k);
-  } catch (err) {
-    console.error(`[brainiac] observation ranker failed: ${(err as Error).message}`);
+  // Phase 1: prefer the fact ranker (reads facts.jsonl populated by the
+  // mem0-style ingest pipeline). Fall back to the observation ranker
+  // (parses entity files) if facts.jsonl is empty/absent — keeps the path
+  // working during the transition.
+  let memoriesText = '(No relevant memories found)';
+  if (deps.observationRank) {
+    const obs = await safeRank(deps.observationRank, question, k);
+    if (obs.length > 0) memoriesText = formatObservations(obs);
+  } else {
+    const ranker = deps.factRank ?? defaultFactRanker;
+    const facts = await safeRank(ranker, question, k);
+    if (facts.length > 0) {
+      memoriesText = formatFactsGroupedByDateNewestFirst(facts);
+    } else {
+      const obs = await safeRank(defaultObservationRanker, question, k);
+      if (obs.length > 0) memoriesText = formatObservations(obs);
+    }
   }
 
-  const questionDate = deriveQuestionDate(timeline);
-  const userPrompt = [
-    `Today's date is ${questionDate}.`,
-    `_core.md:\n\n${core.trim()}`,
-    `Top ${observations.length} observations (semantic match on the question):\n\n${
-      observations.length > 0 ? formatObservations(observations) : '(none)'
-    }`,
-    `Question: ${question}`,
-  ].join('\n\n');
+  const timelineForDate = await readSafe(paths.timeline, '');
+  const questionDate = deriveQuestionDate(timelineForDate);
+  const template = await getAnswerPromptTemplate();
+  // Mem0's template uses single-brace placeholders {memories},
+  // {question_date}, {question}. Replace literally.
+  const prompt = template
+    .replace('{question_date}', questionDate)
+    .replace('{question_date}', questionDate)
+    .replace('{memories}', memoriesText)
+    .replace('{question}', question);
 
   try {
-    const result = await generateObject({
+    const result = await generateText({
       model,
-      schema: AnswerInput,
-      system: FLAT_SYSTEM_PROMPT,
-      prompt: userPrompt,
+      prompt,
       temperature: 0,
+      abortSignal: AbortSignal.timeout(120_000),
     });
-    return result.object;
+    return {
+      answer: stripMemThinking(result.text) || '(empty answer)',
+      citations: [],
+    };
   } catch (err) {
     return {
       answer: `(no answer — flat query failed: ${(err as Error).message})`,
       citations: [],
     };
+  }
+}
+
+async function safeRank<T>(
+  ranker: (q: string, k: number) => Promise<T[]>,
+  q: string,
+  k: number,
+): Promise<T[]> {
+  try {
+    return await ranker(q, k);
+  } catch (err) {
+    console.error(`[brainiac] ranker failed: ${(err as Error).message}`);
+    return [];
   }
 }

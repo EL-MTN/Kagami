@@ -21,6 +21,7 @@ interface CliArgs {
   data: string;
   judgeModel: string | null;
   cleanVaults: boolean;
+  keepVaults: boolean;
   resume: boolean;
 }
 
@@ -59,8 +60,9 @@ function parseArgs(): CliArgs {
   const data = get('--data', path.join(benchRoot, 'data/longmemeval_oracle.json'))!;
   const judgeModel = get('--judge-model');
   const cleanVaults = args.includes('--clean-vaults');
+  const keepVaults = args.includes('--keep-vaults');
   const resume = args.includes('--resume');
-  return { limit, data, judgeModel, cleanVaults, resume };
+  return { limit, data, judgeModel, cleanVaults, keepVaults, resume };
 }
 
 // Per-item predictions are persisted here as the bench progresses so a
@@ -130,7 +132,9 @@ async function main() {
     console.log(`[${i + 1}/${items.length}] ${qid} (${item.question_type})`);
 
     const vault = path.join(vaultsRoot, qid);
-    await fs.rm(vault, { recursive: true, force: true });
+    if (!args.keepVaults) {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
     await fs.mkdir(vault, { recursive: true });
 
     const itemFile = path.join(itemsTmpRoot, `${qid}.item.json`);

@@ -20,6 +20,7 @@ export const paths = {
   internal: path.join(vaultRoot, '.memory'),
   log: path.join(vaultRoot, '.memory', 'log.jsonl'),
   llmFailures: path.join(vaultRoot, '.memory', 'llm-failures'),
+  facts: path.join(vaultRoot, '.memory', 'facts.jsonl'),
   prompts: path.join(projectRoot, 'prompts'),
 } as const;
 

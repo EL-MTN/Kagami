@@ -63,6 +63,7 @@ async function main() {
 
   // Lazy-import after env is set so paths.ts picks up BRAINIAC_VAULT.
   const { consolidate } = await import('../src/ingest.js');
+  const { ingestTranscriptV2 } = await import('../src/extract_v2.js');
   const { query, queryFlat } = await import('../src/query.js');
   const useFlat = process.env.BRAINIAC_FLAT === '1';
 
@@ -79,13 +80,34 @@ async function main() {
   }
 
   const ingestStart = Date.now();
-  for (let i = 0; i < sessions.length; i++) {
-    const sid = sessionIds[i]!;
-    const transcript = formatTranscript(sid, dates[i]!, sessions[i]!);
-    const transcriptPath = path.join(rawDir, `${sid}.md`);
-    await fs.writeFile(transcriptPath, transcript);
-    process.stderr.write(`[worker ${item.question_id}] ingesting ${sid} (${sessions[i]!.length} turns)\n`);
-    await consolidate(transcriptPath);
+  // Skip ingest entirely when a populated facts.jsonl already exists in
+  // the vault. Lets bench reruns isolate query/judge changes without
+  // paying for re-extraction.
+  const factsPath = path.join(vault, '.memory', 'facts.jsonl');
+  let skipIngest = false;
+  if (useFlat) {
+    try {
+      const stat = await fs.stat(factsPath);
+      skipIngest = stat.size > 0;
+    } catch {
+      skipIngest = false;
+    }
+  }
+  if (!skipIngest) {
+    for (let i = 0; i < sessions.length; i++) {
+      const sid = sessionIds[i]!;
+      const transcript = formatTranscript(sid, dates[i]!, sessions[i]!);
+      const transcriptPath = path.join(rawDir, `${sid}.md`);
+      await fs.writeFile(transcriptPath, transcript);
+      process.stderr.write(`[worker ${item.question_id}] ingesting ${sid} (${sessions[i]!.length} turns)\n`);
+      if (useFlat) {
+        await ingestTranscriptV2(transcriptPath);
+      } else {
+        await consolidate(transcriptPath);
+      }
+    }
+  } else {
+    process.stderr.write(`[worker ${item.question_id}] ingest skipped (facts.jsonl exists)\n`);
   }
   const ingestionMs = Date.now() - ingestStart;
 
