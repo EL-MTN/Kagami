@@ -13,12 +13,18 @@ vi.mock("@mashiro/shared", async (orig) => ({
   },
 }));
 
-const { mockGenerateImage } = vi.hoisted(() => ({ mockGenerateImage: vi.fn() }));
+const { mockGenerateImage, mockGenerateVoice } = vi.hoisted(() => ({
+  mockGenerateImage: vi.fn(),
+  mockGenerateVoice: vi.fn(),
+}));
 vi.mock("../../../src/context/generator", () => ({
   generateImage: mockGenerateImage,
 }));
+vi.mock("../../../src/tts/generator", () => ({
+  generateVoice: mockGenerateVoice,
+}));
 
-import { createSendPhotoTool } from "../../../src/ai/tools/send-photo";
+import { createSendPhotoTool, createSendVoiceTool } from "../../../src/ai/tools/media";
 
 interface ExecutableTool {
   execute: (
@@ -27,11 +33,14 @@ interface ExecutableTool {
   ) => Promise<Record<string, unknown>>;
 }
 
-describe("sendPhoto tool", () => {
-  beforeEach(() => {
-    mockGenerateImage.mockReset();
-  });
+beforeEach(() => {
+  mockGenerateImage.mockReset();
+  mockGenerateVoice.mockReset();
+});
 
+// ─── sendPhoto ───────────────────────────────────────────────────────────────
+
+describe("sendPhoto tool", () => {
   it("generates the image with default 3:4 aspect ratio and sends it via the adapter", async () => {
     const buffer = Buffer.from("png-bytes");
     mockGenerateImage.mockResolvedValue({ buffer });
@@ -75,5 +84,35 @@ describe("sendPhoto tool", () => {
 
     expect(result).toEqual({ sent: false, reason: "image API 500" });
     expect(adapter.calls.sendPhotoBuffer).toEqual([]);
+  });
+});
+
+// ─── sendVoice ───────────────────────────────────────────────────────────────
+
+describe("sendVoice tool", () => {
+  it("generates audio and sends it via the adapter with duration", async () => {
+    const buffer = Buffer.from("ogg-bytes");
+    mockGenerateVoice.mockResolvedValue({ buffer, durationSeconds: 4 });
+    const adapter = fakeAdapter();
+    const tool = createSendVoiceTool("chat-1", adapter) as unknown as ExecutableTool;
+
+    const result = await tool.execute({ text: "hello there" });
+
+    expect(result).toEqual({ sent: true });
+    expect(mockGenerateVoice).toHaveBeenCalledWith({ text: "hello there" });
+    expect(adapter.calls.sendVoiceBuffer).toEqual([
+      { chatId: "chat-1", bytes: buffer.length, duration: 4 },
+    ]);
+  });
+
+  it("returns sent:false on TTS failure and skips the adapter call", async () => {
+    mockGenerateVoice.mockRejectedValue(new Error("tts 500"));
+    const adapter = fakeAdapter();
+    const tool = createSendVoiceTool("chat-1", adapter) as unknown as ExecutableTool;
+
+    const result = await tool.execute({ text: "anything" });
+
+    expect(result).toEqual({ sent: false, reason: "Voice generation failed" });
+    expect(adapter.calls.sendVoiceBuffer).toEqual([]);
   });
 });
