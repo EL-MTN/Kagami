@@ -19,6 +19,19 @@ const envSchema = z.object({
   GOOGLE_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   GOOGLE_OAUTH_REDIRECT_URI: z.string().url().optional(),
+  KIZUNA_OAUTH_ENCRYPTION_KEY: z
+    .string()
+    .refine(
+      (s) => {
+        try {
+          return Buffer.from(s, 'base64').length === 32;
+        } catch {
+          return false;
+        }
+      },
+      'must be a base64-encoded 32-byte key',
+    )
+    .optional(),
   NEWSLETTER_DOMAIN_BLOCKLIST: z
     .string()
     .optional()

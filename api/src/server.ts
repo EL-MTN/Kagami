@@ -10,6 +10,7 @@ import { organizationsRouter } from './routes/organizations.js';
 import { interactionsRouter } from './routes/interactions.js';
 import { followupsRouter } from './routes/followups.js';
 import { manifestRouter } from './routes/manifest.js';
+import { makeOauthRouter } from './routes/oauth.js';
 
 export type ServerDeps = {
   db: DbHandle;
@@ -23,6 +24,10 @@ export function createApp({ db, config, logger }: ServerDeps): Express {
   app.use(express.json({ limit: '1mb' }));
 
   app.use(healthRouter(db));
+
+  // /oauth/* — handlers do their own key check (header OR ?key=) so the
+  // browser can land here from a plain <a href>. Callback uses signed-state CSRF.
+  app.use('/oauth', makeOauthRouter(config));
 
   app.use('/v1', bearerAuth(config.KIZUNA_API_KEY));
   app.use('/v1', manifestRouter);

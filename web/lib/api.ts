@@ -6,6 +6,7 @@ import type {
   ListOrganizationsQuery,
   ListPeopleQuery,
   ListResp,
+  OAuthStatus,
   Organization,
   Person,
 } from './types';
@@ -73,7 +74,12 @@ export const api = {
       `/v1/organizations${qs(q as Record<string, unknown> | undefined)}`,
     ),
   getOrganization: (id: string) => kz<Organization>(`/v1/organizations/${id}`),
+  oauthStatus: () => kz<OAuthStatus>('/oauth/google/status'),
 };
+
+export function oauthStartUrl(): string {
+  return `${API_URL}/oauth/google/start?key=${encodeURIComponent(API_KEY)}`;
+}
 
 export const config = {
   apiUrl: API_URL,

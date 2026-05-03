@@ -128,6 +128,10 @@ export type ListFollowupsQuery = {
   includeTombstoned?: boolean;
 };
 
+export type OAuthStatus =
+  | { granted: false }
+  | { granted: true; scopes: string[]; grantedAt: string };
+
 export type ListOrganizationsQuery = {
   limit?: number;
   cursor?: string;

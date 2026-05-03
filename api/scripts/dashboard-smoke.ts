@@ -197,7 +197,7 @@ async function main(): Promise<void> {
       { path: '/people', expects: ['People', 'Sarah Connor'] },
       { path: `/people/${sarah.id}`, expects: ['Sarah Connor', 'Re: Q1 review'] },
       { path: '/contexts', expects: ['Contexts', 'project:acme-redesign'] },
-      { path: '/sync', expects: ['Sync'] },
+      { path: '/sync', expects: ['Sync', 'Connect Google', 'not granted'] },
       { path: '/errors', expects: ['Errors'] },
       { path: '/tombstones', expects: ['Tombstones'] },
     ];
@@ -233,6 +233,21 @@ async function main(): Promise<void> {
     check(
       '/people?includeTombstoned shows tombstoned badge',
       incTombHtml.includes('tombstoned') && incTombHtml.includes('Sarah Connor'),
+    );
+
+    section('OAuth status surfaces on /sync');
+    const { OAuthToken } = await import('../src/db/models/OAuthToken.js');
+    await OAuthToken.create({
+      provider: 'google',
+      refreshToken: 'fake-encrypted-blob-not-real',
+      scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+      grantedAt: new Date(),
+      source: 'concierge',
+    });
+    const grantedSync = await (await fetch(`${webBase}/sync`)).text();
+    check(
+      '/sync flips to "granted" after OAuthToken upsert',
+      grantedSync.includes('Re-authorize') && grantedSync.includes('gmail.readonly'),
     );
   } finally {
     await cleanup();
