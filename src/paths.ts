@@ -14,7 +14,6 @@ export const vaultRoot = process.env.KIOKU_VAULT
 export const paths = {
   vault: vaultRoot,
   raw: path.join(vaultRoot, 'raw'),
-  core: path.join(vaultRoot, '_core.md'),
   internal: path.join(vaultRoot, '.memory'),
   llmFailures: path.join(vaultRoot, '.memory', 'llm-failures'),
   facts: path.join(vaultRoot, '.memory', 'facts.jsonl'),

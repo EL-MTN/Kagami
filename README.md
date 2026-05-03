@@ -43,7 +43,6 @@ prompts/
 
 ```
 $KIOKU_VAULT/
-  _core.md                always-loaded canonical user state, hand-edited
   raw/<session>.md        immutable transcripts (input to ingest)
   .memory/
     facts.jsonl           one atomic fact per line: text + md5 hash + embedding + dates
@@ -128,6 +127,6 @@ npm start
 - **No vector DB.** facts.jsonl + in-memory cosine. Fast through ~10K facts per vault; swap in qdrant if you scale past that.
 - **Embeddings persisted at write time.** Query is one embed call + cosine + BM25 + entity boost — no re-embedding.
 - **Transcripts are immutable.** `raw/<session>.md` files are the audit trail; facts are derived.
-- **`_core.md` is the only hand-editable artifact.** Atomic facts are write-once; edit by re-ingesting a corrected transcript.
+- **Atomic facts are write-once.** No UPDATE/DELETE — corrections happen by appending a newer fact with a later `event_date`; the answerer prompt resolves conflicts newest-wins (`prompts/answer.md`).
 
 The architecture is closely modeled on the open-source memory benchmarks at [mem0ai/memory-benchmarks](https://github.com/mem0ai/memory-benchmarks). Implementation is independent (pure TypeScript, no spaCy / qdrant / Docker) but the prompts, scoring formulas, and pipeline shape come from there.
