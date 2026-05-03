@@ -36,6 +36,12 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((s) => (s ? csv(s).map((d) => d.toLowerCase()) : [])),
+  KIZUNA_GMAIL_BACKFILL_DAYS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .default(30),
   PORT: z.coerce.number().int().positive().max(65_535).default(3000),
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])

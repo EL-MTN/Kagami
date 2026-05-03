@@ -2,6 +2,8 @@ import { timingSafeEqual } from 'node:crypto';
 import { Router } from 'express';
 import type { Config } from '../config.js';
 import { OAuthToken } from '../db/models/OAuthToken.js';
+import { SyncState } from '../db/models/SyncState.js';
+import { clearAccessTokenCache } from '../lib/google-auth.js';
 import {
   GOOGLE_SCOPES,
   buildAuthUrl,
@@ -84,6 +86,14 @@ export function makeOauthRouter(config: Config): Router {
       scopes,
       config.KIZUNA_OAUTH_ENCRYPTION_KEY,
     );
+
+    // A successful re-grant unpauses any worker that was paused on
+    // invalid_grant, and invalidates the cached access token.
+    await SyncState.updateMany(
+      { pausedAt: { $ne: null } },
+      { $set: { pausedAt: null, lastError: null } },
+    );
+    clearAccessTokenCache();
 
     res
       .status(200)

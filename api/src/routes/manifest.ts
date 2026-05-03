@@ -4,12 +4,14 @@ import { peopleEndpoints } from './people.js';
 import { organizationsEndpoints } from './organizations.js';
 import { interactionsEndpoints } from './interactions.js';
 import { followupsEndpoints } from './followups.js';
+import { syncEndpoints } from './sync.js';
 
 export const allEndpoints: EndpointSpec[] = [
   ...peopleEndpoints,
   ...organizationsEndpoints,
   ...interactionsEndpoints,
   ...followupsEndpoints,
+  ...syncEndpoints,
 ];
 
 const manifestData = buildManifest(allEndpoints);

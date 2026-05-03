@@ -9,6 +9,8 @@ import type {
   OAuthStatus,
   Organization,
   Person,
+  RunSyncResult,
+  SyncState,
 } from './types';
 
 const API_URL = process.env.KIZUNA_API_URL ?? 'http://localhost:3000';
@@ -75,6 +77,13 @@ export const api = {
     ),
   getOrganization: (id: string) => kz<Organization>(`/v1/organizations/${id}`),
   oauthStatus: () => kz<OAuthStatus>('/oauth/google/status'),
+  gmailSyncState: () => kz<SyncState>('/v1/sync/gmail/state'),
+  runGmailSync: (force?: boolean) =>
+    kz<RunSyncResult>('/v1/sync/gmail/run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(force ? { force: true } : {}),
+    }),
 };
 
 export function oauthStartUrl(): string {

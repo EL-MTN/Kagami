@@ -23,12 +23,41 @@ export type RecordInteractionInput = {
   status?: 'active' | 'cancelled';
 };
 
+export type RecordOpts = {
+  /**
+   * If true, swallow E11000 dup-key errors raised by the unique partial index
+   * on sourceRef. Returns null in that case. Used by ingest workers to make
+   * replays idempotent.
+   */
+  skipIfDuplicate?: boolean;
+};
+
 /**
  * The only path that inserts into `interactions`. Maintains the
  * `lastInteractionAt` invariant on every linked person via $max.
+ *
+ * Returns null only when `skipIfDuplicate` is true and the unique sourceRef
+ * partial index rejected the insert.
  */
-export async function recordInteraction(input: RecordInteractionInput) {
-  const created = await Interaction.create(input);
+export async function recordInteraction(
+  input: RecordInteractionInput,
+  opts: RecordOpts = {},
+) {
+  let created;
+  try {
+    created = await Interaction.create(input);
+  } catch (err) {
+    if (
+      opts.skipIfDuplicate &&
+      err &&
+      typeof err === 'object' &&
+      'code' in err &&
+      (err as { code: number }).code === 11000
+    ) {
+      return null;
+    }
+    throw err;
+  }
   const participants = (created.get('participants') as unknown as
     | Array<{ personId: Types.ObjectId }>
     | undefined) ?? [];

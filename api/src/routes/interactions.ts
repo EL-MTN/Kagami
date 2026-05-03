@@ -172,7 +172,9 @@ interactionsRouter.post('/interactions', async (req, res) => {
     ...(body.attachments !== undefined ? { attachments: body.attachments } : {}),
     source: 'concierge',
   });
-  res.status(201).json(serializeInteraction(created.toObject()));
+  // recordInteraction can only return null when skipIfDuplicate is set,
+  // which the concierge write path doesn't pass.
+  res.status(201).json(serializeInteraction(created!.toObject()));
 });
 
 interactionsRouter.delete('/interactions/:id', async (req, res) => {

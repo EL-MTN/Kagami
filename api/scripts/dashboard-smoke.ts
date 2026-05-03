@@ -197,7 +197,16 @@ async function main(): Promise<void> {
       { path: '/people', expects: ['People', 'Sarah Connor'] },
       { path: `/people/${sarah.id}`, expects: ['Sarah Connor', 'Re: Q1 review'] },
       { path: '/contexts', expects: ['Contexts', 'project:acme-redesign'] },
-      { path: '/sync', expects: ['Sync', 'Connect Google', 'not granted'] },
+      {
+        path: '/sync',
+        expects: [
+          'Sync',
+          'Connect Google',
+          'not granted',
+          'Gmail ingest',
+          'Calendar ingest',
+        ],
+      },
       { path: '/errors', expects: ['Errors'] },
       { path: '/tombstones', expects: ['Tombstones'] },
     ];

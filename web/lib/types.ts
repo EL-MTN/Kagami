@@ -132,6 +132,27 @@ export type OAuthStatus =
   | { granted: false }
   | { granted: true; scopes: string[]; grantedAt: string };
 
+export type SyncState = {
+  provider: 'gmail' | 'gcal';
+  historyId: string | null;
+  syncToken: string | null;
+  lastRunAt: string | null;
+  errorCount: number;
+  lastError: string | null;
+  pausedAt: string | null;
+};
+
+export type RunSyncResult = {
+  status: 'ok' | 'paused' | 'no_grant' | 'error';
+  fetched: number;
+  inserted: number;
+  skippedExisting: number;
+  skippedNewsletter: number;
+  errors: number;
+  historyIdAfter: string | null;
+  message?: string;
+};
+
 export type ListOrganizationsQuery = {
   limit?: number;
   cursor?: string;
