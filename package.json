@@ -1,0 +1,20 @@
+{
+  "name": "kizuna",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "workspaces": [
+    "api"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm -w @kizuna/api run dev",
+    "build": "npm -w @kizuna/api run build",
+    "start": "npm -w @kizuna/api run start",
+    "test": "npm -w @kizuna/api run test",
+    "typecheck": "npm -w @kizuna/api run typecheck",
+    "smoke": "npm -w @kizuna/api run smoke"
+  }
+}
