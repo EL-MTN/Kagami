@@ -1,10 +1,12 @@
 import { Types } from 'mongoose';
 import { Person } from '../db/models/Person.js';
+import type { Source } from '../db/models/base.js';
 
 export type UpsertPersonInput = {
   email: string;
   displayName?: string | null;
   occurredAt: Date; // used as firstSeen if creating
+  source: Source; // 'gmail-sync' or 'gcal-sync', set by the caller
 };
 
 export type UpsertPersonResult = {
@@ -69,7 +71,7 @@ export async function upsertPerson(
     primaryEmail: email,
     emails: [email],
     firstSeen: input.occurredAt,
-    source: 'gmail-sync',
+    source: input.source,
   });
   return {
     personId: created._id as Types.ObjectId,

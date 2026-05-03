@@ -42,6 +42,12 @@ const envSchema = z.object({
     .min(1)
     .max(365)
     .default(30),
+  KIZUNA_GCAL_BACKFILL_DAYS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .default(60),
   PORT: z.coerce.number().int().positive().max(65_535).default(3000),
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])

@@ -81,3 +81,60 @@ async function touchLastInteraction(
     { $max: { lastInteractionAt: occurredAt } },
   );
 }
+
+/**
+ * Upsert an interaction by its `sourceRef`. Used by the Calendar ingest worker
+ * to reconcile edits to existing events: title/time/location/status get
+ * overwritten, the participants array is replaced wholesale.
+ *
+ * `lastInteractionAt` is only bumped when the upserted interaction is active —
+ * cancelled events should not register as a recent touchpoint.
+ */
+export async function upsertInteractionBySourceRef(input: RecordInteractionInput) {
+  if (!input.sourceRef) {
+    throw new Error('upsertInteractionBySourceRef requires a sourceRef');
+  }
+  const filter = {
+    'sourceRef.provider': input.sourceRef.provider,
+    'sourceRef.id': input.sourceRef.id,
+  };
+  const set: Record<string, unknown> = {
+    occurredAt: input.occurredAt,
+    channel: input.channel,
+    title: input.title,
+    body: input.body ?? '',
+    participants: input.participants,
+    status: input.status ?? 'active',
+    sourceRef: input.sourceRef,
+    source: input.source,
+  };
+  if (input.location !== undefined) set.location = input.location;
+  else set.location = null;
+  if (input.attachments !== undefined) set.attachments = input.attachments;
+  if (input.context !== undefined) set.context = input.context;
+  if (input.sourceVersion !== undefined) set.sourceVersion = input.sourceVersion;
+
+  const doc = await Interaction.findOneAndUpdate(
+    filter,
+    { $set: set },
+    {
+      upsert: true,
+      new: true,
+      runValidators: true,
+      setDefaultsOnInsert: true,
+    },
+  );
+  if (!doc) throw new Error('upsert returned no document');
+
+  const status = (doc.get('status') as string | undefined) ?? 'active';
+  if (status === 'active') {
+    const participants = (doc.get('participants') as unknown as
+      | Array<{ personId: Types.ObjectId }>
+      | undefined) ?? [];
+    await touchLastInteraction(
+      participants.map((p) => p.personId),
+      doc.get('occurredAt') as Date,
+    );
+  }
+  return doc;
+}

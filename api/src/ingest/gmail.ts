@@ -128,6 +128,7 @@ async function processMessageIds(
             email: addr.email,
             displayName: addr.name ?? '',
             occurredAt: parsed.occurredAt,
+            source: 'gmail-sync',
           });
           pid = r.personId;
           personByEmail.set(addr.email, pid);

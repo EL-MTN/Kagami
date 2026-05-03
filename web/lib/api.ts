@@ -9,6 +9,7 @@ import type {
   OAuthStatus,
   Organization,
   Person,
+  RunCalendarSyncResult,
   RunSyncResult,
   SyncState,
 } from './types';
@@ -80,6 +81,13 @@ export const api = {
   gmailSyncState: () => kz<SyncState>('/v1/sync/gmail/state'),
   runGmailSync: (force?: boolean) =>
     kz<RunSyncResult>('/v1/sync/gmail/run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(force ? { force: true } : {}),
+    }),
+  gcalSyncState: () => kz<SyncState>('/v1/sync/gcal/state'),
+  runGcalSync: (force?: boolean) =>
+    kz<RunCalendarSyncResult>('/v1/sync/gcal/run', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(force ? { force: true } : {}),

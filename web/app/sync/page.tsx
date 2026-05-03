@@ -1,6 +1,7 @@
 import { revalidatePath } from 'next/cache';
 import { api, oauthStartUrl } from '@/lib/api';
 import { fmtDateTime, fmtRelative } from '@/lib/format';
+import type { SyncState } from '@/lib/types';
 import {
   Badge,
   Card,
@@ -20,12 +21,20 @@ async function runGmailSyncAction(formData: FormData) {
   revalidatePath('/sync');
 }
 
+async function runGcalSyncAction(formData: FormData) {
+  'use server';
+  const force = formData.get('force') === 'true';
+  await api.runGcalSync(force);
+  revalidatePath('/sync');
+}
+
 export default async function SyncPage() {
-  let oauth, gmailState;
+  let oauth, gmailState, gcalState;
   try {
-    [oauth, gmailState] = await Promise.all([
+    [oauth, gmailState, gcalState] = await Promise.all([
       api.oauthStatus(),
       api.gmailSyncState(),
+      api.gcalSyncState(),
     ]);
   } catch (err) {
     return (
@@ -100,102 +109,133 @@ export default async function SyncPage() {
       </Card>
 
       <div className="mt-6">
-        <Card>
-          <CardHeader>Gmail ingest</CardHeader>
-          <div className="space-y-4 px-4 py-4 text-sm">
-            <div className="grid grid-cols-2 gap-y-2">
-              <div className="text-zinc-500">Status</div>
-              <div>
-                {gmailState.pausedAt ? (
-                  <Badge tone="red">paused</Badge>
-                ) : gmailState.historyId ? (
-                  <Badge tone="green">incremental</Badge>
-                ) : (
-                  <Badge tone="amber">not bootstrapped</Badge>
-                )}
-              </div>
-              <div className="text-zinc-500">Last run</div>
-              <div>
-                {gmailState.lastRunAt ? (
-                  <>
-                    <span>{fmtDateTime(gmailState.lastRunAt)}</span>{' '}
-                    <span className="text-zinc-400">
-                      ({fmtRelative(gmailState.lastRunAt)})
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-zinc-400">never</span>
-                )}
-              </div>
-              <div className="text-zinc-500">History cursor</div>
-              <div>
-                {gmailState.historyId ? (
-                  <Mono>{gmailState.historyId}</Mono>
-                ) : (
-                  <span className="text-zinc-400">—</span>
-                )}
-              </div>
-              <div className="text-zinc-500">Error count</div>
-              <div>{gmailState.errorCount}</div>
-              {gmailState.lastError ? (
-                <>
-                  <div className="text-zinc-500">Last error</div>
-                  <div className="text-rose-700">
-                    <Mono>{gmailState.lastError}</Mono>
-                  </div>
-                </>
-              ) : null}
-              {gmailState.pausedAt ? (
-                <>
-                  <div className="text-zinc-500">Paused at</div>
-                  <div>{fmtDateTime(gmailState.pausedAt)}</div>
-                </>
-              ) : null}
-            </div>
-
-            {oauth.granted ? (
-              <form action={runGmailSyncAction} className="flex items-center gap-2">
-                {gmailState.pausedAt ? (
-                  <>
-                    <input type="hidden" name="force" value="true" />
-                    <button
-                      type="submit"
-                      className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-50"
-                    >
-                      Force-run (clear pause)
-                    </button>
-                    <span className="text-xs text-zinc-500">
-                      Try after a Re-authorize.
-                    </span>
-                  </>
-                ) : (
-                  <button
-                    type="submit"
-                    className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700"
-                  >
-                    Run sync now
-                  </button>
-                )}
-              </form>
-            ) : (
-              <Empty>Connect Google above before running ingest.</Empty>
-            )}
-          </div>
-        </Card>
+        <IngestCard
+          title="Gmail ingest"
+          state={gmailState}
+          cursorLabel="History cursor"
+          cursorValue={gmailState.historyId}
+          granted={oauth.granted}
+          action={runGmailSyncAction}
+          bootstrappedWhen="historyId"
+        />
       </div>
 
       <div className="mt-6">
-        <Card>
-          <CardHeader>Calendar ingest</CardHeader>
-          <div className="p-4">
-            <Empty>
-              Calendar worker ships in step 6. Once it populates{' '}
-              <Mono>sync_state</Mono> for <Mono>gcal</Mono>, this card mirrors
-              the Gmail one.
-            </Empty>
-          </div>
-        </Card>
+        <IngestCard
+          title="Calendar ingest"
+          state={gcalState}
+          cursorLabel="Sync token"
+          cursorValue={gcalState.syncToken}
+          granted={oauth.granted}
+          action={runGcalSyncAction}
+          bootstrappedWhen="syncToken"
+        />
       </div>
     </>
+  );
+}
+
+function IngestCard({
+  title,
+  state,
+  cursorLabel,
+  cursorValue,
+  granted,
+  action,
+  bootstrappedWhen,
+}: {
+  title: string;
+  state: SyncState;
+  cursorLabel: string;
+  cursorValue: string | null;
+  granted: boolean;
+  action: (fd: FormData) => Promise<void>;
+  bootstrappedWhen: 'historyId' | 'syncToken';
+}) {
+  const isBootstrapped = Boolean(cursorValue);
+  return (
+    <Card>
+      <CardHeader>{title}</CardHeader>
+      <div className="space-y-4 px-4 py-4 text-sm">
+        <div className="grid grid-cols-2 gap-y-2">
+          <div className="text-zinc-500">Status</div>
+          <div>
+            {state.pausedAt ? (
+              <Badge tone="red">paused</Badge>
+            ) : isBootstrapped ? (
+              <Badge tone="green">incremental</Badge>
+            ) : (
+              <Badge tone="amber">not bootstrapped</Badge>
+            )}
+          </div>
+          <div className="text-zinc-500">Last run</div>
+          <div>
+            {state.lastRunAt ? (
+              <>
+                <span>{fmtDateTime(state.lastRunAt)}</span>{' '}
+                <span className="text-zinc-400">
+                  ({fmtRelative(state.lastRunAt)})
+                </span>
+              </>
+            ) : (
+              <span className="text-zinc-400">never</span>
+            )}
+          </div>
+          <div className="text-zinc-500">{cursorLabel}</div>
+          <div>
+            {cursorValue ? (
+              <Mono>{cursorValue}</Mono>
+            ) : (
+              <span className="text-zinc-400">—</span>
+            )}
+          </div>
+          <div className="text-zinc-500">Error count</div>
+          <div>{state.errorCount}</div>
+          {state.lastError ? (
+            <>
+              <div className="text-zinc-500">Last error</div>
+              <div className="text-rose-700">
+                <Mono>{state.lastError}</Mono>
+              </div>
+            </>
+          ) : null}
+          {state.pausedAt ? (
+            <>
+              <div className="text-zinc-500">Paused at</div>
+              <div>{fmtDateTime(state.pausedAt)}</div>
+            </>
+          ) : null}
+        </div>
+
+        {granted ? (
+          <form action={action} className="flex items-center gap-2">
+            {state.pausedAt ? (
+              <>
+                <input type="hidden" name="force" value="true" />
+                <button
+                  type="submit"
+                  className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-50"
+                >
+                  Force-run (clear pause)
+                </button>
+                <span className="text-xs text-zinc-500">
+                  Try after a Re-authorize.
+                </span>
+              </>
+            ) : (
+              <button
+                type="submit"
+                className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700"
+              >
+                Run sync now
+              </button>
+            )}
+          </form>
+        ) : (
+          <Empty>Connect Google above before running ingest.</Empty>
+        )}
+        {bootstrappedWhen === 'syncToken' && state.lastError === 'invalid_grant' ? null : null}
+      </div>
+    </Card>
   );
 }

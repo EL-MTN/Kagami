@@ -153,6 +153,17 @@ export type RunSyncResult = {
   message?: string;
 };
 
+export type RunCalendarSyncResult = {
+  status: 'ok' | 'paused' | 'no_grant' | 'error';
+  fetched: number;
+  upserted: number;
+  cancelled: number;
+  errors: number;
+  syncTokenAfter: string | null;
+  resyncedFromBootstrap: boolean;
+  message?: string;
+};
+
 export type ListOrganizationsQuery = {
   limit?: number;
   cursor?: string;

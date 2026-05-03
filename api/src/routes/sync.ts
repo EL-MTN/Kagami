@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { Config } from '../config.js';
 import { SyncState } from '../db/models/SyncState.js';
+import { runCalendarSyncOnce } from '../ingest/calendar.js';
 import { runGmailSyncOnce } from '../ingest/gmail.js';
 import { errors } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
@@ -26,6 +27,17 @@ export const RunSyncResponse = z.object({
   skippedNewsletter: z.number(),
   errors: z.number(),
   historyIdAfter: z.string().nullable(),
+  message: z.string().optional(),
+});
+
+export const RunCalendarSyncResponse = z.object({
+  status: z.enum(['ok', 'paused', 'no_grant', 'error']),
+  fetched: z.number(),
+  upserted: z.number(),
+  cancelled: z.number(),
+  errors: z.number(),
+  syncTokenAfter: z.string().nullable(),
+  resyncedFromBootstrap: z.boolean(),
   message: z.string().optional(),
 });
 
@@ -70,12 +82,56 @@ export function makeSyncRouter(config: Config, logger: Logger): Router {
     }
     const result = await runGmailSyncOnce(config, logger);
     if (body.force && result.status === 'paused') {
-      // Caller asked to force; clear pause and rerun once.
       await SyncState.updateOne(
         { provider: 'gmail' },
         { $set: { pausedAt: null } },
       );
       const second = await runGmailSyncOnce(config, logger);
+      res.json(second);
+      return;
+    }
+    res.json(result);
+  });
+
+  r.get('/sync/gcal/state', async (_req, res) => {
+    const doc = await SyncState.findOne({ provider: 'gcal' }).lean();
+    if (!doc) {
+      res.json({
+        provider: 'gcal',
+        historyId: null,
+        syncToken: null,
+        lastRunAt: null,
+        errorCount: 0,
+        lastError: null,
+        pausedAt: null,
+      });
+      return;
+    }
+    res.json({
+      provider: 'gcal',
+      historyId: doc.historyId ?? null,
+      syncToken: doc.syncToken ?? null,
+      lastRunAt: doc.lastRunAt ?? null,
+      errorCount: doc.errorCount ?? 0,
+      lastError: doc.lastError ?? null,
+      pausedAt: doc.pausedAt ?? null,
+    });
+  });
+
+  r.post('/sync/gcal/run', async (req, res) => {
+    const body = RunSyncBody.parse(req.body ?? {});
+    if (!config.KIZUNA_OAUTH_ENCRYPTION_KEY) {
+      throw errors.badRequest(
+        'KIZUNA_OAUTH_ENCRYPTION_KEY is not set; cannot decrypt refresh token',
+      );
+    }
+    const result = await runCalendarSyncOnce(config, logger);
+    if (body.force && result.status === 'paused') {
+      await SyncState.updateOne(
+        { provider: 'gcal' },
+        { $set: { pausedAt: null } },
+      );
+      const second = await runCalendarSyncOnce(config, logger);
       res.json(second);
       return;
     }
@@ -101,5 +157,21 @@ export const syncEndpoints: EndpointSpec[] = [
       'Run a Gmail sync pass synchronously. Bootstrap on first run; incremental thereafter. Returns counts + final historyId.',
     body: RunSyncBody,
     response: RunSyncResponse,
+  },
+  {
+    name: 'get_calendar_sync_state',
+    method: 'GET',
+    path: '/v1/sync/gcal/state',
+    description: 'Return the Calendar sync state.',
+    response: SyncStateResponse,
+  },
+  {
+    name: 'run_calendar_sync',
+    method: 'POST',
+    path: '/v1/sync/gcal/run',
+    description:
+      'Run a Calendar sync pass synchronously. Bootstrap on first run; sync-token-incremental thereafter. Reconciles edits + cancellations on existing events.',
+    body: RunSyncBody,
+    response: RunCalendarSyncResponse,
   },
 ];

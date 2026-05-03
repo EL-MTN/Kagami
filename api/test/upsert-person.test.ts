@@ -24,7 +24,7 @@ describe('upsertPerson', () => {
     const r = await upsertPerson({
       email: 'Sarah@Acme.com',
       displayName: 'Sarah Connor',
-      occurredAt,
+      occurredAt, source: 'gmail-sync',
     });
     expect(r.created).toBe(true);
     const doc = await Person.findById(r.personId).lean();
@@ -41,12 +41,12 @@ describe('upsertPerson', () => {
     const a = await upsertPerson({
       email: 'sarah@acme.com',
       displayName: 'Sarah',
-      occurredAt,
+      occurredAt, source: 'gmail-sync',
     });
     const b = await upsertPerson({
       email: 'sarah@acme.com',
       displayName: 'Sarah Connor',
-      occurredAt,
+      occurredAt, source: 'gmail-sync',
     });
     expect(b.created).toBe(false);
     expect(b.personId.toHexString()).toBe(a.personId.toHexString());
@@ -56,12 +56,12 @@ describe('upsertPerson', () => {
     await upsertPerson({
       email: 'sarah@acme.com',
       displayName: '',
-      occurredAt,
+      occurredAt, source: 'gmail-sync',
     });
     await upsertPerson({
       email: 'sarah@acme.com',
       displayName: 'Sarah Connor',
-      occurredAt,
+      occurredAt, source: 'gmail-sync',
     });
     const doc = await Person.findOne({ primaryEmail: 'sarah@acme.com' }).lean();
     expect(doc?.displayName).toBe('Sarah Connor');
@@ -71,12 +71,12 @@ describe('upsertPerson', () => {
     await upsertPerson({
       email: 'sarah@acme.com',
       displayName: 'Sarah Connor',
-      occurredAt,
+      occurredAt, source: 'gmail-sync',
     });
     await upsertPerson({
       email: 'sarah@acme.com',
       displayName: 'Different Name',
-      occurredAt,
+      occurredAt, source: 'gmail-sync',
     });
     const doc = await Person.findOne({ primaryEmail: 'sarah@acme.com' }).lean();
     expect(doc?.displayName).toBe('Sarah Connor');
@@ -94,7 +94,7 @@ describe('upsertPerson', () => {
     const r = await upsertPerson({
       email: 'sarah@acme.com',
       displayName: 'NEW NAME',
-      occurredAt,
+      occurredAt, source: 'gmail-sync',
     });
     expect(r.personId.toHexString()).toBe(
       (created._id as { toHexString(): string }).toHexString(),
@@ -117,7 +117,7 @@ describe('upsertPerson', () => {
     const r = await upsertPerson({
       email: 'sarah@acme.com',
       displayName: 'Sarah Connor',
-      occurredAt,
+      occurredAt, source: 'gmail-sync',
     });
     expect(r.tombstonedSuppressed).toBe(false);
     const after = await Person.findById(created._id).lean();
