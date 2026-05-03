@@ -1,4 +1,4 @@
-// Text utilities for Brainiac's hybrid retrieval layer.
+// Text utilities for Kioku's hybrid retrieval layer.
 //
 // lemmatizeForBm25 collapses surface variation so BM25 keyword matching
 // catches "attending" / "attended" / "attends" as the same term:

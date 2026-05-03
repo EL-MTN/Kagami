@@ -1,5 +1,5 @@
 // In-memory BM25 over lemmatized text. Standard Okapi BM25 with the
-// usual defaults (k1=1.5, b=0.75). At Brainiac's scale (~5K facts per
+// usual defaults (k1=1.5, b=0.75). At Kioku's scale (~5K facts per
 // vault) building the index per query is fast enough to skip caching.
 
 const K1 = 1.5;

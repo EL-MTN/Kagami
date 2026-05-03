@@ -5,7 +5,7 @@ import { paths } from '../paths.js';
 
 // Atomic-fact storage. One Fact per line in .memory/facts.jsonl. Each
 // row carries its embedding so retrieval is just embed(question) +
-// in-memory cosine — no vector DB required at Brainiac's scale.
+// in-memory cosine — no vector DB required at Kioku's scale.
 
 export interface Fact {
   id: string;
@@ -45,7 +45,7 @@ export async function appendFacts(facts: Fact[]): Promise<void> {
   await fs.appendFile(paths.facts, lines);
 }
 
-// Rewrites the entire JSONL. Cheap at Brainiac's scale (≤10K facts).
+// Rewrites the entire JSONL. Cheap at Kioku's scale (≤10K facts).
 export async function rewriteFacts(facts: Fact[]): Promise<void> {
   await fs.mkdir(path.dirname(paths.facts), { recursive: true });
   const lines = facts.map((f) => JSON.stringify(f)).join('\n') + (facts.length > 0 ? '\n' : '');

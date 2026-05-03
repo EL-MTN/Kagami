@@ -36,7 +36,7 @@ const modelName = process.env.MODEL ?? '';
 
 if (!modelName) {
   console.warn(
-    '[brainiac] MODEL is unset. Set it in .env to whatever your provider exposes.',
+    '[kioku] MODEL is unset. Set it in .env to whatever your provider exposes.',
   );
 }
 

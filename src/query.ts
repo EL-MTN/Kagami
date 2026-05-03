@@ -4,7 +4,7 @@ import { model } from './llm.js';
 import { paths } from './paths.js';
 import { defaultFactRanker, type FactRanker, type RankedFact } from './retrieval/embeddings.js';
 
-// Single-shot answerer over Brainiac's atomic-fact store. The hybrid
+// Single-shot answerer over Kioku's atomic-fact store. The hybrid
 // ranker (cosine + BM25 + entity boost) returns top-K facts; we group
 // them by date (newest-first) and feed them to the answerer prompt at
 // prompts/answer.md. The model emits free text with a
@@ -21,7 +21,7 @@ export interface QueryDeps {
   topK?: number;
 }
 
-const DEFAULT_TOP_K = Number.parseInt(process.env.BRAINIAC_TOP_K ?? '50', 10);
+const DEFAULT_TOP_K = Number.parseInt(process.env.KIOKU_TOP_K ?? '50', 10);
 
 let cachedAnswerPromptTemplate: string | null = null;
 async function getAnswerPromptTemplate(): Promise<string> {
@@ -85,7 +85,7 @@ export async function query(
   try {
     facts = await ranker(question, k);
   } catch (err) {
-    console.error(`[brainiac] fact ranker failed: ${(err as Error).message}`);
+    console.error(`[kioku] fact ranker failed: ${(err as Error).message}`);
   }
 
   const memoriesText =

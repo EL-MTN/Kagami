@@ -1,10 +1,10 @@
-# Brainiac
+# Kioku
 
 A personal long-term memory system. Atomic facts on disk + hybrid retrieval + a single MCP server interface.
 
 Benchmarked at **76%** on a 100-item LongMemEval-Oracle subset with the full hybrid (cosine + BM25 + entity boost), on GPT-4o-mini answerer + judge. An earlier cosine + BM25-only configuration scored **78%** on the same subset.
 
-**Head-to-head vs. mem0 OSS**: 76% / 76% on the same 100 question_ids, same models, mem0's v3 pipeline running its native top_k=200 vs. Brainiac's top_k=50. Per-type the systems make different mistakes — mem0 is stronger on temporal-reasoning (88.3% vs. 81.7%), Brainiac is stronger on multi-session (67.5% vs. 57.5%) — but the headline is a wash, suggesting the port is faithful. mem0's widely-cited "91% OSS" headline uses gpt-5 + full 500 questions; that operating point was not run here.
+**Head-to-head vs. mem0 OSS**: 76% / 76% on the same 100 question_ids, same models, mem0's v3 pipeline running its native top_k=200 vs. Kioku's top_k=50. Per-type the systems make different mistakes — mem0 is stronger on temporal-reasoning (88.3% vs. 81.7%), Kioku is stronger on multi-session (67.5% vs. 57.5%) — but the headline is a wash, suggesting the port is faithful. mem0's widely-cited "91% OSS" headline uses gpt-5 + full 500 questions; that operating point was not run here.
 
 ## Architecture
 
@@ -33,7 +33,7 @@ prompts/
 ### Vault layout
 
 ```
-$BRAINIAC_VAULT/
+$KIOKU_VAULT/
   _core.md                always-loaded canonical user state, hand-edited
   raw/<session>.md        immutable transcripts (input to ingest)
   .memory/
@@ -64,8 +64,8 @@ $BRAINIAC_VAULT/
 
 ```sh
 # .env
-BRAINIAC_VAULT=/path/to/your/vault                # required
-BRAINIAC_TOP_K=50                                 # optional, default 50
+KIOKU_VAULT=/path/to/your/vault                # required
+KIOKU_TOP_K=50                                 # optional, default 50
 
 # Chat / answerer
 LLM_PROVIDER=lmstudio                             # 'lmstudio' or 'openai'

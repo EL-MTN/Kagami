@@ -7,8 +7,8 @@ import path from 'node:path';
 let tmpVault: string;
 
 before(async () => {
-  tmpVault = await fs.mkdtemp(path.join(os.tmpdir(), 'brainiac-facts-test-'));
-  process.env.BRAINIAC_VAULT = tmpVault;
+  tmpVault = await fs.mkdtemp(path.join(os.tmpdir(), 'kioku-facts-test-'));
+  process.env.KIOKU_VAULT = tmpVault;
 });
 
 after(async () => {

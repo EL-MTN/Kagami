@@ -1,5 +1,5 @@
 // LongMemEval orchestrator. Iterates dataset items, spawns one worker
-// subprocess per item with an isolated BRAINIAC_VAULT, then judges all
+// subprocess per item with an isolated KIOKU_VAULT, then judges all
 // predictions and writes a results JSON.
 //
 // See bench/longmemeval/README.md for setup and usage.
@@ -229,7 +229,7 @@ function runWorker(itemFile: string, resultFile: string, vault: string): Promise
       ['tsx', workerPath, '--item', itemFile, '--result', resultFile],
       {
         stdio: ['ignore', 'inherit', 'inherit'],
-        env: { ...process.env, BRAINIAC_VAULT: vault },
+        env: { ...process.env, KIOKU_VAULT: vault },
       },
     );
     child.on('error', reject);

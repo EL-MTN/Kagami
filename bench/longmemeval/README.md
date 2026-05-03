@@ -1,6 +1,6 @@
 # LongMemEval runner
 
-Runs Brainiac against [LongMemEval](https://github.com/xiaowu0162/LongMemEval) (Wu et al., 2024). Each item is one question over a multi-session chat history; the runner ingests the haystack into a fresh isolated vault, calls `query()`, then judges the answer with the official LLM-judge prompt.
+Runs Kioku against [LongMemEval](https://github.com/xiaowu0162/LongMemEval) (Wu et al., 2024). Each item is one question over a multi-session chat history; the runner ingests the haystack into a fresh isolated vault, calls `query()`, then judges the answer with the official LLM-judge prompt.
 
 ## One-time setup — fetch the Oracle subset
 
@@ -50,11 +50,11 @@ Flags:
 bench/longmemeval/results/<timestamp>.json
 ```
 
-Per-item record includes the question, ground truth, Brainiac's prediction, judge verdict + raw text, and ingest/query latencies.
+Per-item record includes the question, ground truth, Kioku's prediction, judge verdict + raw text, and ingest/query latencies.
 
 ## Architecture
 
-- `scripts/longmemeval.ts` — orchestrator. Iterates items, spawns one worker subprocess per item with an isolated `BRAINIAC_VAULT`, then runs the judge pass.
+- `scripts/longmemeval.ts` — orchestrator. Iterates items, spawns one worker subprocess per item with an isolated `KIOKU_VAULT`, then runs the judge pass.
 - `scripts/longmemeval-worker.ts` — single-item worker. Writes each `haystack_session` as `raw/<session_id>.md`, calls `consolidate()` to extract atomic facts into `.memory/facts.jsonl` + `.memory/entities.jsonl`, then `query()`. Auto-skips ingest when `facts.jsonl` already has content (lets `--keep-vaults` cycle the query/judge layer cheaply).
 
 Per-item subprocesses give clean vault isolation without refactoring `paths.ts` (which freezes the vault root at module load).
@@ -62,5 +62,5 @@ Per-item subprocesses give clean vault isolation without refactoring `paths.ts` 
 ## Caveats
 
 - **Self-judging bias**: by default the judge model is the same as the answerer. Cheap but biased — use `--judge-model` with a stronger model for headline numbers.
-- **Citation recall is not computed.** Brainiac currently returns empty citations from `query()`; LongMemEval's `answer_session_ids` references sessions, but mapping is TODO.
+- **Citation recall is not computed.** Kioku currently returns empty citations from `query()`; LongMemEval's `answer_session_ids` references sessions, but mapping is TODO.
 - **Latency profile**: with OpenAI gpt-4o-mini, expect ~30–50s per item end-to-end (ingest dominates); a full 100-item run is ~50 min and ~$5–7 in API. With local GLM-4.7-flash via LM Studio it's bound by local model speed.

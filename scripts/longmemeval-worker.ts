@@ -6,7 +6,7 @@
 //   --result  path where the JSON result line will be written
 //
 // Inputs (env):
-//   BRAINIAC_VAULT  must be set to a fresh, empty directory
+//   KIOKU_VAULT  must be set to a fresh, empty directory
 //   MODEL           local LM Studio model id
 //
 // Output: writes a JSON file at --result with the prediction + timings.
@@ -56,12 +56,12 @@ function parseArgs(): { itemPath: string; resultPath: string } {
 
 async function main() {
   const { itemPath, resultPath } = parseArgs();
-  const vault = process.env.BRAINIAC_VAULT;
-  if (!vault) throw new Error('BRAINIAC_VAULT must be set');
+  const vault = process.env.KIOKU_VAULT;
+  if (!vault) throw new Error('KIOKU_VAULT must be set');
 
   const item: LMEItem = JSON.parse(await fs.readFile(itemPath, 'utf8'));
 
-  // Lazy-import after env is set so paths.ts picks up BRAINIAC_VAULT.
+  // Lazy-import after env is set so paths.ts picks up KIOKU_VAULT.
   const { consolidate } = await import('../src/ingest.js');
   const { query } = await import('../src/query.js');
 

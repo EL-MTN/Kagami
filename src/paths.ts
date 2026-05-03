@@ -7,8 +7,8 @@ const __dirname = path.dirname(__filename);
 
 export const projectRoot = path.resolve(__dirname, '..');
 
-export const vaultRoot = process.env.BRAINIAC_VAULT
-  ? path.resolve(process.env.BRAINIAC_VAULT)
+export const vaultRoot = process.env.KIOKU_VAULT
+  ? path.resolve(process.env.KIOKU_VAULT)
   : path.join(projectRoot, 'memory');
 
 export const paths = {

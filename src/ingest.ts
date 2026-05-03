@@ -14,7 +14,7 @@ import {
 import { lemmatizeForBm25 } from './retrieval/text.js';
 import { upsertEntitiesFromFacts } from './storage/entities.js';
 
-// Brainiac's atomic-fact extraction pipeline.
+// Kioku's atomic-fact extraction pipeline.
 //
 //   For each transcript:
 //     - chunk into 2-message batches (one user + one assistant turn)

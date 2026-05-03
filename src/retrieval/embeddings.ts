@@ -29,7 +29,7 @@ export type FactRanker = (
   k: number,
 ) => Promise<RankedFact[]>;
 
-// Brainiac's hybrid fact retrieval. Three signals fused into one rank:
+// Kioku's hybrid fact retrieval. Three signals fused into one rank:
 //
 //   semantic search → top max(k*4, 60) by cosine over fact embeddings
 //   BM25 search     → keyword matches over lemmatized fact text

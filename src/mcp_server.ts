@@ -27,7 +27,7 @@ function resolveInVault(p: string): string {
   return abs;
 }
 
-const server = new McpServer({ name: 'brainiac', version: '0.1.0' });
+const server = new McpServer({ name: 'kioku', version: '0.1.0' });
 
 server.registerTool(
   'view',
