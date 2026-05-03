@@ -4,17 +4,26 @@
   "version": "0.0.0",
   "type": "module",
   "workspaces": [
-    "api"
+    "api",
+    "web"
   ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "dev": "npm -w @kizuna/api run dev",
-    "build": "npm -w @kizuna/api run build",
-    "start": "npm -w @kizuna/api run start",
+    "dev": "portless",
+    "api:dev": "npm -w @kizuna/api run dev",
+    "web:dev": "npm -w @kizuna/web run dev",
+    "build": "npm -w @kizuna/api run build && npm -w @kizuna/web run build",
+    "start": "portless",
     "test": "npm -w @kizuna/api run test",
-    "typecheck": "npm -w @kizuna/api run typecheck",
-    "smoke": "npm -w @kizuna/api run smoke"
+    "typecheck": "npm -w @kizuna/api run typecheck && npm -w @kizuna/web run typecheck",
+    "smoke": "npm -w @kizuna/api run smoke",
+    "smoke:dashboard": "npm -w @kizuna/api run smoke:dashboard",
+    "web:build": "npm -w @kizuna/web run build",
+    "web:typecheck": "npm -w @kizuna/web run typecheck"
+  },
+  "devDependencies": {
+    "portless": "^0.12.0"
   }
 }
