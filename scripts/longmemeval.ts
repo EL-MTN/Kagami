@@ -9,7 +9,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateText } from 'ai';
-import { model as defaultModel } from '../src/llm.js';
+import { model as defaultModel, llmEndpoint } from '../src/llm.js';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -245,15 +245,13 @@ type Judge = (p: WorkerResult) => Promise<{ verdict: boolean; raw: string }>;
 function buildJudge(judgeModelId: string): Judge {
   // If the judge model differs from the default, build a fresh provider so
   // we don't accidentally reuse the answerer model.
-  const baseURL = process.env.LMSTUDIO_URL ?? 'http://localhost:1234/v1';
-  const apiKey = process.env.LMSTUDIO_API_KEY ?? 'lm-studio';
   const useDefault = judgeModelId === (process.env.MODEL ?? '');
   const judgeModel = useDefault
     ? defaultModel
     : createOpenAICompatible({
-        name: 'lmstudio',
-        baseURL,
-        apiKey,
+        name: 'llm',
+        baseURL: llmEndpoint.baseURL,
+        apiKey: llmEndpoint.apiKey,
         supportsStructuredOutputs: true,
       } as Parameters<typeof createOpenAICompatible>[0])(judgeModelId);
 

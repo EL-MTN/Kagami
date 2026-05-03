@@ -6,13 +6,36 @@ import { generateObject, wrapLanguageModel } from 'ai';
 import type { LanguageModelV3Middleware } from '@ai-sdk/provider';
 import { paths } from './paths.js';
 
-const baseURL = process.env.LMSTUDIO_URL ?? 'http://localhost:1234/v1';
-const apiKey = process.env.LMSTUDIO_API_KEY ?? 'lm-studio';
+// Provider profiles fill in URL + key defaults for common setups. Explicit
+// {LLM,EMBEDDING}_URL / _API_KEY env vars always win as overrides.
+const PROFILES = {
+  lmstudio: { baseURL: 'http://localhost:1234/v1', apiKey: 'lm-studio' },
+  openai: { baseURL: 'https://api.openai.com/v1', apiKey: process.env.OPENAI_API_KEY ?? '' },
+} as const;
+
+type ProviderName = keyof typeof PROFILES;
+
+function resolveEndpoint(role: 'LLM' | 'EMBEDDING'): { baseURL: string; apiKey: string } {
+  const providerName = (process.env[`${role}_PROVIDER`] ?? 'lmstudio').toLowerCase();
+  if (!(providerName in PROFILES)) {
+    throw new Error(
+      `Unknown ${role}_PROVIDER='${providerName}'. Use 'lmstudio' or 'openai'.`,
+    );
+  }
+  const profile = PROFILES[providerName as ProviderName];
+  return {
+    baseURL: process.env[`${role}_URL`] ?? profile.baseURL,
+    apiKey: process.env[`${role}_API_KEY`] ?? profile.apiKey,
+  };
+}
+
+const llm = resolveEndpoint('LLM');
+const emb = resolveEndpoint('EMBEDDING');
 const modelName = process.env.MODEL ?? '';
 
 if (!modelName) {
   console.warn(
-    '[brainiac] MODEL is unset. Set it in .env to whatever your local server exposes.',
+    '[brainiac] MODEL is unset. Set it in .env to whatever your provider exposes.',
   );
 }
 
@@ -21,11 +44,27 @@ if (!modelName) {
 // `json_object`, which LM Studio rejects with "must be 'json_schema' or 'text'".
 // The option is honored at runtime but isn't in the public settings type.
 const provider = createOpenAICompatible({
-  name: 'lmstudio',
-  baseURL,
-  apiKey,
+  name: 'llm',
+  baseURL: llm.baseURL,
+  apiKey: llm.apiKey,
   supportsStructuredOutputs: true,
 } as Parameters<typeof createOpenAICompatible>[0]);
+
+// Embeddings can target a different endpoint than chat — e.g. chat=OpenAI
+// gpt-4o-mini while embeddings run through a local LM Studio nomic model.
+// Reuses the chat provider when both endpoints resolve to the same place.
+const embeddingProvider =
+  emb.baseURL === llm.baseURL && emb.apiKey === llm.apiKey
+    ? provider
+    : createOpenAICompatible({
+        name: 'embeddings',
+        baseURL: emb.baseURL,
+        apiKey: emb.apiKey,
+      });
+
+// Re-export the resolved chat endpoint for callers like the bench runner
+// that build their own LLM instances (e.g. a separate judge model).
+export const llmEndpoint = llm;
 
 // Thinking-mode models (GLM-4.7-flash, Qwen3.6, etc.) sometimes emit their
 // final structured output into the `reasoning_content` field while leaving
@@ -68,7 +107,7 @@ export const model = wrapLanguageModel({
 export function getEmbeddingModel() {
   const name =
     process.env.EMBEDDING_MODEL ?? 'text-embedding-nomic-embed-text-v1.5';
-  return provider.textEmbeddingModel(name);
+  return embeddingProvider.textEmbeddingModel(name);
 }
 
 // Embedding helpers live in llm.ts (alongside the model factory) to

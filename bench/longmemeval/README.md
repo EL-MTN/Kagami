@@ -17,14 +17,19 @@ The full S subset (`longmemeval_s_cleaned.json`, 277 MB) and M subset (`longmeme
 ## Run
 
 ```sh
-# Local LM Studio + GLM-4.7-flash
-MODEL=zai-org/glm-4.7-flash npx tsx scripts/longmemeval.ts --limit 5
+# All-local LM Studio + GLM-4.7-flash
+LLM_PROVIDER=lmstudio MODEL=zai-org/glm-4.7-flash \
+  npx tsx scripts/longmemeval.ts --limit 5
 
-# OpenAI gpt-4o-mini (the most-tested config)
-LMSTUDIO_URL=https://api.openai.com/v1 \
-  LMSTUDIO_API_KEY=$OPENAI_API_KEY \
-  MODEL=gpt-4o-mini \
-  EMBEDDING_MODEL=text-embedding-3-small \
+# All-OpenAI gpt-4o-mini + text-embedding-3-small (the most-tested config)
+LLM_PROVIDER=openai MODEL=gpt-4o-mini \
+  EMBEDDING_PROVIDER=openai EMBEDDING_MODEL=text-embedding-3-small \
+  OPENAI_API_KEY=$OPENAI_API_KEY \
+  npx tsx scripts/longmemeval.ts --limit 100
+
+# Hybrid: OpenAI chat, local embeddings
+LLM_PROVIDER=openai MODEL=gpt-4o-mini OPENAI_API_KEY=$OPENAI_API_KEY \
+  EMBEDDING_PROVIDER=lmstudio EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5 \
   npx tsx scripts/longmemeval.ts --limit 100
 
 # Reuse vaults from a prior run (skips ingest if facts.jsonl exists)

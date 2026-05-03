@@ -64,15 +64,31 @@ $BRAINIAC_VAULT/
 
 ```sh
 # .env
-LMSTUDIO_URL=http://localhost:1234/v1            # or https://api.openai.com/v1
-LMSTUDIO_API_KEY=lm-studio                        # or your OpenAI key
-MODEL=zai-org/glm-4.7-flash                       # or gpt-4o-mini
-EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5  # or text-embedding-3-small
 BRAINIAC_VAULT=/path/to/your/vault                # required
 BRAINIAC_TOP_K=50                                 # optional, default 50
+
+# Chat / answerer
+LLM_PROVIDER=lmstudio                             # 'lmstudio' or 'openai'
+MODEL=zai-org/glm-4.7-flash                       # provider-native model id
+# LLM_URL=http://localhost:1234/v1                # override (defaults from profile)
+# LLM_API_KEY=lm-studio                           # override (defaults from profile)
+
+# Embeddings — independent provider; can mix-and-match
+EMBEDDING_PROVIDER=lmstudio                       # 'lmstudio' or 'openai'
+EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
+# EMBEDDING_URL=...                               # override
+# EMBEDDING_API_KEY=...                           # override
+
+# Used as the *_API_KEY default when *_PROVIDER=openai
+OPENAI_API_KEY=sk-...
 ```
 
-Any OpenAI-compatible endpoint works (LM Studio, OpenAI, vLLM, etc.). The provider abstraction is `@ai-sdk/openai-compatible`.
+Provider profiles supply URL+key defaults so a typical setup is one line per role. Any OpenAI-compatible endpoint works (LM Studio, OpenAI, vLLM, Ollama, etc.) by setting the explicit `*_URL`/`*_API_KEY` overrides. The provider abstraction is `@ai-sdk/openai-compatible`.
+
+Common combinations:
+- **All-local**: `LLM_PROVIDER=lmstudio`, `EMBEDDING_PROVIDER=lmstudio`, `MODEL=<your-loaded-model>`.
+- **All-OpenAI**: `LLM_PROVIDER=openai`, `EMBEDDING_PROVIDER=openai`, `MODEL=gpt-4o-mini`, `EMBEDDING_MODEL=text-embedding-3-small`, `OPENAI_API_KEY=sk-...`.
+- **Hybrid (cheap chat, free embed)**: `LLM_PROVIDER=openai` + `MODEL=gpt-4o-mini` for the answerer; `EMBEDDING_PROVIDER=lmstudio` + `EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5` for the embeddings.
 
 ## Usage
 
