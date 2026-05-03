@@ -4,8 +4,8 @@
   "description": "Personal long-term memory subsystem for an agentic assistant.",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/mcp_server.ts",
-    "start": "node --import tsx src/mcp_server.ts",
+    "dev": "tsx watch src/server.ts",
+    "start": "node --import tsx src/server.ts",
     "test": "node --import tsx --test tests/**/*.test.ts",
     "typecheck": "tsc"
   },
@@ -14,11 +14,15 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "ai": "^6.0.168",
     "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "gray-matter": "^4.0.3",
     "openai": "^4.0.0",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^20.19.39",
     "tsx": "^4.0.0",
     "typescript": "^5.4.0"
