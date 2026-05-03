@@ -4,7 +4,7 @@ import {
   TranscriptFrontmatter,
   type Transcript,
   type Turn,
-} from './types.js';
+} from '../types.js';
 
 const TURN_HEADING = /^##\s+(t-\d+)\s+(\S+)\s*$/;
 

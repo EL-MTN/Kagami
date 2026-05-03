@@ -3,16 +3,16 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { embed, embedMany, cosineSimilarity, generateObject } from 'ai';
 import { readTranscript } from './transcript.js';
-import { getEmbeddingModel, model } from './llm.js';
-import { paths } from './paths.js';
+import { getEmbeddingModel, model } from '../llm.js';
+import { paths } from '../paths.js';
 import {
   appendFacts,
   newFactId,
   readFacts,
   type Fact,
-} from './storage/facts.js';
-import { lemmatizeForBm25 } from './retrieval/text.js';
-import { upsertEntitiesFromFacts } from './storage/entities.js';
+} from '../storage/facts.js';
+import { lemmatizeForBm25 } from '../retrieval/text.js';
+import { upsertEntitiesFromFacts } from '../storage/entities.js';
 
 // Kioku's atomic-fact extraction pipeline.
 //

@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { paths } from '../src/paths.ts';
-import { consolidate } from '../src/ingest.ts';
+import { consolidate } from '../src/ingest/consolidate.ts';
 
 interface Args {
   in: string;

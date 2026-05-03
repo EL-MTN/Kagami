@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import { generateText } from 'ai';
-import { model } from './llm.js';
-import { paths } from './paths.js';
-import { defaultFactRanker, type FactRanker, type RankedFact } from './retrieval/embeddings.js';
+import { model } from '../llm.js';
+import { paths } from '../paths.js';
+import { defaultFactRanker, type FactRanker, type RankedFact } from '../retrieval/embeddings.js';
 
 // Single-shot answerer over Kioku's atomic-fact store. The hybrid
 // ranker (cosine + BM25 + entity boost) returns top-K facts; we group

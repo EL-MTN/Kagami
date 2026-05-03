@@ -1,8 +1,8 @@
-import { defaultFactRanker, type RankedFact } from './retrieval/embeddings.js';
+import { defaultFactRanker, type RankedFact } from '../retrieval/embeddings.js';
 
 // Ranked fact retrieval without the answerer LLM. Wraps the hybrid
 // ranker so HTTP callers (and the bot) can pull top-K facts directly
-// instead of going through query.ts's single-shot answerer.
+// instead of going through answer.ts's single-shot answerer.
 
 export interface RecalledFact {
   id: string;

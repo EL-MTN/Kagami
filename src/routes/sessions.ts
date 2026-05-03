@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { ingestSessionFromString } from '../sessions.js';
+import { ingestSessionFromString } from '../ingest/sessions.js';
 import { withVaultLock } from '../mutex.js';
 
 const SessionBody = z.object({

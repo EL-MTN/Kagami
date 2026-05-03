@@ -5,11 +5,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import { paths } from './paths.js';
-import { query } from './query.js';
-import { recall } from './recall.js';
+import { query } from './query/answer.js';
+import { recall } from './query/recall.js';
 import { readFacts } from './storage/facts.js';
-import { appendSingleFact } from './append.js';
-import { ingestSessionFromString } from './sessions.js';
+import { appendSingleFact } from './ingest/append.js';
+import { ingestSessionFromString } from './ingest/sessions.js';
 import { withVaultLock } from './mutex.js';
 import { logger } from './logger.js';
 

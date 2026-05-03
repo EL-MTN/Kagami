@@ -1,18 +1,18 @@
 import { createHash } from 'node:crypto';
 import { cosineSimilarity } from 'ai';
-import { embedQuestion } from './llm.js';
-import { lemmatizeForBm25 } from './retrieval/text.js';
+import { embedQuestion } from '../llm.js';
+import { lemmatizeForBm25 } from '../retrieval/text.js';
 import {
   appendFacts,
   newFactId,
   readFacts,
   type Fact,
-} from './storage/facts.js';
-import { upsertEntitiesFromFacts } from './storage/entities.js';
-import { logger } from './logger.js';
+} from '../storage/facts.js';
+import { upsertEntitiesFromFacts } from '../storage/entities.js';
+import { logger } from '../logger.js';
 
 // Single-fact append path. Bypasses the transcript-batch extraction
-// pipeline in ingest.ts — the caller has already decided this is a
+// pipeline in consolidate.ts — the caller has already decided this is a
 // fact worth keeping. We still:
 //   - md5-dedup against existing fact text (hard skip, exact dup)
 //   - cosine-dedup against the top existing fact (skip if >= NEAR_DUPE)

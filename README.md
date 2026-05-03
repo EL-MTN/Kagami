@@ -10,13 +10,22 @@ Benchmarked at **76%** on a 100-item LongMemEval-Oracle subset with the full hyb
 
 ```
 src/
-  mcp_server.ts          MCP server — view/create/str_replace/consolidate/query/fact_count
-  query.ts               public query API — hybrid retrieval → single-shot answerer
-  ingest.ts              public ingest API — transcript → atomic facts + entities
+  server.ts              express HTTP server (REST + streamable HTTP MCP)
+  mcp.ts                 MCP tools mounted at /mcp
   llm.ts                 LLM provider (OpenAI-compatible) + embed helpers
   paths.ts               vault paths
-  transcript.ts          transcript parsing (raw/<session>.md)
   types.ts               shared schemas
+  logger.ts              pino logger
+  mutex.ts               process-wide async lock for vault writes
+  ingest/
+    consolidate.ts       transcript → atomic facts + entities
+    append.ts            single-fact append (md5 + cosine dedup)
+    sessions.ts          raw-string session ingest + summary fact
+    transcript.ts        transcript parsing (raw/<session>.md)
+  query/
+    answer.ts            hybrid retrieval → single-shot answerer
+    recall.ts            ranked retrieval, no LLM
+  routes/                per-resource Express routers
   storage/
     facts.ts             .memory/facts.jsonl — atomic facts with embeddings
     entities.ts          .memory/entities.jsonl — entities with linked fact ids

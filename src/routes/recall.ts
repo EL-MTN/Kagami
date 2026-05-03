@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { recall } from '../recall.js';
+import { recall } from '../query/recall.js';
 
 const RecallBody = z.object({
   query: z.string().min(1),

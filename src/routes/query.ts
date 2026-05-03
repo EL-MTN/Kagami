@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { query } from '../query.js';
+import { query } from '../query/answer.js';
 
 const QueryBody = z.object({
   question: z.string().min(1),

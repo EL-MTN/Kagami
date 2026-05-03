@@ -4,7 +4,7 @@ import {
   deriveQuestionDate,
   formatFactsGroupedByDateNewestFirst,
   stripMemThinking,
-} from '../src/query.ts';
+} from '../src/query/answer.ts';
 import type { RankedFact } from '../src/retrieval/embeddings.ts';
 
 const fact = (overrides: Partial<RankedFact>): RankedFact => ({

@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import { generateObject } from 'ai';
 import { parseTranscript } from './transcript.js';
-import { consolidate } from './ingest.js';
+import { consolidate } from './consolidate.js';
 import { appendSingleFact } from './append.js';
-import { model } from './llm.js';
-import { paths } from './paths.js';
+import { model } from '../llm.js';
+import { paths } from '../paths.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { logger } from './logger.js';
+import { logger } from '../logger.js';
 
 // Session ingest. Accepts a raw transcript string (matter front-matter
 // + `## t-N <role>` headings, same shape as raw/<session>.md), runs the

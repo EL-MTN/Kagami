@@ -62,8 +62,8 @@ async function main() {
   const item: LMEItem = JSON.parse(await fs.readFile(itemPath, 'utf8'));
 
   // Lazy-import after env is set so paths.ts picks up KIOKU_VAULT.
-  const { consolidate } = await import('../src/ingest.js');
-  const { query } = await import('../src/query.js');
+  const { consolidate } = await import('../src/ingest/consolidate.js');
+  const { query } = await import('../src/query/answer.js');
 
   const rawDir = path.join(vault, 'raw');
   await fs.mkdir(rawDir, { recursive: true });

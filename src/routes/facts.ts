@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { readFacts, type Fact } from '../storage/facts.js';
-import { appendSingleFact } from '../append.js';
+import { appendSingleFact } from '../ingest/append.js';
 import { withVaultLock } from '../mutex.js';
 
 const AppendBody = z.object({
