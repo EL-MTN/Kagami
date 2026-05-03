@@ -2,7 +2,9 @@
 
 A personal long-term memory system. Atomic facts on disk + hybrid retrieval + a single MCP server interface.
 
-Benchmarked at **78%** on a 100-item LongMemEval-Oracle subset with cosine + BM25, **75%** with the full hybrid (cosine + BM25 + entity boost). For comparison, the mem0 OSS reference scores 71% on the same subset and same model (GPT-4o-mini).
+Benchmarked at **76%** on a 100-item LongMemEval-Oracle subset with the full hybrid (cosine + BM25 + entity boost), on GPT-4o-mini answerer + judge. An earlier cosine + BM25-only configuration scored **78%** on the same subset.
+
+**Head-to-head vs. mem0 OSS**: 76% / 76% on the same 100 question_ids, same models, mem0's v3 pipeline running its native top_k=200 vs. Brainiac's top_k=50. Per-type the systems make different mistakes — mem0 is stronger on temporal-reasoning (88.3% vs. 81.7%), Brainiac is stronger on multi-session (67.5% vs. 57.5%) — but the headline is a wash, suggesting the port is faithful. mem0's widely-cited "91% OSS" headline uses gpt-5 + full 500 questions; that operating point was not run here.
 
 ## Architecture
 
