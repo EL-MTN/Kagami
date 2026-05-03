@@ -4,6 +4,7 @@ import { peopleEndpoints } from './people.js';
 import { organizationsEndpoints } from './organizations.js';
 import { interactionsEndpoints } from './interactions.js';
 import { followupsEndpoints } from './followups.js';
+import { digestEndpoints } from './digest.js';
 import { syncEndpoints } from './sync.js';
 
 export const allEndpoints: EndpointSpec[] = [
@@ -11,6 +12,7 @@ export const allEndpoints: EndpointSpec[] = [
   ...organizationsEndpoints,
   ...interactionsEndpoints,
   ...followupsEndpoints,
+  ...digestEndpoints,
   ...syncEndpoints,
 ];
 

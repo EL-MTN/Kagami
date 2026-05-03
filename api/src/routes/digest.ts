@@ -1,0 +1,130 @@
+import { Router } from 'express';
+import { Types } from 'mongoose';
+import { z } from 'zod';
+import { Followup } from '../db/models/Followup.js';
+import { Person } from '../db/models/Person.js';
+import { parseDurationMs } from '../lib/duration.js';
+import { errors } from '../lib/errors.js';
+import { serializeFollowup } from '../lib/serialize.js';
+import {
+  ISODateString,
+  ObjectIdString,
+} from '../schemas/common.js';
+import type { EndpointSpec } from '../manifest.js';
+import { FollowupResponseShape } from './followups.js';
+
+const DigestQuery = z.object({
+  window: z.string().default('P7D'),
+});
+
+const DigestPersonShape = z.object({
+  id: ObjectIdString,
+  displayName: z.string(),
+  primaryEmail: z.string().nullable(),
+});
+
+const DigestFollowupShape = FollowupResponseShape.extend({
+  person: DigestPersonShape.nullable(),
+});
+
+export const DigestResponseShape = z.object({
+  window: z.string(),
+  generatedAt: ISODateString,
+  windowStart: ISODateString,
+  windowEnd: ISODateString,
+  overdue: z.array(DigestFollowupShape),
+  upcoming: z.array(DigestFollowupShape),
+});
+
+export const digestRouter = Router();
+
+digestRouter.get('/digest', async (req, res) => {
+  const q = DigestQuery.parse(req.query);
+  let windowMs: number;
+  try {
+    windowMs = parseDurationMs(q.window);
+  } catch (err) {
+    throw errors.badRequest(
+      err instanceof Error ? err.message : 'invalid window',
+    );
+  }
+
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + windowMs);
+
+  const [overdue, upcoming] = await Promise.all([
+    Followup.find({
+      status: 'open',
+      deletedAt: null,
+      dueAt: { $lt: now },
+    })
+      .sort({ dueAt: 1, _id: 1 })
+      .lean(),
+    Followup.find({
+      status: 'open',
+      deletedAt: null,
+      dueAt: { $gte: now, $lte: windowEnd },
+    })
+      .sort({ dueAt: 1, _id: 1 })
+      .lean(),
+  ]);
+
+  const personIds = new Set<string>();
+  for (const f of [...overdue, ...upcoming]) {
+    const pid = f.personId as unknown as Types.ObjectId;
+    if (pid) personIds.add(pid.toHexString());
+  }
+  const persons = (await Person.find({
+    _id: { $in: [...personIds].map((s) => new Types.ObjectId(s)) },
+    deletedAt: null,
+  }).lean()) as unknown as Array<{
+    _id: Types.ObjectId;
+    displayName: string;
+    primaryEmail: string | null;
+  }>;
+  const personById = new Map<
+    string,
+    { id: string; displayName: string; primaryEmail: string | null }
+  >();
+  for (const p of persons) {
+    personById.set(p._id.toHexString(), {
+      id: p._id.toHexString(),
+      displayName: p.displayName,
+      primaryEmail: p.primaryEmail ?? null,
+    });
+  }
+
+  const hydrate = (
+    f: Record<string, unknown>,
+  ): Record<string, unknown> & {
+    person: { id: string; displayName: string; primaryEmail: string | null } | null;
+  } => {
+    const base = serializeFollowup(f);
+    const pid = (f.personId as Types.ObjectId | null)?.toHexString() ?? null;
+    return {
+      ...(base as Record<string, unknown>),
+      person: pid ? personById.get(pid) ?? null : null,
+    } as never;
+  };
+
+  res.json({
+    window: q.window,
+    generatedAt: now,
+    windowStart: now,
+    windowEnd,
+    overdue: overdue.map(hydrate),
+    upcoming: upcoming.map(hydrate),
+  });
+});
+
+export const digestEndpoints: EndpointSpec[] = [
+  {
+    name: 'get_digest',
+    method: 'GET',
+    path: '/v1/digest',
+    description:
+      'Overdue + upcoming open followups within the window (default P7D). Each followup is hydrated with {id, displayName, primaryEmail} for its person.',
+    query: DigestQuery,
+    response: DigestResponseShape,
+  },
+];
