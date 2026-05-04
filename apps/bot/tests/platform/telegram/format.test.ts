@@ -17,9 +17,7 @@ describe("markdownToTelegramHtml", () => {
 
   describe("inline formatting", () => {
     it("converts bold **x**", () => {
-      expect(markdownToTelegramHtml("hello **world** end")).toBe(
-        "hello <b>world</b> end",
-      );
+      expect(markdownToTelegramHtml("hello **world** end")).toBe("hello <b>world</b> end");
     });
 
     it("converts italic *x*", () => {
@@ -27,15 +25,11 @@ describe("markdownToTelegramHtml", () => {
     });
 
     it("does not treat ** as italic (bold takes precedence)", () => {
-      expect(markdownToTelegramHtml("**bold** *italic*")).toBe(
-        "<b>bold</b> <i>italic</i>",
-      );
+      expect(markdownToTelegramHtml("**bold** *italic*")).toBe("<b>bold</b> <i>italic</i>");
     });
 
     it("converts inline code with backticks", () => {
-      expect(markdownToTelegramHtml("see `foo` here")).toBe(
-        "see <code>foo</code> here",
-      );
+      expect(markdownToTelegramHtml("see `foo` here")).toBe("see <code>foo</code> here");
     });
 
     it("converts strikethrough ~~x~~", () => {

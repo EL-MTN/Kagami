@@ -52,9 +52,7 @@ describe("transcribeWithOpenAi — apiKey fallback", () => {
     mockConfig.STT_API_KEY = "stt-key";
     mockConfig.OPENAI_API_KEY = "openai-key";
     await transcribeWithOpenAi(Buffer.from("a"), "audio/ogg", "whisper-1");
-    expect(mockCreateOpenAI).toHaveBeenCalledWith(
-      expect.objectContaining({ apiKey: "stt-key" }),
-    );
+    expect(mockCreateOpenAI).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "stt-key" }));
   });
 
   it("falls back to OPENAI_API_KEY when STT_API_KEY is unset", async () => {

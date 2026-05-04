@@ -20,7 +20,7 @@ const { mockConfig } = vi.hoisted(() => {
 });
 
 vi.mock("@kokoro/shared", async (orig) => ({
-  ...((await orig())),
+  ...(await orig()),
   config: mockConfig,
   logger: {
     info: vi.fn(),

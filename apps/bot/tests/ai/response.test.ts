@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 // Silence the Pino logger so logSteps' debug calls don't leak into test output;
 // also gives the logSteps test a spy to assert against.
 vi.mock("@kokoro/shared", async (orig) => ({
-  ...((await orig())),
+  ...(await orig()),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -83,16 +83,12 @@ describe("collectToolCalls", () => {
     const result = collectToolCalls(
       steps(
         step({
-          toolCalls: [
-            { toolCallId: "c1", toolName: "search", input: { q: "hi" } },
-          ],
+          toolCalls: [{ toolCallId: "c1", toolName: "search", input: { q: "hi" } }],
           toolResults: [{ toolCallId: "c1", toolName: "search", output: { hits: 3 } }],
         }),
         step({
           toolCalls: [{ toolCallId: "c2", toolName: "send", input: { to: "x" } }],
-          toolResults: [
-            { toolCallId: "c2", toolName: "send", output: { ok: true } },
-          ],
+          toolResults: [{ toolCallId: "c2", toolName: "send", output: { ok: true } }],
         }),
       ),
     );

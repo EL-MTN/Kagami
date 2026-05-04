@@ -2,7 +2,7 @@ import { fakeAdapter, withTestDb } from "@kokoro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@kokoro/shared", async (orig) => ({
-  ...((await orig())),
+  ...(await orig()),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -30,10 +30,7 @@ import {
 withTestDb();
 
 interface ExecutableTool {
-  execute: (
-    input: Record<string, unknown>,
-    options?: unknown,
-  ) => Promise<Record<string, unknown>>;
+  execute: (input: Record<string, unknown>, options?: unknown) => Promise<Record<string, unknown>>;
 }
 
 beforeEach(() => {
@@ -454,12 +451,7 @@ describe("useRoutine tool — invocation", () => {
 
 describe("useRoutine tool — purity gate (watcher context)", () => {
   it('rejects an action-purity routine when callingContext="watcher"', async () => {
-    const tool = createUseRoutineTool(
-      "chat-1",
-      adapter,
-      0,
-      "watcher",
-    ) as unknown as ExecutableTool;
+    const tool = createUseRoutineTool("chat-1", adapter, 0, "watcher") as unknown as ExecutableTool;
     await seedRoutine("act", { purity: "action" });
     const result = await tool.execute({ routineName: "act" });
     expect(result.success).toBe(false);
@@ -469,12 +461,7 @@ describe("useRoutine tool — purity gate (watcher context)", () => {
   });
 
   it('allows a read-purity routine from a watcher and propagates callingContext="watcher"', async () => {
-    const tool = createUseRoutineTool(
-      "chat-1",
-      adapter,
-      0,
-      "watcher",
-    ) as unknown as ExecutableTool;
+    const tool = createUseRoutineTool("chat-1", adapter, 0, "watcher") as unknown as ExecutableTool;
     await seedRoutine("read-only", { purity: "read" });
     mockExecuteRoutine.mockResolvedValue("watched");
     const result = await tool.execute({ routineName: "read-only" });
