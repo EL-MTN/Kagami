@@ -190,8 +190,12 @@ async function ensureSearchIndex(
     }
     // Schema drift detection — additive expansions only. If the spec adds
     // filter fields (vector index) or mapped fields (search index) that
-    // the live index doesn't have yet, update in place. Atlas
-    // updateSearchIndex re-syncs; the index re-enters READY shortly.
+    // the live index doesn't have yet, reconcile.
+    //
+    // Atlas updateSearchIndex works for search-type indexes but rejects
+    // vectorSearch updates ("mappings is required" against a definition
+    // that legitimately has no mappings). For vectorSearch we drop+recreate
+    // — re-indexing rebuilds HNSW from existing docs, no data loss.
     const wantFilters = expectedFilterFieldPaths(spec);
     const haveFilters = existingFilterFieldPaths(match);
     const missingFilters = wantFilters.filter((p) => !haveFilters.has(p));
@@ -199,15 +203,24 @@ async function ensureSearchIndex(
     const haveMapped = existingMappedFieldPaths(match);
     const missingMapped = wantMapped.filter((p) => !haveMapped.has(p));
     if (missingFilters.length > 0 || missingMapped.length > 0) {
-      logger.info(
-        {
-          index: spec.name,
-          missingFilters,
-          missingMapped,
-        },
-        'updating search index in place (additive schema drift)',
-      );
-      await coll.updateSearchIndex(spec.name, spec.definition);
+      if (spec.type === 'vectorSearch') {
+        logger.info(
+          { index: spec.name, missingFilters },
+          'recreating vectorSearch index (additive schema drift; updateSearchIndex not supported for vectorSearch)',
+        );
+        await coll.dropSearchIndex(spec.name);
+        await coll.createSearchIndex({
+          name: spec.name,
+          type: 'vectorSearch',
+          definition: spec.definition,
+        });
+      } else {
+        logger.info(
+          { index: spec.name, missingMapped },
+          'updating search index in place (additive schema drift)',
+        );
+        await coll.updateSearchIndex(spec.name, spec.definition);
+      }
     }
   } else {
     // The driver exposes createSearchIndex; the type field defaults to
