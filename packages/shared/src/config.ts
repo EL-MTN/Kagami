@@ -157,7 +157,6 @@ export function validateConfig(): void {
       const provider = config.TTS_PROVIDER.slice(0, slash);
       const ttsKeyMap: Record<string, keyof typeof config | undefined> = {
         elevenlabs: "ELEVENLABS_API_KEY",
-        openai: "OPENAI_API_KEY",
       };
       const requiredKey = ttsKeyMap[provider];
       if (requiredKey && !config[requiredKey]) {
