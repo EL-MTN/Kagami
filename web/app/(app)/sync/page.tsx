@@ -1,6 +1,7 @@
 import { revalidatePath } from 'next/cache';
 import { api, oauthStartUrl } from '@/lib/api';
 import { fmtDateTime, fmtRelative } from '@/lib/format';
+import { Button } from '@/components/ui/button';
 import type { SyncState } from '@/lib/types';
 import {
   Badge,
@@ -75,12 +76,9 @@ export default async function SyncPage() {
                 ))}
               </ul>
               <div className="pt-2">
-                <a
-                  href={oauthStartUrl()}
-                  className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm shadow-xs transition-colors hover:bg-accent"
-                >
-                  Re-authorize
-                </a>
+                <Button variant="outline" asChild>
+                  <a href={oauthStartUrl()}>Re-authorize</a>
+                </Button>
                 <p className="mt-1.5 text-xs text-faint">
                   Use this if Google revoked access (
                   <Mono>invalid_grant</Mono>) or to add scopes.
@@ -96,12 +94,9 @@ export default async function SyncPage() {
                 </span>
               </div>
               <div className="pt-2">
-                <a
-                  href={oauthStartUrl()}
-                  className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                >
-                  Connect Google
-                </a>
+                <Button asChild>
+                  <a href={oauthStartUrl()}>Connect Google</a>
+                </Button>
               </div>
             </>
           )}
@@ -204,23 +199,15 @@ function IngestCard({
             {state.pausedAt ? (
               <>
                 <input type="hidden" name="force" value="true" />
-                <button
-                  type="submit"
-                  className="h-9 rounded-md border border-border bg-card px-3 text-sm font-medium shadow-xs transition-colors hover:bg-accent"
-                >
+                <Button type="submit" variant="outline">
                   Force-run (clear pause)
-                </button>
+                </Button>
                 <span className="text-xs text-faint">
                   Try after a Re-authorize.
                 </span>
               </>
             ) : (
-              <button
-                type="submit"
-                className="h-9 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                Run sync now
-              </button>
+              <Button type="submit">Run sync now</Button>
             )}
           </form>
         ) : (

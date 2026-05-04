@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { api, ApiError, config } from '@/lib/api';
 import { fmtDate, fmtDateTime, fmtRelative } from '@/lib/format';
+import { Button } from '@/components/ui/button';
 import type { Followup, Interaction, Person } from '@/lib/types';
 import {
   Badge,
@@ -342,12 +343,9 @@ function FilterBar({ sp, basePath }: { sp: Search; basePath: string }) {
         defaultValue={sp.occurredBefore?.slice(0, 10) ?? ''}
         className={inputCls}
       />
-      <button
-        type="submit"
-        className="h-8 rounded-md border border-border bg-card px-3 text-xs shadow-xs transition-colors hover:bg-accent"
-      >
+      <Button type="submit" variant="outline" size="sm">
         Filter
-      </button>
+      </Button>
     </form>
   );
 }

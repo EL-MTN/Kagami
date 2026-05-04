@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { Button } from '@/components/ui/button';
 import { loginAction } from '@/lib/auth-actions';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 
@@ -57,12 +58,9 @@ export default async function LoginPage({
         {error ? (
           <p className="text-xs text-critical">Invalid API key.</p>
         ) : null}
-        <button
-          type="submit"
-          className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
+        <Button type="submit" className="w-full">
           Sign in
-        </button>
+        </Button>
         <p className="pt-1 text-center text-[11px] text-faint">
           Same key as{' '}
           <code className="font-mono text-muted-foreground">

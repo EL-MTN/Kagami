@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { fmtRelative } from '@/lib/format';
+import { Button } from '@/components/ui/button';
 import { DataTable, DataRow, type DataTableColumn } from '@/components/shell';
 import { TableCell } from '@/components/ui/table';
 import {
@@ -137,12 +138,9 @@ export default async function PeoplePage({
           />
           include tombstoned
         </label>
-        <button
-          type="submit"
-          className="h-9 rounded-md border border-border bg-card px-3 text-sm shadow-xs transition-colors hover:bg-accent"
-        >
+        <Button type="submit" variant="outline">
           Apply
-        </button>
+        </Button>
         {(sp.q || sp.source || sp.includeTombstoned || tags.length > 0) && (
           <Link
             href="/people"
@@ -215,12 +213,11 @@ export default async function PeoplePage({
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span className="tabular-nums">{result.items.length} shown</span>
         {result.nextCursor ? (
-          <Link
-            href={buildHref(sp, { cursor: result.nextCursor })}
-            className="rounded-md border border-border bg-card px-3 py-1.5 text-sm shadow-xs transition-colors hover:bg-accent"
-          >
-            Next page →
-          </Link>
+          <Button variant="outline" asChild>
+            <Link href={buildHref(sp, { cursor: result.nextCursor })}>
+              Next page →
+            </Link>
+          </Button>
         ) : (
           <span className="text-faint">end of results</span>
         )}
