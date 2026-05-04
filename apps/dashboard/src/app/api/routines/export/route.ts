@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Routine } from "@mashiro/db";
+import { Routine } from "@kokoro/db";
 import { ensureDB } from "@/lib/db";
 import type { RoutineExportBundle } from "@/lib/routine-schema";
 import { serializeParameter } from "@/lib/queries/routines";

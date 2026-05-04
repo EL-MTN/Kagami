@@ -21,7 +21,6 @@ const RELEVANT_ENV_KEYS = [
   "OPENAI_API_KEY",
   "XAI_API_KEY",
   "GOOGLE_API_KEY",
-  "EMBEDDING_PROVIDER",
   "GOOGLE_OAUTH_CLIENT_ID",
   "GOOGLE_OAUTH_CLIENT_SECRET",
   "GOOGLE_OAUTH_REFRESH_TOKEN",
@@ -64,8 +63,6 @@ beforeEach(() => {
   // Provide the bare minimum to make module-load parse succeed.
   vi.stubEnv("LLM_PROVIDER", "anthropic");
   vi.stubEnv("ANTHROPIC_API_KEY", "k");
-  vi.stubEnv("EMBEDDING_PROVIDER", "google");
-  vi.stubEnv("GOOGLE_API_KEY", "k");
   vi.resetModules();
   exitCalled = false;
   errorLog.length = 0;

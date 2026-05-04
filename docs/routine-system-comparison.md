@@ -1,10 +1,10 @@
-# Routine System Comparison: Mashiro vs OpenClaw vs Claude Code vs Code Mode
+# Routine System Comparison: Kokoro vs OpenClaw vs Claude Code vs Code Mode
 
 A deep comparison of four approaches to agent "routines" — how they work, what they optimize for, and the trade-offs between context efficiency, reasoning power, and extensibility.
 
 ## How Each System Works
 
-### Mashiro Routines — Sub-agent LLM calls with typed parameters
+### Kokoro Routines — Sub-agent LLM calls with typed parameters
 
 The LLM calls `useRoutine({ routineName, parameters })` → a full `generateText()` fires with a lean executor identity + routine prompt + parameter injection + all tools → result returns synchronously to the calling LLM. No personality card or conversational instructions enter the routine context. Routines are MongoDB documents (prompt + typed parameter schema + optional cron). Composable up to depth 3.
 
@@ -30,26 +30,26 @@ This is the sharpest differentiator between the four approaches.
 
 | System          | Context cost per routine invocation                                            | What enters context                                                                          | What stays out                                                                       |
 | --------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| **Mashiro**     | Lean context window (executor identity + datetime + parameters)                | Only routine prompt + datetime + tool schemas                                                | Personality card, conversational instructions, conversation history, memory context  |
+| **Kokoro**      | Lean context window (executor identity + datetime + parameters)                | Only routine prompt + datetime + tool schemas                                                | Personality card, conversational instructions, conversation history, memory context  |
 | **OpenClaw**    | Additive — routine instructions consume tokens in the _current_ window         | Routine markdown + all bootstrap files (`SOUL.md`, `MEMORY.md`, etc.) already in context     | Nothing — it's all one context                                                       |
 | **Claude Code** | Descriptions: 2% budget always. Full content: on-demand. Fork: separate window | Description always; full `ROUTINE.md` only when triggered; forked routines get clean context | Supporting files lazy-loaded; scripts execute externally, only output enters context |
 | **Code Mode**   | Minimal — tool schemas loaded on-demand from filesystem                        | Only the code the model writes + final return values                                         | Intermediate API responses, raw data, PII (tokenized)                                |
 
 ### Analysis
 
-Mashiro uses a lean executor prompt — no personality card, no conversational instructions, just an executor identity + datetime + the routine's own prompt and parameters. This keeps the per-invocation cost low while still spawning a full LLM call with tool access. The parent context is _protected_: a routine that processes 10,000 tokens of email data doesn't pollute the conversation window. The calling LLM (which has the full personality context) presents the routine's result in character.
+Kokoro uses a lean executor prompt — no personality card, no conversational instructions, just an executor identity + datetime + the routine's own prompt and parameters. This keeps the per-invocation cost low while still spawning a full LLM call with tool access. The parent context is _protected_: a routine that processes 10,000 tokens of email data doesn't pollute the conversation window. The calling LLM (which has the full personality context) presents the routine's result in character.
 
 OpenClaw pays the least per routine activation (just the markdown bytes), but every routine competes for space in the same context window. If you have 20 routines loaded plus `SOUL.md` + `MEMORY.md` + `AGENTS.md` + conversation history, you're burning context fast. OpenClaw mitigates this with `/compact`, but that's reactive — you're already overflowing when you need it.
 
-Claude Code found the middle ground. The 2% description budget means routine _awareness_ is cheap. The lazy loading (`ROUTINE.md` read on demand) means full instructions only appear when needed. And `context: fork` gives you Mashiro-style isolation when you want it, without forcing it always. The `` !`command` `` preprocessing is clever — shell output gets injected before the LLM sees anything, so dynamic data doesn't require a tool call.
+Claude Code found the middle ground. The 2% description budget means routine _awareness_ is cheap. The lazy loading (`ROUTINE.md` read on demand) means full instructions only appear when needed. And `context: fork` gives you Kokoro-style isolation when you want it, without forcing it always. The `` !`command` `` preprocessing is clever — shell output gets injected before the LLM sees anything, so dynamic data doesn't require a tool call.
 
 Code Mode is the most context-efficient by far. Anthropic reported 150K → 2K tokens (98.7% reduction) because intermediate tool results never enter context. But it only works for _tool orchestration_ — it can't do reasoning or judgment calls inside the sandbox. The code is deterministic; the LLM just writes it.
 
 ### Where each wins on context
 
 - Many small utility routines → OpenClaw or Claude Code (cheap activation)
-- Routines that process large data → Code Mode (sandbox filters) or Mashiro (isolated context)
-- Routines that need multi-step reasoning with tools → Mashiro (only option with full tool access in sub-call)
+- Routines that process large data → Code Mode (sandbox filters) or Kokoro (isolated context)
+- Routines that need multi-step reasoning with tools → Kokoro (only option with full tool access in sub-call)
 - Routines that need conversation context → OpenClaw (same window)
 
 ---
@@ -58,14 +58,14 @@ Code Mode is the most context-efficient by far. Anthropic reported 150K → 2K t
 
 | System          | How to add a routine                                    | Discovery                                   | Distribution                             | Barrier to entry                   |
 | --------------- | ------------------------------------------------------- | ------------------------------------------- | ---------------------------------------- | ---------------------------------- |
-| **Mashiro**     | Tell the bot via Telegram (LLM writes the prompt)       | System prompt injection of enabled routines | Per-instance (MongoDB)                   | Zero (natural language)            |
+| **Kokoro**      | Tell the bot via Telegram (LLM writes the prompt)       | System prompt injection of enabled routines | Per-instance (MongoDB)                   | Zero (natural language)            |
 | **OpenClaw**    | Drop `ROUTINE.md` in workspace, or install from ClawHub | `<available_routines>` XML block in prompt  | ClawHub marketplace (13,700+), git       | Low (write markdown)               |
 | **Claude Code** | Create `ROUTINE.md` in `.claude/routines/`              | Frontmatter descriptions at 2% budget       | Git (project), plugins, managed settings | Low (write markdown + frontmatter) |
 | **Code Mode**   | Deploy an MCP server exposing tool schemas              | Filesystem discovery (`./servers/`)         | npm/pip packages for MCP servers         | High (build a server + sandbox)    |
 
 ### Analysis
 
-Mashiro's extensibility model is unique: the _AI itself_ creates routines at runtime through natural language. You say "create a routine that checks my email and summarizes it," and it does. No files, no code, no restart. The trade-off is there's no ecosystem — routines live in your MongoDB and can't be shared.
+Kokoro's extensibility model is unique: the _AI itself_ creates routines at runtime through natural language. You say "create a routine that checks my email and summarizes it," and it does. No files, no code, no restart. The trade-off is there's no ecosystem — routines live in your MongoDB and can't be shared.
 
 OpenClaw has the strongest ecosystem play. ClawHub's 13,700+ routines mean most common needs are already solved. But Snyk found 36.8% of ClawHub routines have security flaws, and 13.4% have critical issues. The file-based model means routines can be trojaned — a malicious `ROUTINE.md` could instruct the model to exfiltrate data or modify `SOUL.md` for persistent compromise.
 
@@ -79,14 +79,14 @@ Code Mode is the hardest to extend (you need to build an MCP server) but the mos
 
 | System          | Parameter typing                                 | Validation                                         | Composition                            | Scheduling                          | Execution model                            |
 | --------------- | ------------------------------------------------ | -------------------------------------------------- | -------------------------------------- | ----------------------------------- | ------------------------------------------ |
-| **Mashiro**     | Typed (string/number/boolean), schema in DB      | Runtime (required checks, type coercion, defaults) | Yes, depth 3                           | Built-in (cron per routine)         | Sub-`generateText()` with full tool access |
+| **Kokoro**      | Typed (string/number/boolean), schema in DB      | Runtime (required checks, type coercion, defaults) | Yes, depth 3                           | Built-in (cron per routine)         | Sub-`generateText()` with full tool access |
 | **OpenClaw**    | None (free-text instructions)                    | None                                               | No (flat)                              | Separate cron system                | Prompt injection into current call         |
 | **Claude Code** | String arguments only (`$ARGUMENTS`, `$0`, `$1`) | None (LLM interprets)                              | Via `context: fork` + agent delegation | `/loop` routine for recurring       | Inline or forked subagent                  |
 | **Code Mode**   | Full TypeScript type system                      | Compile-time + runtime in sandbox                  | Native (code composes functions)       | N/A (tool layer, not routine layer) | Sandboxed code execution                   |
 
 ### Analysis
 
-Mashiro has the most structured routine definitions. Typed parameters with validation, defaults, and required flags mean the system catches errors before the LLM runs — you won't waste a full `generateText()` call because someone passed a string where a number was expected. The cron-per-routine integration is seamless: a routine can be both on-demand and scheduled. But this structure comes at the cost of a full DB schema and migration overhead.
+Kokoro has the most structured routine definitions. Typed parameters with validation, defaults, and required flags mean the system catches errors before the LLM runs — you won't waste a full `generateText()` call because someone passed a string where a number was expected. The cron-per-routine integration is seamless: a routine can be both on-demand and scheduled. But this structure comes at the cost of a full DB schema and migration overhead.
 
 OpenClaw has essentially no structure. A routine is markdown. This is its strength (anyone can write one, the LLM interprets freely) and its weakness (no type safety, no validation, no composition, no way to know if a routine will work without running it).
 
@@ -113,10 +113,10 @@ Each system optimizes for a different vertex:
                  /               \
                 /─────────────────\
     Reasoning Power              Extensibility
-     (Mashiro)                   (OpenClaw)
+     (Kokoro)                   (OpenClaw)
 ```
 
-- **Mashiro** maximizes reasoning power — full LLM with full tools at every depth level, at the cost of tokens and latency
+- **Kokoro** maximizes reasoning power — full LLM with full tools at every depth level, at the cost of tokens and latency
 - **OpenClaw** maximizes extensibility — massive ecosystem, zero-cost activation, at the cost of context bloat and no composition
 - **Code Mode** maximizes context efficiency — 98.7% token reduction, at the cost of no in-flight reasoning
 - **Claude Code** sits nearest the center — lazy loading, optional forking, structured frontmatter, but no typed parameters or built-in scheduling
@@ -136,9 +136,9 @@ The term "routine" is overloaded across the agent ecosystem. What each project m
 | **Code plugins**     | Deterministic code that executes directly                 | JARVIS, AutoGPT plugins          |
 | **Tool wrappers**    | Thin abstraction over API calls with a schema             | Semantic Kernel, LangChain tools |
 | **Code-as-tool**     | LLM writes code to orchestrate tool APIs in a sandbox     | Code Mode (MCP)                  |
-| **Sub-agent calls**  | Full LLM invocation with typed parameters and tool access | Mashiro                          |
+| **Sub-agent calls**  | Full LLM invocation with typed parameters and tool access | Kokoro                           |
 
-Mashiro's routines are closest to what the research community calls "hierarchical agent delegation" — a parent LLM spawning child LLM calls with scoped instructions and tool access. This is the most powerful pattern but also the most expensive.
+Kokoro's routines are closest to what the research community calls "hierarchical agent delegation" — a parent LLM spawning child LLM calls with scoped instructions and tool access. This is the most powerful pattern but also the most expensive.
 
 ---
 

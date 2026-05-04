@@ -1,6 +1,6 @@
 # Testing
 
-Mashiro has a layered automated-test suite that runs in-memory and finishes in
+Kokoro has a layered automated-test suite that runs in-memory and finishes in
 under 15 s on a laptop. This doc describes how it's organized, what's
 covered, and how to add tests.
 
@@ -44,7 +44,7 @@ npm run test:coverage     # V8 coverage; HTML report at coverage/index.html
 ## Layout
 
 ```
-mashiro/
+kokoro/
 ├── apps/
 │   └── bot/
 │       └── tests/                  # mirrors src/ tree
@@ -185,19 +185,19 @@ covered.
 
 ## Mocking strategy
 
-| Surface                         | Approach                                                                    | Helper                               |
-| ------------------------------- | --------------------------------------------------------------------------- | ------------------------------------ |
-| MongoDB                         | `mongodb-memory-server` per test file; truncate between tests               | `@mashiro/test-utils` `withTestDb()` |
-| LLM (Vercel AI SDK v6)          | `vi.mock("../provider")` returning a `MockLanguageModelV3` (from `ai/test`) | `mockLLM({ scripts })`               |
-| Embeddings                      | Stub `generateEmbedding` to deterministic vector (hash → bucket)            | `mockEmbeddings()`                   |
-| `PlatformAdapter`               | In-memory recorder, assertable via `adapter.calls.<method>`                 | `fakeAdapter()`                      |
-| BlueBubbles HTTP                | MSW handlers                                                                | `setupMswServer()`                   |
-| Gmail / Calendar (`googleapis`) | `vi.mock` the service module per test                                       | (per-test)                           |
-| Whisper / OpenAI STT            | MSW handler returning `{ text, durationInSeconds }`                         | bundled in `setupMswServer()`        |
-| Stagehand (browser)             | `vi.mock("../../services/browser")` per test                                | (per-test)                           |
-| Timers (schedulers)             | `vi.useFakeTimers()` + `vi.advanceTimersByTimeAsync`                        | `advanceTimersByAsync(ms)`           |
-| File system (soul.md, fixtures) | Real reads from `packages/test-utils/src/fixtures/`                         | (no helper needed)                   |
-| Pino logger                     | `vi.mock("@mashiro/shared", ...)` overriding only `logger`                  | (per-test)                           |
+| Surface                         | Approach                                                                    | Helper                              |
+| ------------------------------- | --------------------------------------------------------------------------- | ----------------------------------- |
+| MongoDB                         | `mongodb-memory-server` per test file; truncate between tests               | `@kokoro/test-utils` `withTestDb()` |
+| LLM (Vercel AI SDK v6)          | `vi.mock("../provider")` returning a `MockLanguageModelV3` (from `ai/test`) | `mockLLM({ scripts })`              |
+| Embeddings                      | Stub `generateEmbedding` to deterministic vector (hash → bucket)            | `mockEmbeddings()`                  |
+| `PlatformAdapter`               | In-memory recorder, assertable via `adapter.calls.<method>`                 | `fakeAdapter()`                     |
+| BlueBubbles HTTP                | MSW handlers                                                                | `setupMswServer()`                  |
+| Gmail / Calendar (`googleapis`) | `vi.mock` the service module per test                                       | (per-test)                          |
+| Whisper / OpenAI STT            | MSW handler returning `{ text, durationInSeconds }`                         | bundled in `setupMswServer()`       |
+| Stagehand (browser)             | `vi.mock("../../services/browser")` per test                                | (per-test)                          |
+| Timers (schedulers)             | `vi.useFakeTimers()` + `vi.advanceTimersByTimeAsync`                        | `advanceTimersByAsync(ms)`          |
+| File system (soul.md, fixtures) | Real reads from `packages/test-utils/src/fixtures/`                         | (no helper needed)                  |
+| Pino logger                     | `vi.mock("@kokoro/shared", ...)` overriding only `logger`                   | (per-test)                          |
 
 ## Patterns worth knowing
 

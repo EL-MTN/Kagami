@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { Watcher, createWatcher, defaultExpiresAt, isDuplicateKeyError } from "@mashiro/db";
-import { computeNextRunAt, validateCronAndDefaults } from "@mashiro/shared";
+import { Watcher, createWatcher, defaultExpiresAt, isDuplicateKeyError } from "@kokoro/db";
+import { computeNextRunAt, validateCronAndDefaults } from "@kokoro/shared";
 import { ensureDB } from "@/lib/db";
 import { watcherCreateSchema, watcherExportBundleSchema } from "@/lib/watcher-schema";
 import { getWatcherList } from "@/lib/queries/watchers";

@@ -2,12 +2,13 @@ import { generateText } from "ai";
 import { getModel, getModelName } from "./provider";
 import { assembleSystemPrompt, assembleMessages } from "./context-assembler";
 import { ACKNOWLEDGMENT_INSTRUCTIONS } from "./prompts";
-import { getOrCreateSession, appendMessage } from "@mashiro/db";
-import { logger } from "@mashiro/shared";
-import type { PlatformAdapter } from "@mashiro/shared";
+import { getOrCreateSession, appendMessage } from "@kokoro/db";
+import { logger } from "@kokoro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
 import { sendSegmented } from "./response";
 import { trackUsage } from "./token-tracker";
 import { platformForChatId } from "../platform/registry";
+import { ingestClosedSession } from "@kokoro/memory";
 
 const LLM_TIMEOUT_MS = 60_000;
 
@@ -33,11 +34,16 @@ export async function generateAcknowledgment(
   userId: string,
   adapter: PlatformAdapter,
 ): Promise<void> {
-  const { conversation } = await getOrCreateSession(chatId, userId, platformForChatId(chatId));
+  const { conversation, previouslyClosed } = await getOrCreateSession(
+    chatId,
+    userId,
+    platformForChatId(chatId),
+  );
+  if (previouslyClosed) ingestClosedSession(previouslyClosed);
   const sessionId = conversation.sessionId;
 
   const [baseSystemPrompt, messages] = await Promise.all([
-    assembleSystemPrompt(chatId, sessionId),
+    assembleSystemPrompt(chatId),
     assembleMessages(chatId),
   ]);
 

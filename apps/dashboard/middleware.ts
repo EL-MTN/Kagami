@@ -27,7 +27,7 @@ export function middleware(request: NextRequest) {
   return new NextResponse("Unauthorized", {
     status: 401,
     headers: {
-      "WWW-Authenticate": 'Basic realm="Mashiro Dashboard"',
+      "WWW-Authenticate": 'Basic realm="Kokoro Dashboard"',
     },
   });
 }

@@ -1,4 +1,4 @@
-import { config, logger } from "@mashiro/shared";
+import { config, logger } from "@kokoro/shared";
 
 interface GeocodeResult {
   placeName: string;

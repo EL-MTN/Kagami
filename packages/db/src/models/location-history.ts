@@ -1,5 +1,5 @@
 import mongoose, { Schema, type Document } from "mongoose";
-import { haversineMeters } from "@mashiro/shared";
+import { haversineMeters } from "@kokoro/shared";
 
 export interface ILocationHistory extends Document {
   chatId: string;
@@ -72,6 +72,11 @@ export async function getRecentLocations(
     .limit(limit);
 }
 
+/**
+ * Count visits to within `radiusM` of (latitude, longitude) within the
+ * past `withinDays`. Used by place-learning to detect frequent visits
+ * worth promoting into Kioku as facts.
+ */
 export async function getLocationVisitCount(
   chatId: string,
   latitude: number,
@@ -80,16 +85,12 @@ export async function getLocationVisitCount(
   withinDays = 30,
 ): Promise<number> {
   const cutoff = new Date(Date.now() - withinDays * 24 * 60 * 60 * 1000);
-  const all = await LocationHistory.find({
-    chatId,
-    timestamp: { $gte: cutoff },
-  });
+  const all = await LocationHistory.find({ chatId, timestamp: { $gte: cutoff } });
 
-  // Filter by haversine distance
   let count = 0;
   for (const loc of all) {
     if (haversineMeters(latitude, longitude, loc.latitude, loc.longitude) <= radiusM) {
-      count++;
+      count += 1;
     }
   }
   return count;

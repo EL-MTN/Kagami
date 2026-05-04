@@ -1,6 +1,6 @@
 import { experimental_generateSpeech as generateSpeech } from "ai";
 import { openai } from "@ai-sdk/openai";
-import { config, logger } from "@mashiro/shared";
+import { config, logger } from "@kokoro/shared";
 import type { GeneratedAudio } from "../types";
 
 export async function generateWithOpenAi(text: string, modelId: string): Promise<GeneratedAudio> {

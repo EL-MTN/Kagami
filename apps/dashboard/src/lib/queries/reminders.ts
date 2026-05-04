@@ -1,4 +1,4 @@
-import { Reminder } from "@mashiro/db";
+import { Reminder } from "@kokoro/db";
 import { ensureDB } from "../db";
 
 export interface ReminderListItem {

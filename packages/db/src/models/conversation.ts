@@ -25,6 +25,14 @@ export interface IConversation extends Document {
   sessionId: string;
   status: "active" | "closed";
   closedAt?: Date;
+  // Lifecycle of the closed-session → Kioku ingest. Default "pending"; set
+  // to "done" when the transcript has been extracted into Kioku. The
+  // sweeper in @kokoro/memory drives any stuck "pending" rows to "done"
+  // (or back-off retries them on Kioku outage), so callers don't have to
+  // worry about whether the immediate fire-and-forget trigger succeeded.
+  ingestStatus: "pending" | "done";
+  ingestedAt?: Date;
+  ingestAttempts: number;
   messages: IMessage[];
   createdAt: Date;
   updatedAt: Date;
@@ -59,6 +67,9 @@ const conversationSchema = new Schema<IConversation>(
     sessionId: { type: String, required: true, default: () => crypto.randomUUID() },
     status: { type: String, enum: ["active", "closed"], default: "active" },
     closedAt: { type: Date },
+    ingestStatus: { type: String, enum: ["pending", "done"], default: "pending" },
+    ingestedAt: { type: Date },
+    ingestAttempts: { type: Number, default: 0 },
     messages: [messageSchema],
   },
   { timestamps: true },
@@ -66,6 +77,8 @@ const conversationSchema = new Schema<IConversation>(
 
 conversationSchema.index({ chatId: 1, updatedAt: -1 });
 conversationSchema.index({ chatId: 1, status: 1, updatedAt: -1 });
+// Sweeper queries: closed sessions whose Kioku ingest is still pending.
+conversationSchema.index({ status: 1, ingestStatus: 1, closedAt: 1 });
 // Multi-platform scope: chatId can collide across platforms, so the
 // session-lookup query is scoped by both. Without this index, the find in
 // `getOrCreateSession` falls back to a less selective index.

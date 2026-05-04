@@ -1,6 +1,6 @@
 # iMessage (BlueBubbles)
 
-Mashiro can run alongside Telegram on iMessage via [BlueBubbles](https://bluebubbles.app/), a self-hosted server that exposes a REST API for sending messages and a webhook for inbound events. The bot keeps Telegram fully functional; iMessage is opt-in via env vars.
+Kokoro can run alongside Telegram on iMessage via [BlueBubbles](https://bluebubbles.app/), a self-hosted server that exposes a REST API for sending messages and a webhook for inbound events. The bot keeps Telegram fully functional; iMessage is opt-in via env vars.
 
 ## Constraints (read this first)
 

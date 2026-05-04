@@ -1,4 +1,4 @@
-import type { IncomingMessage, PlatformAdapter } from "@mashiro/shared";
+import type { IncomingMessage, PlatformAdapter } from "@kokoro/shared";
 
 export interface FakeAdapterCalls {
   sendText: Array<{ chatId: string; text: string }>;

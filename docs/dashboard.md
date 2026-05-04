@@ -1,10 +1,10 @@
 # Dashboard
 
-Web dashboard for managing and inspecting Mashiro's data, built with Next.js 15 + Tailwind CSS v4 + shadcn/ui (Radix primitives).
+Web dashboard for managing and inspecting Kokoro's data, built with Next.js 15 + Tailwind CSS v4 + shadcn/ui (Radix primitives).
 
 ## Design System
 
-The dashboard uses **"Mashiro Daylight" (白)** — a warm-paper light theme tuned for observability rather than mood. The earlier "Noir Atelier" dark palette was retired because it traded legibility for atmosphere, which is the wrong tradeoff for a surface whose job is scanning numbers and statuses.
+The dashboard uses **"Kokoro Daylight" (心)** — a warm-paper light theme tuned for observability rather than mood. The earlier "Noir Atelier" dark palette was retired because it traded legibility for atmosphere, which is the wrong tradeoff for a surface whose job is scanning numbers and statuses.
 
 ### Typography
 
@@ -55,11 +55,11 @@ Avoid `text-muted-foreground/30..70` etc. The `/N` modifier antipattern was swep
 Create `apps/dashboard/.env.local`:
 
 ```
-MONGODB_URI=mongodb://localhost:27017/mashiro
+MONGODB_URI=mongodb://localhost:27017/kokoro
 DASHBOARD_PASSWORD=your-password-here  # optional — HTTP Basic Auth gate
 ```
 
-No LLM/embedding API keys needed — the config refactor (see below) ensures the dashboard can import `@mashiro/db` and `@mashiro/shared` without triggering validation for those keys.
+No LLM/embedding API keys needed — the config refactor (see below) ensures the dashboard can import `@kokoro/db` and `@kokoro/shared` without triggering validation for those keys.
 
 When `DASHBOARD_PASSWORD` is set, the `middleware.ts` middleware enforces HTTP Basic Auth on all routes. The browser handles the native login dialog. If unset, all routes are open (dev convenience).
 
@@ -125,13 +125,13 @@ All in `src/lib/queries/`:
 - `watchers.ts` — `getWatcherList()`, `getWatcherDetail(id)`, `getWatcherLogList(...)`, `getWatcherStateHistory(watcherId, limit)` (collapses consecutive identical states into a transition timeline)
 - `usage.ts` — `getUsageOverview()`, `getUsageByCategory(days)`, `getUsageByRoutine(days)`, `getUsageByWatcher(days)` (joins on `metadata.routineId` / `metadata.watcherId`), `getDailyUsageTrend(days)`
 
-Queries use `@mashiro/db` models directly. `@mashiro/memory` is **not** imported (it depends on Google AI SDK which is unnecessary for read-only display).
+Queries use `@kokoro/db` models directly. `@kokoro/memory` is **not** imported (it depends on Google AI SDK which is unnecessary for read-only display).
 
 ### Validation
 
 `src/lib/routine-schema.ts` — Zod schemas shared between API route handlers (server-side validation) and client components (live validation). Exports: `routineCreateSchema`, `routinePatchSchema`, `routineExportBundleSchema`, and inferred TypeScript types. Zero Node.js-specific imports so it works in both runtimes.
 
-Cron validation (parse + required-defaults check) lives in `@mashiro/shared` (`validateCronAndDefaults`, `computeNextRunAt`) so the bot's `manageRoutines` tool and the dashboard API routes share one implementation.
+Cron validation (parse + required-defaults check) lives in `@kokoro/shared` (`validateCronAndDefaults`, `computeNextRunAt`) so the bot's `manageRoutines` tool and the dashboard API routes share one implementation.
 
 ### Editor UX
 
@@ -156,16 +156,16 @@ Runtime fields (`_id`, `chatId`, `nextRunAt`, `version`, timestamps) are strippe
 
 ### Config Refactor
 
-`@mashiro/shared/config.ts` was split into:
+`@kokoro/shared/config.ts` was split into:
 
 - **Base parse** (always succeeds) — validates structure + defaults, no API key requirements
 - **`validateConfig()`** — strict check for LLM/embedding keys, called explicitly by the bot at startup
 
-This allows the dashboard to import `@mashiro/db` → `@mashiro/shared` without `process.exit(1)` from missing API keys.
+This allows the dashboard to import `@kokoro/db` → `@kokoro/shared` without `process.exit(1)` from missing API keys.
 
 ### Next.js Config
 
-- `transpilePackages` for `@mashiro/*` workspace packages
+- `transpilePackages` for `@kokoro/*` workspace packages
 - `serverExternalPackages` for `mongoose`, `pino`, `pino-pretty` (Node.js native modules)
 
 ## Components

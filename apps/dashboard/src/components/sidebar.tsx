@@ -5,7 +5,6 @@ import { getPendingConfirmationCount } from "@/lib/queries/confirmations";
 const links: { href: string; label: string; iconName: IconName }[] = [
   { href: "/", label: "Overview", iconName: "LayoutDashboard" },
   { href: "/conversations", label: "Conversations", iconName: "MessageSquare" },
-  { href: "/memories", label: "Memories", iconName: "Brain" },
   { href: "/confirmations", label: "Confirmations", iconName: "Hourglass" },
   { href: "/reminders", label: "Reminders", iconName: "Bell" },
   { href: "/routines", label: "Routines", iconName: "Zap" },
@@ -19,10 +18,10 @@ export async function Sidebar() {
   return (
     <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-border bg-card">
       <div className="flex h-16 items-center gap-3 px-6">
-        <span className="font-display text-3xl leading-none text-foreground select-none">白</span>
+        <span className="font-display text-3xl leading-none text-foreground select-none">心</span>
         <div>
           <h1 className="font-display text-xl leading-none tracking-wide text-foreground">
-            Mashiro
+            Kokoro
           </h1>
           <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-faint">Dashboard</p>
         </div>
@@ -42,7 +41,7 @@ export async function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-6 pb-5 text-[11px] tabular-nums text-faint">Mashiro v1.0</div>
+      <div className="px-6 pb-5 text-[11px] tabular-nums text-faint">Kokoro v1.0</div>
     </aside>
   );
 }

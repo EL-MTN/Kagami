@@ -1,6 +1,6 @@
 import type { StepResult } from "ai";
-import type { PlatformAdapter } from "@mashiro/shared";
-import { logger } from "@mashiro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
+import { logger } from "@kokoro/shared";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Step = StepResult<any>;

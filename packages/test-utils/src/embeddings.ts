@@ -19,10 +19,6 @@ export function deterministicEmbedding(text: string, dim = 32): number[] {
   return v.map((x) => x / norm);
 }
 
-/**
- * Helper for `vi.mock` — usage:
- *   vi.mock("@mashiro/memory", async (orig) => ({ ...await orig(), generateEmbedding: mockEmbeddings() }));
- */
 export function mockEmbeddings(dim = 32): (text: string) => Promise<number[]> {
   return (text: string) => Promise.resolve(deterministicEmbedding(text, dim));
 }

@@ -79,20 +79,20 @@ Suppression preserves observation accuracy (`lastState` still rolls forward) whi
 
 - `webSearch` — gated on `BRAVE_SEARCH_API_KEY`; Brave-backed lookups return titles/URLs/snippets without spinning the browser. When the API tool is registered, the read-only `browse` tool drops its `search` action so lookups land here.
 - `browse` — read-only variant (`createReadOnlyBrowseTool()`); only `search`/`visit`/`extract` are permitted (no `screenshot`, `act`, `agent`, `login`). The `search` action falls back to a DuckDuckGo HTML scrape via Stagehand when `BRAVE_SEARCH_API_KEY` is unset.
-- `searchMemory`, `readMemory`, `listMemories`
+- `searchMemory` — hybrid retrieval over Kioku. Read-only by construction.
 - `checkEmail` (gated on `GOOGLE_OAUTH_CLIENT_ID`)
 - `listCalendarEvents` — `createManageCalendarTool({ mode: "readOnly" })` returns a list-only tool
 - `useRoutine` — gated to read-purity routines via `callingContext: "watcher"`. Action-purity routines are rejected with a clear error.
 - `reportWatcherResult` — required terminator
 
-Explicitly excluded: `sendEmail`, `rememberFact`, `noteToSelf`, `manageReminders`, `sendPhoto`, `sendVoice`, `manageRoutines`, `manageWatchers`. The principle: watchers observe; action belongs to the trigger handler. This bounds blast radius — a misfiring detection produces a spurious message, never a sent email or modified calendar.
+Explicitly excluded: `sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, `sendVoice`, `manageRoutines`, `manageWatchers`. The principle: watchers observe; action belongs to the trigger handler. This bounds blast radius — a misfiring detection produces a spurious message, never a sent email or modified calendar or a write to long-term memory.
 
 ### Routine purity
 
 Routines carry a `purity: "read" | "action"` marker (default `"action"` for backward-compat safety). The watcher invariant is enforced in two layers:
 
 - **`useRoutine` gate** — only `purity: "read"` routines are invocable from `callingContext: "watcher"`. Action routines return `{ success: false, reason: "..." }` without executing.
-- **Tool-palette restriction** — when a routine _runs_ under `callingContext: "watcher"` (i.e., it was invoked by a watcher), the routine executor uses the read-only tool subset (`routineToolsUnderWatcher`) instead of `allTools`. The routine cannot send emails, write to memory, modify the calendar, or otherwise mutate external state through its own tool palette. This makes the read-only invariant **transitive**: a misbehaving read-purity routine can't leak mutations even if its prompt instructs otherwise.
+- **Tool-palette restriction** — when a routine _runs_ under `callingContext: "watcher"` (i.e., it was invoked by a watcher), the routine executor uses the read-only tool subset (`routineToolsUnderWatcher`) instead of `allTools`. The routine cannot send emails, write to long-term memory (no `rememberFact`), modify the calendar, or otherwise mutate external state through its own tool palette. `searchMemory` is allowed because reads are pure. This makes the read-only invariant **transitive**: a misbehaving read-purity routine can't leak mutations even if its prompt instructs otherwise.
 
 `callingContext` propagates through `executeRoutine` → `useRoutine` → next `executeRoutine`, so the gate stays watcher-scoped at every hop.
 
@@ -114,7 +114,7 @@ The Next.js dashboard at `/watchers` mirrors the Routines surface:
 - List view (`apps/dashboard/src/app/watchers/page.tsx`) — search, filter (all / enabled / snoozed), enabled toggle, delete, create, import, export.
 - Detail editor (`apps/dashboard/src/app/watchers/[id]/page.tsx`) — inline edits to name/description/prompt/cron, lifecycle controls (oneShot, maxFires, cooldownMinutes), snooze dropdown, manual "Run now" button (sets `manualRunRequestedAt`; the scheduler's 3s manual-run poll claims it and runs the watcher with `silent: true`), state-change timeline (see below), and full execution log with triggered/silenced/failed verdicts.
 - **State-change timeline** (`apps/dashboard/src/components/watchers/state-timeline.tsx` + `getWatcherStateHistory(watcherId, limit)` in `lib/queries/watchers.ts`): walks the most recent `limit` completed runs, collapses consecutive identical `newState` values, and renders one entry per _distinct_ observation. Markers are shape-coded — filled disc for triggered fires, hollow ring for cooldown/snoozed-suppressed fires, hairline tick for routine observations. Each entry shows the prior state inline as a struck-through "Was" block when it differs from the current state. Sort is reverse-chronological (newest first); the query fetches the newest window so a long history doesn't drop recent transitions.
-- API: `/api/watchers` (CRUD + import), `/api/watchers/[id]/run` (manual trigger), `/api/watchers/[id]/logs`, `/api/watchers/export`. All routes import directly from `@mashiro/db`.
+- API: `/api/watchers` (CRUD + import), `/api/watchers/[id]/run` (manual trigger), `/api/watchers/[id]/logs`, `/api/watchers/export`. All routes import directly from `@kokoro/db`.
 
 ## Deferred
 

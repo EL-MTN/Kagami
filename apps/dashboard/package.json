@@ -1,8 +1,8 @@
 {
-  "name": "@mashiro/dashboard",
+  "name": "@kokoro/dashboard",
   "private": true,
   "type": "module",
-  "portless": "mashiro",
+  "portless": "kokoro",
   "scripts": {
     "dev": "portless run next dev",
     "build": "next build",
@@ -12,8 +12,8 @@
     "lint:fix": "eslint src/ --fix"
   },
   "dependencies": {
-    "@mashiro/db": "*",
-    "@mashiro/shared": "*",
+    "@kokoro/db": "*",
+    "@kokoro/shared": "*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cron-parser": "^5.5.0",
@@ -27,8 +27,8 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@mashiro/eslint-config": "*",
-    "@mashiro/typescript-config": "*",
+    "@kokoro/eslint-config": "*",
+    "@kokoro/typescript-config": "*",
     "@next/eslint-plugin-next": "^16.1.6",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.0.0",

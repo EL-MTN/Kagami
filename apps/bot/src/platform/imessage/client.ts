@@ -1,4 +1,4 @@
-import { logger } from "@mashiro/shared";
+import { logger } from "@kokoro/shared";
 import crypto from "node:crypto";
 
 /**

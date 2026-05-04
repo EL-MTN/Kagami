@@ -2,7 +2,7 @@ import { z } from "zod";
 import { sendEmail } from "./gmail";
 import { updateEvent, deleteEvent } from "./google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser, withBrowserLock } from "./browser";
-import { logger } from "@mashiro/shared";
+import { logger } from "@kokoro/shared";
 
 /**
  * Tools that the LLM must wrap in a `requestConfirmation` call rather than

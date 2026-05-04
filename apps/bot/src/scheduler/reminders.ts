@@ -1,5 +1,5 @@
-import { getPendingReminders, markReminderFired } from "@mashiro/db";
-import { logger } from "@mashiro/shared";
+import { getPendingReminders, markReminderFired } from "@kokoro/db";
+import { logger } from "@kokoro/shared";
 import { AdapterRegistry, platformForChatId } from "../platform/registry";
 
 const POLL_INTERVAL_MS = 60_000; // 1 minute

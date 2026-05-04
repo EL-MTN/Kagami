@@ -1,7 +1,7 @@
-import { config, logger, validateConfig } from "@mashiro/shared";
+import { config, logger, validateConfig } from "@kokoro/shared";
 
 validateConfig();
-import { connectDB, disconnectDB } from "@mashiro/db";
+import { connectDB, disconnectDB } from "@kokoro/db";
 import { createBot, startBot, getAdapter } from "./platform/telegram/bot";
 import { BlueBubblesClient } from "./platform/imessage/client";
 import { BlueBubblesAdapter } from "./platform/imessage/adapter";
@@ -32,7 +32,7 @@ let stopWatcherScheduler: (() => void) | null = null;
 let stopBlueBubblesWebhook: (() => void) | null = null;
 
 async function main() {
-  logger.info("Starting Mashiro...");
+  logger.info("Starting Kokoro...");
 
   await connectDB();
 

@@ -1,6 +1,6 @@
 import { experimental_transcribe as transcribe } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
-import { config, logger } from "@mashiro/shared";
+import { config, logger } from "@kokoro/shared";
 import type { TranscriptionResult } from "../types";
 
 /**
@@ -22,7 +22,7 @@ export async function transcribeWithOpenAi(
   const provider = createOpenAI({
     // Use `||` so STT_API_KEY="" (the shape `STT_API_KEY=` produces in a
     // .env file) falls through to OPENAI_API_KEY — matches validateConfig
-    // in @mashiro/shared, which would otherwise pass startup but then hand
+    // in @kokoro/shared, which would otherwise pass startup but then hand
     // an empty string to createOpenAI here and fail with auth errors.
     apiKey: config.STT_API_KEY || config.OPENAI_API_KEY,
     ...(config.STT_BASE_URL ? { baseURL: config.STT_BASE_URL } : {}),

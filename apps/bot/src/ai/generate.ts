@@ -9,10 +9,9 @@ import {
   generateImageKey,
   writeAudio,
   generateAudioKey,
-} from "@mashiro/db";
-import { curateIfNeeded, curateClosedSession } from "../memory/curator";
-import type { IncomingMessage, PlatformAdapter } from "@mashiro/shared";
-import { logger } from "@mashiro/shared";
+} from "@kokoro/db";
+import type { IncomingMessage, PlatformAdapter } from "@kokoro/shared";
+import { logger } from "@kokoro/shared";
 import { transcribeAudio } from "../stt/transcriber";
 import {
   extractResponseText,
@@ -23,6 +22,7 @@ import {
 } from "./response";
 import { trackUsage } from "./token-tracker";
 import { getModelName } from "./provider";
+import { ingestClosedSession } from "@kokoro/memory";
 
 const LLM_TIMEOUT_MS = 120_000; // 2 minutes
 
@@ -30,21 +30,21 @@ export async function handleMessage(
   incoming: IncomingMessage,
   adapter: PlatformAdapter,
 ): Promise<void> {
-  // 1. Get/create session (replaces daily conversation scoping)
+  // 1. Get/create session
   const { conversation: convo, previouslyClosed } = await getOrCreateSession(
     incoming.chatId,
     incoming.userId,
     incoming.platform,
   );
 
-  const sessionId = convo.sessionId;
-
-  // Curate the previous session in background if it was just closed
+  // If a stale session just rolled over, ship its transcript to Kioku
+  // for fact extraction. Fire-and-forget — we don't block the new turn
+  // on the LLM-heavy ingest pipeline.
   if (previouslyClosed) {
-    curateClosedSession(previouslyClosed).catch((err) => {
-      logger.error({ err, chatId: incoming.chatId }, "Background session curation failed");
-    });
+    ingestClosedSession(previouslyClosed);
   }
+
+  const sessionId = convo.sessionId;
 
   // Store image in GridFS if present, keep only a reference in the conversation doc
   let imageRef: string | undefined;
@@ -112,14 +112,9 @@ export async function handleMessage(
     timestamp: incoming.timestamp,
   });
 
-  // 2. Fire-and-forget curation (non-blocking)
-  curateIfNeeded(incoming.chatId).catch((err) => {
-    logger.error({ err, chatId: incoming.chatId }, "Background curation failed");
-  });
-
-  // 3. Build system prompt and message history
+  // 2. Build system prompt and message history
   const [systemPrompt, messages] = await Promise.all([
-    assembleSystemPrompt(incoming.chatId, sessionId),
+    assembleSystemPrompt(incoming.chatId),
     assembleMessages(incoming.chatId),
   ]);
 

@@ -1,6 +1,7 @@
-import { appendMessage, getOrCreateSession } from "@mashiro/db";
-import { logger } from "@mashiro/shared";
+import { appendMessage, getOrCreateSession } from "@kokoro/db";
+import { logger } from "@kokoro/shared";
 import { platformForChatId } from "../platform/registry";
+import { ingestClosedSession } from "@kokoro/memory";
 
 export interface ConfirmationResolutionEvent {
   summary: string;
@@ -27,7 +28,12 @@ export async function appendConfirmationResolution(
   event: ConfirmationResolutionEvent,
 ): Promise<void> {
   try {
-    const { conversation } = await getOrCreateSession(chatId, userId, platformForChatId(chatId));
+    const { conversation, previouslyClosed } = await getOrCreateSession(
+      chatId,
+      userId,
+      platformForChatId(chatId),
+    );
+    if (previouslyClosed) ingestClosedSession(previouslyClosed);
     const tail =
       event.verdict === "denied"
         ? `[goshujin-sama denied: "${event.summary}"]`

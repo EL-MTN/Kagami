@@ -14,8 +14,8 @@ vi.mock("mongoose", () => ({
 }));
 
 // Silence the Pino logger.
-vi.mock("@mashiro/shared", () => ({
-  config: { MONGODB_URI: "mongodb://test-host:27017/mashiro-test" },
+vi.mock("@kokoro/shared", () => ({
+  config: { MONGODB_URI: "mongodb://test-host:27017/kokoro-test" },
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -49,7 +49,7 @@ describe("connectDB", () => {
   it("calls mongoose.connect with the configured URI on the happy path", async () => {
     mockConnect.mockResolvedValue(undefined);
     await connectDB();
-    expect(mockConnect).toHaveBeenCalledWith("mongodb://test-host:27017/mashiro-test");
+    expect(mockConnect).toHaveBeenCalledWith("mongodb://test-host:27017/kokoro-test");
     expect(mockConnect).toHaveBeenCalledTimes(1);
   });
 

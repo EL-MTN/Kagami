@@ -1,4 +1,4 @@
-import { withTestDb } from "@mashiro/test-utils";
+import { withTestDb } from "@kokoro/test-utils";
 import mongoose from "mongoose";
 import { describe, expect, it } from "vitest";
 

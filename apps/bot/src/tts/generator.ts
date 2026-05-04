@@ -1,4 +1,4 @@
-import { config, logger } from "@mashiro/shared";
+import { config, logger } from "@kokoro/shared";
 import { trackTtsGeneration } from "../ai/token-tracker";
 import type { TtsRequest, GeneratedAudio } from "./types";
 

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Silence the Pino logger so dispatcher info/error logs don't leak into test
-// output. We only override `logger`; everything else from @mashiro/shared
+// output. We only override `logger`; everything else from @kokoro/shared
 // (config, types, etc.) flows through unchanged.
-vi.mock("@mashiro/shared", async (orig) => ({
+vi.mock("@kokoro/shared", async (orig) => ({
   ...((await orig())),
   logger: {
     info: vi.fn(),

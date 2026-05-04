@@ -151,7 +151,7 @@ Both handlers catch errors and reply with a fallback message so the bot doesn't 
 To add a new platform (e.g., Discord):
 
 1. **Create adapter** at `apps/bot/src/platform/discord/adapter.ts`
-   - Implement the `PlatformAdapter` interface (from `@mashiro/shared`)
+   - Implement the `PlatformAdapter` interface (from `@kokoro/shared`)
    - Handle message normalization to `IncomingMessage`
 
 2. **Create bot setup** at `apps/bot/src/platform/discord/bot.ts`
@@ -164,4 +164,4 @@ To add a new platform (e.g., Discord):
    - Initialize the new adapter alongside or instead of Telegram
    - Pass it to the proactive scheduler
 
-The AI layer (`apps/bot/src/ai/`) is platform-agnostic — it only uses `PlatformAdapter` and `IncomingMessage` from `@mashiro/shared`, so no changes are needed there.
+The AI layer (`apps/bot/src/ai/`) is platform-agnostic — it only uses `PlatformAdapter` and `IncomingMessage` from `@kokoro/shared`, so no changes are needed there.

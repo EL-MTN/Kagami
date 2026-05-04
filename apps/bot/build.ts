@@ -3,12 +3,12 @@ import { rmSync } from "node:fs";
 
 rmSync("dist", { recursive: true, force: true });
 
-const externalizeNonMashiro: esbuild.Plugin = {
-  name: "externalize-non-mashiro",
+const externalizeNonKokoro: esbuild.Plugin = {
+  name: "externalize-non-kokoro",
   setup(build) {
-    // Externalize all bare imports except @mashiro/* packages
+    // Externalize all bare imports except @kokoro/* packages
     build.onResolve({ filter: /^[^./]/ }, (args) => {
-      if (args.path.startsWith("@mashiro/")) return undefined;
+      if (args.path.startsWith("@kokoro/")) return undefined;
       return { path: args.path, external: true };
     });
   },
@@ -23,7 +23,7 @@ await esbuild.build({
   outdir: "dist",
   sourcemap: true,
   splitting: false,
-  plugins: [externalizeNonMashiro],
+  plugins: [externalizeNonKokoro],
   banner: {
     js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
   },

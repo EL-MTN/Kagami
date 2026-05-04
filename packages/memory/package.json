@@ -1,5 +1,5 @@
 {
-  "name": "@mashiro/memory",
+  "name": "@kokoro/memory",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,16 +11,17 @@
     "lint:fix": "eslint src/ tests/ --fix"
   },
   "dependencies": {
-    "@mashiro/shared": "*",
-    "@mashiro/db": "*",
-    "@ai-sdk/google": "^3.0.30",
-    "ai": "^6.0.116"
+    "@kokoro/db": "*",
+    "@kokoro/shared": "*"
   },
   "devDependencies": {
-    "@mashiro/typescript-config": "*",
-    "@mashiro/eslint-config": "*",
+    "@kokoro/eslint-config": "*",
+    "@kokoro/test-utils": "*",
+    "@kokoro/typescript-config": "*",
     "@types/node": "^22.0.0",
     "eslint": "^10.0.1",
-    "typescript": "^5.7.0"
+    "msw": "^2.10.4",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.5"
   }
 }

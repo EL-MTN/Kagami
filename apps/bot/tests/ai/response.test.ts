@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // Silence the Pino logger so logSteps' debug calls don't leak into test output;
 // also gives the logSteps test a spy to assert against.
-vi.mock("@mashiro/shared", async (orig) => ({
+vi.mock("@kokoro/shared", async (orig) => ({
   ...((await orig())),
   logger: {
     info: vi.fn(),
@@ -14,8 +14,8 @@ vi.mock("@mashiro/shared", async (orig) => ({
   },
 }));
 
-import { fakeAdapter } from "@mashiro/test-utils";
-import { logger } from "@mashiro/shared";
+import { fakeAdapter } from "@kokoro/test-utils";
+import { logger } from "@kokoro/shared";
 
 import {
   collectToolCalls,

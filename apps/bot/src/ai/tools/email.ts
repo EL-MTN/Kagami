@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { listUnreadEmails, getEmailById, sendEmail } from "../../services/gmail";
-import { logger } from "@mashiro/shared";
+import { logger } from "@kokoro/shared";
 
 // ─── checkEmail ──────────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import { fakeAdapter } from "@mashiro/test-utils";
+import { fakeAdapter } from "@kokoro/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *   - IMAGE_GENERATION_MODEL gates sendPhoto.
  *   - TTS_PROVIDER gates sendVoice.
  *
- * Mock `@mashiro/shared.config` per test by overriding via vi.hoisted +
+ * Mock `@kokoro/shared.config` per test by overriding via vi.hoisted +
  * `vi.resetModules()` so each scenario re-loads the registry against the
  * scenario's config.
  */
@@ -19,7 +19,7 @@ const { mockConfig } = vi.hoisted(() => {
   return { mockConfig };
 });
 
-vi.mock("@mashiro/shared", async (orig) => ({
+vi.mock("@kokoro/shared", async (orig) => ({
   ...((await orig())),
   config: mockConfig,
   logger: {
@@ -61,17 +61,13 @@ afterEach(() => {
 });
 
 describe("allTools — minimum-config baseline", () => {
-  it("registers the always-on tools (memory, routine mgmt, watcher mgmt) with no flags set", () => {
+  it("registers the always-on tools (routine mgmt, watcher mgmt, memory) with no flags set", () => {
     const tools = allTools(baseCtx);
     const names = Object.keys(tools).sort();
     expect(names).toEqual(
       [
-        "curateMemory",
-        "listMemories",
         "manageRoutines",
         "manageWatchers",
-        "noteToSelf",
-        "readMemory",
         "rememberFact",
         "searchMemory",
         "searchRoutines",
@@ -134,7 +130,7 @@ describe("allTools — useRoutine recursion gate", () => {
 });
 
 describe("watcherTools — read-only invariant", () => {
-  it("excludes every mutating tool — sends, memory writes, calendar writes, reminders, routine/watcher CRUD, confirmation primitives", () => {
+  it("excludes every mutating tool — sends, calendar writes, reminders, routine/watcher CRUD, confirmation primitives", () => {
     mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
     mockConfig.BROWSER_ENABLED = true;
     mockConfig.IMAGE_GENERATION_MODEL = "stub";
@@ -145,9 +141,6 @@ describe("watcherTools — read-only invariant", () => {
       "sendEmail",
       "sendPhoto",
       "sendVoice",
-      "rememberFact",
-      "noteToSelf",
-      "curateMemory",
       "manageCalendar", // mutating; readOnly variant is `listCalendarEvents`
       "manageReminders",
       "manageRoutines",
@@ -155,6 +148,7 @@ describe("watcherTools — read-only invariant", () => {
       "requestConfirmation",
       "cancelConfirmation",
       "searchRoutines",
+      "rememberFact", // mutates the vault; searchMemory (read-only) is allowed
     ];
     for (const f of forbidden) {
       expect(names, `watcherTools must not include ${f}`).not.toContain(f);
@@ -168,22 +162,18 @@ describe("watcherTools — read-only invariant", () => {
     const names = Object.keys(watcherTools(baseCtx));
     expect(names).toEqual(
       expect.arrayContaining([
-        "readMemory",
-        "searchMemory",
-        "listMemories",
         "checkEmail",
         "listCalendarEvents", // the readOnly variant exposed under this name
         "browse",
         "useRoutine",
         "reportWatcherResult",
+        "searchMemory",
       ]),
     );
   });
 
   it("excludes useRoutine at MAX_ROUTINE_DEPTH", () => {
-    expect(
-      Object.keys(watcherTools({ ...baseCtx, routineDepth: 3 })),
-    ).not.toContain("useRoutine");
+    expect(Object.keys(watcherTools({ ...baseCtx, routineDepth: 3 }))).not.toContain("useRoutine");
   });
 });
 
@@ -203,7 +193,6 @@ describe("routineToolsUnderWatcher — read-only invariant transitive", () => {
 
     const names = Object.keys(routineToolsUnderWatcher(baseCtx));
     expect(names).not.toContain("sendEmail");
-    expect(names).not.toContain("rememberFact");
     expect(names).not.toContain("manageCalendar");
     expect(names).not.toContain("requestConfirmation");
   });

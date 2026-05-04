@@ -1,4 +1,4 @@
-import { config, logger } from "@mashiro/shared";
+import { config, logger } from "@kokoro/shared";
 import { trackSttTranscription } from "../ai/token-tracker";
 import type { SttRequest, SttOutcome } from "./types";
 

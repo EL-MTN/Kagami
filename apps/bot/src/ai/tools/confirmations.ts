@@ -5,9 +5,9 @@ import {
   setPromptMessageId,
   getPendingConfirmation,
   resolvePendingConfirmation,
-} from "@mashiro/db";
-import { logger } from "@mashiro/shared";
-import type { PlatformAdapter } from "@mashiro/shared";
+} from "@kokoro/db";
+import { logger } from "@kokoro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
 import { GATED_TOOL_NAMES, isGatedTool } from "../../services/gated-actions";
 import { appendConfirmationResolution } from "../../services/confirmation-events";
 

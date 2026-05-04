@@ -1,6 +1,6 @@
 import mongoose, { mongo } from "mongoose";
 import { randomUUID } from "node:crypto";
-import { logger } from "@mashiro/shared";
+import { logger } from "@kokoro/shared";
 
 const IMAGE_BUCKET = "images";
 const AUDIO_BUCKET = "audio";

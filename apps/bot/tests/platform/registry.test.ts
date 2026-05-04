@@ -1,4 +1,4 @@
-import type { PlatformAdapter } from "@mashiro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
 import { describe, expect, it } from "vitest";
 
 import { AdapterRegistry, imessageChatId, platformForChatId } from "../../src/platform/registry";

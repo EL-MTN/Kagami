@@ -1,4 +1,4 @@
-import { Routine, RoutineLog, type IRoutineParameter } from "@mashiro/db";
+import { Routine, RoutineLog, type IRoutineParameter } from "@kokoro/db";
 import { ensureDB } from "../db";
 import type { RoutineListItem, RoutineLogItem, RoutineParameter } from "../routine-schema";
 

@@ -1,11 +1,7 @@
 import http from "node:http";
 import crypto from "node:crypto";
-import { logger, config } from "@mashiro/shared";
-import {
-  attachResultText,
-  listPendingConfirmations,
-  resolvePendingConfirmation,
-} from "@mashiro/db";
+import { logger, config } from "@kokoro/shared";
+import { attachResultText, listPendingConfirmations, resolvePendingConfirmation } from "@kokoro/db";
 import { handleMessage } from "../../ai/generate";
 import { dispatchGatedAction } from "../../services/gated-actions";
 import { appendConfirmationResolution } from "../../services/confirmation-events";

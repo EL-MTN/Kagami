@@ -1,5 +1,5 @@
-import { TokenUsage, type UsageCategory } from "@mashiro/db";
-import { config, logger } from "@mashiro/shared";
+import { TokenUsage, type UsageCategory } from "@kokoro/db";
+import { config, logger } from "@kokoro/shared";
 
 // Pricing per 1M tokens: [input, output]
 const MODEL_PRICING: Record<string, [number, number]> = {

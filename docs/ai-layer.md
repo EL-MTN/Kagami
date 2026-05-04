@@ -37,32 +37,37 @@ The `ModelTier` enum lets call sites declare intent rather than hardcoding model
 
 ## Context Assembly Pipeline
 
-Implemented in `apps/bot/src/ai/context-assembler.ts`. The system prompt is built from MongoDB and the soul file at generation time.
+Implemented in `apps/bot/src/ai/context-assembler.ts`. The system prompt carries no facts — long-term memory is on-demand via the `searchMemory` tool, not pre-loaded. The shell is small and largely static; only routines, pending approvals, location, and (for proactive) reminders pull from MongoDB.
 
 ```
-assembleSystemPrompt(chatId, sessionId?)
+assembleSystemPrompt(chatId)
     │
-    ├─ 1. Soul                   ← context/soul.md
-    ├─ 2. User knowledge         ← engine.getTopFacts(30) — MongoDB
-    ├─ 3. Milestones             ← engine.getRecentMilestones(5) — MongoDB
-    ├─ 4. Daily episodes         ← engine.getRecentDailyEpisodes(3) — MongoDB
-    ├─ 5. Weekly episodes        ← engine.getRecentWeeklyEpisodes(2) — MongoDB
-    ├─ 6. Working memory         ← engine.getWorkingMemories(sessionId) — MongoDB (if sessionId)
-    ├─ 7. Follow-ups             ← engine.getActiveFollowUps() — 30-day limit, deduped
-    ├─ 8. Emotional note         ← injected when mood trend is rising or falling (not stable)
-    ├─ 9. Location context       ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (conditional on LOCATION_ENABLED)
-    ├─ 10. Datetime context      ← current time + time-of-day label
-    ├─ 11. Tool behavior guidelines← compact behavioral rules in prompts.ts (tool schemas are self-describing)
-    ├─ 12. Maid service instructions← conditional on Google OAuth config (prompts.ts, condensed)
-    ├─ 13. Web search instructions← conditional on BRAVE_SEARCH_API_KEY (prompts.ts, condensed)
-    ├─ 14. Browser instructions   ← conditional on BROWSER_ENABLED (prompts.ts, condensed)
-    ├─ 15. Response format        ← message style rules in prompts.ts
-    └─ 16. Active reminders       ← pending + recently fired (proactive only)
+    ├─ 1. Soul                       ← apps/bot/context/soul.md (file)
+    ├─ 2. Datetime context           ← current time + time-of-day label
+    ├─ 3. Tool behavior guidelines   ← prompts.ts (compact behavioral rules)
+    ├─ 4. Maid service instructions  ← prompts.ts (conditional on GOOGLE_OAUTH_CLIENT_ID)
+    ├─ 5. Web search instructions    ← prompts.ts (conditional on BRAVE_SEARCH_API_KEY)
+    ├─ 6. Browser instructions       ← prompts.ts (conditional on BROWSER_ENABLED)
+    ├─ 7. Routine behavior            ← prompts.ts (always)
+    ├─ 8. Routine context            ← listRoutinesForChat → enabled routine names (Mongo)
+    ├─ 9. Pending approvals          ← listPendingConfirmations (Mongo)
+    ├─ 10. Location context          ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (Mongo, conditional on LOCATION_ENABLED)
+    └─ 11. Response format           ← prompts.ts (message style rules)
 
-    All parts joined with "---" separator
+    All parts joined with "\n\n---\n\n"
+
+assembleProactiveSystemPrompt(chatId)
+    │
+    ├─ shell (1–7 above)
+    ├─ Active reminders              ← pending + recently fired (Mongo)
+    ├─ Pending approvals             ← (Mongo)
+    ├─ Location context              ← (Mongo, conditional)
+    └─ PROACTIVE_MESSAGE_INSTRUCTIONS← prompts.ts
 ```
 
-All dynamic memory content (facts, milestones, episodes, working memory, follow-ups) is loaded from MongoDB. Only the soul (`apps/bot/context/soul.md`) is file-based.
+Long-term memory (facts, prior conversations, milestones) is **not** pre-loaded into the prompt. The LLM calls `searchMemory(query)` when it needs context — the tool forwards to Kioku's hybrid retrieval (`@kokoro/memory.recall()` → `POST /recall`). See [memory.md](memory.md) for the full read/write paths.
+
+Only the soul file (`apps/bot/context/soul.md`) is file-based; everything else in the shell is either inline strings (`prompts.ts`) or pulled from Mongo at assembly time.
 
 ### Datetime Context
 
@@ -96,57 +101,31 @@ interface ToolContext {
   routineDepth?: number; // Current routine nesting depth (0 = top-level)
 }
 
-allTools(ctx) → { rememberFact, noteToSelf, readMemory, searchMemory, listMemories, curateMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, webSearch?, browse?, manageRoutines, searchRoutines, useRoutine?, manageWatchers }
+allTools(ctx) → { rememberFact, searchMemory, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, webSearch?, browse?, manageRoutines, searchRoutines, useRoutine?, manageWatchers }
 
-watcherTools(ctx) → { readMemory, searchMemory, listMemories, reportWatcherResult, checkEmail?, listCalendarEvents?, webSearch?, browse? (read-only) }
+watcherTools(ctx) → { searchMemory, reportWatcherResult, checkEmail?, listCalendarEvents?, webSearch?, browse? (read-only), useRoutine? }
 ```
 
 Two distinct tool sets are assembled depending on the calling context:
 
 - **`allTools(ctx)`** — full surface available to Mashiro in conversation and inside routine executors. Includes side-effecting tools (`sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, etc.).
-- **`watcherTools(ctx)`** — read-only subset for watcher executor ticks (`apps/bot/src/services/watcher-executor.ts`). Watchers observe; they never mutate external state. The browse tool here is the `createReadOnlyBrowseTool()` variant, which restricts actions to `search`/`visit`/`extract` and excludes `screenshot` (sends a photo), `act` (mutates page state), `agent`, and `login`. The calendar variant is `createManageCalendarTool({ mode: "readOnly" })`. `manageWatchers` is also excluded — watchers cannot create watchers.
-
-### rememberFact
-
-- **Purpose**: Save important facts or milestones directly to MongoDB
-- **Parameters**: `{ content: string, type: "fact" | "milestone", importance: 1-10 }`
-- **Returns**: `{ success: true, memoryId, type, content, importance }` or `{ success: false, reason, existing }` if duplicate
-- **Behavior**: Checks for duplicate facts (cosine similarity ≥ 0.85) before saving. If a similar fact exists, returns the existing content instead of creating a duplicate. Stores directly in Memory collection with embedding.
-
-### noteToSelf
-
-- **Purpose**: Make session-scoped temporary notes
-- **Parameters**: `{ note: string }`
-- **Returns**: `{ success: true, memoryId, note, expiresIn: "24 hours" }`
-- **Behavior**: Stores as working memory with TTL. Auto-expires after 24 hours. Injected into system prompt as "Currently Tracking" section.
-
-### readMemory
-
-- **Purpose**: Read a specific memory by ID from MongoDB
-- **Parameters**: `{ path?: string, memoryId?: string }`
-- **Returns**: `{ found: boolean, content?: string }` or `{ found: boolean, id, type, content, createdAt, importance }`
-- **Use case**: Recall stored personality definition, or inspect a specific memory found via search/list
+- **`watcherTools(ctx)`** — read-only subset for watcher executor ticks (`apps/bot/src/services/watcher-executor.ts`). Watchers observe; they never mutate external state. `searchMemory` is read-only and included; `rememberFact` is excluded. The browse tool is the `createReadOnlyBrowseTool()` variant, which restricts actions to `search`/`visit`/`extract` and excludes `screenshot` (sends a photo), `act` (mutates page state), `agent`, and `login`. The calendar variant is `createManageCalendarTool({ mode: "readOnly" })`. `manageWatchers` is also excluded — watchers cannot create watchers.
 
 ### searchMemory
 
-- **Purpose**: Semantic search across all memories
-- **Parameters**: `{ query: string, type?: "fact" | "episode" | "milestone" }`
-- **Returns**: `{ found: boolean, results: [{ id, source, content, score, type }] }`
-- **Behavior**: Uses Memory Engine's `recall()` with tiered search (90d → 365d), composite scoring, and 200-candidate cap. Results limited to 10 by default with a minimum match score of 0.3. Optional type filter. Excludes archived memories.
+- **Purpose**: Hybrid retrieval (cosine + BM25 + entity boost) over Kioku's atomic-fact store. No LLM in the loop — returns ranked facts directly.
+- **Parameters**: `{ query: string, k?: 1–20, since?: "YYYY-MM-DD", until?: "YYYY-MM-DD" }`
+- **Returns**: `{ success: true, query, facts: [{ id, text, event_date, source_session, created_at }] }` or `{ success: false, reason, facts: [], degraded: true }` on Kioku outage (fail-open)
+- **Behavior**: Forwards to `@kokoro/memory.recall()` → `POST /recall`. Default `k = 8`. Fails open: if Kioku is unreachable, returns an empty list with `degraded: true` so the model keeps responding instead of stalling.
 
-### listMemories
+### rememberFact
 
-- **Purpose**: Discover available memories by type
-- **Parameters**: `{ type?: "fact" | "episode" | "milestone", limit?: number }`
-- **Returns**: `{ found: boolean, count, memories: [{ id, type, date, preview, importance }] }`
-- **Behavior**: Queries the Memory collection, excludes archived memories, returns recent memories sorted by date
+- **Purpose**: Append one atomic fact to the long-term memory vault.
+- **Parameters**: `{ text: string (≤800 chars), eventDate?: "YYYY-MM-DD" }`
+- **Returns**: `{ success: true, id, status: "added" | "duplicate", reason?: "hash" | "cosine" }` or `{ success: false, reason }` on Kioku error
+- **Behavior**: Forwards to `@kokoro/memory.appendFact()` → `POST /facts`. Kioku does md5 + cosine ≥0.97 dedup, embeds, lemmatizes for BM25, and upserts entity links. Idempotent — calling twice with the same text returns the existing id. `eventDate` defaults to today; pass an explicit date when remembering something from the past.
 
-### curateMemory
-
-- **Purpose**: Trigger the curation pipeline (summarize overflow, extract facts)
-- **Parameters**: none
-- **Returns**: `{ success: true, message: "Curation started in background" }`
-- **Behavior**: Fire-and-forget — starts curation without blocking the response
+See [memory.md](memory.md) for the full memory subsystem (session ingest, sweeper, transcript pipeline).
 
 ### sendPhoto
 
@@ -228,7 +207,7 @@ Two distinct tool sets are assembled depending on the calling context:
 | `agent`      | `goal`         | Autonomous multi-step task (up to 25 steps)                                                 | `stagehand.agent().execute()`               |
 | `login`      | `url`          | Opens login page for manual credential entry                                                | `page.goto()` (no browser release)          |
 
-**Architecture**: Two independent LLM streams — Mashiro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_ENV` (`local`/`cloud`), `BROWSER_DATA_DIR`, `BROWSER_HEADLESS`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
+**Architecture**: Two independent LLM streams — Kokoro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_ENV` (`local`/`cloud`), `BROWSER_DATA_DIR`, `BROWSER_HEADLESS`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
 
 ### searchRoutines
 
@@ -250,7 +229,7 @@ Two distinct tool sets are assembled depending on the calling context:
 - **Parameters**: `{ routineName: string, parameters?: Record<string, unknown> }`
 - **Returns**: `{ success: true, routineName, result }` or `{ success: false, reason }`
 - **Behavior**: Looks up routine by name, validates parameters (type checking, required params, defaults), then executes synchronously via `executeRoutine()`. The result is returned to the calling LLM. Supports composition: routines can call other routines up to 3 levels deep. At `MAX_ROUTINE_DEPTH` (3), the `useRoutine` tool is omitted from the tool set entirely.
-- **Purity gate**: When the surrounding `ToolContext.callingContext === "watcher"`, `useRoutine` rejects routines with `purity: "action"` before executing them. Watchers can only compose with routines marked `purity: "read"`. Additionally, when a routine _runs_ under `callingContext: "watcher"`, the routine executor swaps `allTools` for `routineToolsUnderWatcher` — a read-only tool subset that excludes `sendEmail`, `rememberFact`, `noteToSelf`, `manageReminders`, `sendPhoto`, `sendVoice`, `manageRoutines`, `manageWatchers`, and the mutating browse actions. This makes the watcher invariant transitive: a read-purity routine spawned by a watcher cannot mutate external state through its own tool palette, even if its prompt instructs it to. Main chat and routine-executor contexts (`callingContext: "main"`, the default) are unrestricted.
+- **Purity gate**: When the surrounding `ToolContext.callingContext === "watcher"`, `useRoutine` rejects routines with `purity: "action"` before executing them. Watchers can only compose with routines marked `purity: "read"`. Additionally, when a routine _runs_ under `callingContext: "watcher"`, the routine executor swaps `allTools` for `routineToolsUnderWatcher` — a read-only tool subset that excludes `sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, `sendVoice`, `manageRoutines`, `manageWatchers`, and the mutating browse actions. This makes the watcher invariant transitive: a read-purity routine spawned by a watcher cannot mutate external state through its own tool palette, even if its prompt instructs it to. Main chat and routine-executor contexts (`callingContext: "main"`, the default) are unrestricted.
 
 **Routine Execution**: Routines run via `generateText` with a lean context (executor identity + datetime + parameter injection — no soul or conversational instructions). Step limits vary by trigger: cron = 20 steps at temp 0.4, manual (depth 0) = 10 steps at temp 0.5, composed (depth > 0) = 5 steps at temp 0.4. A separate execution log (`RoutineLog`) tracks each run's status, trigger type, parameters, parent log (for composed calls), and timing. The scheduler polls every 60s, skips routines that are already running, and resets stale locks on startup.
 
@@ -400,7 +379,7 @@ The main `generateText()` call in `apps/bot/src/ai/generate.ts` uses:
 | `model`       | From `getModel()` (provider-dependent)                                                     |
 | `system`      | Assembled system prompt (with sessionId)                                                   |
 | `messages`    | Last 40 messages from active session (reconstructed)                                       |
-| `tools`       | `allTools(ctx)` — includes sessionId for noteToSelf                                        |
+| `tools`       | `allTools(ctx)` — full conversational tool surface                                         |
 | `stopWhen`    | `stepCountIs(5)`                                                                           |
 | `temperature` | 0.7                                                                                        |
 | `abortSignal` | `AbortSignal.timeout(120_000)` — 2 minute timeout (30s for Fast tier classification calls) |
@@ -436,4 +415,4 @@ Cost estimation uses a per-model lookup table (`MODEL_PRICING` in `token-tracker
 
 ### Dashboard
 
-The `/usage` page displays cost breakdowns by category, daily trends, and summary stats (today/week/month). Queries in `apps/dashboard/src/lib/queries/usage.ts`. The `TokenUsage` model and aggregation helpers (`getUsageSummary`, `getDailyUsage`, `getTotalCost`) are exported from `@mashiro/db`.
+The `/usage` page displays cost breakdowns by category, daily trends, and summary stats (today/week/month). Queries in `apps/dashboard/src/lib/queries/usage.ts`. The `TokenUsage` model and aggregation helpers (`getUsageSummary`, `getDailyUsage`, `getTotalCost`) are exported from `@kokoro/db`.

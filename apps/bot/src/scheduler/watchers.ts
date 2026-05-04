@@ -3,10 +3,10 @@ import {
   claimPendingManualWatcherRun,
   getDueWatchers,
   resetStaleRunningWatcherLogs,
-} from "@mashiro/db";
-import { logger } from "@mashiro/shared";
-import type { IWatcher } from "@mashiro/db";
-import type { PlatformAdapter } from "@mashiro/shared";
+} from "@kokoro/db";
+import { logger } from "@kokoro/shared";
+import type { IWatcher } from "@kokoro/db";
+import type { PlatformAdapter } from "@kokoro/shared";
 import { AdapterRegistry, platformForChatId } from "../platform/registry";
 import { executeWatcher } from "../services/watcher-executor";
 

@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { config, logger } from "@mashiro/shared";
+import { config, logger } from "@kokoro/shared";
 
 export async function connectDB(): Promise<void> {
   try {

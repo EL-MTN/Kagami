@@ -1,5 +1,5 @@
-import { Conversation } from "@mashiro/db";
-import type { IMessage } from "@mashiro/db";
+import { Conversation } from "@kokoro/db";
+import type { IMessage } from "@kokoro/db";
 import { ensureDB } from "../db";
 
 export interface ConversationListItem {

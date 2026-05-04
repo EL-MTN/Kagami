@@ -6,8 +6,8 @@ import {
   resetBrowser,
   withBrowserLock,
 } from "../../services/browser";
-import { logger } from "@mashiro/shared";
-import type { PlatformAdapter } from "@mashiro/shared";
+import { logger } from "@kokoro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
 
 const SearchResultSchema = z.array(
   z.object({

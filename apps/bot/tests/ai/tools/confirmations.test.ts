@@ -1,7 +1,7 @@
-import { fakeAdapter, withTestDb } from "@mashiro/test-utils";
+import { fakeAdapter, withTestDb } from "@kokoro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@mashiro/shared", async (orig) => ({
+vi.mock("@kokoro/shared", async (orig) => ({
   ...((await orig())),
   logger: {
     info: vi.fn(),
@@ -22,7 +22,7 @@ import {
   PendingConfirmation,
   createPendingConfirmation,
   setPromptMessageId,
-} from "@mashiro/db";
+} from "@kokoro/db";
 import {
   createRequestConfirmationTool,
   createCancelConfirmationTool,

@@ -1,7 +1,11 @@
-import { config, logger, haversineMeters } from "@mashiro/shared";
-import { storeLocation, getLatestLocation, getLocationVisitCount } from "@mashiro/db";
-import * as engine from "@mashiro/memory";
+import { config, logger, haversineMeters } from "@kokoro/shared";
+import { storeLocation, getLatestLocation, getLocationVisitCount } from "@kokoro/db";
+import { appendFact, KiokuClientError } from "@kokoro/memory";
 import { reverseGeocode } from "./geocoding";
+
+const PLACE_LEARNING_VISITS = 3;
+const PLACE_LEARNING_RADIUS_M = 200;
+const PLACE_LEARNING_WINDOW_DAYS = 30;
 
 export interface LocationEvent {
   type: "arrival";
@@ -62,33 +66,48 @@ export async function processLocation(
     }
   }
 
-  // Place learning: if visited 3+ times in 30 days, store a fact
+  // Place learning: after 3+ visits within 200m / 30 days, promote a fact
+  // into Kioku. Format is stable so md5-dedup catches re-saves; Kioku's
+  // cosine gate (≥0.97) catches paraphrased near-duplicates.
   if (geo?.placeName) {
-    try {
-      const visitCount = await getLocationVisitCount(chatId, latitude, longitude, 200, 30);
-      if (visitCount >= 3) {
-        const factContent = `He frequently visits ${geo.placeName} (${geo.placeCategory})`;
-        // Check for duplicate facts before storing
-        const existing = await engine.recall(factContent, {
-          type: "fact",
-          limit: 1,
-          minScore: 0.85,
-        });
-        if (existing.length === 0) {
-          await engine.remember(factContent, "fact", "location-learning", {
-            chatId,
-            importance: 4,
-          });
-          logger.info(
-            { chatId, placeName: geo.placeName, visitCount },
-            "Stored place learning fact",
-          );
-        }
-      }
-    } catch (error) {
-      logger.warn({ error, chatId }, "Place learning failed");
-    }
+    void learnPlace(chatId, latitude, longitude, geo.placeName, geo.placeCategory ?? "place");
   }
 
   return event;
+}
+
+async function learnPlace(
+  chatId: string,
+  latitude: number,
+  longitude: number,
+  placeName: string,
+  placeCategory: string,
+): Promise<void> {
+  try {
+    const visitCount = await getLocationVisitCount(
+      chatId,
+      latitude,
+      longitude,
+      PLACE_LEARNING_RADIUS_M,
+      PLACE_LEARNING_WINDOW_DAYS,
+    );
+    if (visitCount < PLACE_LEARNING_VISITS) return;
+
+    const text = `User frequently visits ${placeName} (${placeCategory}).`;
+    const result = await appendFact({ text, source_session: "location-learning" });
+    if (result.status === "added") {
+      logger.info(
+        { chatId, placeName, visitCount, factId: result.id },
+        "Stored place-learning fact",
+      );
+    } else {
+      logger.debug(
+        { chatId, placeName, factId: result.id, reason: result.reason },
+        "Place-learning fact already known",
+      );
+    }
+  } catch (err) {
+    const reason = err instanceof KiokuClientError ? err.message : (err as Error).message;
+    logger.warn({ err: reason, chatId, placeName }, "Place learning failed");
+  }
 }

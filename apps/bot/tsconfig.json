@@ -1,4 +1,4 @@
 {
-  "extends": "@mashiro/typescript-config/bot.json",
+  "extends": "@kokoro/typescript-config/bot.json",
   "include": ["src", "tests"]
 }
