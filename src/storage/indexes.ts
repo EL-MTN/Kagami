@@ -34,9 +34,54 @@ interface SearchIndexSpec {
 
 async function ensureBtreeIndexes(db: Db): Promise<void> {
   const facts: Collection = db.collection('facts');
-  await facts.createIndex({ hash: 1 }, { name: 'facts_hash_unique', unique: true });
+
+  // Hash-dedup index. Scoped by (user_id, run_id, agent_id) so identical
+  // text under different scopes does not collide. The legacy index was
+  // {hash:1} unscoped — drop it on first startup after the scope upgrade
+  // and replace with the scoped version. Mongo treats a missing field as
+  // null, so existing rows with no run_id/agent_id still satisfy uniqueness
+  // within the (user_id='default', null, null) scope they were written in.
+  //
+  // facts.indexes() throws NamespaceNotFound when the collection has
+  // never been written to — fresh deployments and fresh test DBs hit
+  // this. In that case there's no legacy state to migrate from.
+  let existingIndexes: Array<{ name?: string; key?: Record<string, unknown> }> = [];
+  try {
+    existingIndexes = await facts.indexes();
+  } catch (err) {
+    if ((err as { code?: number }).code !== 26) throw err;
+  }
+  const legacyHash = existingIndexes.find(
+    (i) =>
+      i.name === 'facts_hash_unique' &&
+      i.key &&
+      Object.keys(i.key).length === 1 &&
+      'hash' in i.key,
+  );
+  if (legacyHash) {
+    await facts.dropIndex('facts_hash_unique');
+  }
   await facts.createIndex(
-    { user_id: 1, created_at: -1 },
+    { user_id: 1, run_id: 1, agent_id: 1, hash: 1 },
+    { name: 'facts_hash_unique', unique: true },
+  );
+
+  // Same scope-prefix story for the read-side compound index. Pre-scope
+  // shape was {user_id:1, created_at:-1}; the new shape covers scope
+  // filters too. Same drop-and-recreate dance.
+  const legacyUserCreated = existingIndexes.find(
+    (i) =>
+      i.name === 'facts_user_created' &&
+      i.key &&
+      Object.keys(i.key).length === 2 &&
+      'user_id' in i.key &&
+      'created_at' in i.key,
+  );
+  if (legacyUserCreated) {
+    await facts.dropIndex('facts_user_created');
+  }
+  await facts.createIndex(
+    { user_id: 1, run_id: 1, agent_id: 1, created_at: -1 },
     { name: 'facts_user_created' },
   );
 
@@ -89,6 +134,30 @@ function existingFieldAnalyzer(
   return idx.latestDefinition?.mappings?.fields?.[fieldPath]?.analyzer;
 }
 
+function existingFilterFieldPaths(idx: ExistingSearchIndex): Set<string> {
+  const out = new Set<string>();
+  for (const f of idx.latestDefinition?.fields ?? []) {
+    if (f.type === 'filter' && f.path) out.add(f.path);
+  }
+  return out;
+}
+
+function expectedFilterFieldPaths(spec: SearchIndexSpec): string[] {
+  const fields = (spec.definition.fields as Array<{ type?: string; path?: string }> | undefined) ?? [];
+  return fields.filter((f) => f.type === 'filter' && f.path).map((f) => f.path!);
+}
+
+function expectedMappedFieldPaths(spec: SearchIndexSpec): string[] {
+  const m = spec.definition.mappings as
+    | { fields?: Record<string, unknown> }
+    | undefined;
+  return m?.fields ? Object.keys(m.fields) : [];
+}
+
+function existingMappedFieldPaths(idx: ExistingSearchIndex): Set<string> {
+  return new Set(Object.keys(idx.latestDefinition?.mappings?.fields ?? {}));
+}
+
 async function ensureSearchIndex(
   coll: Collection,
   spec: SearchIndexSpec,
@@ -118,6 +187,27 @@ async function ensureSearchIndex(
             `Drop the index (db.${coll.collectionName}.dropSearchIndex("${spec.name}")) and restart.`,
         );
       }
+    }
+    // Schema drift detection — additive expansions only. If the spec adds
+    // filter fields (vector index) or mapped fields (search index) that
+    // the live index doesn't have yet, update in place. Atlas
+    // updateSearchIndex re-syncs; the index re-enters READY shortly.
+    const wantFilters = expectedFilterFieldPaths(spec);
+    const haveFilters = existingFilterFieldPaths(match);
+    const missingFilters = wantFilters.filter((p) => !haveFilters.has(p));
+    const wantMapped = expectedMappedFieldPaths(spec);
+    const haveMapped = existingMappedFieldPaths(match);
+    const missingMapped = wantMapped.filter((p) => !haveMapped.has(p));
+    if (missingFilters.length > 0 || missingMapped.length > 0) {
+      logger.info(
+        {
+          index: spec.name,
+          missingFilters,
+          missingMapped,
+        },
+        'updating search index in place (additive schema drift)',
+      );
+      await coll.updateSearchIndex(spec.name, spec.definition);
     }
   } else {
     // The driver exposes createSearchIndex; the type field defaults to
@@ -154,7 +244,11 @@ async function ensureSearchAndVectorIndexes(db: Db): Promise<void> {
 
   const dim = await probeEmbeddingDim();
 
-  // facts_vec: cosine vector search over fact embeddings.
+  // facts_vec: cosine vector search over fact embeddings. Filter fields
+  // (user_id, run_id, agent_id, category) are declared so $vectorSearch's
+  // `filter` operator can push them down. Metadata stays dynamic — we
+  // can't pre-declare arbitrary keys, so metadata filters happen via a
+  // post-vector-search $match stage in the retrieval pipeline.
   await ensureSearchIndex(
     facts,
     {
@@ -168,6 +262,10 @@ async function ensureSearchAndVectorIndexes(db: Db): Promise<void> {
             numDimensions: dim,
             similarity: 'cosine',
           },
+          { type: 'filter', path: 'user_id' },
+          { type: 'filter', path: 'run_id' },
+          { type: 'filter', path: 'agent_id' },
+          { type: 'filter', path: 'category' },
         ],
       },
     },
@@ -180,6 +278,9 @@ async function ensureSearchAndVectorIndexes(db: Db): Promise<void> {
   // because lemmatizeForBm25 already did all of that at write time.
   // Same analyzer applies to the query string at search time, so query
   // tokens line up exactly with indexed tokens.
+  //
+  // Scope + category fields are mapped as `token` for exact-match
+  // filtering via $search.compound.filter. Metadata is dynamic (post-$match).
   await ensureSearchIndex(
     facts,
     {
@@ -192,6 +293,10 @@ async function ensureSearchAndVectorIndexes(db: Db): Promise<void> {
               type: 'string',
               analyzer: 'lucene.whitespace',
             },
+            user_id: { type: 'token' },
+            run_id: { type: 'token' },
+            agent_id: { type: 'token' },
+            category: { type: 'token' },
           },
         },
       },

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { recall } from '../query/recall.js';
+import { FiltersSchema } from './filters.js';
 
 const RecallBody = z.object({
   query: z.string().min(1),
@@ -13,6 +14,7 @@ const RecallBody = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'until must be YYYY-MM-DD')
     .optional(),
+  filters: FiltersSchema.optional(),
 });
 
 export const recallRouter = Router();
@@ -24,6 +26,7 @@ recallRouter.post('/', async (req, res, next) => {
       k: body.k,
       since: body.since,
       until: body.until,
+      filters: body.filters,
     });
     res.json({ facts, total: facts.length });
   } catch (err) {

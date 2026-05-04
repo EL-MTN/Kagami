@@ -2,7 +2,12 @@ import fs from 'node:fs/promises';
 import { generateText } from 'ai';
 import { model } from '../llm.js';
 import { paths } from '../paths.js';
-import { defaultFactRanker, type FactRanker, type RankedFact } from '../retrieval/embeddings.js';
+import {
+  defaultFactRanker,
+  type FactRanker,
+  type MemoryFilters,
+  type RankedFact,
+} from '../retrieval/embeddings.js';
 
 // Single-shot answerer over Kioku's atomic-fact store. The hybrid
 // ranker (cosine + BM25 + entity boost) returns top-K facts; we group
@@ -19,6 +24,7 @@ export interface QueryResult {
 export interface QueryDeps {
   factRank?: FactRanker;
   topK?: number;
+  filters?: MemoryFilters;
 }
 
 const DEFAULT_TOP_K = Number.parseInt(process.env.KIOKU_TOP_K ?? '50', 10);
@@ -83,7 +89,7 @@ export async function query(
 
   let facts: RankedFact[] = [];
   try {
-    facts = await ranker(question, k);
+    facts = await ranker(question, k, { filters: deps.filters });
   } catch (err) {
     console.error(`[kioku] fact ranker failed: ${(err as Error).message}`);
   }

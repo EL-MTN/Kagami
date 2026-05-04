@@ -12,6 +12,9 @@ const AppendBody = z.object({
     .optional(),
   source_session: z.string().optional(),
   user_id: z.string().optional(),
+  run_id: z.string().optional(),
+  agent_id: z.string().optional(),
+  metadata: z.record(z.unknown()).optional(),
 });
 
 const ListQuery = z.object({
@@ -26,6 +29,9 @@ const ListQuery = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'until must be YYYY-MM-DD')
     .optional(),
   source_session: z.string().optional(),
+  user_id: z.string().optional(),
+  run_id: z.string().optional(),
+  agent_id: z.string().optional(),
 });
 
 // Drop the embedding from list/detail responses by default — embeddings
@@ -70,6 +76,15 @@ factsRouter.get('/', async (req, res, next) => {
     if (q.until) facts = facts.filter((f) => f.event_date <= q.until!);
     if (q.source_session) {
       facts = facts.filter((f) => f.source_session === q.source_session);
+    }
+    if (q.user_id !== undefined) {
+      facts = facts.filter((f) => f.user_id === q.user_id);
+    }
+    if (q.run_id !== undefined) {
+      facts = facts.filter((f) => f.run_id === q.run_id);
+    }
+    if (q.agent_id !== undefined) {
+      facts = facts.filter((f) => f.agent_id === q.agent_id);
     }
     facts.sort((a, b) =>
       (b.event_date || '').localeCompare(a.event_date || '') ||

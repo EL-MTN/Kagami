@@ -13,6 +13,20 @@ import { appendSingleFact } from './ingest/append.js';
 import { ingestSessionFromString } from './ingest/sessions.js';
 import { logger } from './logger.js';
 
+// Shared zod shape for the mem0-OSS-style filter payload, surfaced on
+// every read tool that can prefilter. Mirrors src/routes/filters.ts but
+// inlined here because the MCP SDK wants a plain ZodRawShape per tool.
+const filtersShape = {
+  user_id: z.string().optional(),
+  run_id: z.string().optional(),
+  agent_id: z.string().optional(),
+  category: z.string().optional(),
+  metadata: z
+    .record(z.union([z.string(), z.number(), z.boolean()]))
+    .optional(),
+};
+const FiltersInput = z.object(filtersShape).optional();
+
 // Streamable HTTP MCP surface, mounted at /mcp. Tools mirror the
 // programmatic REST API but take JSON-shaped tool inputs and emit
 // tool-result text payloads. External LLM clients (Claude Desktop,
@@ -119,11 +133,12 @@ function buildServer(): McpServer {
         k: z.number().int().positive().max(100).optional(),
         since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        filters: FiltersInput,
       },
     },
-    async ({ query: q, k, since, until }) => {
+    async ({ query: q, k, since, until, filters }) => {
       try {
-        const facts = await recall(q, { k, since, until });
+        const facts = await recall(q, { k, since, until, filters });
         return ok(JSON.stringify({ facts, total: facts.length }));
       } catch (e) {
         return fail(String(e));
@@ -136,11 +151,11 @@ function buildServer(): McpServer {
     {
       description:
         'Answer a question from the memory vault using top-K atomic facts. Returns {answer, citations}. Use this when you want a synthesized answer; use `recall` if you want raw facts.',
-      inputSchema: { question: z.string() },
+      inputSchema: { question: z.string(), filters: FiltersInput },
     },
-    async ({ question }) => {
+    async ({ question, filters }) => {
       try {
-        return ok(JSON.stringify(await query(question)));
+        return ok(JSON.stringify(await query(question, { filters })));
       } catch (e) {
         return fail(String(e));
       }
@@ -156,6 +171,10 @@ function buildServer(): McpServer {
         text: z.string(),
         event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         source_session: z.string().optional(),
+        user_id: z.string().optional(),
+        run_id: z.string().optional(),
+        agent_id: z.string().optional(),
+        metadata: z.record(z.unknown()).optional(),
       },
     },
     async (input) => {
@@ -176,13 +195,21 @@ function buildServer(): McpServer {
       inputSchema: {
         transcript: z.string(),
         generate_summary: z.boolean().optional(),
+        user_id: z.string().optional(),
+        run_id: z.string().optional(),
+        agent_id: z.string().optional(),
+        metadata: z.record(z.unknown()).optional(),
       },
     },
-    async ({ transcript, generate_summary }) => {
+    async ({ transcript, generate_summary, user_id, run_id, agent_id, metadata }) => {
       try {
         const result = await ingestSessionFromString({
           transcript,
           generateSummary: generate_summary,
+          user_id,
+          run_id,
+          agent_id,
+          metadata,
         });
         return ok(JSON.stringify(result));
       } catch (e) {

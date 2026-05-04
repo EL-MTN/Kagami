@@ -5,7 +5,7 @@ import { lemmatizeForBm25 } from '../retrieval/text.js';
 import {
   appendFacts,
   newFactId,
-  readFacts,
+  readFactsInScope,
   type Fact,
 } from '../storage/facts.js';
 import { upsertEntitiesFromFacts } from '../storage/entities.js';
@@ -46,6 +46,9 @@ export interface AppendFactInput {
   event_date?: string;     // YYYY-MM-DD; defaults to today
   source_session?: string; // free-form caller-supplied tag
   user_id?: string;
+  run_id?: string;
+  agent_id?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export type AppendStatus = 'added' | 'duplicate';
@@ -71,8 +74,18 @@ async function appendSingleFactImpl(
     throw new Error('text must be non-empty');
   }
 
+  const userId = input.user_id ?? 'default';
+  const runId = input.run_id;
+  const agentId = input.agent_id;
+
   const hash = createHash('md5').update(text).digest('hex');
-  const existing = await readFacts();
+  // Scope-bound dedup: an identical fact under (alice, none, none) does
+  // not block writing the same text under (bob, none, none).
+  const existing = await readFactsInScope({
+    user_id: userId,
+    run_id: runId,
+    agent_id: agentId,
+  });
   const hashHit = existing.find((f) => f.hash === hash);
   if (hashHit) {
     return { id: hashHit.id, status: 'duplicate', reason: 'hash' };
@@ -103,12 +116,15 @@ async function appendSingleFactImpl(
     id: newFactId(),
     text,
     text_lemmatized: lemmatizeForBm25(text),
-    user_id: input.user_id ?? 'default',
+    user_id: userId,
+    ...(runId !== undefined ? { run_id: runId } : {}),
+    ...(agentId !== undefined ? { agent_id: agentId } : {}),
     created_at: new Date().toISOString(),
     event_date: input.event_date ?? today,
     source_session: input.source_session ?? '',
     hash,
     embedding,
+    ...(input.metadata ? { metadata: input.metadata } : {}),
   };
 
   await appendFacts([fact]);

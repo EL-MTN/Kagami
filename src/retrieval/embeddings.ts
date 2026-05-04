@@ -22,9 +22,26 @@ export interface RankedFact {
   createdAt: string;
 }
 
+// Mem0-OSS-shaped filter shape. Scope fields and `category` are declared
+// filter/token fields on the search/vector indexes and are pushed down at
+// query time. `metadata` is dynamic (cannot be pre-declared) so it
+// post-filters via $match after the candidate docs are fetched.
+export interface MemoryFilters {
+  user_id?: string;
+  run_id?: string;
+  agent_id?: string;
+  category?: string;
+  metadata?: Record<string, string | number | boolean>;
+}
+
+export interface RankerOptions {
+  filters?: MemoryFilters;
+}
+
 export type FactRanker = (
   question: string,
   k: number,
+  opts?: RankerOptions,
 ) => Promise<RankedFact[]>;
 
 // Kioku's hybrid fact retrieval. Three signals fused into one rank:
@@ -61,7 +78,7 @@ interface EntityRow {
   linked_memory_ids: string[];
 }
 
-export const defaultFactRanker: FactRanker = async (question, k) => {
+export const defaultFactRanker: FactRanker = async (question, k, opts = {}) => {
   const db = await getDb();
   const facts = db.collection<FactRow>('facts');
 
@@ -72,6 +89,14 @@ export const defaultFactRanker: FactRanker = async (question, k) => {
   const qEmb = await embedQuestion(question);
 
   const internalLimit = Math.max(k * 4, 60);
+
+  // Compile filters once. Scope/category are pushed down to the search
+  // engines via declared filter fields. `metadata` keys are dynamic
+  // (can't be pre-declared at index-build time) so they post-filter
+  // through a $match stage after candidate docs are fetched.
+  const vectorFilter = buildVectorSearchFilter(opts.filters);
+  const searchFilter = buildSearchCompoundFilter(opts.filters);
+  const metadataMatch = buildMetadataMatch(opts.filters);
 
   // Step 3: dense top-N via $vectorSearch. numCandidates is the HNSW
   // beam — Atlas docs recommend ~10x limit as a starting point.
@@ -84,6 +109,7 @@ export const defaultFactRanker: FactRanker = async (question, k) => {
           queryVector: qEmb,
           numCandidates: internalLimit * 10,
           limit: internalLimit,
+          ...(vectorFilter ? { filter: vectorFilter } : {}),
         },
       },
       { $project: { _id: 1 } },
@@ -100,7 +126,18 @@ export const defaultFactRanker: FactRanker = async (question, k) => {
             {
               $search: {
                 index: 'facts_text',
-                text: { query: queryLemmatized, path: 'text_lemmatized' },
+                ...(searchFilter
+                  ? {
+                      compound: {
+                        must: [
+                          { text: { query: queryLemmatized, path: 'text_lemmatized' } },
+                        ],
+                        filter: searchFilter,
+                      },
+                    }
+                  : {
+                      text: { query: queryLemmatized, path: 'text_lemmatized' },
+                    }),
               },
             },
             { $limit: internalLimit },
@@ -113,13 +150,18 @@ export const defaultFactRanker: FactRanker = async (question, k) => {
   // union (we need the embedding to compute cosine in app, since
   // vectorSearchScore uses Atlas's (1+cos)/2 transform that doesn't
   // line up with the existing SEMANTIC_THRESHOLD=0.1 contract).
+  // Metadata filters apply at this stage via the $match after $in.
   const ids = new Set<string>();
   for (const r of dense) ids.add(r._id);
   for (const r of bm25Hits) ids.add(r._id);
   if (ids.size === 0) return [];
 
+  const fetchFilter: Record<string, unknown> = {
+    _id: { $in: Array.from(ids) },
+    ...(metadataMatch ?? {}),
+  };
   const docs = (await facts
-    .find({ _id: { $in: Array.from(ids) } })
+    .find(fetchFilter)
     .project<FactRow>({
       text: 1,
       text_lemmatized: 1,
@@ -145,7 +187,10 @@ export const defaultFactRanker: FactRanker = async (question, k) => {
     bm25Scores.set(h._id, normalizeBm25(h.bm25_raw, midpoint, steepness));
   }
 
-  // Step 8: entity boost.
+  // Step 8: entity boost. The entity store itself isn't scoped (entities
+  // are global by design), but the boost map is intersected with the
+  // candidate-fact id set, so filters applied on the fact path implicitly
+  // gate the boosts too.
   const entityBoosts = await computeEntityBoosts(question);
 
   // Step 9: combine + rank.
@@ -238,4 +283,57 @@ async function computeEntityBoosts(question: string): Promise<Map<string, number
     }
   }
   return boosts;
+}
+
+// MQL-shaped filter for $vectorSearch. Atlas evaluates this against
+// fields declared as `type: filter` in the vector index. Only scope and
+// category are pre-declared; metadata is dynamic and post-filters via
+// buildMetadataMatch().
+function buildVectorSearchFilter(
+  filters?: MemoryFilters,
+): Record<string, unknown> | undefined {
+  if (!filters) return undefined;
+  const clauses: Record<string, unknown> = {};
+  if (filters.user_id !== undefined) clauses.user_id = { $eq: filters.user_id };
+  if (filters.run_id !== undefined) clauses.run_id = { $eq: filters.run_id };
+  if (filters.agent_id !== undefined) clauses.agent_id = { $eq: filters.agent_id };
+  if (filters.category !== undefined) clauses.category = { $eq: filters.category };
+  return Object.keys(clauses).length === 0 ? undefined : clauses;
+}
+
+// Atlas Search compound.filter clauses. `equals` requires the field to be
+// mapped as `token` in the index — same scope+category set as the vector
+// filter above.
+function buildSearchCompoundFilter(
+  filters?: MemoryFilters,
+): Array<Record<string, unknown>> | undefined {
+  if (!filters) return undefined;
+  const clauses: Array<Record<string, unknown>> = [];
+  if (filters.user_id !== undefined) {
+    clauses.push({ equals: { path: 'user_id', value: filters.user_id } });
+  }
+  if (filters.run_id !== undefined) {
+    clauses.push({ equals: { path: 'run_id', value: filters.run_id } });
+  }
+  if (filters.agent_id !== undefined) {
+    clauses.push({ equals: { path: 'agent_id', value: filters.agent_id } });
+  }
+  if (filters.category !== undefined) {
+    clauses.push({ equals: { path: 'category', value: filters.category } });
+  }
+  return clauses.length === 0 ? undefined : clauses;
+}
+
+// Mongo $match for arbitrary metadata.<key> filters. Applied after the
+// candidate doc fetch, so it acts as a final gate on the union of the
+// dense + lexical hits. Values are matched exactly via $eq.
+function buildMetadataMatch(
+  filters?: MemoryFilters,
+): Record<string, unknown> | undefined {
+  if (!filters?.metadata) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(filters.metadata)) {
+    out[`metadata.${k}`] = { $eq: v };
+  }
+  return Object.keys(out).length === 0 ? undefined : out;
 }

@@ -117,6 +117,86 @@ test('parallel appendFacts converge on the deduped union (no mutex)', async () =
   );
 });
 
+test('hash unique index is scoped — same hash under different user_id coexists', async () => {
+  const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
+  const a = makeFact({
+    id: newFactId(),
+    hash: 'shared',
+    user_id: 'alice',
+    text: 'User likes coffee',
+  });
+  const b = makeFact({
+    id: newFactId(),
+    hash: 'shared',
+    user_id: 'bob',
+    text: 'User likes coffee',
+  });
+  await appendFacts([a]);
+  await appendFacts([b]);
+  const facts = await readFacts();
+  assert.equal(facts.length, 2);
+  assert.deepEqual(
+    facts.map((f) => f.user_id).sort(),
+    ['alice', 'bob'],
+  );
+});
+
+test('hash unique index still blocks dupes within the same scope', async () => {
+  const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
+  const a = makeFact({ id: newFactId(), hash: 'h', user_id: 'alice' });
+  const dup = makeFact({ id: newFactId(), hash: 'h', user_id: 'alice' });
+  await appendFacts([a]);
+  await appendFacts([dup]);
+  const facts = await readFacts();
+  assert.equal(facts.length, 1);
+});
+
+test('hash unique scope distinguishes run_id and agent_id too', async () => {
+  const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
+  const baseScope = { user_id: 'alice', hash: 'h' };
+  await appendFacts([makeFact({ id: newFactId(), ...baseScope })]);
+  await appendFacts([makeFact({ id: newFactId(), ...baseScope, run_id: 'r1' })]);
+  await appendFacts([
+    makeFact({ id: newFactId(), ...baseScope, run_id: 'r1', agent_id: 'a1' }),
+  ]);
+  const facts = await readFacts();
+  assert.equal(facts.length, 3);
+});
+
+test('readFactsInScope filters to the supplied scope', async () => {
+  const { appendFacts, readFactsInScope, newFactId } = await import(
+    '../src/storage/facts.ts'
+  );
+  await appendFacts([
+    makeFact({ id: newFactId(), hash: 'h1', user_id: 'alice' }),
+    makeFact({ id: newFactId(), hash: 'h2', user_id: 'bob' }),
+    makeFact({ id: newFactId(), hash: 'h3', user_id: 'alice', run_id: 'r1' }),
+  ]);
+  const aliceAll = await readFactsInScope({ user_id: 'alice' });
+  assert.equal(aliceAll.length, 2);
+  const aliceR1 = await readFactsInScope({ user_id: 'alice', run_id: 'r1' });
+  assert.equal(aliceR1.length, 1);
+  assert.equal(aliceR1[0]!.run_id, 'r1');
+});
+
+test('appendFacts persists run_id, agent_id, and metadata', async () => {
+  const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
+  const f = makeFact({
+    id: newFactId(),
+    hash: 'h',
+    user_id: 'alice',
+    run_id: 'session-1',
+    agent_id: 'kioku',
+    metadata: { category: 'food', confidence: 0.9 },
+  });
+  await appendFacts([f]);
+  const facts = await readFacts();
+  assert.equal(facts.length, 1);
+  assert.equal(facts[0]!.run_id, 'session-1');
+  assert.equal(facts[0]!.agent_id, 'kioku');
+  assert.deepEqual(facts[0]!.metadata, { category: 'food', confidence: 0.9 });
+});
+
 test('newFactId returns unique uuid-shaped strings', async () => {
   const { newFactId } = await import('../src/storage/facts.ts');
   const ids = new Set([newFactId(), newFactId(), newFactId()]);

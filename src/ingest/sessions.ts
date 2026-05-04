@@ -63,6 +63,10 @@ async function generateSummaryClause(
 export interface IngestSessionInput {
   transcript: string;        // raw markdown body (frontmatter + turns)
   generateSummary?: boolean; // default true
+  user_id?: string;          // default 'default'
+  run_id?: string;
+  agent_id?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface IngestSessionResult {
@@ -88,7 +92,12 @@ export async function ingestSessionFromString(
   await fs.mkdir(paths.raw, { recursive: true });
   await fs.writeFile(rawPath, input.transcript);
 
-  const { added, batches } = await consolidate(rawPath);
+  const { added, batches } = await consolidate(rawPath, {
+    user_id: input.user_id,
+    run_id: input.run_id,
+    agent_id: input.agent_id,
+    metadata: input.metadata,
+  });
 
   let summaryFactId: string | null = null;
   if (input.generateSummary !== false) {
@@ -101,6 +110,10 @@ export async function ingestSessionFromString(
         text: summaryText,
         event_date: sessionDate,
         source_session: `raw/${sessionId}`,
+        user_id: input.user_id,
+        run_id: input.run_id,
+        agent_id: input.agent_id,
+        metadata: input.metadata,
       });
       // If a summary for this session already exists (re-ingest), the
       // hash dedup short-circuits and we surface the existing id.
