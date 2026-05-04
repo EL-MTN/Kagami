@@ -30,7 +30,8 @@ const ListQuery = z.object({
 
 // Drop the embedding from list/detail responses by default — embeddings
 // are large (768 floats × 4 bytes printed = ~10KB per fact) and the only
-// caller that needs them is the ranker, which reads facts.jsonl directly.
+// caller that needs them is the ranker, which projects them out of Mongo
+// directly when scoring candidates.
 function publicFact(f: Fact) {
   const { embedding: _embedding, ...rest } = f;
   void _embedding;

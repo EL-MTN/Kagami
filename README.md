@@ -1,10 +1,10 @@
 # Kioku
 
-A personal long-term memory system. Atomic facts on disk + hybrid retrieval + a single MCP server interface.
+A personal long-term memory system. Atomic facts in MongoDB + hybrid retrieval (`$vectorSearch` + `$search` + entity boost) + a single MCP server interface.
 
-Benchmarked at **76%** on a 100-item LongMemEval-Oracle subset with the full hybrid (cosine + BM25 + entity boost), on GPT-4o-mini answerer + judge. An earlier cosine + BM25-only configuration scored **78%** on the same subset.
+Benchmarked at **78%** on a 100-item LongMemEval-Oracle subset (gpt-4o-mini answerer + judge, lmstudio nomic embeddings, atlas-local). Up from the JSONL-era baseline of 76% — the gain comes from whole-corpus BM25 closing the recall ceiling on multi-session questions (72.5% vs. 67.5%); temporal-reasoning is unchanged at 81.7%.
 
-**Head-to-head vs. mem0 OSS**: 76% / 76% on the same 100 question_ids, same models, mem0's v3 pipeline running its native top_k=200 vs. Kioku's top_k=50. Per-type the systems make different mistakes — mem0 is stronger on temporal-reasoning (88.3% vs. 81.7%), Kioku is stronger on multi-session (67.5% vs. 57.5%) — but the headline is a wash, suggesting the port is faithful. mem0's widely-cited "91% OSS" headline uses gpt-5 + full 500 questions; that operating point was not run here.
+**Head-to-head vs. mem0 OSS** (JSONL-era numbers, pre-Mongo): 76% / 76% on the same 100 question_ids, same models, mem0's v3 pipeline running its native top_k=200 vs. Kioku's top_k=50. mem0's widely-cited "91% OSS" headline uses gpt-5 + full 500 questions; that operating point was not run here.
 
 ## Architecture
 
@@ -45,7 +45,9 @@ prompts/
 MongoDB (atlas-local, 127.0.0.1:27017)
   db: kioku
     facts        atomic facts: text + embedding + dates + md5 hash (unique)
+                 indexes: facts_vec ($vectorSearch), facts_text ($search)
     entities     entities: text + embedding + linked_memory_ids
+                 indexes: entities_vec ($vectorSearch), text_lower (unique)
     history      audit log of fact ADD/UPDATE/DELETE events
 $KIOKU_VAULT/
   raw/<session>.md        immutable transcripts (input to ingest)
@@ -53,7 +55,7 @@ $KIOKU_VAULT/
     llm-failures/         dropped LLM responses, for debugging
 ```
 
-The migration from JSONL to MongoDB is in progress; see `plan.md`. Phase 1 (this commit) adds the connection layer and idempotent index setup but doesn't yet route reads/writes through Mongo.
+`scripts/import-jsonl.ts` migrates an existing pre-Mongo JSONL vault into the collections — see Usage below.
 
 ### Pipeline
 
@@ -62,8 +64,8 @@ The migration from JSONL to MongoDB is in progress; see `plan.md`. Phase 1 (this
 2. For each batch, look up the top-10 most-similar existing facts as dedup context.
 3. Call the extraction prompt → get back `{memory: [{id, text}]}`.
 4. md5-dedup each new fact against existing + within-batch hashes.
-5. Embed and persist surviving facts to `facts.jsonl`.
-6. Extract proper-noun and quoted-text entities from each new fact; upsert into `entities.jsonl` with linked fact ids.
+5. Embed and `insertMany` surviving facts; the `facts_hash_unique` index handles dedup atomically.
+6. Extract proper-noun and quoted-text entities from each new fact; per-entity `updateOne` with `$setOnInsert` + `$addToSet` on `linked_memory_ids` (race-safe under concurrent ingest).
 
 **Query** (`query(question)`):
 1. Embed and lemmatize the question.
@@ -132,6 +134,15 @@ npm start
 # Bench against LongMemEval — see bench/longmemeval/README.md
 ```
 
+### Migrating from a pre-Mongo JSONL vault
+
+If you already have a `$KIOKU_VAULT/.memory/{facts,entities}.jsonl` from before the Mongo migration, the importer lifts it over. Idempotent — re-runs skip duplicates via the unique indexes.
+
+```sh
+tsx scripts/import-jsonl.ts --dry-run     # preview counts
+tsx scripts/import-jsonl.ts                # actually import
+```
+
 ## MCP tools
 
 | Tool | Purpose |
@@ -146,9 +157,10 @@ npm start
 
 ## Design notes
 
-- **No vector DB.** facts.jsonl + in-memory cosine. Fast through ~10K facts per vault; swap in qdrant if you scale past that.
-- **Embeddings persisted at write time.** Query is one embed call + cosine + BM25 + entity boost — no re-embedding.
+- **One Mongo, three collections.** `facts`, `entities`, `history` — a single `mongodb-atlas-local` container handles dense vector search, BM25, and the audit log. Replaces what mem0 splits across Qdrant + SQLite.
+- **Embeddings persisted at write time.** Query is one embed call; the dense pre-pass uses `$vectorSearch` (HNSW), with cosine recomputed in app over the candidate union to preserve the existing scoring contract.
+- **Whole-corpus BM25.** `$search` runs against the whole corpus rather than a cosine-prefiltered window, so a fact strong on keywords but weak on cosine can still surface. The sigmoid that normalizes raw BM25 into the additive fusion is calibrated against Lucene's score range — see `scripts/probe-bm25-scores.ts` for the refit tool.
 - **Transcripts are immutable.** `raw/<session>.md` files are the audit trail; facts are derived.
-- **Atomic facts are write-once.** No UPDATE/DELETE — corrections happen by appending a newer fact with a later `event_date`; the answerer prompt resolves conflicts newest-wins (`prompts/answer.md`).
+- **Atomic facts are write-once.** No UPDATE/DELETE — corrections happen by appending a newer fact with a later `event_date`; the answerer prompt resolves conflicts newest-wins (`prompts/answer.md`). Every mutation leaves a row in the `history` collection for postmortem.
 
-The architecture is closely modeled on the open-source memory benchmarks at [mem0ai/memory-benchmarks](https://github.com/mem0ai/memory-benchmarks). Implementation is independent (pure TypeScript, no spaCy / qdrant / Docker) but the prompts, scoring formulas, and pipeline shape come from there.
+The architecture is closely modeled on the open-source memory benchmarks at [mem0ai/memory-benchmarks](https://github.com/mem0ai/memory-benchmarks). Implementation is independent (pure TypeScript, no spaCy / Qdrant) but the prompts, scoring formulas, and pipeline shape come from there.
