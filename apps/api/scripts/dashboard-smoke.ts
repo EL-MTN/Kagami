@@ -3,9 +3,9 @@
  * against a Mongo testcontainer, seeds a small concierge dataset, then HTTP-GETs
  * every dashboard route and verifies they 200 with non-empty markup.
  *
- * Requires: `npm -w @kizuna/web run build` to have run first.
+ * Requires: `npm -w @kizuna/dashboard run build` to have run first.
  *
- * Run from workspace root: tsx api/scripts/dashboard-smoke.ts
+ * Run from workspace root: tsx apps/api/scripts/dashboard-smoke.ts
  */
 
 import { spawn } from 'node:child_process';
@@ -21,7 +21,7 @@ import { createApp } from '../src/server.js';
 
 const TEST_API_KEY = 'dashboard-smoke-key-1234567890abcdef';
 
-// Mirror web/lib/session.ts: HMAC-signed session token using KIZUNA_API_KEY.
+// Mirror apps/dashboard/lib/session.ts: HMAC-signed session token using KIZUNA_API_KEY.
 function makeSessionCookie(secret: string): string {
   const nonce = randomBytes(16).toString('base64url');
   const ts = Date.now();
@@ -84,13 +84,13 @@ async function main(): Promise<void> {
   if (!apiAddr || typeof apiAddr === 'string') throw new Error('api: no port');
   const apiBase = `http://127.0.0.1:${apiAddr.port}`;
 
-  // Spawn `next start` for web/, pointed at our API and a free port.
+  // Spawn `next start` for the dashboard, pointed at our API and a free port.
   const webPort = String(40_000 + Math.floor(Math.random() * 5000));
   const web = spawn(
     'npx',
     ['--yes', 'next', 'start', '-p', webPort],
     {
-      cwd: new URL('../../web', import.meta.url).pathname,
+      cwd: new URL('../../dashboard', import.meta.url).pathname,
       env: {
         ...process.env,
         KIZUNA_API_URL: apiBase,

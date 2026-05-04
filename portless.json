@@ -1,6 +1,6 @@
 {
   "apps": {
-    "web": { "name": "kizuna" },
-    "api": { "name": "api.kizuna" }
+    "apps/dashboard": { "name": "kizuna" },
+    "apps/api": { "name": "api.kizuna" }
   }
 }

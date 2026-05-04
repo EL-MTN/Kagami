@@ -3,27 +3,28 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "npm@11.0.0",
   "workspaces": [
-    "api",
-    "web"
+    "apps/*",
+    "packages/*"
   ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "dev": "portless",
-    "api:dev": "npm -w @kizuna/api run dev",
-    "web:dev": "npm -w @kizuna/web run dev",
-    "build": "npm -w @kizuna/api run build && npm -w @kizuna/web run build",
     "start": "portless",
-    "test": "npm -w @kizuna/api run test",
-    "typecheck": "npm -w @kizuna/api run typecheck && npm -w @kizuna/web run typecheck",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "dev:api": "turbo run dev --filter=@kizuna/api",
+    "dev:dashboard": "turbo run dev --filter=@kizuna/dashboard",
     "smoke": "npm -w @kizuna/api run smoke",
-    "smoke:dashboard": "npm -w @kizuna/api run smoke:dashboard",
-    "web:build": "npm -w @kizuna/web run build",
-    "web:typecheck": "npm -w @kizuna/web run typecheck"
+    "smoke:dashboard": "npm -w @kizuna/api run smoke:dashboard"
   },
   "devDependencies": {
-    "portless": "^0.12.0"
+    "portless": "^0.12.0",
+    "turbo": "^2.8.15"
   }
 }
