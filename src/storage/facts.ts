@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Collection } from 'mongodb';
 import { getDb } from './mongo.js';
+import { recordEvents, type RecordEventInput } from './history.js';
 
 // Atomic-fact storage. Each row is one Fact in the `facts` collection.
 // The embedding is stored alongside the text so retrieval is just
@@ -54,32 +55,88 @@ export async function readFacts(): Promise<Fact[]> {
   return docs.map(fromDoc);
 }
 
-export async function appendFacts(facts: Fact[]): Promise<void> {
+export async function appendFacts(facts: Fact[], actor?: string): Promise<void> {
   if (facts.length === 0) return;
   const col = await factsCol();
+
+  // Track which inserts actually landed so the audit log doesn't
+  // emit ADD events for hash-deduped rows. Both the success path and
+  // the partial-failure (dupes) path expose `insertedIds` keyed by
+  // input index — only those indices are present after the call.
+  let insertedIndices: Set<number> = new Set();
   try {
-    await col.insertMany(facts.map(toDoc), { ordered: false });
+    const result = await col.insertMany(facts.map(toDoc), { ordered: false });
+    insertedIndices = new Set(Object.keys(result.insertedIds).map(Number));
   } catch (err) {
-    // The `facts_hash_unique` index does the dedup work — duplicate rows
-    // surface here as code 11000. With ordered:false, every non-dupe still
-    // landed; we only re-throw if something other than dupes failed.
-    const e = err as { code?: number; writeErrors?: Array<{ code?: number }> };
+    const e = err as {
+      code?: number;
+      writeErrors?: Array<{ code?: number }>;
+      insertedIds?: Record<number, unknown>;
+      result?: { insertedIds?: Record<number, unknown> };
+    };
     const errs = Array.isArray(e.writeErrors) ? e.writeErrors : [];
     const allDupes =
       e.code === 11000 || (errs.length > 0 && errs.every((w) => w.code === 11000));
     if (!allDupes) throw err;
+    const ids = e.insertedIds ?? e.result?.insertedIds ?? {};
+    insertedIndices = new Set(Object.keys(ids).map(Number));
   }
+
+  if (insertedIndices.size === 0) return;
+  const events: RecordEventInput[] = [];
+  for (let i = 0; i < facts.length; i++) {
+    if (!insertedIndices.has(i)) continue;
+    events.push({
+      memory_id: facts[i]!.id,
+      event: 'ADD',
+      new_text: facts[i]!.text,
+      actor,
+    });
+  }
+  await recordEvents(events);
 }
 
 // Replace-all semantics, matching the prior JSONL fs.writeFile contract.
-// Currently unused by production code — append-only is the norm — but the
-// export stays so future overwrite paths have somewhere to land.
+// Currently unused by production code — append-only is the norm — but
+// the export stays so future overwrite paths have somewhere to land.
 //
-// TODO(phase 6): every overwrite must emit a history record (old_text,
-// new_text, event=UPDATE|DELETE) before it lands.
-export async function rewriteFacts(facts: Fact[]): Promise<void> {
+// Diffs the current state against the new set so the audit log records
+// UPDATE for unchanged-id-changed-text, DELETE for removed ids, and
+// ADD for new ids. Old text is captured before the destructive write.
+export async function rewriteFacts(facts: Fact[], actor?: string): Promise<void> {
   const col = await factsCol();
+
+  const before = await col
+    .find({})
+    .project<{ _id: string; text: string }>({ _id: 1, text: 1 })
+    .toArray();
+  const beforeById = new Map(before.map((d) => [d._id, d.text]));
+  const afterById = new Map(facts.map((f) => [f.id, f.text]));
+
+  const events: RecordEventInput[] = [];
+  for (const [id, oldText] of beforeById) {
+    const newText = afterById.get(id);
+    if (newText === undefined) {
+      events.push({ memory_id: id, event: 'DELETE', old_text: oldText, actor });
+    } else if (newText !== oldText) {
+      events.push({
+        memory_id: id,
+        event: 'UPDATE',
+        old_text: oldText,
+        new_text: newText,
+        actor,
+      });
+    }
+  }
+  for (const f of facts) {
+    if (!beforeById.has(f.id)) {
+      events.push({ memory_id: f.id, event: 'ADD', new_text: f.text, actor });
+    }
+  }
+
   await col.deleteMany({});
-  if (facts.length === 0) return;
-  await col.insertMany(facts.map(toDoc), { ordered: false });
+  if (facts.length > 0) {
+    await col.insertMany(facts.map(toDoc), { ordered: false });
+  }
+  if (events.length > 0) await recordEvents(events);
 }

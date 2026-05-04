@@ -139,9 +139,10 @@ npm start
 | `view` | Read a file or list a directory inside the vault |
 | `create` | Create a new file (errors if it exists) |
 | `str_replace` | Replace one occurrence of `old` with `new` in a vault file |
-| `consolidate` | Extract atomic facts from a transcript into `facts.jsonl` |
+| `consolidate` | Extract atomic facts from a transcript |
 | `query` | Answer a question using top-K hybrid retrieval |
 | `fact_count` | Return the number of atomic facts currently stored |
+| `fact_history` | Return the audit journal (ADD/UPDATE/DELETE) for one fact |
 
 ## Design notes
 

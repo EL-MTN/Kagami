@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { readFacts, type Fact } from '../storage/facts.js';
+import { readHistoryFor } from '../storage/history.js';
 import { appendSingleFact } from '../ingest/append.js';
 
 const AppendBody = z.object({
@@ -76,6 +77,15 @@ factsRouter.get('/', async (req, res, next) => {
     const total = facts.length;
     const page = facts.slice(offset, offset + limit).map(publicFact);
     res.json({ total, limit, offset, facts: page });
+  } catch (err) {
+    next(err);
+  }
+});
+
+factsRouter.get('/:id/history', async (req, res, next) => {
+  try {
+    const events = await readHistoryFor(req.params.id);
+    res.json({ id: req.params.id, events });
   } catch (err) {
     next(err);
   }
