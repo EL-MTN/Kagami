@@ -10,5 +10,9 @@ memory/
 # downloaded datasets, per-item vaults, and result files are not.
 bench/longmemeval/data/
 bench/longmemeval/vaults/
+bench/longmemeval/vaults-probe/
 bench/longmemeval/results/
+bench/longmemeval/tmp/
+bench/longmemeval/tmp-probe/
 bench/longmemeval/partial-predictions.json
+bench/longmemeval/bm25-probe-*.json

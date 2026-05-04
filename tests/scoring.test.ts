@@ -48,24 +48,25 @@ test('extractEntities skips generic capitalized words', () => {
 
 test('getBm25Params adapts midpoint to query length', () => {
   // Pass pre-lemmatized strings to bypass the lemmatizer's stopword drop.
-  assert.deepEqual(getBm25Params('', 'one two'), [5.0, 0.7]);
-  assert.deepEqual(getBm25Params('', 'one two three four'), [7.0, 0.6]);
-  assert.deepEqual(getBm25Params('', 'one two three four five six seven'), [9.0, 0.5]);
+  // Values calibrated against Lucene/Atlas BM25 score distributions.
+  assert.deepEqual(getBm25Params('', 'one two'), [1.5, 1.5]);
+  assert.deepEqual(getBm25Params('', 'one two three four'), [2.0, 1.0]);
+  assert.deepEqual(getBm25Params('', 'one two three four five six seven'), [2.5, 1.2]);
   assert.deepEqual(
     getBm25Params('', 'one two three four five six seven eight nine ten eleven twelve'),
-    [10.0, 0.5],
+    [3.0, 1.0],
   );
   assert.deepEqual(
     getBm25Params(
       '',
       'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen',
     ),
-    [12.0, 0.5],
+    [3.5, 1.0],
   );
 });
 
 test('normalizeBm25 maps midpoint to 0.5', () => {
-  assert.equal(normalizeBm25(5, 5, 0.7), 0.5);
+  assert.equal(normalizeBm25(2.5, 2.5, 1.2), 0.5);
 });
 
 test('scoreAndRank gates by threshold then fuses additively', () => {
