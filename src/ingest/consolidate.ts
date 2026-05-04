@@ -33,10 +33,11 @@ const LAST_K_MESSAGES = 20;
 
 // The extraction prompt describes a richer per-memory shape
 // (`attributed_to`, optional `linked_memory_ids`). We only persist text +
-// category — fewer required fields means fewer ways for the model to
-// fail strict structured-output validation. category is optional on the
-// wire (defaults to 'misc') so an older prompt or a confused model still
-// produces parseable output.
+// category. Every property in this schema must be required because
+// OpenAI's strict json_schema mode rejects a `properties` map that
+// doesn't list each key in `required`. category is therefore required
+// on the wire; normalizeCategory clamps unknown / empty values to 'misc'
+// so a confused model still produces a usable category tag.
 const CATEGORIES = [
   'personal_details',
   'family',
@@ -61,7 +62,7 @@ const ExtractionResult = z.object({
     z.object({
       id: z.string(),
       text: z.string(),
-      category: z.string().optional(),
+      category: z.string(),
     }),
   ),
 });
