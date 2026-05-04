@@ -14,9 +14,9 @@ Defined in `apps/bot/src/ai/provider.ts`. Uses the Vercel AI SDK (`ai` package).
 | `OPENAI_API_KEY`             | Required if provider is `openai` (validated at startup)                                                                                                            |
 | `XAI_API_KEY`                | Required if provider is `xai` (validated at startup)                                                                                                               |
 | `IMAGE_GENERATION_MODEL`     | Image model in `provider/model` format (e.g., `xai/grok-imagine-image`, `google/gemini-2.5-flash-image`, `openai/gpt-image-1`). Enables `sendPhoto` tool when set. |
-| `TTS_PROVIDER`               | TTS model in `provider/model` format (e.g., `elevenlabs/eleven_flash_v2_5`, `openai/tts-1`). Enables `sendVoice` tool when set.                                    |
-| `TTS_VOICE_ID`               | Voice identifier for the TTS provider (e.g., ElevenLabs voice ID or OpenAI voice name like `"shimmer"`)                                                            |
-| `ELEVENLABS_API_KEY`         | Required when `TTS_PROVIDER` uses `elevenlabs` provider                                                                                                            |
+| `TTS_PROVIDER`               | TTS model in `provider/model` format (e.g., `elevenlabs/eleven_flash_v2_5`). Enables `sendVoice` tool when set.                                                    |
+| `TTS_VOICE_ID`               | ElevenLabs voice identifier                                                                                                                                        |
+| `ELEVENLABS_API_KEY`         | Required when `TTS_PROVIDER` is set                                                                                                                                |
 | `GOOGLE_API_KEY`             | Required for embedding generation (Google Gemini `gemini-embedding-001`)                                                                                           |
 | `EMBEDDING_MODEL`            | Embedding model name (default: `"gemini-embedding-001"`)                                                                                                           |
 | `LOCATION_ENABLED`           | Feature gate for location awareness (default: `false`)                                                                                                             |
@@ -139,7 +139,7 @@ See [memory.md](memory.md) for the full memory subsystem (session ingest, sweepe
 - **Purpose**: Send a voice message via TTS
 - **Parameters**: `{ text: string }`
 - **Returns**: `{ sent: true } | { sent: false, reason }`
-- **Behavior**: Converts text to speech via the configured TTS provider (ElevenLabs or OpenAI), then sends as a Telegram voice message. The LLM decides when voice fits naturally — emotional moments, teasing, singing, or when asked. Unlike photos, voice messages don't suppress the text response (no caption equivalent).
+- **Behavior**: Converts text to speech via ElevenLabs, then sends as a Telegram voice message. The LLM decides when voice fits naturally — emotional moments, teasing, singing, or when asked. Unlike photos, voice messages don't suppress the text response (no caption equivalent).
 
 ### checkEmail (conditional — requires Google OAuth)
 

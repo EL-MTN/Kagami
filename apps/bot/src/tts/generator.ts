@@ -25,11 +25,6 @@ export async function generateVoice(req: TtsRequest): Promise<GeneratedAudio> {
       audio = await generateWithElevenLabs(req.text, modelId);
       break;
     }
-    case "openai": {
-      const { generateWithOpenAi } = await import("./providers/openai-tts");
-      audio = await generateWithOpenAi(req.text, modelId);
-      break;
-    }
     default:
       throw new Error(`Unsupported TTS provider "${provider}"`);
   }
