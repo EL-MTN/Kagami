@@ -13,6 +13,7 @@ import {
 } from '../storage/facts.js';
 import { lemmatizeForBm25 } from '../retrieval/text.js';
 import { upsertEntitiesFromFacts } from '../storage/entities.js';
+import { getOrComputeSessionSummary } from './session-summary.js';
 
 // Kioku's atomic-fact extraction pipeline.
 //
@@ -109,9 +110,10 @@ export function buildExtractionUserPrompt(opts: {
   lastKMessages?: Message[];
   recentlyExtracted?: Array<{ id: string; text: string }>;
   existingMemories?: Array<{ id: string; text: string }>;
+  summary?: string;
 }): string {
   const sections: string[] = [];
-  sections.push(`## Summary\n`);
+  sections.push(`## Summary\n${opts.summary ?? ''}`);
   sections.push(
     `## Last k Messages\n${formatMessages(opts.lastKMessages ?? [])}`,
   );
@@ -180,6 +182,15 @@ export async function consolidate(
     run_id: runId,
     agent_id: agentId,
   });
+
+  // Rolling session summary, fed into every batch's `## Summary` slot.
+  // One LLM call per consolidate() run (cached on re-ingest), grounding
+  // entities and references for the per-batch extractor.
+  const sessionSummary = await getOrComputeSessionSummary({
+    sourceSession: `raw/${sessionId}`,
+    turns: messages.map((m) => ({ role: m.role, text: m.content })),
+    scope: { user_id: userId, run_id: runId, agent_id: agentId },
+  });
   // md5 hash dedup. Skip facts whose text
   // is byte-identical to one already on disk or seen earlier in this run.
   const seenHashes = new Set<string>(existingFacts.map((f) => f.hash));
@@ -232,6 +243,7 @@ export async function consolidate(
         .slice(-RECENTLY_EXTRACTED_LIMIT)
         .map(({ id, text }) => ({ id, text })),
       existingMemories,
+      summary: sessionSummary || undefined,
     });
 
     let extraction: z.infer<typeof ExtractionResult>;

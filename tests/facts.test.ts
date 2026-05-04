@@ -254,3 +254,16 @@ test('buildExtractionUserPrompt assembles all required sections in order', async
   assert.ok(prompt.includes('## Current Date\n2026-05-02'));
   assert.ok(prompt.endsWith('# Output:'));
 });
+
+test('buildExtractionUserPrompt threads summary into the Summary section', async () => {
+  const { buildExtractionUserPrompt } = await import('../src/ingest/consolidate.ts');
+  const summary =
+    'User is Marcus, a senior engineer at Shopify. The conversation covered career milestones and family.';
+  const prompt = buildExtractionUserPrompt({
+    newMessages: [{ role: 'user', content: 'hi' }],
+    observationDate: '2025-08-19',
+    currentDate: '2026-05-04',
+    summary,
+  });
+  assert.ok(prompt.includes(`## Summary\n${summary}`));
+});
