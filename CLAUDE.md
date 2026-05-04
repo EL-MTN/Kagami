@@ -17,7 +17,7 @@ kokoro/
 │   ├── eslint-config/      # Shared ESLint flat config
 │   ├── shared/             # config, logger, markdown, types
 │   ├── db/                 # MongoDB connection, models, GridFS
-│   └── test-utils/         # Vitest harness (withTestDb, mockLLM, fakeAdapter, MSW)
+│   └── test-utils/         # Vitest harness (withTestDb, fakeAdapter, MSW)
 ├── scripts/          # Auth scripts
 └── docs/
 ```

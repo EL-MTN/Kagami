@@ -23,9 +23,9 @@ covered, and how to add tests.
   synced so partial-unique constraints fire deterministically (Mongoose's
   default `autoIndex: true` builds in the background).
 - **LLM tests:** Vercel AI SDK v6's `MockLanguageModelV3` (from `ai/test`),
-  scripted via the `mockLLM(scripts)` helper.
-- **Embeddings:** stubbed to a deterministic L2-normalized hash bucket so
-  similarity ordering is stable without calling Google.
+  wired up per-test with `vi.mock("../provider")`.
+- **Embeddings:** `generateEmbedding` is stubbed per-test to a deterministic
+  vector so similarity ordering is stable without calling Google.
 - **External HTTP:** MSW for fetch interception (Gmail, Calendar, BlueBubbles,
   Telegram CDN, Whisper).
 - **Timer-driven schedulers:** `vi.useFakeTimers()` + `vi.advanceTimersByTimeAsync`.
@@ -61,8 +61,6 @@ kokoro/
 │   └── test-utils/                 # internal package
 │       └── src/
 │           ├── db.ts               # withTestDb() — Mongo lifecycle + index sync
-│           ├── llm.ts              # mockLLM() → MockLanguageModelV3
-│           ├── embeddings.ts       # mockEmbeddings() — deterministic vectors
 │           ├── platform.ts         # fakeAdapter(), fakeIncoming()
 │           ├── http.ts             # MSW server with default handlers
 │           ├── time.ts             # advanceTimersByAsync helper
@@ -188,8 +186,8 @@ covered.
 | Surface                         | Approach                                                                    | Helper                              |
 | ------------------------------- | --------------------------------------------------------------------------- | ----------------------------------- |
 | MongoDB                         | `mongodb-memory-server` per test file; truncate between tests               | `@kokoro/test-utils` `withTestDb()` |
-| LLM (Vercel AI SDK v6)          | `vi.mock("../provider")` returning a `MockLanguageModelV3` (from `ai/test`) | `mockLLM({ scripts })`              |
-| Embeddings                      | Stub `generateEmbedding` to deterministic vector (hash → bucket)            | `mockEmbeddings()`                  |
+| LLM (Vercel AI SDK v6)          | `vi.mock("../provider")` returning a `MockLanguageModelV3` (from `ai/test`) | (per-test)                          |
+| Embeddings                      | Stub `generateEmbedding` to deterministic vector (hash → bucket)            | (per-test)                          |
 | `PlatformAdapter`               | In-memory recorder, assertable via `adapter.calls.<method>`                 | `fakeAdapter()`                     |
 | BlueBubbles HTTP                | MSW handlers                                                                | `setupMswServer()`                  |
 | Gmail / Calendar (`googleapis`) | `vi.mock` the service module per test                                       | (per-test)                          |
@@ -224,7 +222,7 @@ covered.
 What we have today (~408 tests, ~10 s) covers pure functions, DB models,
 and tool contracts. Two phases remain:
 
-- **Pipeline tests.** Real DB, `mockLLM`, fake timers, MSW. Generate-pipeline
+- **Pipeline tests.** Real DB, `MockLanguageModelV3`, fake timers, MSW. Generate-pipeline
   goldens, Telegram callback_query flows, iMessage webhook YES/NO parser,
   proactive scheduler timer recovery, watcher and routine executors.
   `tests/e2e/` at the root for cross-package flows.
