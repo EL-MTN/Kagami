@@ -58,12 +58,23 @@ async function main() {
   const { itemPath, resultPath } = parseArgs();
   const vault = process.env.KIOKU_VAULT;
   if (!vault) throw new Error('KIOKU_VAULT must be set');
+  if (!process.env.KIOKU_MONGO_DB) {
+    throw new Error('KIOKU_MONGO_DB must be set (orchestrator sets it per item)');
+  }
 
   const item: LMEItem = JSON.parse(await fs.readFile(itemPath, 'utf8'));
 
-  // Lazy-import after env is set so paths.ts picks up KIOKU_VAULT.
+  // Lazy-import after env is set so paths.ts picks up KIOKU_VAULT and
+  // mongo.ts picks up KIOKU_MONGO_DB.
+  const { ensureIndexes } = await import('../src/storage/indexes.js');
+  const { getDb, closeMongo } = await import('../src/storage/mongo.js');
   const { consolidate } = await import('../src/ingest/consolidate.js');
   const { query } = await import('../src/query/answer.js');
+
+  // Per-item DB starts empty — build the indexes the storage + retrieval
+  // layers depend on before any read/write. Idempotent for --keep-vaults
+  // reruns (existing indexes are no-ops).
+  await ensureIndexes();
 
   const rawDir = path.join(vault, 'raw');
   await fs.mkdir(rawDir, { recursive: true });
@@ -78,17 +89,11 @@ async function main() {
   }
 
   const ingestStart = Date.now();
-  // Skip ingest entirely when a populated facts.jsonl already exists in
-  // the vault. Lets bench reruns isolate query/judge changes without
+  // Skip ingest entirely when the per-item DB already has facts. Lets
+  // bench reruns with --keep-vaults isolate query/judge changes without
   // paying for re-extraction.
-  const factsPath = path.join(vault, '.memory', 'facts.jsonl');
-  let skipIngest = false;
-  try {
-    const stat = await fs.stat(factsPath);
-    skipIngest = stat.size > 0;
-  } catch {
-    skipIngest = false;
-  }
+  const factsCount = await (await getDb()).collection('facts').countDocuments({});
+  const skipIngest = factsCount > 0;
   if (!skipIngest) {
     for (let i = 0; i < sessions.length; i++) {
       const sid = sessionIds[i]!;
@@ -129,6 +134,7 @@ async function main() {
     ...(err ? { error: err } : {}),
   };
   await fs.writeFile(resultPath, JSON.stringify(result, null, 2));
+  await closeMongo();
   process.stderr.write(`[worker ${item.question_id}] done\n`);
 }
 
