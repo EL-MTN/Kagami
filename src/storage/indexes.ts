@@ -12,7 +12,11 @@ import { embedQuestion } from '../llm.js';
 // returning, so callers can assume queries are safe immediately after.
 
 const SEARCH_POLL_INTERVAL_MS = 500;
-const SEARCH_POLL_TIMEOUT_MS = 60_000;
+// Atlas-local's mongot is slower than production Atlas at building search
+// indexes — rapid sequential bench runs (100 fresh DBs each needing fresh
+// vector + search indexes) push past 60s on a meaningful fraction of items.
+// 180s is the empirically-found ceiling that holds across the bench.
+const SEARCH_POLL_TIMEOUT_MS = 180_000;
 
 // Probe the embedding provider for its output dimension. The vector index
 // must be created with a fixed numDimensions, and the provider is the
