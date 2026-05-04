@@ -225,6 +225,12 @@ test('appendFacts persists run_id, agent_id, and metadata', async () => {
   assert.deepEqual(facts[0]!.metadata, { category: 'food', confidence: 0.9 });
 });
 
+test('appendFactsBulk on empty input returns empty array without LLM contact', async () => {
+  const { appendFactsBulk } = await import('../src/ingest/append.ts');
+  const out = await appendFactsBulk([]);
+  assert.deepEqual(out, []);
+});
+
 test('newFactId returns unique uuid-shaped strings', async () => {
   const { newFactId } = await import('../src/storage/facts.ts');
   const ids = new Set([newFactId(), newFactId(), newFactId()]);
