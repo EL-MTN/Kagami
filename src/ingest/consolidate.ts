@@ -8,7 +8,7 @@ import { paths } from '../paths.js';
 import {
   appendFacts,
   newFactId,
-  readFacts,
+  readFactsInScope,
   type Fact,
 } from '../storage/facts.js';
 import { lemmatizeForBm25 } from '../retrieval/text.js';
@@ -117,20 +117,39 @@ function normalizeRole(role: string): string {
   return role.toLowerCase() === 'user' ? 'user' : 'assistant';
 }
 
+export interface ConsolidateOptions {
+  user_id?: string;        // defaults to 'default'
+  run_id?: string;
+  agent_id?: string;
+  metadata?: Record<string, unknown>; // applied to every fact extracted in this run
+}
+
 export async function consolidate(
   transcriptPath: string,
+  opts: ConsolidateOptions = {},
 ): Promise<{ added: number; batches: number }> {
   const transcript = await readTranscript(transcriptPath);
   const sessionId = transcript.frontmatter.id;
   const sessionDate = String(transcript.frontmatter.started_at).slice(0, 10);
   const currentDate = new Date().toISOString().slice(0, 10);
 
+  const userId = opts.user_id ?? 'default';
+  const runId = opts.run_id;
+  const agentId = opts.agent_id;
+  const metadata = opts.metadata;
+
   const messages: Message[] = transcript.turns.map((t) => ({
     role: normalizeRole(t.role),
     content: t.text,
   }));
 
-  const existingFacts = await readFacts();
+  // Dedup context is scoped: hash collisions and cosine-near-neighbors
+  // outside this (user, run, agent) tuple don't constrain extraction here.
+  const existingFacts = await readFactsInScope({
+    user_id: userId,
+    run_id: runId,
+    agent_id: agentId,
+  });
   // md5 hash dedup. Skip facts whose text
   // is byte-identical to one already on disk or seen earlier in this run.
   const seenHashes = new Set<string>(existingFacts.map((f) => f.hash));
@@ -228,12 +247,15 @@ export async function consolidate(
         id: newFactId(),
         text: m.text,
         text_lemmatized: lemmatizeForBm25(m.text),
-        user_id: 'default',
+        user_id: userId,
+        ...(runId !== undefined ? { run_id: runId } : {}),
+        ...(agentId !== undefined ? { agent_id: agentId } : {}),
         created_at: new Date().toISOString(),
         event_date: sessionDate,
         source_session: `raw/${sessionId}`,
         hash,
         embedding: embeddings[j]!,
+        ...(metadata ? { metadata } : {}),
       });
     }
 
