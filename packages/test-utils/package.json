@@ -5,8 +5,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./db": "./src/db.ts",
-    "./llm": "./src/llm.ts",
-    "./embeddings": "./src/embeddings.ts",
     "./platform": "./src/platform.ts",
     "./http": "./src/http.ts",
     "./time": "./src/time.ts"
@@ -19,7 +17,6 @@
   "dependencies": {
     "@kokoro/db": "*",
     "@kokoro/shared": "*",
-    "ai": "^6.0.116",
     "mongodb-memory-server": "^10.1.4",
     "mongoose": "^8.9.0",
     "msw": "^2.10.4",
