@@ -15,6 +15,7 @@ const AppendBody = z.object({
   run_id: z.string().optional(),
   agent_id: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
+  category: z.string().optional(),
 });
 
 const ListQuery = z.object({

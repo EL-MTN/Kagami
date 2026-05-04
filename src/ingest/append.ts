@@ -49,6 +49,7 @@ export interface AppendFactInput {
   run_id?: string;
   agent_id?: string;
   metadata?: Record<string, unknown>;
+  category?: string;       // optional; not auto-categorized for raw adds
 }
 
 export type AppendStatus = 'added' | 'duplicate';
@@ -125,6 +126,7 @@ async function appendSingleFactImpl(
     hash,
     embedding,
     ...(input.metadata ? { metadata: input.metadata } : {}),
+    ...(input.category ? { category: input.category } : {}),
   };
 
   await appendFacts([fact]);

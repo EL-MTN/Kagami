@@ -30,6 +30,11 @@ export interface Fact {
   // filterable at query time via post-vector-search $match. Nested objects
   // and arrays are persisted but not indexed.
   metadata?: Record<string, unknown>;
+  // Mem0-OSS-style category tag. One of a fixed enumerated list (see
+  // prompts/extraction.md → Categories). Indexed as a filter field on
+  // facts_vec and a token field on facts_text so retrieval filters can
+  // push it down. Optional — pre-categorization facts have no value here.
+  category?: string;
 }
 
 // Internal Mongo doc shape: the public `id` field maps to `_id` so we

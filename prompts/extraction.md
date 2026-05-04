@@ -79,6 +79,27 @@ Today's system date. May be years after Observation Date. Do NOT use this to res
 - **feedback_str**: Adjust extraction based on this feedback
 
 
+## Categories
+
+Every extracted memory MUST be tagged with exactly one category from this fixed list. Categories are used as a retrieval filter, so be conservative — when in doubt, choose `misc`. The list:
+
+- **personal_details** — name, age, location, identity, demographics
+- **family** — spouses, children, parents, siblings, pets, family events
+- **professional_details** — job, employer, title, projects, career history
+- **sports** — sports played, watched, teams supported, athletes followed
+- **travel** — trips taken, destinations visited, travel plans
+- **food** — meals, restaurants, dietary preferences, cooking
+- **music** — artists, songs, concerts, instruments, listening habits
+- **health** — medical conditions, fitness, exercise routines, wellness
+- **technology** — devices, software, programming, online services
+- **hobbies** — non-sport leisure pursuits, crafts, collecting
+- **fashion** — clothing, accessories, style preferences
+- **entertainment** — movies, shows, books, games, comedy
+- **milestones** — birthdays, anniversaries, achievements, life events
+- **user_preferences** — likes, dislikes, opinions not covered above
+- **misc** — anything that doesn't fit the categories above
+
+
 # GUIDELINES
 
 ## What to Extract
@@ -247,12 +268,12 @@ Observation Date: 2025-08-19
 
 Output:
 {"memory": [
-  {"id": "0", "text": "User's name is Marcus and was promoted to Senior Engineer at Shopify around August 12, 2025 after working toward it for two years"},
-  {"id": "1", "text": "Marcus has a wife named Elena and they celebrate special occasions at Osteria Francescana, their go-to restaurant"},
-  {"id": "2", "text": "Marcus and his wife Elena are expecting their first baby in March 2026"}
+  {"id": "0", "text": "User's name is Marcus and was promoted to Senior Engineer at Shopify around August 12, 2025 after working toward it for two years", "category": "professional_details"},
+  {"id": "1", "text": "Marcus has a wife named Elena and they celebrate special occasions at Osteria Francescana, their go-to restaurant", "category": "family"},
+  {"id": "2", "text": "Marcus and his wife Elena are expecting their first baby in March 2026", "category": "milestones"}
 ]}
 
-Three distinct topics — career, relationship/dining, family milestone — each get their own memory with full context.
+Three distinct topics — career, relationship/dining, family milestone — each get their own memory with full context and a category tag.
 
 
 ## Example 2: Extracting from Assistant Recommendations
@@ -454,8 +475,8 @@ Return ONLY valid JSON parsable by json.loads(). No text, reasoning, explanation
 
 {
   "memory": [
-    {"id": "0", "text": "First extracted memory", "attributed_to": "user", "linked_memory_ids": ["uuid-of-related-existing-memory"]},
-    {"id": "1", "text": "Second extracted memory", "attributed_to": "assistant"}
+    {"id": "0", "text": "First extracted memory", "category": "personal_details", "attributed_to": "user", "linked_memory_ids": ["uuid-of-related-existing-memory"]},
+    {"id": "1", "text": "Second extracted memory", "category": "entertainment", "attributed_to": "assistant"}
   ]
 }
 
@@ -463,6 +484,7 @@ Return ONLY valid JSON parsable by json.loads(). No text, reasoning, explanation
 
 - **id** (string, required): Sequential integers as strings starting at "0".
 - **text** (string, required): A contextually rich, self-contained factual statement (15-80 words).
+- **category** (string, required): One of the fixed categories listed in the Categories section. Use `misc` only when no other category is a clear fit.
 - **attributed_to** (string, required): Who this memory is about. Use "user" for facts stated by or about the user (preferences, plans, personal facts). Use "assistant" for information provided by the assistant (recommendations, confirmations, plans created, information researched).
 - **linked_memory_ids** (array of strings, optional): IDs of Existing Memories that this new memory relates to. Use the exact IDs from the Existing Memories list. Omit or pass [] if no existing memories are related.
 
