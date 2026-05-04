@@ -179,6 +179,34 @@ test('readFactsInScope filters to the supplied scope', async () => {
   assert.equal(aliceR1[0]!.run_id, 'r1');
 });
 
+test('normalizeCategory accepts the known list, falls back to misc otherwise', async () => {
+  const { normalizeCategory, KIOKU_CATEGORIES } = await import(
+    '../src/ingest/consolidate.ts'
+  );
+  for (const c of KIOKU_CATEGORIES) {
+    assert.equal(normalizeCategory(c), c);
+  }
+  assert.equal(normalizeCategory('PROFESSIONAL_DETAILS'), 'professional_details');
+  assert.equal(normalizeCategory('  food  '), 'food');
+  assert.equal(normalizeCategory('not_a_real_category'), 'misc');
+  assert.equal(normalizeCategory(undefined), 'misc');
+  assert.equal(normalizeCategory(''), 'misc');
+});
+
+test('appendFacts persists category', async () => {
+  const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
+  const f = makeFact({
+    id: newFactId(),
+    hash: 'h-cat',
+    text: 'User loves jazz',
+    category: 'music',
+  });
+  await appendFacts([f]);
+  const facts = await readFacts();
+  assert.equal(facts.length, 1);
+  assert.equal(facts[0]!.category, 'music');
+});
+
 test('appendFacts persists run_id, agent_id, and metadata', async () => {
   const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
   const f = makeFact({

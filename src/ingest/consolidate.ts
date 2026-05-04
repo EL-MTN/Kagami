@@ -31,17 +31,47 @@ const RECENTLY_EXTRACTED_LIMIT = 20;
 const LAST_K_MESSAGES = 20;
 
 // The extraction prompt describes a richer per-memory shape
-// (`attributed_to`, optional `linked_memory_ids`). We only use `text` at
-// retrieval time, so the wire schema stays minimal — fewer fields means
-// fewer ways for the model to fail strict structured-output validation.
+// (`attributed_to`, optional `linked_memory_ids`). We only persist text +
+// category — fewer required fields means fewer ways for the model to
+// fail strict structured-output validation. category is optional on the
+// wire (defaults to 'misc') so an older prompt or a confused model still
+// produces parseable output.
+const CATEGORIES = [
+  'personal_details',
+  'family',
+  'professional_details',
+  'sports',
+  'travel',
+  'food',
+  'music',
+  'health',
+  'technology',
+  'hobbies',
+  'fashion',
+  'entertainment',
+  'milestones',
+  'user_preferences',
+  'misc',
+] as const;
+const KNOWN_CATEGORIES = new Set<string>(CATEGORIES);
+
 const ExtractionResult = z.object({
   memory: z.array(
     z.object({
       id: z.string(),
       text: z.string(),
+      category: z.string().optional(),
     }),
   ),
 });
+
+export function normalizeCategory(raw: string | undefined): string {
+  if (!raw) return 'misc';
+  const c = raw.trim().toLowerCase();
+  return KNOWN_CATEGORIES.has(c) ? c : 'misc';
+}
+
+export const KIOKU_CATEGORIES: readonly string[] = CATEGORIES;
 
 interface Message {
   role: string;
@@ -256,6 +286,7 @@ export async function consolidate(
         hash,
         embedding: embeddings[j]!,
         ...(metadata ? { metadata } : {}),
+        category: normalizeCategory(m.category),
       });
     }
 

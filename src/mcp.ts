@@ -175,6 +175,7 @@ function buildServer(): McpServer {
         run_id: z.string().optional(),
         agent_id: z.string().optional(),
         metadata: z.record(z.unknown()).optional(),
+        category: z.string().optional(),
       },
     },
     async (input) => {
