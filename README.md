@@ -27,8 +27,10 @@ src/
     recall.ts            ranked retrieval, no LLM
   routes/                per-resource Express routers
   storage/
-    facts.ts             .memory/facts.jsonl — atomic facts with embeddings
-    entities.ts          .memory/entities.jsonl — entities with linked fact ids
+    mongo.ts             MongoClient singleton + getDb()
+    indexes.ts           idempotent index setup (btree + $vectorSearch + $search)
+    facts.ts             atomic facts collection (text + embedding + metadata)
+    entities.ts          entities collection (text + embedding + linked_memory_ids)
   retrieval/
     embeddings.ts        hybrid ranker (cosine + BM25 + entity boost)
     bm25.ts              in-memory Okapi BM25
@@ -39,16 +41,21 @@ prompts/
   answer.md              answerer prompt (3K-token rulebook)
 ```
 
-### Vault layout
+### Storage layout
 
 ```
+MongoDB (atlas-local, 127.0.0.1:27017)
+  db: kioku
+    facts        atomic facts: text + embedding + dates + md5 hash (unique)
+    entities     entities: text + embedding + linked_memory_ids
+    history      audit log of fact ADD/UPDATE/DELETE events
 $KIOKU_VAULT/
   raw/<session>.md        immutable transcripts (input to ingest)
   .memory/
-    facts.jsonl           one atomic fact per line: text + md5 hash + embedding + dates
-    entities.jsonl        one entity per line: text + embedding + linked_memory_ids
     llm-failures/         dropped LLM responses, for debugging
 ```
+
+The migration from JSONL to MongoDB is in progress; see `plan.md`. Phase 1 (this commit) adds the connection layer and idempotent index setup but doesn't yet route reads/writes through Mongo.
 
 ### Pipeline
 
@@ -65,15 +72,20 @@ $KIOKU_VAULT/
 2. Semantic search over `facts.jsonl` — over-fetch top `max(K*4, 60)` by cosine.
 3. BM25 over the lemmatized text of those candidates.
 4. Entity extraction on the question; for each query entity, search `entities.jsonl` and boost the linked facts.
-5. Fuse the three signals via additive scoring (`semantic + bm25 + entity_boost / max_possible`), take top-K = 50.
+5. Fuse the three signals via additive scoring: `(semantic + bm25 + entity_boost) / max_possible`, where `entity_boost ≤ 0.5` and `max_possible = 1 + (bm25 ? 1 : 0) + (entity ? 0.5 : 0)` adapts to which channels fired so the combined score stays in [0, 1]. Take top-K = 50.
 6. Group surviving facts by date (newest-first), feed to the answerer prompt, strip `<mem_thinking>` block from output.
 
 ## Configuration
 
 ```sh
 # .env
-KIOKU_VAULT=/path/to/your/vault                # required
+KIOKU_VAULT=/path/to/your/vault                # required (transcripts)
 KIOKU_TOP_K=50                                 # optional, default 50
+
+# MongoDB (defaults to local atlas-local on 27017). The vector index dim
+# is probed from the embedding provider at startup, so no env var needed.
+# KIOKU_MONGO_URI=mongodb://127.0.0.1:27017/?directConnection=true
+# KIOKU_MONGO_DB=kioku
 
 # Chat / answerer
 LLM_PROVIDER=lmstudio                             # 'lmstudio' or 'openai'
@@ -99,6 +111,16 @@ Common combinations:
 - **Hybrid (cheap chat, free embed)**: `LLM_PROVIDER=openai` + `MODEL=gpt-4o-mini` for the answerer; `EMBEDDING_PROVIDER=lmstudio` + `EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5` for the embeddings.
 
 ## Usage
+
+Prerequisites: a local MongoDB Atlas Search instance on `127.0.0.1:27017`. The simplest path is the `mongodb-atlas-local` container:
+
+```sh
+atlas local start mongodb
+# or:
+docker run -d -p 27017:27017 mongodb/mongodb-atlas-local
+```
+
+Then:
 
 ```sh
 npm install

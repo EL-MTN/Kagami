@@ -9,6 +9,8 @@ import { recallRouter } from './routes/recall.js';
 import { queryRouter } from './routes/query.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { mcpRouter } from './mcp.js';
+import { ensureIndexes } from './storage/indexes.js';
+import { closeMongo } from './storage/mongo.js';
 
 const PORT = Number.parseInt(process.env.KIOKU_PORT ?? '7777', 10);
 const HOST = process.env.KIOKU_HOST ?? '127.0.0.1';
@@ -38,6 +40,29 @@ const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
 };
 app.use(errorHandler);
 
-app.listen(PORT, HOST, () => {
-  logger.info({ host: HOST, port: PORT }, 'kioku http server listening');
-});
+async function main(): Promise<void> {
+  try {
+    await ensureIndexes();
+  } catch (err) {
+    logger.error(
+      { err: (err as Error).message },
+      'failed to initialize MongoDB — is the atlas-local container running on KIOKU_MONGO_URI?',
+    );
+    process.exit(1);
+  }
+
+  const server = app.listen(PORT, HOST, () => {
+    logger.info({ host: HOST, port: PORT }, 'kioku http server listening');
+  });
+
+  const shutdown = async (signal: string): Promise<void> => {
+    logger.info({ signal }, 'shutting down');
+    server.close();
+    await closeMongo();
+    process.exit(0);
+  };
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+}
+
+void main();
