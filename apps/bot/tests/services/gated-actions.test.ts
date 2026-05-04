@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // output. We only override `logger`; everything else from @kokoro/shared
 // (config, types, etc.) flows through unchanged.
 vi.mock("@kokoro/shared", async (orig) => ({
-  ...((await orig())),
+  ...(await orig()),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -34,11 +34,7 @@ vi.mock("../../src/services/browser", () => ({
 
 import { sendEmail } from "../../src/services/gmail";
 import { updateEvent, deleteEvent } from "../../src/services/google-calendar";
-import {
-  acquireBrowser,
-  releaseBrowser,
-  resetBrowser,
-} from "../../src/services/browser";
+import { acquireBrowser, releaseBrowser, resetBrowser } from "../../src/services/browser";
 import {
   dispatchGatedAction,
   isGatedTool,
@@ -74,11 +70,7 @@ describe("isGatedTool", () => {
   it("currently gates exactly sendEmail / manageCalendar / browseAgent", () => {
     // Pinned to surface intent — adding a new gated tool should update this list
     // alongside the GATED_TOOL_NAMES literal and the dispatcher switch.
-    expect([...GATED_TOOL_NAMES].sort()).toEqual([
-      "browseAgent",
-      "manageCalendar",
-      "sendEmail",
-    ]);
+    expect([...GATED_TOOL_NAMES].sort()).toEqual(["browseAgent", "manageCalendar", "sendEmail"]);
   });
 });
 
@@ -126,12 +118,7 @@ describe("dispatchGatedAction — sendEmail happy path", () => {
     expect(result.success).toBe(true);
     expect(result.summary).toBe("email sent to alice@example.com");
     expect(result.detail).toEqual({ id: "msg-1", threadId: "th-1" });
-    expect(vi.mocked(sendEmail)).toHaveBeenCalledWith(
-      "alice@example.com",
-      "hi",
-      "body",
-      undefined,
-    );
+    expect(vi.mocked(sendEmail)).toHaveBeenCalledWith("alice@example.com", "hi", "body", undefined);
   });
 
   it("forwards threadId/inReplyTo when present", async () => {
@@ -143,12 +130,10 @@ describe("dispatchGatedAction — sendEmail happy path", () => {
       threadId: "th-2",
       inReplyTo: "<msg-1@example.com>",
     });
-    expect(vi.mocked(sendEmail)).toHaveBeenCalledWith(
-      "alice@example.com",
-      "re",
-      "body",
-      { threadId: "th-2", inReplyTo: "<msg-1@example.com>" },
-    );
+    expect(vi.mocked(sendEmail)).toHaveBeenCalledWith("alice@example.com", "re", "body", {
+      threadId: "th-2",
+      inReplyTo: "<msg-1@example.com>",
+    });
   });
 
   it("propagates underlying sendEmail errors as a failed dispatch", async () => {

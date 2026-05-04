@@ -25,7 +25,7 @@ describe("platformForChatId", () => {
     expect(platformForChatId("-1001234567890")).toBe("telegram");
   });
 
-  it('treats anything not starting with imessage: as telegram', () => {
+  it("treats anything not starting with imessage: as telegram", () => {
     // Documenting current behavior: there are only two platforms today and the
     // registry assumes "not imessage" → "telegram". This is intentional per the
     // module-level comment.

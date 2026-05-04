@@ -2,7 +2,7 @@ import { fakeAdapter, withTestDb } from "@kokoro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@kokoro/shared", async (orig) => ({
-  ...((await orig())),
+  ...(await orig()),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -18,11 +18,7 @@ vi.mock("../../../src/services/confirmation-events", () => ({
   appendConfirmationResolution: mockAppendResolution,
 }));
 
-import {
-  PendingConfirmation,
-  createPendingConfirmation,
-  setPromptMessageId,
-} from "@kokoro/db";
+import { PendingConfirmation, createPendingConfirmation, setPromptMessageId } from "@kokoro/db";
 import {
   createRequestConfirmationTool,
   createCancelConfirmationTool,
@@ -31,10 +27,7 @@ import {
 withTestDb({ syncIndexes: false });
 
 interface ExecutableTool {
-  execute: (
-    input: Record<string, unknown>,
-    options?: unknown,
-  ) => Promise<Record<string, unknown>>;
+  execute: (input: Record<string, unknown>, options?: unknown) => Promise<Record<string, unknown>>;
 }
 
 beforeEach(() => {
@@ -164,20 +157,14 @@ describe("cancelConfirmation tool", () => {
   });
 
   it("returns 'confirmation not found' for an unknown id", async () => {
-    const tool = createCancelConfirmationTool(
-      "chat-1",
-      fakeAdapter(),
-    ) as unknown as ExecutableTool;
+    const tool = createCancelConfirmationTool("chat-1", fakeAdapter()) as unknown as ExecutableTool;
     const result = await tool.execute({ confirmationId: "000000000000000000000000" });
     expect(result).toEqual({ success: false, reason: "confirmation not found" });
   });
 
   it("rejects when the confirmation belongs to a different chat", async () => {
     const row = await seedPending();
-    const tool = createCancelConfirmationTool(
-      "chat-2",
-      fakeAdapter(),
-    ) as unknown as ExecutableTool;
+    const tool = createCancelConfirmationTool("chat-2", fakeAdapter()) as unknown as ExecutableTool;
     const result = await tool.execute({ confirmationId: row.id as string });
     expect(result).toEqual({
       success: false,
@@ -188,10 +175,7 @@ describe("cancelConfirmation tool", () => {
   it("returns the existing status when already-resolved (idempotent on re-cancel)", async () => {
     const row = await seedPending();
     await PendingConfirmation.findByIdAndUpdate(row._id, { status: "approved" });
-    const tool = createCancelConfirmationTool(
-      "chat-1",
-      fakeAdapter(),
-    ) as unknown as ExecutableTool;
+    const tool = createCancelConfirmationTool("chat-1", fakeAdapter()) as unknown as ExecutableTool;
     const result = await tool.execute({ confirmationId: row.id as string });
     expect(result).toEqual({ success: false, reason: "already approved" });
   });

@@ -20,10 +20,7 @@ vi.mock("../../../src/services/web-search", () => ({
 import { createWebSearchTool } from "../../../src/ai/tools/web-search";
 
 interface ExecutableTool {
-  execute: (
-    input: Record<string, unknown>,
-    options?: unknown,
-  ) => Promise<Record<string, unknown>>;
+  execute: (input: Record<string, unknown>, options?: unknown) => Promise<Record<string, unknown>>;
 }
 
 beforeEach(() => {
@@ -32,9 +29,7 @@ beforeEach(() => {
 
 describe("createWebSearchTool", () => {
   it("forwards query and count to the service and wraps results in {success, query, results}", async () => {
-    mockWebSearch.mockResolvedValue([
-      { title: "t", url: "https://x", snippet: "s" },
-    ]);
+    mockWebSearch.mockResolvedValue([{ title: "t", url: "https://x", snippet: "s" }]);
     const tool = createWebSearchTool() as unknown as ExecutableTool;
 
     const result = await tool.execute({ query: "hello", count: 3 });

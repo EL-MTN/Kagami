@@ -2,7 +2,7 @@ import { fakeAdapter } from "@kokoro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@kokoro/shared", async (orig) => ({
-  ...((await orig())),
+  ...(await orig()),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -27,10 +27,7 @@ vi.mock("../../../src/tts/generator", () => ({
 import { createSendPhotoTool, createSendVoiceTool } from "../../../src/ai/tools/media";
 
 interface ExecutableTool {
-  execute: (
-    input: Record<string, unknown>,
-    options?: unknown,
-  ) => Promise<Record<string, unknown>>;
+  execute: (input: Record<string, unknown>, options?: unknown) => Promise<Record<string, unknown>>;
 }
 
 beforeEach(() => {

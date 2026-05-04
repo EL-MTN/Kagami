@@ -2,7 +2,7 @@ import { fakeAdapter } from "@kokoro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@kokoro/shared", async (orig) => ({
-  ...((await orig())),
+  ...(await orig()),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -13,11 +13,7 @@ vi.mock("@kokoro/shared", async (orig) => ({
   },
 }));
 
-const {
-  mockAcquireBrowser,
-  mockReleaseBrowser,
-  mockResetBrowser,
-} = vi.hoisted(() => ({
+const { mockAcquireBrowser, mockReleaseBrowser, mockResetBrowser } = vi.hoisted(() => ({
   mockAcquireBrowser: vi.fn(),
   mockReleaseBrowser: vi.fn(),
   mockResetBrowser: vi.fn(),
@@ -29,20 +25,20 @@ vi.mock("../../../src/services/browser", () => ({
   withBrowserLock: vi.fn(<T>(fn: () => Promise<T>) => fn()),
 }));
 
-import {
-  createBrowseTool,
-  createReadOnlyBrowseTool,
-} from "../../../src/ai/tools/browse";
+import { createBrowseTool, createReadOnlyBrowseTool } from "../../../src/ai/tools/browse";
 
 interface ExecutableTool {
-  execute: (
-    input: Record<string, unknown>,
-    options?: unknown,
-  ) => Promise<Record<string, unknown>>;
+  execute: (input: Record<string, unknown>, options?: unknown) => Promise<Record<string, unknown>>;
 }
 
 interface FakeStagehand {
-  context: { pages: () => Array<{ goto: ReturnType<typeof vi.fn>; evaluate: ReturnType<typeof vi.fn>; screenshot: ReturnType<typeof vi.fn> }> };
+  context: {
+    pages: () => Array<{
+      goto: ReturnType<typeof vi.fn>;
+      evaluate: ReturnType<typeof vi.fn>;
+      screenshot: ReturnType<typeof vi.fn>;
+    }>;
+  };
   extract: ReturnType<typeof vi.fn>;
   act: ReturnType<typeof vi.fn>;
   agent: () => { execute: ReturnType<typeof vi.fn> };
@@ -73,9 +69,7 @@ describe("browse — readOnly", () => {
 
   it("search visits DuckDuckGo HTML and returns up to 10 results", async () => {
     const sh = fakeStagehand();
-    sh.extract.mockResolvedValue([
-      { title: "t1", url: "https://x", snippet: "s1" },
-    ]);
+    sh.extract.mockResolvedValue([{ title: "t1", url: "https://x", snippet: "s1" }]);
     mockAcquireBrowser.mockResolvedValue(sh);
 
     const result = await tool.execute({ action: "search", query: "node testing" });
@@ -151,10 +145,7 @@ describe("browse — full mode", () => {
       execute: vi.fn(() => Promise.resolve(longResult)),
     });
     mockAcquireBrowser.mockResolvedValue(sh);
-    const tool = createBrowseTool(
-      "chat-1",
-      fakeAdapter(),
-    ) as unknown as ExecutableTool;
+    const tool = createBrowseTool("chat-1", fakeAdapter()) as unknown as ExecutableTool;
 
     const result = await tool.execute({ action: "agent", goal: "find a deal" });
     expect(result.success).toBe(true);
@@ -166,10 +157,7 @@ describe("browse — full mode", () => {
     const sh = fakeStagehand();
     sh.context.pages()[0].evaluate = vi.fn(() => Promise.resolve("Login Page"));
     mockAcquireBrowser.mockResolvedValue(sh);
-    const tool = createBrowseTool(
-      "chat-1",
-      fakeAdapter(),
-    ) as unknown as ExecutableTool;
+    const tool = createBrowseTool("chat-1", fakeAdapter()) as unknown as ExecutableTool;
 
     const result = await tool.execute({ action: "login", url: "https://example.com/login" });
     expect(result).toMatchObject({
@@ -183,10 +171,7 @@ describe("browse — full mode", () => {
 
   it("each action requires its specific input", async () => {
     mockAcquireBrowser.mockResolvedValue(fakeStagehand());
-    const tool = createBrowseTool(
-      "chat-1",
-      fakeAdapter(),
-    ) as unknown as ExecutableTool;
+    const tool = createBrowseTool("chat-1", fakeAdapter()) as unknown as ExecutableTool;
 
     expect(await tool.execute({ action: "search" })).toMatchObject({ success: false });
     expect(await tool.execute({ action: "visit" })).toMatchObject({ success: false });

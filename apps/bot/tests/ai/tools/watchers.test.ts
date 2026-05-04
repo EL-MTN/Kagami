@@ -2,7 +2,7 @@ import { withTestDb } from "@kokoro/test-utils";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@kokoro/shared", async (orig) => ({
-  ...((await orig())),
+  ...(await orig()),
   config: {
     BROWSER_ENABLED: false,
     GOOGLE_OAUTH_CLIENT_ID: "stub",
@@ -28,10 +28,7 @@ import {
 withTestDb();
 
 interface ExecutableTool {
-  execute: (
-    input: Record<string, unknown>,
-    options?: unknown,
-  ) => Promise<Record<string, unknown>>;
+  execute: (input: Record<string, unknown>, options?: unknown) => Promise<Record<string, unknown>>;
 }
 
 // ─── manageWatchers ──────────────────────────────────────────────────────────
