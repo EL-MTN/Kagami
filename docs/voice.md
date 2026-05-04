@@ -82,11 +82,11 @@ whisper-server \
   --inference-path /v1/audio/transcriptions
 ```
 
-`whisper-server` exposes an OpenAI-compatible `/v1/audio/transcriptions` endpoint, so Mashiro talks to it the same way it talks to api.openai.com — only the base URL differs.
+`whisper-server` exposes an OpenAI-compatible `/v1/audio/transcriptions` endpoint, so Kokoro talks to it the same way it talks to api.openai.com — only the base URL differs.
 
 For a long-running setup, wrap this in a launchd plist on macOS so the server restarts at boot.
 
-### 4. Configure Mashiro
+### 4. Configure Kokoro
 
 Add to `apps/bot/.env`:
 

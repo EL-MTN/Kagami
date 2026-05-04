@@ -11,7 +11,7 @@ Gate any action you wouldn't want to misfire. v2 covers `sendEmail`, mutating `m
 | Reading email / listing calendar             | Sending email to anyone but Goshujin                   |
 | Self-addressed drafts / notes                | `manageCalendar` with `action: "update"` or `"delete"` |
 | Setting reminders                            | `browseAgent` (autonomous multi-step browser)          |
-| Saving facts / `noteToSelf`                  | Replying to a thread on his behalf                     |
+| Saving facts (`rememberFact`)                | Replying to a thread on his behalf                     |
 | `browse` search/visit/extract/act/screenshot | (anything outbound or irreversible)                    |
 
 The gated allowlist is the single source of truth at `apps/bot/src/services/gated-actions.ts::GATED_TOOL_NAMES`. The `requestConfirmation` tool's `action.tool` parameter is a Zod enum bound to that list — the LLM cannot route a non-gated tool through the wrapper.

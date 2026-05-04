@@ -1,7 +1,7 @@
-import { fakeAdapter } from "@mashiro/test-utils";
+import { fakeAdapter } from "@kokoro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@mashiro/shared", async (orig) => ({
+vi.mock("@kokoro/shared", async (orig) => ({
   ...((await orig())),
   logger: {
     info: vi.fn(),

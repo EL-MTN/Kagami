@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readImage } from "@mashiro/db";
+import { readImage } from "@kokoro/db";
 import { ensureDB } from "@/lib/db";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ key: string }> }) {

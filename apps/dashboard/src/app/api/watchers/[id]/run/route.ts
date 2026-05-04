@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
-import { getWatcherById, requestManualWatcherRun } from "@mashiro/db";
+import { getWatcherById, requestManualWatcherRun } from "@kokoro/db";
 import { ensureDB } from "@/lib/db";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Watcher } from "@mashiro/db";
+import { Watcher } from "@kokoro/db";
 import { ensureDB } from "@/lib/db";
 import type { WatcherExportBundle } from "@/lib/watcher-schema";
 

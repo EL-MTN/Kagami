@@ -1,5 +1,5 @@
 {
-  "name": "mashiro",
+  "name": "kokoro",
   "private": true,
   "type": "module",
   "packageManager": "npm@11.11.0",
@@ -10,8 +10,8 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "dev:bot": "turbo run dev --filter=@mashiro/bot",
-    "dev:dashboard": "turbo run dev --filter=@mashiro/dashboard",
+    "dev:bot": "turbo run dev --filter=@kokoro/bot",
+    "dev:dashboard": "turbo run dev --filter=@kokoro/dashboard",
     "typecheck": "turbo run typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -21,7 +21,6 @@
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
     "auth:google": "tsx scripts/authorize-google.ts",
-    "migrate:memory": "tsx scripts/migrate-memory-v2.ts",
     "prepare": "husky"
   },
   "lint-staged": {

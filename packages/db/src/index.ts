@@ -11,7 +11,6 @@ export {
   removeAudio,
   removeAudios,
 } from "./gridfs";
-export { Memory, type IMemory, type IMemoryMetadata } from "./models/memory";
 export {
   Conversation,
   getOrCreateSession,

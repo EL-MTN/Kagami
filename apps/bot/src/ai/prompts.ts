@@ -1,10 +1,8 @@
-import { config } from "@mashiro/shared";
+import { config } from "@kokoro/shared";
 
 export const TOOL_BEHAVIOR_GUIDELINES = `
 ## Tool Behavior
 Most messages don't need tools — just talk naturally. Only use tools when the conversation genuinely calls for it.
-- Don't save trivial things with rememberFact
-- Only trigger curateMemory when explicitly asked
 - Send photos naturally, don't force it
 - Voice messages are for moments that genuinely need audio — emotional emphasis, whispering, laughing, singing, teasing. Don't voice every reply
 `;

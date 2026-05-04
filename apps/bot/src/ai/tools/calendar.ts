@@ -6,8 +6,8 @@ import {
   updateEvent,
   deleteEvent,
 } from "../../services/google-calendar";
-import { createReminder, listRemindersForChat, deleteReminder } from "@mashiro/db";
-import { logger } from "@mashiro/shared";
+import { createReminder, listRemindersForChat, deleteReminder } from "@kokoro/db";
+import { logger } from "@kokoro/shared";
 
 const isoDatetime = z
   .string()

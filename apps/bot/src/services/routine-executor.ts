@@ -8,9 +8,9 @@ import {
   failRoutineLog,
   advanceRoutineNextRunAt,
   type IRoutine,
-} from "@mashiro/db";
-import { logger, computeNextRunAt } from "@mashiro/shared";
-import type { PlatformAdapter } from "@mashiro/shared";
+} from "@kokoro/db";
+import { logger, computeNextRunAt } from "@kokoro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
 import { extractResponseText, sendSegmented } from "../ai/response";
 import { trackUsage } from "../ai/token-tracker";
 import { getModelName } from "../ai/provider";

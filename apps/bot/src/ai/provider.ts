@@ -2,7 +2,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
 import { xai } from "@ai-sdk/xai";
-import { config } from "@mashiro/shared";
+import { config } from "@kokoro/shared";
 import type { LanguageModel } from "ai";
 
 export enum ModelTier {

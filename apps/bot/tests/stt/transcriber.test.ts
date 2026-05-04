@@ -8,7 +8,7 @@ const { mockConfig, mockTranscribeWithOpenAi, mockTrackStt } = vi.hoisted(() => 
   mockTrackStt: vi.fn(),
 }));
 
-vi.mock("@mashiro/shared", () => ({
+vi.mock("@kokoro/shared", () => ({
   config: mockConfig,
   logger: {
     info: vi.fn(),

@@ -2,22 +2,21 @@
 
 ## System Overview
 
-Mashiro is a layered conversational AI system organized as a monorepo. Messages flow from a platform adapter through normalization, storage, context assembly, LLM generation, and back out as responses.
+Kokoro is a layered conversational AI system organized as a monorepo. Messages flow from a platform adapter through normalization, storage, context assembly, LLM generation, and back out as responses.
 
 ### Monorepo Layout
 
 ```
-mashiro/                          # npm workspaces + Turborepo
+kokoro/                          # npm workspaces + Turborepo
 ├── apps/
 │   ├── bot/                      # Telegram + iMessage bot app
 │   │   ├── src/
 │   │   │   ├── ai/               # provider, prompts, response, context-assembler, generate
-│   │   │   │   └── tools/        # all tool files
+│   │   │   │   └── tools/        # all tool files (incl. memory.ts — Kioku tool factories)
 │   │   │   ├── context/          # image generation (generator.ts, types.ts)
-│   │   │   ├── memory/           # curator.ts (tightly coupled to AI layer)
 │   │   │   ├── platform/         # registry.ts + telegram/ + imessage/ (multi-adapter)
-│   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, cron, routine-executor, watcher-executor
-│   │   │   └── scheduler/        # proactive, reminders, routines, watchers
+│   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, cron, routine-executor, watcher-executor, location
+│   │   │   └── scheduler/        # proactive (incl. Kioku ingest sweeper), reminders, routines, watchers
 │   │   └── context/              # soul (personality), reference images, settings (data)
 │   └── dashboard/                # Next.js dashboard (routine + watcher management, observability)
 ├── packages/
@@ -25,34 +24,34 @@ mashiro/                          # npm workspaces + Turborepo
 │   ├── eslint-config/            # shared ESLint flat config
 │   ├── shared/                   # config, logger, markdown, types
 │   ├── db/                       # MongoDB connection, models, GridFS
-│   └── memory/                   # engine, embedding
-├── scripts/                      # migrate, auth
+│   └── memory/                   # Kioku HTTP client + transcript glue + sweeper
+├── scripts/                      # auth
 └── docs/
 ```
 
 ### Dependency Graph
 
 ```
-@mashiro/typescript-config  ← leaf (no deps)
-@mashiro/eslint-config      ← leaf
+@kokoro/typescript-config  ← leaf (no deps)
+@kokoro/eslint-config      ← leaf
        ↑
-@mashiro/shared  ← config, logger, markdown, types (dotenv, zod, pino, gray-matter)
+@kokoro/shared  ← config, logger, markdown, types (dotenv, zod, pino, gray-matter)
        ↑
-@mashiro/db      ← MongoDB connection, models, GridFS (mongoose)
+@kokoro/db      ← MongoDB connection, models, GridFS (mongoose)
        ↑
-@mashiro/memory  ← engine, embedding (@ai-sdk/google, ai)
+@kokoro/memory  ← Kioku HTTP client + conversation→transcript glue + session-close ingest
        ↑
-@mashiro/bot     ← AI layer, tools, platform, schedulers
-@mashiro/dashboard ← Next.js (placeholder)
+@kokoro/bot     ← AI layer, tools, platform, schedulers
+@kokoro/dashboard ← Next.js (routine + watcher management, observability)
 ```
 
 ## Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Telegram Bot                      │
-│          (Grammy / apps/bot/src/platform/)           │
-│         allowlist ─► rate limit ─► handlers          │
+│            Platform Adapters                         │
+│   Telegram (Grammy) + iMessage (BlueBubbles)         │
+│        allowlist ─► rate limit ─► handlers           │
 └──────────────┬──────────────────────┬────────────────┘
                │ IncomingMessage      │ sendText/sendPhoto
                ▼                      ▲
@@ -67,47 +66,33 @@ mashiro/                          # npm workspaces + Turborepo
 │         │                 │                          │
 │  ┌──────┴───────┐  ┌──────┴───────┐                 │
 │  │    tools/     │  │   prompts    │                 │
-│  │ remember-fact/│  │  (system +   │                 │
-│  │ note-to-self/ │  │   format)    │                 │
-│  │ read/search/  │  └──────────────┘                 │
-│  │ list/curate/  │                                    │
-│  │ photo/email/  │                                    │
-│  │ cal/reminders/│                                    │
-│  │ browse/       │                                    │
-│  │ routines        │                                    │
+│  │ searchMemory  │  │  (system +   │                 │
+│  │ rememberFact  │  │   format)    │                 │
+│  │ photo/email/  │  └──────────────┘                 │
+│  │ cal/reminders │                                    │
+│  │ browse/web    │                                    │
+│  │ routines      │                                    │
+│  │ watchers      │                                    │
 │  └──────┬───────┘                                    │
 └─────────┼────────────────────────────────────────────┘
           │
-    ┌─────┴──────┐
-    ▼            ▼
-┌────────┐  ┌────────────┐
-│ Memory │  │  Database   │
-│ Vault  │  │  (MongoDB)  │    ← packages/memory + packages/db
-│ (.md)  │  │             │
-│        │  │ Conversation│
-│ person │  │ Scheduler   │
-│ ality/ │  │ State       │
-│ card   │  │ Memory      │
-│        │  │ Reminder    │
-│        │  │ Routine       │
-│        │  │ RoutineLog    │
-│        │  │ TokenUsage  │
-│        │  │ Location    │
-│        │  │  History    │
-└────────┘  └─────────────┘
-    ▲            ▲
-    └─────┬──────┘
-          │
-┌─────────────────────────┐
-│    Memory Engine         │    ← packages/memory
-│                          │
-│ embedding (Google Gemini)│
-│  ─► cosine similarity    │
-│  ─► remember / recall    │
-│  ─► fact ADD/UPDATE/DEL  │
-│  ─► working memory (TTL) │
-│  ─► soft archival        │
-└──────────────────────────┘
+   ┌──────┴───────────┬───────────────────┐
+   ▼                  ▼                   ▼
+┌──────────┐  ┌────────────┐  ┌──────────────────┐
+│ MongoDB  │  │@kokoro/    │  │  Kioku service   │
+│          │  │memory      │  │  (separate proc) │
+│Conv'n    │──│  HTTP      │─►│                  │
+│Scheduler │  │  client +  │  │ /facts /recall   │
+│State     │  │  transcript│  │ /sessions /query │
+│Reminder  │  │  + sweeper │  │ /mcp             │
+│Routine   │  └────────────┘  │                  │
+│RoutineLog│                  │ facts.jsonl      │
+│TokenUsage│                  │ entities.jsonl   │
+│Location  │                  │ hybrid retrieval │
+│History   │                  └──────────────────┘
+│Pending   │                  KIOKU_URL (default
+│Confirm   │                  http://localhost:7777)
+└──────────┘
 
 ┌──────────────────────────┐
 │   Proactive Scheduler    │    ← apps/bot/src/scheduler/
@@ -116,8 +101,9 @@ mashiro/                          # npm workspaces + Turborepo
 │        ─► active hours   │
 │        ─► generate msg   │
 │        ─► persist state  │
-│        ─► weekly/monthly │
 │        ─► daily cleanup  │
+│        ─► Kioku sweeper  │
+│           (5 min tick)   │
 └──────────────────────────┘
 
 ┌──────────────────────────┐
@@ -175,38 +161,39 @@ mashiro/                          # npm workspaces + Turborepo
 ## Message Flow
 
 ```
-1. User sends message on Telegram
+1. User sends message on Telegram or iMessage
        │
-2. Grammy handler fires (message:text, message:photo, or message:location)
+2. Platform handler fires (message:text, message:photo, or message:location)
        │
 3. Allowlist check ─► Rate limit check
        │
 4. adapter.normalize(ctx) → IncomingMessage
        │  (for photos: download file, convert to base64)
+       │  (for voice: transcribe via STT before reaching the AI layer)
        │
 5. getOrCreateSession(chatId) — idle-based (1h threshold)
-       │  ├─ If stale session found: close it, queue background curation
+       │  ├─ If stale session found: close it, return previouslyClosed
        │  └─ Return active session with sessionId
        │
-6. If image: write to GridFS → get imageRef key
+6. If previouslyClosed: ingestClosedSession(prev) — fire-and-forget
+       │   POST the transcript to Kioku /sessions; doesn't block this turn.
+       │   On success → conversation.ingestStatus flips pending → done.
+       │   On failure → sweeper retries within 5 min.
        │
-7. appendMessage(conversation, userMsg with imageRef)
+7. If image: write to GridFS → get imageRef key
        │
-8. curateIfNeeded(chatId) — fire-and-forget (non-blocking):
-       │   ├─ Per-chat mutex prevents concurrent curation
-       │   ├─ summarize overflow → Memory collection episode (MongoDB only)
-       │   ├─ extract structured metadata (emotionalTone, importance, followUps)
-       │   ├─ classify facts as ADD/UPDATE/DELETE (bounded: 30 most relevant facts)
-       │   └─ trim conversation to 40 messages (delete orphaned GridFS images)
+8. appendMessage(conversation, userMsg with imageRef)
        │
-9. Parallel: assembleSystemPrompt(chatId, sessionId) + assembleMessages(chatId)
-       │   ├─ System: personality + facts (top 30) + milestones (last 5)
-       │   │         + daily episodes (3) + weekly episodes (2)
-       │   │         + working memory + follow-ups + location + datetime + tools + format
-       │   └─ Messages: last 40 msgs from active session, images from GridFS, tool-call pairs (recent 10 only)
+9. Parallel: assembleSystemPrompt(chatId) + assembleMessages(chatId)
+       │   ├─ System: soul.md + datetime + tool guidance + reminders + location
+       │   │         (no facts pre-loaded — Mashiro calls searchMemory on demand)
+       │   └─ Messages: last 40 msgs from active session, images from GridFS,
+       │                tool-call pairs (recent 10 only)
        │
 10. generateText({ model, system, messages, tools, stopWhen: stepCountIs(5), temperature: 0.7 })
-       │   └─ LLM may call tools (rememberFact, noteToSelf, readMemory, searchMemory, sendPhoto, etc.)
+       │   └─ LLM may call tools (searchMemory, rememberFact, sendPhoto, sendEmail, etc.)
+       │       searchMemory → @kokoro/memory.recall() → POST Kioku /recall
+       │       rememberFact → @kokoro/memory.appendFact() → POST Kioku /facts
        │
 11. extractResponseText(steps) + collectToolCalls(steps)
        │
@@ -218,6 +205,8 @@ mashiro/                          # npm workspaces + Turborepo
 14. resetTimer(chatId) — reschedule proactive message
 ```
 
+See [memory.md](memory.md) for the Kioku read/write paths in full, including the sweeper that backstops fire-and-forget ingest failures.
+
 ## Proactive Scheduler
 
 The scheduler sends unprompted messages to maintain engagement:
@@ -228,20 +217,20 @@ The scheduler sends unprompted messages to maintain engagement:
 - **Startup**: 30–60 minute delay after boot
 - **Persistence**: next-fire timestamps saved to MongoDB (survives restarts)
 - **Reset**: any user message reschedules the next proactive to 1.5–2.5h out
-- **Memory consolidation**: after each proactive fire, checks weekly merge and monthly consolidation (fire-and-forget)
+- **Kioku ingest sweeper**: every 5 minutes, drives any `closed && ingestStatus: "pending"` conversations to `done` (retrying through Kioku outages) and closes `active` sessions idle past 6h so they become eligible for ingest. See [memory.md](memory.md).
 - **Daily cleanup**: removes fired reminders (>30 days), closed conversations (>90 days), old routine logs (>90 days), and old location history (>90 days)
 
 When firing, the scheduler uses `getOrCreateSession` to get the active session, assembles a proactive system prompt with sessionId, and injects a synthetic nudge if no recent user message exists.
 
 ## Package Boundaries
 
-| Package              | Purpose                                            | Key Exports                                                                                                                                                                                                 |
-| -------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@mashiro/shared`    | Config, logging, markdown, platform types          | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, cron + routine validation helpers                                                                                  |
-| `@mashiro/db`        | MongoDB connection, all models, GridFS             | `connectDB`, `disconnectDB`, `Memory`, `Conversation`, `Reminder`, `SchedulerState`, `Routine`, `RoutineLog`, `LocationHistory`, `PendingConfirmation`, `readImage`, `writeImage`, all model CRUD functions |
-| `@mashiro/memory`    | Memory engine, embeddings                          | `remember`, `recall`, `forget`, `generateEmbedding`, episode/fact/milestone retrieval                                                                                                                       |
-| `@mashiro/bot`       | Telegram bot, AI layer, tools, schedulers, curator | App entry point — not imported by other packages                                                                                                                                                            |
-| `@mashiro/dashboard` | Next.js dashboard (read + write CRUD)              | Overview, conversations, memories, reminders, routines, watchers, usage pages                                                                                                                               |
+| Package             | Purpose                                              | Key Exports                                                                                                                                                                                                   |
+| ------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@kokoro/shared`    | Config, logging, markdown, platform types            | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, cron + routine validation helpers                                                                                    |
+| `@kokoro/db`        | MongoDB connection, all models, GridFS               | `connectDB`, `disconnectDB`, `Conversation`, `Reminder`, `SchedulerState`, `Routine`, `RoutineLog`, `LocationHistory`, `PendingConfirmation`, `readImage`, `writeImage`, all model CRUD functions             |
+| `@kokoro/memory`    | Kioku HTTP client + conversation→transcript glue     | `recall`, `appendFact`, `getFactById`, `getFactCount`, `hasFactsForSession`, `ingestSession`, `buildTranscript`, `ingestClosedSession`, `sweepPendingIngests`, `sweepStaleActiveSessions`, `KiokuClientError` |
+| `@kokoro/bot`       | Telegram + iMessage bot, AI layer, tools, schedulers | App entry point — not imported by other packages                                                                                                                                                              |
+| `@kokoro/dashboard` | Next.js dashboard (read + write CRUD)                | Overview, conversations, reminders, routines, watchers, usage pages                                                                                                                                           |
 
 ### Bot-Internal Modules
 
@@ -252,7 +241,6 @@ When firing, the scheduler uses `getOrCreateSession` to get the active session, 
 | `apps/bot/src/platform/`          | `registry.ts` (AdapterRegistry + platformForChatId helper)                                                   |
 | `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup (Grammy long-polling)                                                           |
 | `apps/bot/src/platform/imessage/` | BlueBubbles adapter + REST client + webhook server (opt-in, see docs/imessage.md)                            |
-| `apps/bot/src/memory/`            | Curator (tightly coupled to AI layer)                                                                        |
 | `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Cron, Routine executor, Geocoding, Location, Gated-action dispatcher |
 | `apps/bot/src/scheduler/`         | Proactive, reminder, routine scheduling                                                                      |
 | `apps/bot/src/context/`           | Image reference loading + generation                                                                         |
@@ -274,21 +262,15 @@ Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop p
 
 ## Key Design Decisions
 
-- **Internal packages pattern** — npm workspaces + Turborepo. Library packages (`shared`, `db`, `memory`) export raw TypeScript source via `exports: { ".": "./src/index.ts" }`. No build step for libraries; consumers resolve source directly. Only `bot` and `dashboard` have build scripts (tsup and Next.js respectively). The bot's tsup config uses `noExternal: [/^@mashiro\//]` to inline all workspace packages into a single bundle.
+- **Internal packages pattern** — npm workspaces + Turborepo. Library packages (`shared`, `db`, `memory`) export raw TypeScript source via `exports: { ".": "./src/index.ts" }`. No build step for libraries; consumers resolve source directly. Only `bot` and `dashboard` have build scripts (tsup and Next.js respectively). The bot's tsup config uses `noExternal: [/^@kokoro\//]` to inline all workspace packages into a single bundle.
 - **Session-based conversations** — sessions close after 1 hour of inactivity, replacing daily scoping. Eliminates cross-midnight amnesia.
-- **Curator stays in bot** — `curator.ts` imports `getModel` and `generateObject` from the AI layer. Dashboard only reads data, never curates.
-- **Config stays unified** — single config module in `@mashiro/shared`. Base parse always succeeds (defaults for everything). `validateConfig()` must be called explicitly by apps that need LLM/embedding keys (the bot). The dashboard only needs `MONGODB_URI`.
-- **Dashboard is read-only** — imports `@mashiro/db` models directly, never `@mashiro/memory` (avoids Google AI SDK dependency). All pages are React Server Components.
-- **Non-blocking curation** — curation runs as fire-and-forget with per-chat mutex, so users don't wait for LLM calls
-- **40-message context window** — overflow is summarized into MongoDB episodes, not lost
-- **Separated episode types** — daily episodes, weekly merges, and monthly consolidations are queried separately to prevent conflation
-- **Bounded fact retrieval** — only 30 most relevant facts sent to LLM for classification, not the entire collection
-- **Non-destructive merges** — weekly/monthly merges soft-archive originals instead of deleting them
-- **Working memory** — session-scoped temporary notes with 24h TTL, auto-cleaned by MongoDB
-- **Tool-augmented LLM** — the model reads/writes its own memory via tools, not hardcoded logic
-- **MongoDB as single source of truth** — only the hand-edited soul (`apps/bot/context/soul.md`) lives outside MongoDB
+- **Long-term memory delegated to Kioku** — `@kokoro/memory` is a typed HTTP client; the actual atomic-fact store + hybrid retrieval lives in a separate Kioku service (`KIOKU_URL`, default `http://localhost:7777`). See [memory.md](memory.md) for the full subsystem map.
+- **On-demand retrieval, not eager loading** — the system prompt carries zero facts. The LLM calls `searchMemory` when it needs context. Better retrieval (cosine + BM25 + entity boost) replaces the old tier-and-merge compression strategy.
+- **Append-only facts** — atomic facts are write-once. Corrections happen by appending newer facts with later `event_date`; the answerer prompt resolves contradictions newest-wins. No UPDATE / DELETE / soft-archival.
+- **Sweeper as correctness layer for ingest** — session-close ingest fires fire-and-forget at four call sites for latency, but a 5-minute sweeper backstops failures: any `closed && ingestStatus: "pending"` conversation gets retried until Kioku confirms.
+- **Config stays unified** — single config module in `@kokoro/shared`. Base parse always succeeds (defaults for everything). `validateConfig()` must be called explicitly by apps that need LLM/embedding keys (the bot). The dashboard only needs `MONGODB_URI`.
+- **Tool-augmented LLM** — the model reads/writes its own memory via `searchMemory` / `rememberFact` tools, not hardcoded logic
+- **MongoDB stores deterministic state only** — sessions, reminders, confirmations, routines, watchers, location history. Long-term memory lives in Kioku's vault.
 - **GridFS image storage** — user-sent photos stored in MongoDB GridFS (`images` bucket) instead of inline base64
-- **Semantic memory** — Google Gemini embeddings + cosine similarity for meaning-based retrieval with 200-candidate cap
-- **Smart fact management** — ADD/UPDATE/DELETE operations prevent stale fact accumulation
 - **Platform abstraction** — `PlatformAdapter` interface enables future platform support
 - **Segmented sending** — responses split on `\n\n` for natural pacing

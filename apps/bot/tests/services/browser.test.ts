@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@mashiro/shared", async (orig) => ({
+vi.mock("@kokoro/shared", async (orig) => ({
   ...(await orig()),
   logger: {
     info: vi.fn(),

@@ -1,11 +1,11 @@
 import { Bot } from "grammy";
-import { config, logger } from "@mashiro/shared";
+import { config, logger } from "@kokoro/shared";
 import {
   clearConversation,
   getPendingConfirmation,
   resolvePendingConfirmation,
   attachResultText,
-} from "@mashiro/db";
+} from "@kokoro/db";
 import { TelegramAdapter } from "./adapter";
 import { handleMessage } from "../../ai/generate";
 import { generateAcknowledgment } from "../../ai/acknowledge";

@@ -1,5 +1,5 @@
 {
-  "extends": "@mashiro/typescript-config/library.json",
+  "extends": "@kokoro/typescript-config/library.json",
   "compilerOptions": {
     "rootDir": "src",
     "types": ["node"]

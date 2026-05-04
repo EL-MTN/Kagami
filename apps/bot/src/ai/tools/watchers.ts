@@ -8,8 +8,8 @@ import {
   deleteWatcher,
   defaultExpiresAt,
   isDuplicateKeyError,
-} from "@mashiro/db";
-import { config, logger, computeNextRunAt, validateCronAndDefaults } from "@mashiro/shared";
+} from "@kokoro/db";
+import { config, logger, computeNextRunAt, validateCronAndDefaults } from "@kokoro/shared";
 
 // ─── manageWatchers ──────────────────────────────────────────────────────────
 

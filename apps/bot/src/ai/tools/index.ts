@@ -1,11 +1,3 @@
-import {
-  readMemory,
-  rememberFact,
-  createNoteToSelfTool,
-  searchMemory,
-  listMemories,
-  createCurateMemoryTool,
-} from "./memory";
 import { createSendPhotoTool, createSendVoiceTool } from "./media";
 import { createCheckEmailTool, createSendEmailTool } from "./email";
 import { createManageCalendarTool, createManageRemindersTool } from "./calendar";
@@ -18,10 +10,11 @@ import {
 } from "./routines";
 import { createManageWatchersTool, reportWatcherResult } from "./watchers";
 import { createRequestConfirmationTool, createCancelConfirmationTool } from "./confirmations";
+import { createSearchMemoryTool, createRememberFactTool } from "./memory";
 import { MAX_ROUTINE_DEPTH } from "../../services/routine-executor";
-import { config } from "@mashiro/shared";
+import { config } from "@kokoro/shared";
 import type { ToolSet } from "ai";
-import type { PlatformAdapter } from "@mashiro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
 
 export interface ToolContext {
   chatId: string;
@@ -52,14 +45,7 @@ export function allTools(ctx: ToolContext) {
   const depth = ctx.routineDepth ?? 0;
   const callingContext = ctx.callingContext ?? "main";
 
-  const tools: ToolSet = {
-    readMemory,
-    rememberFact,
-    noteToSelf: createNoteToSelfTool(ctx.sessionId),
-    searchMemory,
-    listMemories,
-    curateMemory: createCurateMemoryTool(ctx.chatId),
-  };
+  const tools: ToolSet = {};
 
   if (config.IMAGE_GENERATION_MODEL) {
     tools.sendPhoto = createSendPhotoTool(ctx.chatId, ctx.adapter);
@@ -102,6 +88,9 @@ export function allTools(ctx: ToolContext) {
   tools.searchRoutines = createSearchRoutinesTool(ctx.chatId);
   tools.manageWatchers = createManageWatchersTool(ctx.chatId);
 
+  tools.searchMemory = createSearchMemoryTool();
+  tools.rememberFact = createRememberFactTool();
+
   // Only provide useRoutine when below max depth (prevents infinite recursion)
   if (depth < MAX_ROUTINE_DEPTH) {
     tools.useRoutine = createUseRoutineTool(ctx.chatId, ctx.adapter, depth, callingContext);
@@ -113,13 +102,12 @@ export function allTools(ctx: ToolContext) {
 /**
  * Shared read-only tool subset used by both the watcher executor and any
  * routine that runs under a watcher context. Excludes everything that mutates
- * external state: sends (email/photo/voice), memory writes (rememberFact /
- * noteToSelf / curateMemory), calendar/reminder writes, routine creation,
- * watcher creation, and the confirmation primitive (requestConfirmation /
- * cancelConfirmation — both write to the PendingConfirmation collection
- * and the underlying messaging surface). `useRoutine` IS included but
- * `callingContext: "watcher"` is hardcoded so any nested routine invocation
- * re-enters the gate.
+ * external state: sends (email/photo/voice), calendar/reminder writes, routine
+ * creation, watcher creation, and the confirmation primitive
+ * (requestConfirmation / cancelConfirmation — both write to the
+ * PendingConfirmation collection and the underlying messaging surface).
+ * `useRoutine` IS included but `callingContext: "watcher"` is hardcoded so any
+ * nested routine invocation re-enters the gate.
  *
  * Does NOT include `reportWatcherResult` — that's the watcher executor's
  * terminator, irrelevant to routines running under watcher context.
@@ -127,11 +115,7 @@ export function allTools(ctx: ToolContext) {
 function readOnlyToolSubset(ctx: ToolContext): ToolSet {
   const depth = ctx.routineDepth ?? 0;
 
-  const tools: ToolSet = {
-    readMemory,
-    searchMemory,
-    listMemories,
-  };
+  const tools: ToolSet = {};
 
   if (config.GOOGLE_OAUTH_CLIENT_ID) {
     tools.checkEmail = createCheckEmailTool();
@@ -151,6 +135,10 @@ function readOnlyToolSubset(ctx: ToolContext): ToolSet {
   if (depth < MAX_ROUTINE_DEPTH) {
     tools.useRoutine = createUseRoutineTool(ctx.chatId, ctx.adapter, depth, "watcher");
   }
+
+  // Memory reads are pure — watchers observe what's already in the vault.
+  // rememberFact is omitted because it mutates.
+  tools.searchMemory = createSearchMemoryTool();
 
   return tools;
 }

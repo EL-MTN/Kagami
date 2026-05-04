@@ -1,7 +1,7 @@
-import { withTestDb } from "@mashiro/test-utils";
+import { withTestDb } from "@kokoro/test-utils";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@mashiro/shared", async (orig) => ({
+vi.mock("@kokoro/shared", async (orig) => ({
   ...((await orig())),
   config: {
     BROWSER_ENABLED: false,
@@ -17,7 +17,7 @@ vi.mock("@mashiro/shared", async (orig) => ({
   },
 }));
 
-import { Watcher, getWatcherById } from "@mashiro/db";
+import { Watcher, getWatcherById } from "@kokoro/db";
 import {
   createManageWatchersTool,
   reportWatcherResult,

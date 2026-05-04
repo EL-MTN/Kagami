@@ -1,7 +1,7 @@
-import { getDueRoutines, claimPendingManualRun, resetStaleRunningRoutineLogs } from "@mashiro/db";
-import { logger } from "@mashiro/shared";
-import type { IRoutine } from "@mashiro/db";
-import type { PlatformAdapter } from "@mashiro/shared";
+import { getDueRoutines, claimPendingManualRun, resetStaleRunningRoutineLogs } from "@kokoro/db";
+import { logger } from "@kokoro/shared";
+import type { IRoutine } from "@kokoro/db";
+import type { PlatformAdapter } from "@kokoro/shared";
 import { AdapterRegistry, platformForChatId } from "../platform/registry";
 import { executeRoutine } from "../services/routine-executor";
 

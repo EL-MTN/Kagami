@@ -1,7 +1,7 @@
-import { withTestDb } from "@mashiro/test-utils";
+import { withTestDb } from "@kokoro/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@mashiro/shared", async (orig) => ({
+vi.mock("@kokoro/shared", async (orig) => ({
   ...((await orig())),
   logger: {
     info: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock("../../../src/services/google-calendar", () => ({
   deleteEvent: mockDelete,
 }));
 
-import { Reminder, createReminder } from "@mashiro/db";
+import { Reminder, createReminder } from "@kokoro/db";
 import {
   createManageCalendarTool,
   createManageRemindersTool,

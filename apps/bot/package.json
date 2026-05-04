@@ -1,5 +1,5 @@
 {
-  "name": "@mashiro/bot",
+  "name": "@kokoro/bot",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,9 +17,9 @@
     "@ai-sdk/openai": "^3.0.41",
     "@ai-sdk/xai": "^3.0.67",
     "@browserbasehq/stagehand": "^3.0.0",
-    "@mashiro/db": "*",
-    "@mashiro/memory": "*",
-    "@mashiro/shared": "*",
+    "@kokoro/db": "*",
+    "@kokoro/memory": "*",
+    "@kokoro/shared": "*",
     "ai": "^6.0.116",
     "cron-parser": "^5.5.0",
     "date-fns": "^4.1.0",
@@ -32,8 +32,8 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@mashiro/eslint-config": "*",
-    "@mashiro/typescript-config": "*",
+    "@kokoro/eslint-config": "*",
+    "@kokoro/typescript-config": "*",
     "@types/node": "^22.0.0",
     "esbuild": "^0.25.0",
     "eslint": "^10.0.1",

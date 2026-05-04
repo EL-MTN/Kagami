@@ -1,7 +1,6 @@
 import { generateText, stepCountIs } from "ai";
 import { getModel } from "../ai/provider";
 import { assembleProactiveSystemPrompt, assembleMessages } from "../ai/context-assembler";
-import { checkWeeklyMerge, checkMonthlyConsolidation } from "../memory/curator";
 import { allTools, type ToolContext } from "../ai/tools/index";
 import {
   getOrCreateSession,
@@ -14,13 +13,14 @@ import {
   cleanupOldLocations,
   getNextProactiveAt,
   setNextProactiveAt,
-} from "@mashiro/db";
-import { config, logger } from "@mashiro/shared";
-import type { PlatformAdapter } from "@mashiro/shared";
+} from "@kokoro/db";
+import { config, logger } from "@kokoro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
 import { extractResponseText, collectToolCalls, wasPhotoSent, sendSegmented } from "../ai/response";
 import { trackUsage } from "../ai/token-tracker";
 import { getModelName } from "../ai/provider";
 import { AdapterRegistry, platformForChatId, imessageChatId } from "../platform/registry";
+import { ingestClosedSession, sweepPendingIngests, sweepStaleActiveSessions } from "@kokoro/memory";
 
 const LLM_TIMEOUT_MS = 120_000; // 2 minutes
 
@@ -37,8 +37,10 @@ const MIN_IDLE = 60 * 60_000; // 1 hour
 const STARTUP_MIN = 30 * 60_000; // 30 min
 const STARTUP_MAX = 60 * 60_000; // 1 hour
 const CLEANUP_INTERVAL = 24 * 60 * 60_000; // 24 hours
+const KIOKU_SWEEP_INTERVAL = 5 * 60_000; // 5 minutes
 
 let cleanupTimer: NodeJS.Timeout | null = null;
+let kiokuSweepTimer: NodeJS.Timeout | null = null;
 
 function getHourInTimezone(): number {
   return Number(
@@ -142,14 +144,6 @@ async function fireProactive(chatId: string, userId: string): Promise<void> {
 
   // Schedule next
   scheduleNext(chatId, userId);
-
-  // Fire-and-forget memory consolidation checks
-  checkWeeklyMerge().catch((error) => {
-    logger.warn({ error }, "Weekly merge check failed during proactive cycle");
-  });
-  checkMonthlyConsolidation().catch((error) => {
-    logger.warn({ error }, "Monthly consolidation check failed during proactive cycle");
-  });
 }
 
 async function generateProactiveMessage(
@@ -159,11 +153,16 @@ async function generateProactiveMessage(
 ): Promise<void> {
   logger.info({ chatId }, "Generating proactive message");
 
-  const { conversation } = await getOrCreateSession(chatId, userId, platformForChatId(chatId));
+  const { conversation, previouslyClosed } = await getOrCreateSession(
+    chatId,
+    userId,
+    platformForChatId(chatId),
+  );
+  if (previouslyClosed) ingestClosedSession(previouslyClosed);
   const sessionId = conversation.sessionId;
 
   const [systemPrompt, messages] = await Promise.all([
-    assembleProactiveSystemPrompt(chatId, sessionId),
+    assembleProactiveSystemPrompt(chatId),
     assembleMessages(chatId),
   ]);
 
@@ -216,6 +215,25 @@ async function generateProactiveMessage(
   // Send — skip if sendPhoto already delivered text as caption
   if (!wasPhotoSent(result.steps)) {
     await sendSegmented(adapter, chatId, responseText);
+  }
+}
+
+async function runKiokuSweep(): Promise<void> {
+  // Backstops the per-call-site `ingestClosedSession` trigger. The
+  // immediate trigger is best-effort; this sweeper drives any stuck
+  // `closed && pending` rows to `done`, retrying through Kioku
+  // outages, and closes long-idle `active` sessions that never got a
+  // rollover. Running both on the same tick — the stale-active query
+  // is indexed and cheap when there's no work.
+  try {
+    await sweepStaleActiveSessions();
+  } catch (error) {
+    logger.error({ error }, "Kioku stale-active sweep failed");
+  }
+  try {
+    await sweepPendingIngests();
+  } catch (error) {
+    logger.error({ error }, "Kioku pending-ingest sweep failed");
   }
 }
 
@@ -340,6 +358,23 @@ export function startProactiveScheduler(registry: AdapterRegistry): () => void {
     });
   }, 60_000);
 
+  // Schedule Kioku ingest sweeper (every 5 minutes). Backstops the
+  // per-call-site immediate trigger.
+  kiokuSweepTimer = setInterval(() => {
+    runKiokuSweep().catch((error) => {
+      logger.error({ error }, "Kioku sweep interval failed");
+    });
+  }, KIOKU_SWEEP_INTERVAL);
+
+  // Run once on startup (after a brief delay so the bot is fully up)
+  // — covers the case where Kioku was unavailable when the previous
+  // process closed sessions.
+  setTimeout(() => {
+    runKiokuSweep().catch((error) => {
+      logger.error({ error }, "Startup Kioku sweep failed");
+    });
+  }, 30_000);
+
   logger.info(
     {
       telegramChats: config.ALLOWED_USER_IDS.length,
@@ -356,6 +391,10 @@ export function startProactiveScheduler(registry: AdapterRegistry): () => void {
     if (cleanupTimer) {
       clearInterval(cleanupTimer);
       cleanupTimer = null;
+    }
+    if (kiokuSweepTimer) {
+      clearInterval(kiokuSweepTimer);
+      kiokuSweepTimer = null;
     }
     _registry = null;
     logger.info("Proactive scheduler stopped");

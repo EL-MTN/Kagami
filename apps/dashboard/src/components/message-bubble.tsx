@@ -1,4 +1,4 @@
-import type { IMessage } from "@mashiro/db";
+import type { IMessage } from "@kokoro/db";
 import { cn } from "@/lib/utils";
 
 interface MessageBubbleProps {

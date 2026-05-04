@@ -1,5 +1,5 @@
 import { Stagehand } from "@browserbasehq/stagehand";
-import { config, logger } from "@mashiro/shared";
+import { config, logger } from "@kokoro/shared";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 

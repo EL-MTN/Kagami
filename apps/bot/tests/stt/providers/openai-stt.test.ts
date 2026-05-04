@@ -15,7 +15,7 @@ const { mockConfig, mockCreateOpenAI, mockTranscribe } = vi.hoisted(() => ({
   mockTranscribe: vi.fn(() => Promise.resolve({ text: "hi", durationInSeconds: 1.5 })),
 }));
 
-vi.mock("@mashiro/shared", () => ({
+vi.mock("@kokoro/shared", () => ({
   config: mockConfig,
   logger: {
     info: vi.fn(),

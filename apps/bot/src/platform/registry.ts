@@ -1,4 +1,4 @@
-import type { PlatformAdapter } from "@mashiro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
 
 /**
  * Holds a `PlatformAdapter` per platform string. Schedulers and resolution

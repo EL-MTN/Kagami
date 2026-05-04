@@ -1,5 +1,5 @@
 {
-  "name": "@mashiro/test-utils",
+  "name": "@kokoro/test-utils",
   "private": true,
   "type": "module",
   "exports": {
@@ -17,8 +17,8 @@
     "lint:fix": "eslint src/ --fix"
   },
   "dependencies": {
-    "@mashiro/db": "*",
-    "@mashiro/shared": "*",
+    "@kokoro/db": "*",
+    "@kokoro/shared": "*",
     "ai": "^6.0.116",
     "mongodb-memory-server": "^10.1.4",
     "mongoose": "^8.9.0",
@@ -26,8 +26,8 @@
     "vitest": "^4.1.5"
   },
   "devDependencies": {
-    "@mashiro/eslint-config": "*",
-    "@mashiro/typescript-config": "*",
+    "@kokoro/eslint-config": "*",
+    "@kokoro/typescript-config": "*",
     "@types/node": "^22.0.0",
     "eslint": "^10.0.1",
     "typescript": "^5.7.0"

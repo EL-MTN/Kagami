@@ -2,8 +2,8 @@ import { tool } from "ai";
 import { z } from "zod";
 import { generateImage } from "../../context/generator";
 import { generateVoice } from "../../tts/generator";
-import type { PlatformAdapter } from "@mashiro/shared";
-import { logger } from "@mashiro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
+import { logger } from "@kokoro/shared";
 
 // ─── sendPhoto ───────────────────────────────────────────────────────────────
 

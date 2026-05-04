@@ -1,6 +1,6 @@
 # Google Services Integration
 
-Mashiro integrates with Gmail and Google Calendar to perform real assistant tasks — checking email, managing schedules, and setting reminders.
+Kokoro integrates with Gmail and Google Calendar to perform real assistant tasks — checking email, managing schedules, and setting reminders.
 
 ## OAuth Setup
 

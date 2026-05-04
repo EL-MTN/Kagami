@@ -1,7 +1,7 @@
-import { setupMswServer } from "@mashiro/test-utils";
+import { setupMswServer } from "@kokoro/test-utils";
 import { http, HttpResponse } from "msw";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { config, logger } from "@mashiro/shared";
+import { config, logger } from "@kokoro/shared";
 import { webSearch } from "../../src/services/web-search";
 
 // Mutate the live config object so the service sees a deterministic API key

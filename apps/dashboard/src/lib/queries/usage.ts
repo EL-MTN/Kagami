@@ -1,4 +1,4 @@
-import { TokenUsage, Routine, Watcher, type UsageSummary, type DailyUsage } from "@mashiro/db";
+import { TokenUsage, Routine, Watcher, type UsageSummary, type DailyUsage } from "@kokoro/db";
 import { Types } from "mongoose";
 import { ensureDB } from "../db";
 

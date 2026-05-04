@@ -1,4 +1,4 @@
-import { config, logger } from "@mashiro/shared";
+import { config, logger } from "@kokoro/shared";
 
 export interface WebSearchResult {
   title: string;

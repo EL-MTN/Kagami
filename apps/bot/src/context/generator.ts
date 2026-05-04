@@ -1,7 +1,7 @@
 import { generateText, generateImage as aiGenerateImage } from "ai";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { config, logger } from "@mashiro/shared";
+import { config, logger } from "@kokoro/shared";
 import {
   getModel,
   getModelName,

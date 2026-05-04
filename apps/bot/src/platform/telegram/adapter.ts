@@ -1,7 +1,7 @@
 import { Bot, InputFile, InlineKeyboard } from "grammy";
-import type { IncomingMessage, PlatformAdapter } from "@mashiro/shared";
+import type { IncomingMessage, PlatformAdapter } from "@kokoro/shared";
 import type { Context } from "grammy";
-import { logger } from "@mashiro/shared";
+import { logger } from "@kokoro/shared";
 import { markdownToTelegramHtml } from "./format";
 
 export class TelegramAdapter implements PlatformAdapter {

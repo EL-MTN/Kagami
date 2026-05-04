@@ -1,5 +1,5 @@
-import { logger } from "@mashiro/shared";
-import type { IncomingMessage, PlatformAdapter } from "@mashiro/shared";
+import { logger } from "@kokoro/shared";
+import type { IncomingMessage, PlatformAdapter } from "@kokoro/shared";
 import { BlueBubblesClient } from "./client";
 import { imessageChatId } from "../registry";
 

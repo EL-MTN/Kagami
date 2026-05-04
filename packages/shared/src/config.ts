@@ -16,10 +16,10 @@ const baseSchema = z.object({
   XAI_API_KEY: z.string().optional(),
 
   GOOGLE_API_KEY: z.string().optional(),
-  EMBEDDING_PROVIDER: z.enum(["google"]).default("google"),
-  EMBEDDING_MODEL: z.string().default("gemini-embedding-001"),
 
-  MONGODB_URI: z.string().default("mongodb://localhost:27017/mashiro"),
+  MONGODB_URI: z.string().default("mongodb://localhost:27017/kokoro"),
+
+  KIOKU_URL: z.string().url().default("http://localhost:7777"),
 
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
@@ -109,16 +109,6 @@ export function validateConfig(): void {
   const requiredLLM = keyMap[config.LLM_PROVIDER];
   if (requiredLLM && !config[requiredLLM as keyof typeof config]) {
     errors.push(`${requiredLLM} is required when LLM_PROVIDER is "${config.LLM_PROVIDER}"`);
-  }
-
-  const embeddingKeyMap: Record<string, string> = {
-    google: "GOOGLE_API_KEY",
-  };
-  const requiredEmbedding = embeddingKeyMap[config.EMBEDDING_PROVIDER];
-  if (requiredEmbedding && !config[requiredEmbedding as keyof typeof config]) {
-    errors.push(
-      `${requiredEmbedding} is required when EMBEDDING_PROVIDER is "${config.EMBEDDING_PROVIDER}"`,
-    );
   }
 
   if (config.IMAGE_GENERATION_MODEL) {

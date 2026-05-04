@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
-import { getRoutineById, requestManualRun } from "@mashiro/db";
+import { getRoutineById, requestManualRun } from "@kokoro/db";
 import { ensureDB } from "@/lib/db";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {

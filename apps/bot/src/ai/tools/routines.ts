@@ -11,9 +11,9 @@ import {
   type IRoutine,
   type IRoutineParameter,
   type RoutineParameterType,
-} from "@mashiro/db";
-import { logger, computeNextRunAt, validateCronAndDefaults } from "@mashiro/shared";
-import type { PlatformAdapter } from "@mashiro/shared";
+} from "@kokoro/db";
+import { logger, computeNextRunAt, validateCronAndDefaults } from "@kokoro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
 import { executeRoutine, MAX_ROUTINE_DEPTH } from "../../services/routine-executor";
 
 // ─── manageRoutines ──────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 {
-  "name": "@mashiro/db",
+  "name": "@kokoro/db",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,12 +11,12 @@
     "lint:fix": "eslint src/ tests/ --fix"
   },
   "dependencies": {
-    "@mashiro/shared": "*",
+    "@kokoro/shared": "*",
     "mongoose": "^8.9.0"
   },
   "devDependencies": {
-    "@mashiro/typescript-config": "*",
-    "@mashiro/eslint-config": "*",
+    "@kokoro/typescript-config": "*",
+    "@kokoro/eslint-config": "*",
     "@types/node": "^22.0.0",
     "eslint": "^10.0.1",
     "typescript": "^5.7.0"

@@ -1,194 +1,103 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { format } from "date-fns";
-import { Memory } from "@mashiro/db";
-import * as engine from "@mashiro/memory";
-import { logger } from "@mashiro/shared";
-import { curateIfNeeded } from "../../memory/curator";
+import { logger } from "@kokoro/shared";
+import { recall, appendFact, KiokuClientError } from "@kokoro/memory";
 
-export const readMemory = tool({
-  description: "Read a specific memory by its ID from the database.",
-  inputSchema: z.object({
-    memoryId: z.string().describe("ID of the memory to read"),
-  }),
-  execute: async ({ memoryId }) => {
-    logger.info({ memoryId }, "Tool: readMemory");
-    const memory = await Memory.findById(memoryId);
-    if (!memory) {
-      return { found: false, error: `Memory not found: ${memoryId}` };
-    }
-    return {
-      found: true,
-      id: memory._id.toString(),
-      type: memory.type,
-      content: memory.content,
-      createdAt: memory.metadata.createdAt,
-      importance: memory.metadata.importance,
-    };
-  },
-});
-
-export const searchMemory = tool({
-  description:
-    "Search across all memories using semantic understanding. Finds relevant information even when exact words don't match. Use when you need to find information but aren't sure where it is.",
-  inputSchema: z.object({
-    query: z.string().describe("The search term, phrase, or question to search for"),
-    type: z
-      .enum(["fact", "episode", "milestone"])
-      .optional()
-      .describe("Optionally filter by memory type"),
-  }),
-  execute: async ({ query, type }) => {
-    logger.info({ query, type }, "Tool: searchMemory");
-
-    const results = await engine.recall(query, { type, limit: 10, minScore: 0.3 });
-
-    logger.debug({ query, resultCount: results.length }, "searchMemory results");
-
-    if (results.length === 0) {
-      return { found: false, message: `No results for "${query}"` };
-    }
-
-    return {
-      found: true,
-      results: results.map((r) => ({
-        id: r.id,
-        source: `memory:${r.type}`,
-        content: r.content.slice(0, 500),
-        score: Math.round(r.score * 100) / 100,
-        type: r.type,
-      })),
-    };
-  },
-});
-
-export const listMemories = tool({
-  description:
-    "List available memories by type. Use to discover past conversation summaries, stored facts, or milestones. Helpful when you want to see what you remember.",
-  inputSchema: z.object({
-    type: z
-      .enum(["fact", "episode", "milestone"])
-      .optional()
-      .describe(
-        "Filter by memory type. 'episode' = conversation summaries, 'fact' = user facts, 'milestone' = relationship milestones. Omit for all types.",
-      ),
-    limit: z.number().default(10).describe("Maximum number of results to return"),
-  }),
-  execute: async ({ type, limit }) => {
-    logger.info({ type, limit }, "Tool: listMemories");
-
-    const filter: Record<string, unknown> = {
-      "metadata.archivedAt": { $exists: false },
-    };
-    if (type) {
-      filter.type = type;
-    } else {
-      // Exclude working memory from general listing
-      filter.type = { $ne: "working" };
-    }
-
-    const memories = await Memory.find(filter)
-      .sort({ "metadata.createdAt": -1 })
-      .limit(limit)
-      .select("content type metadata.createdAt metadata.importance metadata.followUps")
-      .exec();
-
-    if (memories.length === 0) {
-      return { found: false, message: `No ${type ?? ""} memories found` };
-    }
-
-    return {
-      found: true,
-      count: memories.length,
-      memories: memories.map((m) => ({
-        id: m._id.toString(),
-        type: m.type,
-        date: format(m.metadata.createdAt, "yyyy-MM-dd"),
-        preview: m.content.slice(0, 200),
-        importance: m.metadata.importance,
-        hasFollowUps: (m.metadata.followUps?.length ?? 0) > 0,
-      })),
-    };
-  },
-});
-
-export const rememberFact = tool({
-  description:
-    "Save an important fact or milestone about him directly to your memory. Use for things worth remembering long-term: preferences, life events, important dates, relationship milestones. Don't save trivial things.",
-  inputSchema: z.object({
-    content: z.string().describe("The fact or milestone to remember"),
-    type: z
-      .enum(["fact", "milestone"])
-      .default("fact")
-      .describe(
-        "'fact' for user preferences/info, 'milestone' for significant relationship events",
-      ),
-    importance: z
-      .number()
-      .int()
-      .min(1)
-      .max(10)
-      .default(5)
-      .describe("How important is this? 1=minor detail, 10=life-changing"),
-  }),
-  execute: async ({ content, type, importance }) => {
-    logger.info({ type, importance, contentPreview: content.slice(0, 80) }, "Tool: rememberFact");
-
-    // Check for duplicate facts
-    const existing = await engine.recall(content, { type, limit: 1, minScore: 0.85 });
-    if (existing.length > 0) {
-      logger.info({ existingId: existing[0].id }, "Tool: rememberFact duplicate detected");
-      return {
-        success: false,
-        reason: "Similar fact already exists",
-        existing: existing[0].content,
-      };
-    }
-
-    const memory = await engine.remember(content, type, "tool", { importance });
-
-    return {
-      success: true,
-      memoryId: memory._id.toString(),
-      type,
-      content,
-      importance,
-    };
-  },
-});
-
-export function createNoteToSelfTool(sessionId: string) {
+/**
+ * Memory retrieval tool. Calls Kioku's hybrid ranker (cosine + BM25 +
+ * entity boost) and returns the top-K atomic facts directly — no
+ * answerer LLM, no synthesis. The model reads the facts and reasons over
+ * them itself.
+ *
+ * Fails open: a Kioku outage returns an empty fact list with `degraded:
+ * true` so the model can keep responding instead of stalling.
+ */
+export function createSearchMemoryTool() {
   return tool({
     description:
-      "Make a temporary note to yourself for this session. Use for things you want to track short-term: what he's cooking, a topic to circle back to, something to ask about later. These notes auto-expire after 24 hours.",
+      "Search long-term memory (Kioku) for facts about Goshujin-sama. Returns ranked atomic facts with their event date and source session. Call this whenever you'd benefit from past context — preferences, prior conversations, ongoing situations. The facts are short and atomic; you may need a couple of calls with different phrasings to triangulate.",
     inputSchema: z.object({
-      note: z.string().describe("The note to save for this session"),
+      query: z.string().min(1).describe("Natural-language query — what you want to recall."),
+      k: z
+        .number()
+        .int()
+        .min(1)
+        .max(20)
+        .optional()
+        .describe("How many facts to return (1–20, default 8)."),
+      since: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional()
+        .describe("Inclusive lower bound on event date, YYYY-MM-DD."),
+      until: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional()
+        .describe("Inclusive upper bound on event date, YYYY-MM-DD."),
     }),
-    execute: async ({ note }) => {
-      logger.info({ sessionId, notePreview: note.slice(0, 80) }, "Tool: noteToSelf");
-
-      const memory = await engine.setWorkingMemory(note, sessionId);
-
-      return {
-        success: true,
-        memoryId: memory._id.toString(),
-        note,
-        expiresIn: "24 hours",
-      };
+    execute: async ({ query, k, since, until }) => {
+      try {
+        logger.info({ query, k, since, until }, "Tool: searchMemory");
+        const facts = await recall(query, { k: k ?? 8, since, until });
+        return { success: true, query, facts };
+      } catch (err) {
+        const reason =
+          err instanceof KiokuClientError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : "memory search failed";
+        logger.warn({ err: reason, query }, "Tool: searchMemory failed");
+        return { success: false, reason, facts: [], degraded: true };
+      }
     },
   });
 }
 
-export function createCurateMemoryTool(chatId: string) {
+/**
+ * Memory write tool. Appends a single atomic fact to the vault. Kioku
+ * dedups by md5 + cosine, so calling this on a near-duplicate is
+ * idempotent — the result surfaces `status: "duplicate"` with the
+ * existing id rather than creating a new fact.
+ */
+export function createRememberFactTool() {
   return tool({
     description:
-      "Trigger memory curation — summarize and organize overflow messages. Only use when explicitly asked.",
-    inputSchema: z.object({}),
-    execute: () => {
-      void curateIfNeeded(chatId).catch((err) => {
-        logger.error({ err, chatId }, "Background curation failed (tool-triggered)");
-      });
-      return Promise.resolve({ success: true, message: "Curation started in background" });
+      'Save one atomic fact about Goshujin-sama to long-term memory (Kioku). Use this for durable observations he\'d want you to remember — preferences, milestones, ongoing situations. Keep facts short, single-claim, third-person ("User likes X" rather than "You like X"). Don\'t use this for transient context that the conversation will surface naturally; only for things worth remembering across sessions.',
+    inputSchema: z.object({
+      text: z
+        .string()
+        .min(1)
+        .max(800)
+        .describe("The fact to remember. One claim, ideally <200 chars."),
+      eventDate: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional()
+        .describe(
+          "Date the fact is about (YYYY-MM-DD). Defaults to today. Use the actual event date when remembering something from the past.",
+        ),
+    }),
+    execute: async ({ text, eventDate }) => {
+      try {
+        logger.info({ text, eventDate }, "Tool: rememberFact");
+        const result = await appendFact({
+          text,
+          event_date: eventDate,
+          source_session: "rememberFact",
+        });
+        return { success: true, ...result };
+      } catch (err) {
+        const reason =
+          err instanceof KiokuClientError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : "memory write failed";
+        logger.error({ err: reason, text }, "Tool: rememberFact failed");
+        return { success: false, reason };
+      }
     },
   });
 }

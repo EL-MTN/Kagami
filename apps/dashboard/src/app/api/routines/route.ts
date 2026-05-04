@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { Routine, createRoutine, isDuplicateKeyError } from "@mashiro/db";
-import { computeNextRunAt, validateCronAndDefaults } from "@mashiro/shared";
+import { Routine, createRoutine, isDuplicateKeyError } from "@kokoro/db";
+import { computeNextRunAt, validateCronAndDefaults } from "@kokoro/shared";
 import { ensureDB } from "@/lib/db";
 import { routineCreateSchema, routineExportBundleSchema } from "@/lib/routine-schema";
 import { getRoutineList } from "@/lib/queries/routines";

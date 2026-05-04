@@ -1,5 +1,5 @@
 {
-  "name": "@mashiro/eslint-config",
+  "name": "@kokoro/eslint-config",
   "private": true,
   "type": "module",
   "exports": {

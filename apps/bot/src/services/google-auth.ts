@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import { config } from "@mashiro/shared";
+import { config } from "@kokoro/shared";
 
 let client: InstanceType<typeof google.auth.OAuth2> | null = null;
 

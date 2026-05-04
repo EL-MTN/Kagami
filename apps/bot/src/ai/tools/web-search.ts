@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { webSearch } from "../../services/web-search";
-import { logger } from "@mashiro/shared";
+import { logger } from "@kokoro/shared";
 
 /**
  * Lightweight web search backed by the Brave Search API. No browser, no lock,

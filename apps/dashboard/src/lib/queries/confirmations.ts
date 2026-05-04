@@ -2,7 +2,7 @@ import {
   PendingConfirmation,
   type PendingConfirmationOrigin,
   type PendingConfirmationStatus,
-} from "@mashiro/db";
+} from "@kokoro/db";
 import { ensureDB } from "../db";
 
 export interface ConfirmationListItem {

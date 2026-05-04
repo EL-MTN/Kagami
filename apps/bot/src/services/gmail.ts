@@ -1,6 +1,6 @@
 import { google } from "googleapis";
 import { getGoogleAuth } from "./google-auth";
-import { logger } from "@mashiro/shared";
+import { logger } from "@kokoro/shared";
 
 export interface EmailSummary {
   id: string;

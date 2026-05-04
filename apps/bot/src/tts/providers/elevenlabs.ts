@@ -1,6 +1,6 @@
 import { experimental_generateSpeech as generateSpeech } from "ai";
 import { elevenlabs } from "@ai-sdk/elevenlabs";
-import { config, logger } from "@mashiro/shared";
+import { config, logger } from "@kokoro/shared";
 import type { GeneratedAudio } from "../types";
 
 export async function generateWithElevenLabs(

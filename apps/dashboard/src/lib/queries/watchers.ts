@@ -1,4 +1,4 @@
-import { Watcher, WatcherLog } from "@mashiro/db";
+import { Watcher, WatcherLog } from "@kokoro/db";
 import { ensureDB } from "../db";
 import type { WatcherListItem, WatcherLogItem } from "../watcher-schema";
 
