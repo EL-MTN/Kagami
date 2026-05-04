@@ -67,6 +67,27 @@ export function appendSingleFact(
   return withAppendLock(() => appendSingleFactImpl(input));
 }
 
+// Bulk infer=false add. The mem0 OSS equivalent of `add([texts...],
+// infer=False)`: persist N caller-supplied facts verbatim, bypassing the
+// LLM extraction pipeline. Each input gets its own md5 + cosine dedup,
+// embed, and entity-upsert pass — same contract as appendSingleFact.
+//
+// Sequenced under the same append lock as the single-fact path, so the
+// cosine near-dupe check can't race against itself across inputs in the
+// same call. Returns one result per input in order.
+export async function appendFactsBulk(
+  inputs: AppendFactInput[],
+): Promise<AppendFactResult[]> {
+  if (inputs.length === 0) return [];
+  return withAppendLock(async () => {
+    const results: AppendFactResult[] = [];
+    for (const input of inputs) {
+      results.push(await appendSingleFactImpl(input));
+    }
+    return results;
+  });
+}
+
 async function appendSingleFactImpl(
   input: AppendFactInput,
 ): Promise<AppendFactResult> {

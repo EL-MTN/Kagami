@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { readFacts, type Fact } from '../storage/facts.js';
 import { readHistoryFor } from '../storage/history.js';
-import { appendSingleFact } from '../ingest/append.js';
+import { appendFactsBulk, appendSingleFact } from '../ingest/append.js';
 
 const AppendBody = z.object({
   text: z.string().min(1),
@@ -52,6 +52,25 @@ factsRouter.post('/', async (req, res, next) => {
     const body = AppendBody.parse(req.body);
     const result = await appendSingleFact(body);
     res.status(result.status === 'added' ? 201 : 200).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Bulk infer=false add. Equivalent to mem0's `add([...], infer=False)`:
+// each input is stored verbatim with its own dedup pass, no LLM
+// extraction. Returns one result per input in order.
+const BulkBody = z.object({
+  facts: z.array(AppendBody).min(1).max(500),
+});
+
+factsRouter.post('/bulk', async (req, res, next) => {
+  try {
+    const body = BulkBody.parse(req.body);
+    const results = await appendFactsBulk(body.facts);
+    const added = results.filter((r) => r.status === 'added').length;
+    const duplicates = results.length - added;
+    res.status(201).json({ results, added, duplicates });
   } catch (err) {
     next(err);
   }

@@ -151,7 +151,11 @@ tsx scripts/import-jsonl.ts                # actually import
 | `create` | Create a new file (errors if it exists) |
 | `str_replace` | Replace one occurrence of `old` with `new` in a vault file |
 | `consolidate` | Extract atomic facts from a transcript |
-| `query` | Answer a question using top-K hybrid retrieval |
+| `ingest_session` | Extract facts from a raw transcript string + write a session-summary fact |
+| `append_fact` | Add one fact verbatim (no LLM). Accepts scope + metadata + category |
+| `append_facts` | Bulk infer=false add (mem0-OSS-style). Up to 500 facts in one call |
+| `recall` | Hybrid retrieval (no LLM). Accepts scope/metadata/category filters |
+| `query` | Answer a question using top-K hybrid retrieval. Accepts the same filters |
 | `fact_count` | Return the number of atomic facts currently stored |
 | `fact_history` | Return the audit journal (ADD/UPDATE/DELETE) for one fact |
 

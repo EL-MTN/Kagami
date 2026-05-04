@@ -9,7 +9,7 @@ import { query } from './query/answer.js';
 import { recall } from './query/recall.js';
 import { readFacts } from './storage/facts.js';
 import { readHistoryFor } from './storage/history.js';
-import { appendSingleFact } from './ingest/append.js';
+import { appendFactsBulk, appendSingleFact } from './ingest/append.js';
 import { ingestSessionFromString } from './ingest/sessions.js';
 import { logger } from './logger.js';
 
@@ -182,6 +182,41 @@ function buildServer(): McpServer {
       try {
         const result = await appendSingleFact(input);
         return ok(JSON.stringify(result));
+      } catch (e) {
+        return fail(String(e));
+      }
+    },
+  );
+
+  // mem0 OSS-style bulk infer=false: store N caller-supplied facts
+  // verbatim, no LLM extraction. Each input is deduped and embedded
+  // individually. Returns one result per input in order.
+  const appendFactInputShape = {
+    text: z.string(),
+    event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    source_session: z.string().optional(),
+    user_id: z.string().optional(),
+    run_id: z.string().optional(),
+    agent_id: z.string().optional(),
+    metadata: z.record(z.unknown()).optional(),
+    category: z.string().optional(),
+  };
+  server.registerTool(
+    'append_facts',
+    {
+      description:
+        'Add multiple atomic facts to the vault in one call (no LLM extraction). Equivalent to mem0 add(infer=False). Each input is independently deduped (md5 + cosine). Returns {results, added, duplicates}.',
+      inputSchema: {
+        facts: z.array(z.object(appendFactInputShape)).min(1).max(500),
+      },
+    },
+    async ({ facts }) => {
+      try {
+        const results = await appendFactsBulk(facts);
+        const added = results.filter((r) => r.status === 'added').length;
+        return ok(
+          JSON.stringify({ results, added, duplicates: results.length - added }),
+        );
       } catch (e) {
         return fail(String(e));
       }
