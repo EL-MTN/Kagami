@@ -1,7 +1,6 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { paths } from '../paths.js';
+import type { Collection } from 'mongodb';
+import { getDb } from './mongo.js';
 import { embedTexts } from '../llm.js';
 import { extractEntities } from '../retrieval/text.js';
 import type { Fact } from './facts.js';
@@ -20,43 +19,53 @@ export interface Entity {
   linked_memory_ids: string[]; // sorted, deduped
 }
 
-export async function readEntities(): Promise<Entity[]> {
-  try {
-    const raw = await fs.readFile(paths.entities, 'utf8');
-    return raw
-      .split('\n')
-      .filter((l) => l.trim().length > 0)
-      .map((l) => JSON.parse(l) as Entity);
-  } catch {
-    return [];
-  }
+interface EntityDoc extends Omit<Entity, 'id'> {
+  _id: string;
+  // Case-insensitive upsert key. Indexed unique by ensureIndexes().
+  text_lower: string;
 }
 
-export async function writeEntities(entities: Entity[]): Promise<void> {
-  await fs.mkdir(path.dirname(paths.entities), { recursive: true });
-  const lines =
-    entities.map((e) => JSON.stringify(e)).join('\n') +
-    (entities.length > 0 ? '\n' : '');
-  await fs.writeFile(paths.entities, lines);
+function fromDoc(d: EntityDoc): Entity {
+  const { _id, text_lower: _tl, ...rest } = d;
+  void _tl;
+  return { id: _id, ...rest };
+}
+
+async function entitiesCol(): Promise<Collection<EntityDoc>> {
+  const db = await getDb();
+  return db.collection<EntityDoc>('entities');
+}
+
+export async function readEntities(): Promise<Entity[]> {
+  const col = await entitiesCol();
+  const docs = await col.find({}).toArray();
+  return docs.map(fromDoc);
+}
+
+// No-op. The old JSONL implementation did read-merge-rewrite, which
+// races under concurrent ingest; the Mongo path uses atomic per-row
+// upserts (see upsertEntitiesFromFacts) instead. Kept exported so the
+// stable API surface doesn't break callers, but it deliberately does
+// nothing — there's no safe bulk-replace anymore.
+export async function writeEntities(_entities: Entity[]): Promise<void> {
+  return;
 }
 
 // For each fact, extract entities and either link the fact_id to an
 // existing entity (case-insensitive text match) or create a new one.
 // Embeds new entities in a single batched call to amortize the API
 // round-trip.
+//
+// Race-safe by construction: each entity is touched by exactly one
+// updateOne against the unique text_lower index. $setOnInsert seeds the
+// row on insert; $addToSet appends linked_memory_ids on both insert and
+// update paths. Two concurrent ingests touching the same entity end up
+// with the union of their fact ids, never overwriting each other.
 export async function upsertEntitiesFromFacts(
   facts: Fact[],
 ): Promise<{ created: number; linked: number }> {
   if (facts.length === 0) return { created: 0, linked: 0 };
 
-  const existing = await readEntities();
-  const byKey = new Map<string, Entity>();
-  for (const e of existing) {
-    byKey.set(e.text.trim().toLowerCase(), e);
-  }
-
-  // Collect (key → entity_type, display_text, set of memory_ids) for
-  // every entity mentioned across the new facts.
   type Pending = { type: string; display: string; mems: Set<string> };
   const pending = new Map<string, Pending>();
   for (const f of facts) {
@@ -74,21 +83,24 @@ export async function upsertEntitiesFromFacts(
   }
   if (pending.size === 0) return { created: 0, linked: 0 };
 
-  // Identify which keys are new (need embedding) vs existing (just link
-  // additional memory_ids).
-  const newKeys: string[] = [];
-  const newTexts: string[] = [];
-  for (const [key, p] of pending) {
-    if (!byKey.has(key)) {
-      newKeys.push(key);
-      newTexts.push(p.display);
-    }
-  }
+  const col = await entitiesCol();
+  const keys = Array.from(pending.keys());
 
+  // Find which keys already have a row, so we only embed the new ones.
+  // A concurrent writer can still insert between this read and our
+  // upsert; in that case our $setOnInsert is silently skipped (correct)
+  // and our embedding is wasted (cheap).
+  const existing = await col
+    .find({ text_lower: { $in: keys } })
+    .project<{ text_lower: string }>({ text_lower: 1 })
+    .toArray();
+  const existingSet = new Set(existing.map((e) => e.text_lower));
+
+  const newKeys = keys.filter((k) => !existingSet.has(k));
   let newEmbeddings: number[][] = [];
-  if (newTexts.length > 0) {
+  if (newKeys.length > 0) {
     try {
-      newEmbeddings = await embedTexts(newTexts);
+      newEmbeddings = await embedTexts(newKeys.map((k) => pending.get(k)!.display));
     } catch (err) {
       console.error('[entities] embed failed:', (err as Error).message);
       return { created: 0, linked: 0 };
@@ -97,35 +109,54 @@ export async function upsertEntitiesFromFacts(
 
   let created = 0;
   let linked = 0;
+
+  const ops: Promise<void>[] = [];
   for (let i = 0; i < newKeys.length; i++) {
     const key = newKeys[i]!;
     const p = pending.get(key)!;
-    const merged = Array.from(p.mems).sort();
-    const ent: Entity = {
-      id: randomUUID(),
-      text: p.display,
-      entity_type: p.type,
-      embedding: newEmbeddings[i]!,
-      linked_memory_ids: merged,
-    };
-    byKey.set(key, ent);
-    created += 1;
-    linked += merged.length;
+    const memIds = Array.from(p.mems);
+    const embedding = newEmbeddings[i]!;
+    ops.push(
+      col
+        .updateOne(
+          { text_lower: key },
+          {
+            $setOnInsert: {
+              _id: randomUUID(),
+              text: p.display,
+              text_lower: key,
+              entity_type: p.type,
+              embedding,
+            },
+            $addToSet: { linked_memory_ids: { $each: memIds } },
+          },
+          { upsert: true },
+        )
+        .then((r) => {
+          if (r.upsertedCount > 0) created += 1;
+          // `linked` was previously the count of *newly added* edges.
+          // Tracking that exactly under $addToSet would require a
+          // read-modify-write per row; settle for an upper-bound
+          // approximation since this counter is metrics-only.
+          linked += memIds.length;
+        }),
+    );
   }
-
-  for (const [key, p] of pending) {
-    if (newKeys.includes(key)) continue;
-    const ent = byKey.get(key)!;
-    const set = new Set(ent.linked_memory_ids);
-    for (const mid of p.mems) {
-      if (!set.has(mid)) {
-        set.add(mid);
-        linked += 1;
-      }
-    }
-    ent.linked_memory_ids = Array.from(set).sort();
+  for (const key of keys) {
+    if (!existingSet.has(key)) continue;
+    const p = pending.get(key)!;
+    const memIds = Array.from(p.mems);
+    ops.push(
+      col
+        .updateOne(
+          { text_lower: key },
+          { $addToSet: { linked_memory_ids: { $each: memIds } } },
+        )
+        .then(() => {
+          linked += memIds.length;
+        }),
+    );
   }
-
-  await writeEntities(Array.from(byKey.values()));
+  await Promise.all(ops);
   return { created, linked };
 }
