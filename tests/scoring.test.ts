@@ -7,7 +7,6 @@ import {
   scoreAndRank,
 } from '../src/retrieval/scoring.ts';
 import { lemmatizeForBm25, extractEntities } from '../src/retrieval/text.ts';
-import { Bm25Index } from '../src/retrieval/bm25.ts';
 
 test('lemmatizeForBm25 lowercases, drops stopwords, stems suffixes', () => {
   const out = lemmatizeForBm25('I was meeting with Alex about the meetings');
@@ -47,43 +46,27 @@ test('extractEntities skips generic capitalized words', () => {
   assert.ok(!texts.includes('ideas'));
 });
 
-test('Bm25Index ranks docs by term overlap with query', () => {
-  const idx = new Bm25Index([
-    { id: 'a', lemmatized: 'user own honda civic' },
-    { id: 'b', lemmatized: 'user buy bike' },
-    { id: 'c', lemmatized: 'honda civic gp system fail' },
-  ]);
-  const hits = idx.query('honda civic');
-  assert.equal(hits[0]!.id, 'a');
-  assert.equal(hits[1]!.id, 'c');
-  assert.ok(!hits.some((h) => h.id === 'b'));
-});
-
-test('Bm25Index returns empty when no overlap', () => {
-  const idx = new Bm25Index([{ id: 'a', lemmatized: 'apple banana' }]);
-  assert.deepEqual(idx.query('zebra'), []);
-});
-
 test('getBm25Params adapts midpoint to query length', () => {
   // Pass pre-lemmatized strings to bypass the lemmatizer's stopword drop.
-  assert.deepEqual(getBm25Params('', 'one two'), [5.0, 0.7]);
-  assert.deepEqual(getBm25Params('', 'one two three four'), [7.0, 0.6]);
-  assert.deepEqual(getBm25Params('', 'one two three four five six seven'), [9.0, 0.5]);
+  // Values calibrated against Lucene/Atlas BM25 score distributions.
+  assert.deepEqual(getBm25Params('', 'one two'), [1.5, 1.5]);
+  assert.deepEqual(getBm25Params('', 'one two three four'), [2.0, 1.0]);
+  assert.deepEqual(getBm25Params('', 'one two three four five six seven'), [2.5, 1.2]);
   assert.deepEqual(
     getBm25Params('', 'one two three four five six seven eight nine ten eleven twelve'),
-    [10.0, 0.5],
+    [3.0, 1.0],
   );
   assert.deepEqual(
     getBm25Params(
       '',
       'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen',
     ),
-    [12.0, 0.5],
+    [3.5, 1.0],
   );
 });
 
 test('normalizeBm25 maps midpoint to 0.5', () => {
-  assert.equal(normalizeBm25(5, 5, 0.7), 0.5);
+  assert.equal(normalizeBm25(2.5, 2.5, 1.2), 0.5);
 });
 
 test('scoreAndRank gates by threshold then fuses additively', () => {

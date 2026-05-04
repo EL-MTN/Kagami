@@ -1,7 +1,6 @@
 import { cosineSimilarity } from 'ai';
 import { embedQuestion, embedTexts } from '../llm.js';
-import { readFacts, type Fact } from '../storage/facts.js';
-import { Bm25Index } from './bm25.js';
+import { getDb } from '../storage/mongo.js';
 import {
   ENTITY_BOOST_WEIGHT,
   getBm25Params,
@@ -9,7 +8,6 @@ import {
   scoreAndRank,
 } from './scoring.js';
 import { extractEntities, lemmatizeForBm25 } from './text.js';
-import { readEntities, type Entity } from '../storage/entities.js';
 
 // Re-export so callers (ingest, query) can import the embed helpers
 // from a single module. Implementations live in llm.ts to avoid a
@@ -31,79 +29,144 @@ export type FactRanker = (
 
 // Kioku's hybrid fact retrieval. Three signals fused into one rank:
 //
-//   semantic search → top max(k*4, 60) by cosine over fact embeddings
-//   BM25 search     → keyword matches over lemmatized fact text
-//   entity boost    → query entities matched against the entity store
-//   scoreAndRank    → additive fusion, return top-K
+//   $vectorSearch  → top max(k*4, 60) by cosine over fact embeddings
+//   $search (BM25) → top max(k*4, 60) by lexical match over text_lemmatized
+//   entity boost   → query entities matched against the entity store
+//   scoreAndRank   → additive fusion, return top-K
 //
-// Lemmatization is computed lazily for facts that predate the hybrid
-// layer (text_lemmatized field is optional on Fact).
+// The two search passes run independently against the whole corpus, so
+// a fact that's weak on cosine but strong on keyword (or vice versa)
+// can still enter the top-K — this is the recall ceiling Kioku-on-JSONL
+// hit, where BM25 only saw the cosine-prefiltered window.
+
 const SEMANTIC_THRESHOLD = 0.1;
+const ENTITY_SIM_THRESHOLD = 0.5;
+const MAX_QUERY_ENTITIES = 8;
+const ENTITY_VS_NUM_CANDIDATES = 100;
+const ENTITY_VS_LIMIT = 20;
+
+interface FactRow {
+  _id: string;
+  text: string;
+  text_lemmatized?: string;
+  event_date: string;
+  source_session: string;
+  created_at: string;
+  embedding: number[];
+}
+
+interface EntityRow {
+  _id: string;
+  embedding: number[];
+  linked_memory_ids: string[];
+}
 
 export const defaultFactRanker: FactRanker = async (question, k) => {
-  const facts = await readFacts();
-  if (facts.length === 0) return [];
+  const db = await getDb();
+  const facts = db.collection<FactRow>('facts');
 
-  // Step 1: preprocess query
+  // Step 1: preprocess query.
   const queryLemmatized = lemmatizeForBm25(question);
 
-  // Step 2: embed query
+  // Step 2: embed query.
   const qEmb = await embedQuestion(question);
 
-  // Step 3: semantic search — over-fetch (max(k*4, 60)) so the BM25
-  // and entity passes have room to re-rank below the eventual top-K.
   const internalLimit = Math.max(k * 4, 60);
-  const semanticAll = facts
-    .map((f: Fact) => ({
-      id: f.id,
-      score: cosineSimilarity(qEmb, f.embedding),
-      fact: f,
-    }))
-    .sort((a, b) => b.score - a.score);
-  const semanticResults = semanticAll.slice(0, internalLimit);
 
-  // Step 4: keyword search — BM25 over lemmatized text. Build the index
-  // from the same internal-limit pool so BM25 only scores candidates the
-  // semantic search has already surfaced.
-  const bm25Docs = semanticResults.map(({ id, fact }) => ({
-    id,
-    lemmatized: fact.text_lemmatized ?? lemmatizeForBm25(fact.text),
+  // Step 3: dense top-N via $vectorSearch. numCandidates is the HNSW
+  // beam — Atlas docs recommend ~10x limit as a starting point.
+  const dense = await facts
+    .aggregate<{ _id: string }>([
+      {
+        $vectorSearch: {
+          index: 'facts_vec',
+          path: 'embedding',
+          queryVector: qEmb,
+          numCandidates: internalLimit * 10,
+          limit: internalLimit,
+        },
+      },
+      { $project: { _id: 1 } },
+    ])
+    .toArray();
+
+  // Step 4: BM25 top-N via $search over the whole corpus. Whole-corpus
+  // is the deliberate behavior change vs JSONL Kioku, where BM25 was
+  // restricted to the cosine-prefiltered window.
+  const bm25Hits =
+    queryLemmatized.length > 0
+      ? await facts
+          .aggregate<{ _id: string; bm25_raw: number }>([
+            {
+              $search: {
+                index: 'facts_text',
+                text: { query: queryLemmatized, path: 'text_lemmatized' },
+              },
+            },
+            { $limit: internalLimit },
+            { $project: { _id: 1, bm25_raw: { $meta: 'searchScore' } } },
+          ])
+          .toArray()
+      : [];
+
+  // Step 5: union the two candidate sets, then fetch full docs for the
+  // union (we need the embedding to compute cosine in app, since
+  // vectorSearchScore uses Atlas's (1+cos)/2 transform that doesn't
+  // line up with the existing SEMANTIC_THRESHOLD=0.1 contract).
+  const ids = new Set<string>();
+  for (const r of dense) ids.add(r._id);
+  for (const r of bm25Hits) ids.add(r._id);
+  if (ids.size === 0) return [];
+
+  const docs = (await facts
+    .find({ _id: { $in: Array.from(ids) } })
+    .project<FactRow>({
+      text: 1,
+      text_lemmatized: 1,
+      event_date: 1,
+      source_session: 1,
+      created_at: 1,
+      embedding: 1,
+    })
+    .toArray());
+
+  // Step 6: cosine in app. Preserves the existing scoring math exactly
+  // — same threshold, same units as the JSONL implementation.
+  const semanticResults = docs.map((d) => ({
+    id: d._id,
+    score: cosineSimilarity(qEmb, d.embedding),
   }));
-  const bm25Index = new Bm25Index(bm25Docs);
-  const bm25Hits = bm25Index.query(queryLemmatized);
 
-  // Step 5: normalize BM25 with query-length-adaptive sigmoid params
+  // Step 7: normalize BM25 with query-length-adaptive sigmoid params.
   const [midpoint, steepness] = getBm25Params(question, queryLemmatized);
   const bm25Scores = new Map<string, number>();
   for (const h of bm25Hits) {
-    if (h.score <= 0) continue;
-    bm25Scores.set(h.id, normalizeBm25(h.score, midpoint, steepness));
+    if (h.bm25_raw <= 0) continue;
+    bm25Scores.set(h._id, normalizeBm25(h.bm25_raw, midpoint, steepness));
   }
 
-  // Step 6: entity boost — extract entities from the query, embed each
-  // (max 8, deduped), match against the per-vault entity store, boost
-  // linked facts. See computeEntityBoosts below.
+  // Step 8: entity boost.
   const entityBoosts = await computeEntityBoosts(question);
 
-  // Step 7-8: combine + rank
+  // Step 9: combine + rank.
   const ranked = scoreAndRank(
-    semanticResults.map(({ id, score }) => ({ id, score })),
+    semanticResults,
     bm25Scores,
     entityBoosts,
     SEMANTIC_THRESHOLD,
     k,
   );
 
-  const factById = new Map(facts.map((f) => [f.id, f]));
+  const docById = new Map(docs.map((d) => [d._id, d]));
   return ranked
-    .map((r) => factById.get(r.id))
-    .filter((f): f is Fact => Boolean(f))
-    .map((fact) => ({
-      id: fact.id,
-      text: fact.text,
-      eventDate: fact.event_date,
-      sourceSession: fact.source_session,
-      createdAt: fact.created_at,
+    .map((r) => docById.get(r.id))
+    .filter((d): d is FactRow => Boolean(d))
+    .map((d) => ({
+      id: d._id,
+      text: d.text,
+      eventDate: d.event_date,
+      sourceSession: d.source_session,
+      createdAt: d.created_at,
     }));
 };
 
@@ -111,20 +174,16 @@ export const defaultFactRanker: FactRanker = async (question, k) => {
 //
 //   For each query entity (max 8, deduped):
 //     1. Embed entity text
-//     2. Cosine-search the entity store
+//     2. $vectorSearch over the entity store
 //     3. For each match with sim >= 0.5, boost its linked_memory_ids by
 //          sim * ENTITY_BOOST_WEIGHT * (1 / (1 + 0.001 * (n_linked - 1)^2))
 //     4. Per-memory boost is the max across query entities.
 //
 // Returns Map<memory_id, boost in [0, ENTITY_BOOST_WEIGHT]>.
-const ENTITY_SIM_THRESHOLD = 0.5;
-const MAX_QUERY_ENTITIES = 8;
-
 async function computeEntityBoosts(question: string): Promise<Map<string, number>> {
   const queryEntities = extractEntities(question);
   if (queryEntities.length === 0) return new Map();
 
-  // Dedup by lower-cased text, take first MAX_QUERY_ENTITIES.
   const seen = new Set<string>();
   const dedup: string[] = [];
   for (const e of queryEntities) {
@@ -136,9 +195,6 @@ async function computeEntityBoosts(question: string): Promise<Map<string, number
   }
   if (dedup.length === 0) return new Map();
 
-  const store = await readEntities();
-  if (store.length === 0) return new Map();
-
   let qEmbeddings: number[][];
   try {
     qEmbeddings = await embedTexts(dedup);
@@ -147,9 +203,29 @@ async function computeEntityBoosts(question: string): Promise<Map<string, number
     return new Map();
   }
 
+  const db = await getDb();
+  const entities = db.collection<EntityRow>('entities');
+
+  // Same cosine-recompute pattern as the fact path: $vectorSearch surfaces
+  // candidates, but we recompute cosine in app so the threshold of 0.5
+  // means raw cosine similarity (matching the JSONL implementation).
   const boosts = new Map<string, number>();
   for (const qEmb of qEmbeddings) {
-    for (const ent of store as Entity[]) {
+    const hits = await entities
+      .aggregate<EntityRow>([
+        {
+          $vectorSearch: {
+            index: 'entities_vec',
+            path: 'embedding',
+            queryVector: qEmb,
+            numCandidates: ENTITY_VS_NUM_CANDIDATES,
+            limit: ENTITY_VS_LIMIT,
+          },
+        },
+        { $project: { embedding: 1, linked_memory_ids: 1 } },
+      ])
+      .toArray();
+    for (const ent of hits) {
       const sim = cosineSimilarity(qEmb, ent.embedding);
       if (sim < ENTITY_SIM_THRESHOLD) continue;
       const nLinked = Math.max(ent.linked_memory_ids.length, 1);

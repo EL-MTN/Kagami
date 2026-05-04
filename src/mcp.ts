@@ -8,9 +8,9 @@ import { paths } from './paths.js';
 import { query } from './query/answer.js';
 import { recall } from './query/recall.js';
 import { readFacts } from './storage/facts.js';
+import { readHistoryFor } from './storage/history.js';
 import { appendSingleFact } from './ingest/append.js';
 import { ingestSessionFromString } from './ingest/sessions.js';
-import { withVaultLock } from './mutex.js';
 import { logger } from './logger.js';
 
 // Streamable HTTP MCP surface, mounted at /mcp. Tools mirror the
@@ -160,7 +160,7 @@ function buildServer(): McpServer {
     },
     async (input) => {
       try {
-        const result = await withVaultLock(() => appendSingleFact(input));
+        const result = await appendSingleFact(input);
         return ok(JSON.stringify(result));
       } catch (e) {
         return fail(String(e));
@@ -180,12 +180,10 @@ function buildServer(): McpServer {
     },
     async ({ transcript, generate_summary }) => {
       try {
-        const result = await withVaultLock(() =>
-          ingestSessionFromString({
-            transcript,
-            generateSummary: generate_summary,
-          }),
-        );
+        const result = await ingestSessionFromString({
+          transcript,
+          generateSummary: generate_summary,
+        });
         return ok(JSON.stringify(result));
       } catch (e) {
         return fail(String(e));
@@ -203,6 +201,23 @@ function buildServer(): McpServer {
       try {
         const facts = await readFacts();
         return ok(String(facts.length));
+      } catch (e) {
+        return fail(String(e));
+      }
+    },
+  );
+
+  server.registerTool(
+    'fact_history',
+    {
+      description:
+        'Return the audit journal for one fact (ADD/UPDATE/DELETE events, newest first).',
+      inputSchema: { id: z.string() },
+    },
+    async ({ id }) => {
+      try {
+        const events = await readHistoryFor(id);
+        return ok(JSON.stringify({ id, events }));
       } catch (e) {
         return fail(String(e));
       }

@@ -9,8 +9,17 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateText } from 'ai';
+import { MongoClient } from 'mongodb';
 import { model as defaultModel, llmEndpoint } from '../src/llm.js';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+
+// Per-item DB names: each worker gets its own kioku DB so retrieval
+// over fact A doesn't see facts from fact B. Sanitized to satisfy
+// Mongo's DB-name rules (no /\. "$ etc.).
+function dbNameFor(qid: string): string {
+  const safe = qid.replace(/[^A-Za-z0-9_-]/g, '_');
+  return `kioku_bench_${safe}`;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -132,8 +141,10 @@ async function main() {
     console.log(`[${i + 1}/${items.length}] ${qid} (${item.question_type})`);
 
     const vault = path.join(vaultsRoot, qid);
+    const mongoDbName = dbNameFor(qid);
     if (!args.keepVaults) {
       await fs.rm(vault, { recursive: true, force: true });
+      await dropMongoDb(mongoDbName);
     }
     await fs.mkdir(vault, { recursive: true });
 
@@ -142,7 +153,7 @@ async function main() {
     await fs.writeFile(itemFile, JSON.stringify(item));
 
     try {
-      await runWorker(itemFile, resultFile, vault);
+      await runWorker(itemFile, resultFile, vault, mongoDbName);
       const result: WorkerResult = JSON.parse(await fs.readFile(resultFile, 'utf8'));
       predictions.push(result);
       const tag = result.error ? 'ERROR' : 'OK';
@@ -167,6 +178,7 @@ async function main() {
       await fs.rm(resultFile, { force: true });
       if (args.cleanVaults) {
         await fs.rm(vault, { recursive: true, force: true });
+        await dropMongoDb(mongoDbName);
       }
       // Checkpoint after every item so killing the bench doesn't lose work.
       await savePartialPredictions(predictions);
@@ -219,9 +231,20 @@ async function main() {
 
   // Bench completed end-to-end — clear the resumable checkpoint.
   await fs.rm(PARTIAL_PATH, { force: true });
+
+  // Close the shared Mongo client used by per-item dropDatabase calls.
+  if (sharedClient) {
+    await sharedClient.close();
+    sharedClient = null;
+  }
 }
 
-function runWorker(itemFile: string, resultFile: string, vault: string): Promise<void> {
+function runWorker(
+  itemFile: string,
+  resultFile: string,
+  vault: string,
+  mongoDbName: string,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const workerPath = path.join(projectRoot, 'scripts/longmemeval-worker.ts');
     const child = spawn(
@@ -229,7 +252,7 @@ function runWorker(itemFile: string, resultFile: string, vault: string): Promise
       ['tsx', workerPath, '--item', itemFile, '--result', resultFile],
       {
         stdio: ['ignore', 'inherit', 'inherit'],
-        env: { ...process.env, KIOKU_VAULT: vault },
+        env: { ...process.env, KIOKU_VAULT: vault, KIOKU_MONGO_DB: mongoDbName },
       },
     );
     child.on('error', reject);
@@ -238,6 +261,19 @@ function runWorker(itemFile: string, resultFile: string, vault: string): Promise
       else reject(new Error(`worker exited with code ${code}`));
     });
   });
+}
+
+// Per-item Mongo cleanup. We keep one shared MongoClient across items
+// so dropDatabase calls don't reconnect each time.
+let sharedClient: MongoClient | null = null;
+async function dropMongoDb(name: string): Promise<void> {
+  const uri =
+    process.env.KIOKU_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?directConnection=true';
+  if (!sharedClient) {
+    sharedClient = new MongoClient(uri);
+    await sharedClient.connect();
+  }
+  await sharedClient.db(name).dropDatabase();
 }
 
 type Judge = (p: WorkerResult) => Promise<{ verdict: boolean; raw: string }>;
