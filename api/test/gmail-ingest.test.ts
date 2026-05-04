@@ -55,6 +55,96 @@ afterEach(() => {
   // each test owns its FakeGmailClient
 });
 
+describe('runGmailSync — skip-self on group emails', () => {
+  it('drops user from to/cc when ≥ 2 other recipients', async () => {
+    const client = new FakeGmailClient();
+    client.add(
+      buildPlainMessage({
+        id: 'group-1',
+        from: 'Sarah <sarah@acme.com>',
+        to: 'me@example.com, bob@bar.com, carol@acme.com',
+        subject: 'team sync',
+        body: 'all',
+      }),
+    );
+    await runGmailSync({
+      config: makeConfig({ USER_EMAILS: 'me@example.com' }),
+      client,
+      logger: silentLogger,
+    });
+    const ints = (await Interaction.find().lean()) as unknown as Array<{
+      participants: Array<{ personId: { toHexString(): string }; role: string }>;
+    }>;
+    expect(ints.length).toBe(1);
+
+    const people = (await Person.find().lean()) as unknown as Array<{
+      _id: { toHexString(): string };
+      primaryEmail: string;
+    }>;
+    // Self isn't linked → never upserted as a Person.
+    expect(people.find((p) => p.primaryEmail === 'me@example.com')).toBeUndefined();
+    expect(people.map((p) => p.primaryEmail).sort()).toEqual([
+      'bob@bar.com',
+      'carol@acme.com',
+      'sarah@acme.com',
+    ]);
+    // Sender (sarah) still 'from'; bob + carol as 'to'. Self is dropped.
+    expect(ints[0]!.participants.length).toBe(3);
+  });
+
+  it('keeps user as a participant in 1:1 emails', async () => {
+    const client = new FakeGmailClient();
+    client.add(
+      buildPlainMessage({
+        id: '1to1-1',
+        from: 'Sarah <sarah@acme.com>',
+        to: 'me@example.com',
+        subject: 'just us',
+        body: 'hi',
+      }),
+    );
+    await runGmailSync({
+      config: makeConfig({ USER_EMAILS: 'me@example.com' }),
+      client,
+      logger: silentLogger,
+    });
+    const ints = (await Interaction.find().lean()) as unknown as Array<{
+      participants: Array<{ role: string }>;
+    }>;
+    expect(ints[0]!.participants.length).toBe(2);
+    const roles = ints[0]!.participants.map((p) => p.role).sort();
+    expect(roles).toEqual(['from', 'to']);
+  });
+
+  it('keeps self in `from` role even on outbound group emails', async () => {
+    const client = new FakeGmailClient();
+    client.add(
+      buildPlainMessage({
+        id: 'outbound-group-1',
+        from: 'me@example.com',
+        to: 'sarah@acme.com, bob@bar.com, carol@acme.com',
+        subject: 'I sent this',
+        body: 'hi all',
+      }),
+    );
+    await runGmailSync({
+      config: makeConfig({ USER_EMAILS: 'me@example.com' }),
+      client,
+      logger: silentLogger,
+    });
+    const ints = (await Interaction.find().lean()) as unknown as Array<{
+      participants: Array<{ personId: { toHexString(): string }; role: string }>;
+    }>;
+    const people = (await Person.find().lean()) as unknown as Array<{
+      _id: { toHexString(): string };
+      primaryEmail: string;
+    }>;
+    const meId = people.find((p) => p.primaryEmail === 'me@example.com')!._id.toHexString();
+    const fromParticipants = ints[0]!.participants.filter((p) => p.role === 'from');
+    expect(fromParticipants.map((p) => p.personId.toHexString())).toContain(meId);
+  });
+});
+
 describe('runGmailSync — bootstrap', () => {
   it('inserts each message as an interaction with sourceRef', async () => {
     const client = new FakeGmailClient();

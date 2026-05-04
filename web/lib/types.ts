@@ -100,7 +100,11 @@ export type ListPeopleQuery = {
   hasOpenFollowup?: boolean;
   source?: string;
   includeTombstoned?: boolean;
+  sort?: '_id:-1' | 'lastInteractionAt:-1';
 };
+
+export type ContextRow = { tag: string; count: number };
+export type ListContextsQuery = { personId?: string; limit?: number };
 
 export type ListInteractionsQuery = {
   limit?: number;

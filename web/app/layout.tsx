@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { Nav } from './nav';
 
 export const metadata: Metadata = {
   title: 'Kizuna',
@@ -14,10 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen">
-        <Nav />
-        <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
-      </body>
+      <body className="min-h-screen">{children}</body>
     </html>
   );
 }

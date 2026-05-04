@@ -138,8 +138,15 @@ async function processEvent(
     }
   };
 
+  // Skip-self on group events: drop USER_EMAILS attendees when ≥ 2 others
+  // remain. Organizer (role 'from') is preserved either way so outbound
+  // detection still works for events the user organized.
+  const userSet = new Set(config.USER_EMAILS);
+  const others = parsed.attendees.filter((a) => !userSet.has(a.email));
+  const attendees = others.length >= 2 ? others : parsed.attendees;
+
   if (parsed.organizer) await link(parsed.organizer, 'from');
-  for (const a of parsed.attendees) await link(a, 'attendee');
+  for (const a of attendees) await link(a, 'attendee');
 
   if (participants.length === 0) {
     // No resolvable attendees — skip rather than violate the schema invariant.

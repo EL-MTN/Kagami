@@ -48,6 +48,14 @@ const envSchema = z.object({
     .min(1)
     .max(365)
     .default(60),
+  // 0 disables the in-process scheduler. Manual triggers via
+  // POST /v1/sync/{gmail,gcal}/run still work.
+  KIZUNA_INGEST_INTERVAL_SEC: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(86_400)
+    .default(0),
   PORT: z.coerce.number().int().positive().max(65_535).default(3000),
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])

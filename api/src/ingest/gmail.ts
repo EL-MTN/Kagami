@@ -141,9 +141,21 @@ async function processMessageIds(
       participants.push({ personId: pid, role });
     };
 
+    // Skip-self on group emails: drop USER_EMAILS recipients from to/cc when
+    // there are >= 2 other recipients. The from role is preserved either way
+    // so outbound detection (sender ∈ USER_EMAILS) still works downstream.
+    const userSet = new Set(config.USER_EMAILS);
+    const toCc: Array<{ addr: ParsedAddress; role: 'to' | 'cc' }> = [
+      ...parsed.to.map((a) => ({ addr: a, role: 'to' as const })),
+      ...parsed.cc.map((a) => ({ addr: a, role: 'cc' as const })),
+    ];
+    const recipients =
+      toCc.filter((p) => !userSet.has(p.addr.email)).length >= 2
+        ? toCc.filter((p) => !userSet.has(p.addr.email))
+        : toCc;
+
     await link(parsed.from, 'from');
-    for (const a of parsed.to) await link(a, 'to');
-    for (const a of parsed.cc) await link(a, 'cc');
+    for (const ar of recipients) await link(ar.addr, ar.role);
 
     if (participants.length === 0) {
       result.errors++;

@@ -9,6 +9,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { createHmac, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import { setTimeout as wait } from 'node:timers/promises';
 import { GenericContainer } from 'testcontainers';
@@ -19,6 +20,18 @@ import { createLogger } from '../src/lib/logger.js';
 import { createApp } from '../src/server.js';
 
 const TEST_API_KEY = 'dashboard-smoke-key-1234567890abcdef';
+
+// Mirror web/lib/session.ts: HMAC-signed session token using KIZUNA_API_KEY.
+function makeSessionCookie(secret: string): string {
+  const nonce = randomBytes(16).toString('base64url');
+  const ts = Date.now();
+  const payload = `${nonce}.${ts}`;
+  const sig = createHmac('sha256', secret).update(payload).digest('base64url');
+  return `kizuna_session=${payload}.${sig}`;
+}
+const SESSION_COOKIE = makeSessionCookie(TEST_API_KEY);
+
+const browserHeaders = (): HeadersInit => ({ cookie: SESSION_COOKIE });
 
 const C_RESET = '\x1b[0m';
 const C_GREEN = '\x1b[32m';
@@ -102,7 +115,7 @@ async function main(): Promise<void> {
   for (let i = 0; i < 40; i++) {
     await wait(500);
     try {
-      const r = await fetch(`${webBase}/`);
+      const r = await fetch(`${webBase}/`, { headers: browserHeaders() });
       if (r.status < 500) {
         ready = true;
         break;
@@ -127,6 +140,21 @@ async function main(): Promise<void> {
       );
       throw new Error('web boot timeout');
     }
+
+    section('Auth wall');
+    const noCookie = await fetch(`${webBase}/`, { redirect: 'manual' });
+    check(
+      'no cookie → redirect to /login',
+      noCookie.status === 307 &&
+        (noCookie.headers.get('location') ?? '').includes('/login'),
+      `got ${noCookie.status} → ${noCookie.headers.get('location')}`,
+    );
+    const loginPage = await fetch(`${webBase}/login`);
+    check(
+      '/login renders without auth',
+      loginPage.status === 200 &&
+        (await loginPage.text()).includes('API key'),
+    );
 
     section('Seed data');
     const apiH = { authorization: `Bearer ${TEST_API_KEY}` };
@@ -214,7 +242,9 @@ async function main(): Promise<void> {
       { path: '/tombstones', expects: ['Tombstones'] },
     ];
     for (const r of routes) {
-      const res = await fetch(`${webBase}${r.path}`);
+      const res = await fetch(`${webBase}${r.path}`, {
+        headers: browserHeaders(),
+      });
       check(`GET ${r.path} → 200`, res.status === 200, `got ${res.status}`);
       const html = await res.text();
       for (const term of r.expects) {
@@ -233,14 +263,18 @@ async function main(): Promise<void> {
     });
     check('tombstone sarah', delRes.status === 200);
 
-    const tombHtml = await (await fetch(`${webBase}/tombstones`)).text();
+    const tombHtml = await (
+      await fetch(`${webBase}/tombstones`, { headers: browserHeaders() })
+    ).text();
     check(
       '/tombstones lists Sarah after delete',
       tombHtml.includes('Sarah Connor'),
     );
 
     const incTombHtml = await (
-      await fetch(`${webBase}/people?includeTombstoned=true`)
+      await fetch(`${webBase}/people?includeTombstoned=true`, {
+        headers: browserHeaders(),
+      })
     ).text();
     check(
       '/people?includeTombstoned shows tombstoned badge',
@@ -256,7 +290,9 @@ async function main(): Promise<void> {
       grantedAt: new Date(),
       source: 'concierge',
     });
-    const grantedSync = await (await fetch(`${webBase}/sync`)).text();
+    const grantedSync = await (
+      await fetch(`${webBase}/sync`, { headers: browserHeaders() })
+    ).text();
     check(
       '/sync flips to "granted" after OAuthToken upsert',
       grantedSync.includes('Re-authorize') && grantedSync.includes('gmail.readonly'),

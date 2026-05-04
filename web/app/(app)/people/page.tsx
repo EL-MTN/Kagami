@@ -30,7 +30,10 @@ function buildQuery(sp: Search): ListPeopleQuery {
       ? sp.tag
       : [sp.tag]
     : undefined;
-  const out: ListPeopleQuery = { limit: PAGE_SIZE };
+  const out: ListPeopleQuery = {
+    limit: PAGE_SIZE,
+    sort: 'lastInteractionAt:-1',
+  };
   if (sp.q) out.query = sp.q;
   if (sp.source) out.source = sp.source;
   if (tag) out.tag = tag;
@@ -94,9 +97,7 @@ export default async function PeoplePage({
     <>
       <PageHeader
         title="People"
-        subtitle={
-          'Sorted by creation order. Filter via querystring; lastInteractionAt sort is on the roadmap.'
-        }
+        subtitle="Sorted by most recent interaction. Filter via the querystring."
       />
 
       <form

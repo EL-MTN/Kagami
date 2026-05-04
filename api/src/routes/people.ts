@@ -83,7 +83,11 @@ export const ListPeopleQuery = Pagination.extend({
   hasOpenFollowup: BoolFlag.optional(),
   source: z.enum(SOURCE_VALUES).optional(),
   includeTombstoned: BoolFlag.optional(),
+  sort: z.enum(['_id:-1', 'lastInteractionAt:-1']).default('_id:-1'),
 });
+
+type LiaCursor = { lia: string | null; id: string };
+type IdCursor = { id: string };
 
 export const peopleRouter = Router();
 
@@ -107,28 +111,65 @@ peopleRouter.get('/people', async (req, res) => {
       status: 'open',
       deletedAt: null,
     });
-    const idFilter = q.hasOpenFollowup
-      ? { $in: openIds }
-      : { $nin: openIds };
-    filter._id = idFilter;
+    filter._id = q.hasOpenFollowup ? { $in: openIds } : { $nin: openIds };
   }
+
+  // Sort + cursor. Two modes:
+  //   _id:-1                 — simple cursor: {id}
+  //   lastInteractionAt:-1   — compound cursor: {lia, id}, null bucket comes last
+  const sort: Record<string, 1 | -1> =
+    q.sort === 'lastInteractionAt:-1'
+      ? { lastInteractionAt: -1, _id: -1 }
+      : { _id: -1 };
 
   if (q.cursor) {
-    const cid = decodeCursor(q.cursor);
-    const existing = (filter._id as Record<string, unknown>) ?? {};
-    filter._id = { ...existing, $lt: cid };
+    if (q.sort === 'lastInteractionAt:-1') {
+      const c = decodeCursor<LiaCursor>(q.cursor);
+      const cId = new Types.ObjectId(c.id);
+      if (c.lia === null) {
+        // Already in the trailing null bucket — only nulls remain.
+        filter.lastInteractionAt = null;
+        filter._id = { ...((filter._id as object) ?? {}), $lt: cId };
+      } else {
+        const cDate = new Date(c.lia);
+        const cursorBranches: Record<string, unknown>[] = [
+          { lastInteractionAt: { $lt: cDate } },
+          { lastInteractionAt: cDate, _id: { $lt: cId } },
+          { lastInteractionAt: null },
+        ];
+        filter.$and = [
+          ...((filter.$and as Array<Record<string, unknown>>) ?? []),
+          { $or: cursorBranches },
+        ];
+      }
+    } else {
+      const c = decodeCursor<IdCursor>(q.cursor);
+      filter._id = {
+        ...((filter._id as object) ?? {}),
+        $lt: new Types.ObjectId(c.id),
+      };
+    }
   }
 
-  const docs = await Person.find(filter)
-    .sort({ _id: -1 })
-    .limit(q.limit + 1)
-    .lean();
+  const docs = await Person.find(filter).sort(sort).limit(q.limit + 1).lean();
   const hasMore = docs.length > q.limit;
   const page = hasMore ? docs.slice(0, -1) : docs;
   const items = page.map(serializePerson);
-  const last = page[page.length - 1];
+  const last = page[page.length - 1] as
+    | { _id: Types.ObjectId; lastInteractionAt?: Date | null }
+    | undefined;
   const body: { items: unknown[]; nextCursor?: string } = { items };
-  if (hasMore && last) body.nextCursor = encodeCursor(last._id as Types.ObjectId);
+  if (hasMore && last) {
+    if (q.sort === 'lastInteractionAt:-1') {
+      const lia =
+        last.lastInteractionAt instanceof Date
+          ? last.lastInteractionAt.toISOString()
+          : null;
+      body.nextCursor = encodeCursor({ lia, id: last._id.toHexString() });
+    } else {
+      body.nextCursor = encodeCursor({ id: last._id.toHexString() });
+    }
+  }
   res.json(body);
 });
 

@@ -1,20 +1,22 @@
-import { Types } from 'mongoose';
 import { errors } from './errors.js';
 
-export function encodeCursor(id: Types.ObjectId | string): string {
-  const hex = typeof id === 'string' ? id : id.toHexString();
-  return Buffer.from(hex, 'utf8').toString('base64url');
+// Cursors are opaque base64url-encoded JSON. Each list endpoint defines
+// the shape of its cursor payload (e.g. {id} or {lia, id}).
+
+export function encodeCursor(payload: unknown): string {
+  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }
 
-export function decodeCursor(cursor: string): Types.ObjectId {
-  let hex: string;
+export function decodeCursor<T>(cursor: string): T {
+  let json: unknown;
   try {
-    hex = Buffer.from(cursor, 'base64url').toString('utf8');
+    const text = Buffer.from(cursor, 'base64url').toString('utf8');
+    json = JSON.parse(text);
   } catch {
     throw errors.badRequest('invalid cursor');
   }
-  if (!/^[a-f0-9]{24}$/i.test(hex)) {
+  if (json === null || typeof json !== 'object') {
     throw errors.badRequest('invalid cursor');
   }
-  return new Types.ObjectId(hex);
+  return json as T;
 }

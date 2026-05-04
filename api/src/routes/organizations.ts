@@ -59,8 +59,8 @@ organizationsRouter.get('/organizations', async (req, res) => {
   if (q.source) filter.source = q.source;
   if (q.query) filter.name = { $regex: escapeRegex(q.query), $options: 'i' };
   if (q.cursor) {
-    const cid = decodeCursor(q.cursor);
-    filter._id = { $lt: cid };
+    const c = decodeCursor<{ id: string }>(q.cursor);
+    filter._id = { $lt: new Types.ObjectId(c.id) };
   }
 
   const docs = await Organization.find(filter)
@@ -73,7 +73,9 @@ organizationsRouter.get('/organizations', async (req, res) => {
   const last = page[page.length - 1];
   const body: { items: unknown[]; nextCursor?: string } = { items };
   if (hasMore && last)
-    body.nextCursor = encodeCursor(last._id as Types.ObjectId);
+    body.nextCursor = encodeCursor({
+      id: (last._id as Types.ObjectId).toHexString(),
+    });
   res.json(body);
 });
 

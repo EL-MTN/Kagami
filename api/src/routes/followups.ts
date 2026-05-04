@@ -78,8 +78,8 @@ followupsRouter.get('/followups', async (req, res) => {
     filter.dueAt = range;
   }
   if (q.cursor) {
-    const cid = decodeCursor(q.cursor);
-    filter._id = { $lt: cid };
+    const c = decodeCursor<{ id: string }>(q.cursor);
+    filter._id = { $lt: new Types.ObjectId(c.id) };
   }
 
   const docs = await Followup.find(filter)
@@ -92,7 +92,9 @@ followupsRouter.get('/followups', async (req, res) => {
   const last = page[page.length - 1];
   const body: { items: unknown[]; nextCursor?: string } = { items };
   if (hasMore && last)
-    body.nextCursor = encodeCursor(last._id as Types.ObjectId);
+    body.nextCursor = encodeCursor({
+      id: (last._id as Types.ObjectId).toHexString(),
+    });
   res.json(body);
 });
 

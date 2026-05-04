@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { logoutAction } from '@/lib/auth-actions';
 
 const links = [
   { href: '/', label: 'Today' },
@@ -31,7 +32,14 @@ export function Nav() {
             </li>
           ))}
         </ul>
-        <div className="ml-auto text-xs text-zinc-400">read-only</div>
+        <form action={logoutAction} className="ml-auto">
+          <button
+            type="submit"
+            className="text-xs text-zinc-400 transition-colors hover:text-zinc-700"
+          >
+            Sign out
+          </button>
+        </form>
       </div>
     </nav>
   );

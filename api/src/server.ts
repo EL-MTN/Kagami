@@ -9,6 +9,7 @@ import { peopleRouter } from './routes/people.js';
 import { organizationsRouter } from './routes/organizations.js';
 import { interactionsRouter } from './routes/interactions.js';
 import { followupsRouter } from './routes/followups.js';
+import { contextsRouter } from './routes/contexts.js';
 import { digestRouter } from './routes/digest.js';
 import { manifestRouter } from './routes/manifest.js';
 import { makeOauthRouter } from './routes/oauth.js';
@@ -37,6 +38,7 @@ export function createApp({ db, config, logger }: ServerDeps): Express {
   app.use('/v1', organizationsRouter);
   app.use('/v1', interactionsRouter);
   app.use('/v1', followupsRouter);
+  app.use('/v1', contextsRouter);
   app.use('/v1', digestRouter);
   app.use('/v1', makeSyncRouter(config, logger));
 

@@ -130,8 +130,8 @@ export async function listInteractionsForFilter(q: ListInteractionsQueryT) {
   if (q.query) filter.$text = { $search: q.query };
 
   if (q.cursor) {
-    const cid = decodeCursor(q.cursor);
-    filter._id = { $lt: cid };
+    const c = decodeCursor<{ id: string }>(q.cursor);
+    filter._id = { $lt: new Types.ObjectId(c.id) };
   }
 
   const docs = await Interaction.find(filter)
@@ -144,7 +144,9 @@ export async function listInteractionsForFilter(q: ListInteractionsQueryT) {
   const last = page[page.length - 1];
   const body: { items: unknown[]; nextCursor?: string } = { items };
   if (hasMore && last)
-    body.nextCursor = encodeCursor(last._id as Types.ObjectId);
+    body.nextCursor = encodeCursor({
+      id: (last._id as Types.ObjectId).toHexString(),
+    });
   return body;
 }
 

@@ -1,6 +1,8 @@
 import type {
+  ContextRow,
   Followup,
   Interaction,
+  ListContextsQuery,
   ListFollowupsQuery,
   ListInteractionsQuery,
   ListOrganizationsQuery,
@@ -77,6 +79,10 @@ export const api = {
       `/v1/organizations${qs(q as Record<string, unknown> | undefined)}`,
     ),
   getOrganization: (id: string) => kz<Organization>(`/v1/organizations/${id}`),
+  listContexts: (q?: ListContextsQuery) =>
+    kz<{ items: ContextRow[] }>(
+      `/v1/contexts${qs(q as Record<string, unknown> | undefined)}`,
+    ),
   oauthStatus: () => kz<OAuthStatus>('/oauth/google/status'),
   gmailSyncState: () => kz<SyncState>('/v1/sync/gmail/state'),
   runGmailSync: (force?: boolean) =>

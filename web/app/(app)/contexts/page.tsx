@@ -14,8 +14,6 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-const SAMPLE_LIMIT = 200;
-
 type Search = { tag?: string };
 
 export default async function ContextsPage({
@@ -25,60 +23,48 @@ export default async function ContextsPage({
 }) {
   const sp = await searchParams;
 
-  let interactions: Awaited<ReturnType<typeof api.listInteractions>>;
+  if (sp.tag) {
+    return <ContextDetail tag={sp.tag} />;
+  }
+
+  let result;
   try {
-    interactions = await api.listInteractions(
-      sp.tag
-        ? { context: sp.tag, limit: SAMPLE_LIMIT }
-        : { limit: SAMPLE_LIMIT },
-    );
+    result = await api.listContexts({ limit: 200 });
   } catch (err) {
     return (
       <>
         <PageHeader title="Contexts" />
         <ErrorBlock
-          title="Couldn't load interactions"
+          title="Couldn't load contexts"
           detail={err instanceof Error ? err.message : String(err)}
         />
       </>
     );
   }
 
-  if (sp.tag) {
-    return (
-      <ContextDetail tag={sp.tag} interactions={interactions.items} />
-    );
-  }
-
-  // Aggregate distinct context tags + counts from the recent sample.
-  const counts = new Map<string, number>();
-  for (const i of interactions.items) {
-    for (const c of i.context) {
-      counts.set(c, (counts.get(c) ?? 0) + 1);
-    }
-  }
-  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-
   return (
     <>
       <PageHeader
         title="Contexts"
-        subtitle={`Aggregated from the last ${interactions.items.length} interactions. (Real distinct-aggregate endpoint is a roadmap item.)`}
+        subtitle={`${result.items.length} distinct context tags across active interactions.`}
       />
-      {sorted.length === 0 ? (
-        <Empty>No context tags in the recent sample.</Empty>
+      {result.items.length === 0 ? (
+        <Empty>No context tags yet.</Empty>
       ) : (
         <Card>
           <ul className="divide-y divide-zinc-100">
-            {sorted.map(([tag, count]) => (
-              <li key={tag} className="flex items-center justify-between px-4 py-3">
+            {result.items.map((row) => (
+              <li
+                key={row.tag}
+                className="flex items-center justify-between px-4 py-3"
+              >
                 <Link
-                  href={`/contexts?tag=${encodeURIComponent(tag)}`}
+                  href={`/contexts?tag=${encodeURIComponent(row.tag)}`}
                   className="font-mono text-sm text-zinc-800 hover:underline"
                 >
-                  {tag}
+                  {row.tag}
                 </Link>
-                <span className="text-sm text-zinc-500">{count}</span>
+                <span className="text-sm text-zinc-500">{row.count}</span>
               </li>
             ))}
           </ul>
@@ -88,15 +74,26 @@ export default async function ContextsPage({
   );
 }
 
-async function ContextDetail({
-  tag,
-  interactions,
-}: {
-  tag: string;
-  interactions: Interaction[];
-}) {
+async function ContextDetail({ tag }: { tag: string }) {
+  let interactions: Interaction[] = [];
+  try {
+    const res = await api.listInteractions({ context: tag, limit: 200 });
+    interactions = res.items;
+  } catch (err) {
+    return (
+      <>
+        <PageHeader title={tag} />
+        <ErrorBlock
+          title="Couldn't load interactions"
+          detail={err instanceof Error ? err.message : String(err)}
+        />
+      </>
+    );
+  }
+
   const personIds = new Set<string>();
-  for (const i of interactions) for (const p of i.participants) personIds.add(p.personId);
+  for (const i of interactions)
+    for (const p of i.participants) personIds.add(p.personId);
   const people = await Promise.all(
     [...personIds].map((id) => api.getPerson(id).catch(() => null)),
   );

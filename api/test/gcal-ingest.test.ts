@@ -65,6 +65,70 @@ beforeEach(async () => {
   ]);
 });
 
+describe('runCalendarSync — skip-self on group events', () => {
+  it('drops user from attendee role when ≥ 2 others', async () => {
+    const client = new FakeCalendarClient();
+    client.enqueueBootstrap(
+      [
+        baseEvent({
+          attendees: [
+            { email: 'me@example.com', organizer: true },
+            { email: 'sarah@acme.com', displayName: 'Sarah' },
+            { email: 'bob@bar.com', displayName: 'Bob' },
+          ],
+        }),
+      ],
+      'sync-1',
+    );
+    await runCalendarSync({
+      config: makeConfig(),
+      client,
+      logger: silentLogger,
+    });
+    const ints = (await Interaction.find().lean()) as unknown as Array<{
+      participants: Array<{ personId: { toHexString(): string }; role: string }>;
+    }>;
+    const people = (await Person.find().lean()) as unknown as Array<{
+      _id: { toHexString(): string };
+      primaryEmail: string;
+    }>;
+    const meId = people
+      .find((p) => p.primaryEmail === 'me@example.com')!
+      ._id.toHexString();
+    const attendeeParts = ints[0]!.participants.filter((p) => p.role === 'attendee');
+    const attendeeIds = attendeeParts.map((p) => p.personId.toHexString());
+    expect(attendeeIds).not.toContain(meId);
+    // Organizer (also 'me') keeps the 'from' role per skip-self contract.
+    const fromParts = ints[0]!.participants.filter((p) => p.role === 'from');
+    expect(fromParts.map((p) => p.personId.toHexString())).toContain(meId);
+  });
+
+  it('keeps user attendee on a 1:1 event', async () => {
+    const client = new FakeCalendarClient();
+    client.enqueueBootstrap(
+      [
+        baseEvent({
+          organizer: { email: 'sarah@acme.com', displayName: 'Sarah' },
+          attendees: [
+            { email: 'sarah@acme.com', organizer: true },
+            { email: 'me@example.com' },
+          ],
+        }),
+      ],
+      'sync-1',
+    );
+    await runCalendarSync({
+      config: makeConfig(),
+      client,
+      logger: silentLogger,
+    });
+    const ints = (await Interaction.find().lean()) as unknown as Array<{
+      participants: Array<{ role: string }>;
+    }>;
+    expect(ints[0]!.participants.length).toBe(2);
+  });
+});
+
 describe('runCalendarSync — bootstrap', () => {
   it('inserts events as calendar interactions with sourceRef', async () => {
     const client = new FakeCalendarClient();

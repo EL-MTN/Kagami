@@ -27,18 +27,23 @@ type Search = {
   status?: string;
 };
 
-function isOutbound(i: Interaction, person: Person, userEmails: string[]): boolean {
-  // Heuristic: an interaction is outbound if the person whose role is `from`
-  // has primaryEmail in USER_EMAILS — i.e. the user is the sender.
-  // (Step 5 will tag this server-side once ingest writes provenance.)
-  const fromIds = i.participants.filter((p) => p.role === 'from').map((p) => p.personId);
-  if (fromIds.length === 0) return false;
-  if (
-    person.primaryEmail &&
-    userEmails.includes(person.primaryEmail.toLowerCase()) &&
-    fromIds.includes(person.id)
-  ) {
-    return true;
+function isOutbound(
+  i: Interaction,
+  userEmails: string[],
+  peopleById: Map<string, Person>,
+): boolean {
+  // Outbound: a participant in `from` role belongs to USER_EMAILS — i.e.
+  // the user is the sender. Skip-self preserves self in `from`, so this
+  // remains accurate even on group emails where self is dropped from to/cc.
+  const fromParticipants = i.participants.filter((p) => p.role === 'from');
+  for (const p of fromParticipants) {
+    const fromPerson = peopleById.get(p.personId);
+    if (
+      fromPerson?.primaryEmail &&
+      userEmails.includes(fromPerson.primaryEmail.toLowerCase())
+    ) {
+      return true;
+    }
   }
   return false;
 }
@@ -151,11 +156,15 @@ export default async function PersonPage({
                         {i.status !== 'active' ? (
                           <StatusBadge status={i.status} />
                         ) : null}
-                        {isOutbound(i, person, config.userEmails) ? (
-                          <Badge tone="blue">outbound</Badge>
-                        ) : (
-                          <Badge tone="zinc">inbound</Badge>
-                        )}
+                        {(() => {
+                          const lookup = new Map(participantsById);
+                          lookup.set(person.id, person);
+                          return isOutbound(i, config.userEmails, lookup) ? (
+                            <Badge tone="blue">outbound</Badge>
+                          ) : (
+                            <Badge tone="zinc">inbound</Badge>
+                          );
+                        })()}
                         <span>{fmtDateTime(i.occurredAt)}</span>
                       </div>
                       <Mono>{i.source}</Mono>
