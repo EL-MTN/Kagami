@@ -21,8 +21,8 @@ import { upsertEntitiesFromFacts } from '../storage/entities.js';
 //     - look up the top-K most-similar existing facts as dedup context
 //     - call the extraction prompt (prompts/extraction.md) for that batch
 //     - md5-dedup each new fact against existing + within-batch hashes
-//     - embed + persist surviving facts to .memory/facts.jsonl
-//     - upsert mentioned entities into .memory/entities.jsonl with
+//     - embed + persist surviving facts to the facts collection
+//     - upsert mentioned entities into the entities collection with
 //       linked fact ids for the entity-boost retrieval channel
 
 const BATCH_SIZE = 2;

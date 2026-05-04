@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { readFacts, type Fact } from '../storage/facts.js';
+import { readHistoryFor } from '../storage/history.js';
 import { appendSingleFact } from '../ingest/append.js';
-import { withVaultLock } from '../mutex.js';
 
 const AppendBody = z.object({
   text: z.string().min(1),
@@ -30,7 +30,8 @@ const ListQuery = z.object({
 
 // Drop the embedding from list/detail responses by default — embeddings
 // are large (768 floats × 4 bytes printed = ~10KB per fact) and the only
-// caller that needs them is the ranker, which reads facts.jsonl directly.
+// caller that needs them is the ranker, which projects them out of Mongo
+// directly when scoring candidates.
 function publicFact(f: Fact) {
   const { embedding: _embedding, ...rest } = f;
   void _embedding;
@@ -42,7 +43,7 @@ export const factsRouter = Router();
 factsRouter.post('/', async (req, res, next) => {
   try {
     const body = AppendBody.parse(req.body);
-    const result = await withVaultLock(() => appendSingleFact(body));
+    const result = await appendSingleFact(body);
     res.status(result.status === 'added' ? 201 : 200).json(result);
   } catch (err) {
     next(err);
@@ -77,6 +78,15 @@ factsRouter.get('/', async (req, res, next) => {
     const total = facts.length;
     const page = facts.slice(offset, offset + limit).map(publicFact);
     res.json({ total, limit, offset, facts: page });
+  } catch (err) {
+    next(err);
+  }
+});
+
+factsRouter.get('/:id/history', async (req, res, next) => {
+  try {
+    const events = await readHistoryFor(req.params.id);
+    res.json({ id: req.params.id, events });
   } catch (err) {
     next(err);
   }

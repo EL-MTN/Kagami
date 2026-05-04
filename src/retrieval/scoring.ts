@@ -13,20 +13,31 @@ import { lemmatizeForBm25 } from './text.js';
 
 export const ENTITY_BOOST_WEIGHT = 0.5;
 
-// Returns [midpoint, steepness] for sigmoid normalization. Longer queries
-// produce higher raw BM25 scores so the midpoint shifts up with query
-// length.
+// Returns [midpoint, steepness] for sigmoid normalization of $search BM25
+// raw scores. Calibrated against Lucene/Atlas BM25, which produces scores
+// in roughly the 1–8 range on Kioku-scale corpora — much more compressed
+// than the in-process Okapi BM25 this layer originally targeted (which
+// produced 5–20). LUCENE-8563 dropped the (k1+1) numerator factor in 2018
+// so per-term contributions are ~2.4× smaller; the small per-vault corpus
+// further compresses scores via reduced IDF.
+//
+// Empirically fit on a 20-item slice of LongMemEval-Oracle so that:
+//   - top-relevant docs (max raw) → ≥0.85 normalized
+//   - p75 docs                    → 0.5–0.7
+//   - irrelevant tail             → <0.15
+//
+// See scripts/probe-bm25-scores.ts for the sampling tool used to refit.
 export function getBm25Params(
   query: string,
   lemmatized?: string,
 ): [number, number] {
   const lem = lemmatized ?? lemmatizeForBm25(query);
   const numTerms = lem.split(/\s+/).filter(Boolean).length || 1;
-  if (numTerms <= 3) return [5.0, 0.7];
-  if (numTerms <= 6) return [7.0, 0.6];
-  if (numTerms <= 9) return [9.0, 0.5];
-  if (numTerms <= 15) return [10.0, 0.5];
-  return [12.0, 0.5];
+  if (numTerms <= 3) return [1.5, 1.5];
+  if (numTerms <= 6) return [2.0, 1.0];
+  if (numTerms <= 9) return [2.5, 1.2];
+  if (numTerms <= 15) return [3.0, 1.0];
+  return [3.5, 1.0];
 }
 
 export function normalizeBm25(

@@ -16,7 +16,8 @@ import { logger } from '../logger.js';
 // covered <topics>.") so retrieval surfaces session-level context
 // alongside the atomic facts.
 //
-// Caller is expected to hold the vault mutex.
+// Concurrent callers are safe: writes go through appendFacts (unique-hash
+// dedup) and upsertEntitiesFromFacts (atomic per-entity upserts).
 
 const SummarySchema = z.object({
   topics: z

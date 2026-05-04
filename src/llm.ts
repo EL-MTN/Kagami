@@ -192,7 +192,10 @@ export async function callObject<T extends z.ZodTypeAny>(
 }
 
 async function quarantine(stage: string, payload: unknown): Promise<void> {
-  const dir = path.join(paths.llmFailures, stage);
+  // Debug-only fallback: dump the failed LLM payload to disk for postmortem.
+  // Stays on the filesystem rather than going to Mongo — these are rare
+  // anomalies, not first-class state.
+  const dir = path.join(paths.vault, '.memory', 'llm-failures', stage);
   await fs.mkdir(dir, { recursive: true });
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   await fs.writeFile(
