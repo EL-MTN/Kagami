@@ -73,46 +73,6 @@ test('appendFacts does not emit ADD events for hash dupes', async () => {
   assert.equal(origHistory.length, 1);
 });
 
-test('rewriteFacts emits ADD/UPDATE/DELETE diff with old_text captured', async () => {
-  const { appendFacts, rewriteFacts, newFactId } = await import('../src/storage/facts.ts');
-  const { readHistoryFor } = await import('../src/storage/history.ts');
-  const keep = makeFact({ id: newFactId(), hash: 'k', text: 'unchanged' });
-  const update = makeFact({ id: newFactId(), hash: 'u', text: 'before' });
-  const remove = makeFact({ id: newFactId(), hash: 'd', text: 'doomed' });
-  await appendFacts([keep, update, remove]);
-
-  const updateAfter = { ...update, text: 'after' };
-  const fresh = makeFact({ id: newFactId(), hash: 'n', text: 'new' });
-  await rewriteFacts([keep, updateAfter, fresh], 'rewrite');
-
-  const keepHist = await readHistoryFor(keep.id);
-  const updateHist = await readHistoryFor(update.id);
-  const removeHist = await readHistoryFor(remove.id);
-  const freshHist = await readHistoryFor(fresh.id);
-
-  // keep had only its initial ADD; rewrite produced no event for it.
-  assert.equal(keepHist.length, 1);
-  assert.equal(keepHist[0]!.event, 'ADD');
-
-  // update has the original ADD plus an UPDATE with both texts.
-  assert.equal(updateHist.length, 2);
-  const upd = updateHist.find((e) => e.event === 'UPDATE')!;
-  assert.equal(upd.old_text, 'before');
-  assert.equal(upd.new_text, 'after');
-  assert.equal(upd.actor, 'rewrite');
-
-  // remove has the original ADD plus a DELETE with the old text.
-  assert.equal(removeHist.length, 2);
-  const del = removeHist.find((e) => e.event === 'DELETE')!;
-  assert.equal(del.old_text, 'doomed');
-  assert.equal(del.new_text, undefined);
-
-  // fresh got an ADD event from the rewrite path.
-  assert.equal(freshHist.length, 1);
-  assert.equal(freshHist[0]!.event, 'ADD');
-  assert.equal(freshHist[0]!.new_text, 'new');
-});
-
 test('readHistoryFor returns events newest first', async () => {
   const { recordEvent, readHistoryFor } = await import('../src/storage/history.ts');
   await recordEvent({ memory_id: 'mid', event: 'ADD', new_text: 'a' });

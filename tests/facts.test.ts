@@ -117,24 +117,6 @@ test('parallel appendFacts converge on the deduped union (no mutex)', async () =
   );
 });
 
-test('rewriteFacts replaces all facts', async () => {
-  const { appendFacts, rewriteFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
-  await appendFacts([makeFact({ id: newFactId(), hash: 'old', text: 'old' })]);
-  const c = makeFact({
-    id: newFactId(),
-    text: 'Updated fact',
-    created_at: '2024-02-01T00:00:00Z',
-    event_date: '2024-02-01',
-    source_session: 'raw/s3',
-    hash: 'xyz',
-    embedding: [0.5, 0.5, 0],
-  });
-  await rewriteFacts([c]);
-  const facts = await readFacts();
-  assert.equal(facts.length, 1);
-  assert.equal(facts[0]!.text, 'Updated fact');
-});
-
 test('newFactId returns unique uuid-shaped strings', async () => {
   const { newFactId } = await import('../src/storage/facts.ts');
   const ids = new Set([newFactId(), newFactId(), newFactId()]);

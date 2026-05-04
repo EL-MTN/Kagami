@@ -19,10 +19,27 @@ import { logger } from '../logger.js';
 //   - embed and lemmatize for BM25
 //   - upsert entities so the entity-boost ranker picks it up
 //
-// Concurrent callers are safe: appendFacts dedupes via the facts_hash_unique
-// index and upsertEntitiesFromFacts uses atomic per-entity upserts.
+// Concurrent callers serialize on a process-wide async lock. The hash and
+// entity paths are race-safe via Mongo primitives (unique index +
+// $setOnInsert/$addToSet upserts), but the cosine near-dupe check is a
+// read-then-act sequence: two concurrent calls with cosine-similar but
+// byte-distinct text would each see no near-dupe and both insert. The
+// hash unique index can't catch this (different hashes); $vectorSearch
+// can't atomically guard insertion. Phase 5 deleted the vault-wide
+// mutex on the strength of Mongo atomicity — but the cosine path was
+// never atomic, so we re-introduce a narrow lock for this path only.
+// Bulk ingest via consolidate.ts is unaffected.
 
 const NEAR_DUPE_COSINE = 0.97;
+
+let appendChain: Promise<unknown> = Promise.resolve();
+function withAppendLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = appendChain.then(fn, fn);
+  // Swallow errors on the chain so a failed call doesn't poison
+  // subsequent ones; the error still propagates to the caller via `next`.
+  appendChain = next.catch(() => undefined);
+  return next;
+}
 
 export interface AppendFactInput {
   text: string;
@@ -40,7 +57,13 @@ export interface AppendFactResult {
   similarity?: number;
 }
 
-export async function appendSingleFact(
+export function appendSingleFact(
+  input: AppendFactInput,
+): Promise<AppendFactResult> {
+  return withAppendLock(() => appendSingleFactImpl(input));
+}
+
+async function appendSingleFactImpl(
   input: AppendFactInput,
 ): Promise<AppendFactResult> {
   const text = input.text.trim();
