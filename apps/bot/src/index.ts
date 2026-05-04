@@ -12,6 +12,7 @@ import { startProactiveScheduler } from "./scheduler/proactive";
 import { startReminderScheduler } from "./scheduler/reminders";
 import { startRoutineScheduler } from "./scheduler/routines";
 import { startWatcherScheduler } from "./scheduler/watchers";
+import { startMaintenanceScheduler } from "./scheduler/maintenance";
 import { shutdownBrowser } from "./services/browser";
 
 // Bot-specific validation: TELEGRAM_BOT_TOKEN is required
@@ -29,6 +30,7 @@ let stopProactiveScheduler: (() => void) | null = null;
 let stopReminderScheduler: (() => void) | null = null;
 let stopRoutineScheduler: (() => void) | null = null;
 let stopWatcherScheduler: (() => void) | null = null;
+let stopMaintenanceScheduler: (() => void) | null = null;
 let stopBlueBubblesWebhook: (() => void) | null = null;
 
 async function main() {
@@ -69,6 +71,7 @@ async function main() {
   stopReminderScheduler = startReminderScheduler(registry);
   stopRoutineScheduler = startRoutineScheduler(registry);
   stopWatcherScheduler = startWatcherScheduler(registry);
+  stopMaintenanceScheduler = startMaintenanceScheduler();
 }
 
 function shutdown(signal: string) {
@@ -77,6 +80,7 @@ function shutdown(signal: string) {
   stopReminderScheduler?.();
   stopRoutineScheduler?.();
   stopWatcherScheduler?.();
+  stopMaintenanceScheduler?.();
   stopBlueBubblesWebhook?.();
   void shutdownBrowser()
     .then(() => disconnectDB())
