@@ -38,25 +38,6 @@ function makeDoc(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test('readEntities returns empty array when collection is empty', async () => {
-  const { readEntities } = await import('../src/storage/entities.ts');
-  assert.deepEqual(await readEntities(), []);
-});
-
-test('readEntities maps _id back to id and strips text_lower', async () => {
-  const { getDb } = await import('../src/storage/mongo.ts');
-  const { readEntities } = await import('../src/storage/entities.ts');
-  const db = await getDb();
-  const doc = makeDoc({ text: 'Mira', linked_memory_ids: ['m1', 'm2'] });
-  await db.collection('entities').insertOne(doc as never);
-  const ents = await readEntities();
-  assert.equal(ents.length, 1);
-  assert.equal(ents[0]!.id, doc._id);
-  assert.equal(ents[0]!.text, 'Mira');
-  assert.deepEqual(ents[0]!.linked_memory_ids, ['m1', 'm2']);
-  assert.ok(!('text_lower' in ents[0]!), 'text_lower should not leak past the boundary');
-});
-
 test('text_lower unique index rejects duplicate keys', async () => {
   const { getDb } = await import('../src/storage/mongo.ts');
   const db = await getDb();
@@ -65,22 +46,6 @@ test('text_lower unique index rejects duplicate keys', async () => {
     () => db.collection('entities').insertOne(makeDoc({ text: 'Mira' }) as never),
     /E11000|duplicate key/,
   );
-});
-
-test('writeEntities is a no-op (Mongo path uses atomic upserts)', async () => {
-  const { writeEntities, readEntities } = await import('../src/storage/entities.ts');
-  const before = await readEntities();
-  await writeEntities([
-    {
-      id: randomUUID(),
-      text: 'should not appear',
-      entity_type: 'PROPER',
-      embedding: [1, 0, 0],
-      linked_memory_ids: [],
-    },
-  ]);
-  const after = await readEntities();
-  assert.deepEqual(after, before);
 });
 
 test('parallel upsert-style updateOnes converge on union of linked_memory_ids', async () => {

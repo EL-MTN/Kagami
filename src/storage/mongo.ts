@@ -20,7 +20,7 @@ function getDbName(): string {
   return process.env.KIOKU_MONGO_DB ?? DEFAULT_DB;
 }
 
-export async function getMongoClient(): Promise<MongoClient> {
+async function getMongoClient(): Promise<MongoClient> {
   if (client) return client;
   // Cache the in-flight promise so two concurrent first-callers join the
   // same connect instead of each opening their own MongoClient and leaking
@@ -55,12 +55,4 @@ export async function closeMongo(): Promise<void> {
   connectPromise = null;
   dbName = null;
   await c.close();
-}
-
-// For tests: lets us swap in a memory-server URI per-process before the
-// first getDb() call. Throws if a client is already open.
-export function setMongoConfig(opts: { uri?: string; dbName?: string }): void {
-  if (client) throw new Error('setMongoConfig: client already connected');
-  if (opts.uri) process.env.KIOKU_MONGO_URI = opts.uri;
-  if (opts.dbName) process.env.KIOKU_MONGO_DB = opts.dbName;
 }

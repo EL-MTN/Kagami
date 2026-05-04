@@ -7,48 +7,23 @@ import type { Fact } from './facts.js';
 
 // Per-vault entity store. Each row: an entity text + embedding + the
 // set of fact ids that mention it. At query time, query entities are
-// embedded and matched against this store; matches with similarity
-// >= 0.5 contribute an additive boost to the score of their linked
-// facts via the hybrid scoring layer.
+// embedded and matched against this store via $vectorSearch; matches
+// with similarity >= 0.5 contribute an additive boost to the score of
+// their linked facts via the hybrid scoring layer.
 
-export interface Entity {
-  id: string;
-  text: string;
-  entity_type: string;        // 'PROPER' | 'QUOTED'
-  embedding: number[];
-  linked_memory_ids: string[]; // sorted, deduped
-}
-
-interface EntityDoc extends Omit<Entity, 'id'> {
+interface EntityDoc {
   _id: string;
+  text: string;
   // Case-insensitive upsert key. Indexed unique by ensureIndexes().
   text_lower: string;
-}
-
-function fromDoc(d: EntityDoc): Entity {
-  const { _id, text_lower: _tl, ...rest } = d;
-  void _tl;
-  return { id: _id, ...rest };
+  entity_type: string;          // 'PROPER' | 'QUOTED'
+  embedding: number[];
+  linked_memory_ids: string[];  // sorted, deduped
 }
 
 async function entitiesCol(): Promise<Collection<EntityDoc>> {
   const db = await getDb();
   return db.collection<EntityDoc>('entities');
-}
-
-export async function readEntities(): Promise<Entity[]> {
-  const col = await entitiesCol();
-  const docs = await col.find({}).toArray();
-  return docs.map(fromDoc);
-}
-
-// No-op. The old JSONL implementation did read-merge-rewrite, which
-// races under concurrent ingest; the Mongo path uses atomic per-row
-// upserts (see upsertEntitiesFromFacts) instead. Kept exported so the
-// stable API surface doesn't break callers, but it deliberately does
-// nothing — there's no safe bulk-replace anymore.
-export async function writeEntities(_entities: Entity[]): Promise<void> {
-  return;
 }
 
 // For each fact, extract entities and either link the fact_id to an
