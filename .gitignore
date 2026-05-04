@@ -16,3 +16,4 @@ bench/longmemeval/tmp/
 bench/longmemeval/tmp-probe/
 bench/longmemeval/partial-predictions.json
 bench/longmemeval/bm25-probe-*.json
+.claude/
