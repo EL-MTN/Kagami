@@ -64,6 +64,9 @@ interface ExistingSearchIndex {
       numDimensions?: number;
       similarity?: string;
     }>;
+    mappings?: {
+      fields?: Record<string, { type?: string; analyzer?: string }>;
+    };
   };
 }
 
@@ -79,11 +82,19 @@ function existingVectorDim(idx: ExistingSearchIndex): number | undefined {
   return f?.numDimensions;
 }
 
+function existingFieldAnalyzer(
+  idx: ExistingSearchIndex,
+  fieldPath: string,
+): string | undefined {
+  return idx.latestDefinition?.mappings?.fields?.[fieldPath]?.analyzer;
+}
+
 async function ensureSearchIndex(
   coll: Collection,
   spec: SearchIndexSpec,
   existing: ExistingSearchIndex[],
   expectedVectorDim?: number,
+  expectedAnalyzer?: { path: string; analyzer: string },
 ): Promise<void> {
   const match = existing.find((i) => i.name === spec.name);
   if (match) {
@@ -95,6 +106,16 @@ async function ensureSearchIndex(
             `numDimensions=${actual} but the embedding provider now returns ` +
             `${expectedVectorDim}. Did EMBEDDING_MODEL change? Drop the index ` +
             `(db.${coll.collectionName}.dropSearchIndex("${spec.name}")) and restart.`,
+        );
+      }
+    }
+    if (expectedAnalyzer) {
+      const actual = existingFieldAnalyzer(match, expectedAnalyzer.path);
+      if (actual !== undefined && actual !== expectedAnalyzer.analyzer) {
+        throw new Error(
+          `search index ${spec.name} on ${coll.collectionName} uses analyzer ` +
+            `"${actual}" but the spec now expects "${expectedAnalyzer.analyzer}". ` +
+            `Drop the index (db.${coll.collectionName}.dropSearchIndex("${spec.name}")) and restart.`,
         );
       }
     }
@@ -154,9 +175,11 @@ async function ensureSearchAndVectorIndexes(db: Db): Promise<void> {
     dim,
   );
 
-  // facts_text: BM25 over the pre-lemmatized text. Phase 4 picks the
-  // analyzer; for now use lucene.keyword since lemmatizeForBm25 already
-  // tokenizes and we don't want re-tokenization to fight it.
+  // facts_text: BM25 over the pre-lemmatized text. lucene.whitespace
+  // tokenizes on whitespace only — no re-stemming, no re-lowercasing —
+  // because lemmatizeForBm25 already did all of that at write time.
+  // Same analyzer applies to the query string at search time, so query
+  // tokens line up exactly with indexed tokens.
   await ensureSearchIndex(
     facts,
     {
@@ -167,13 +190,15 @@ async function ensureSearchAndVectorIndexes(db: Db): Promise<void> {
           fields: {
             text_lemmatized: {
               type: 'string',
-              analyzer: 'lucene.keyword',
+              analyzer: 'lucene.whitespace',
             },
           },
         },
       },
     },
     existingFacts,
+    undefined,
+    { path: 'text_lemmatized', analyzer: 'lucene.whitespace' },
   );
 
   // entities_vec: cosine vector search over entity embeddings.

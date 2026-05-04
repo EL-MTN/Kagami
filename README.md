@@ -33,7 +33,6 @@ src/
     entities.ts          entities collection (text + embedding + linked_memory_ids)
   retrieval/
     embeddings.ts        hybrid ranker (cosine + BM25 + entity boost)
-    bm25.ts              in-memory Okapi BM25
     scoring.ts           additive scoring fusion
     text.ts              lemmatization + entity extraction
 prompts/
@@ -69,11 +68,12 @@ The migration from JSONL to MongoDB is in progress; see `plan.md`. Phase 1 (this
 
 **Query** (`query(question)`):
 1. Embed and lemmatize the question.
-2. Semantic search over `facts.jsonl` — over-fetch top `max(K*4, 60)` by cosine.
-3. BM25 over the lemmatized text of those candidates.
-4. Entity extraction on the question; for each query entity, search `entities.jsonl` and boost the linked facts.
-5. Fuse the three signals via additive scoring: `(semantic + bm25 + entity_boost) / max_possible`, where `entity_boost ≤ 0.5` and `max_possible = 1 + (bm25 ? 1 : 0) + (entity ? 0.5 : 0)` adapts to which channels fired so the combined score stays in [0, 1]. Take top-K = 50.
-6. Group surviving facts by date (newest-first), feed to the answerer prompt, strip `<mem_thinking>` block from output.
+2. `$vectorSearch` on `facts_vec` — top `max(K*4, 60)` by cosine.
+3. `$search` BM25 on `facts_text` (whole-corpus) — top `max(K*4, 60)` by lexical match. Whole-corpus instead of cosine-prefiltered closes the recall ceiling: a fact strong on keywords but weak on cosine can still enter the top-K.
+4. Union the candidate _id sets, fetch full docs, recompute cosine in app to preserve the existing scoring math.
+5. Entity extraction on the question; for each query entity, `$vectorSearch` on `entities_vec` and boost the linked facts.
+6. Fuse the three signals via additive scoring: `(semantic + bm25 + entity_boost) / max_possible`, where `entity_boost ≤ 0.5` and `max_possible = 1 + (bm25 ? 1 : 0) + (entity ? 0.5 : 0)` adapts to which channels fired so the combined score stays in [0, 1]. Take top-K = 50.
+7. Group surviving facts by date (newest-first), feed to the answerer prompt, strip `<mem_thinking>` block from output.
 
 ## Configuration
 

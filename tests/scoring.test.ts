@@ -7,7 +7,6 @@ import {
   scoreAndRank,
 } from '../src/retrieval/scoring.ts';
 import { lemmatizeForBm25, extractEntities } from '../src/retrieval/text.ts';
-import { Bm25Index } from '../src/retrieval/bm25.ts';
 
 test('lemmatizeForBm25 lowercases, drops stopwords, stems suffixes', () => {
   const out = lemmatizeForBm25('I was meeting with Alex about the meetings');
@@ -45,23 +44,6 @@ test('extractEntities skips generic capitalized words', () => {
   const texts = ents.map((e) => e.text.toLowerCase());
   assert.ok(!texts.includes('things'));
   assert.ok(!texts.includes('ideas'));
-});
-
-test('Bm25Index ranks docs by term overlap with query', () => {
-  const idx = new Bm25Index([
-    { id: 'a', lemmatized: 'user own honda civic' },
-    { id: 'b', lemmatized: 'user buy bike' },
-    { id: 'c', lemmatized: 'honda civic gp system fail' },
-  ]);
-  const hits = idx.query('honda civic');
-  assert.equal(hits[0]!.id, 'a');
-  assert.equal(hits[1]!.id, 'c');
-  assert.ok(!hits.some((h) => h.id === 'b'));
-});
-
-test('Bm25Index returns empty when no overlap', () => {
-  const idx = new Bm25Index([{ id: 'a', lemmatized: 'apple banana' }]);
-  assert.deepEqual(idx.query('zebra'), []);
 });
 
 test('getBm25Params adapts midpoint to query length', () => {
