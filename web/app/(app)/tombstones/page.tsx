@@ -24,13 +24,13 @@ export default async function TombstonesPage() {
     ]);
   } catch (err) {
     return (
-      <>
+      <div className="space-y-6">
         <PageHeader title="Tombstones" />
         <ErrorBlock
           title="Couldn't load tombstones"
           detail={err instanceof Error ? err.message : String(err)}
         />
-      </>
+      </div>
     );
   }
 
@@ -39,10 +39,10 @@ export default async function TombstonesPage() {
   const tombFollowups = followups.items.filter((f) => f.deletedAt);
 
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
         title="Tombstones"
-        subtitle={`Verifiable soft-deletes. (Sampling the last ${PEEK} of each — full tombstone listing is a roadmap item.)`}
+        description={`Verifiable soft-deletes. (Sampling the last ${PEEK} of each — full tombstone listing is a roadmap item.)`}
       />
 
       <div className="space-y-6">
@@ -53,14 +53,14 @@ export default async function TombstonesPage() {
               <Empty>None.</Empty>
             </div>
           ) : (
-            <ul className="divide-y divide-zinc-100">
+            <ul className="divide-y divide-border">
               {tombPeople.map((p) => (
                 <li
                   key={p.id}
-                  className="flex items-center justify-between px-4 py-2 text-sm"
+                  className="flex items-center justify-between px-5 py-2.5 text-sm"
                 >
                   <PersonLink id={p.id} name={p.displayName} />
-                  <span className="text-xs text-zinc-500">
+                  <span className="text-xs tabular-nums text-muted-foreground">
                     {p.suppressReingest ? 'suppressReingest=true · ' : ''}
                     {fmtDateTime(p.deletedAt)}
                   </span>
@@ -79,14 +79,14 @@ export default async function TombstonesPage() {
               <Empty>None.</Empty>
             </div>
           ) : (
-            <ul className="divide-y divide-zinc-100">
+            <ul className="divide-y divide-border">
               {tombInteractions.map((i) => (
                 <li
                   key={i.id}
-                  className="flex items-center justify-between px-4 py-2 text-sm"
+                  className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm"
                 >
-                  <span className="truncate text-zinc-800">{i.title}</span>
-                  <span className="text-xs text-zinc-500">
+                  <span className="truncate text-foreground">{i.title}</span>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                     <Mono>{i.channel}</Mono> · {fmtDateTime(i.deletedAt)}
                   </span>
                 </li>
@@ -104,14 +104,14 @@ export default async function TombstonesPage() {
               <Empty>None.</Empty>
             </div>
           ) : (
-            <ul className="divide-y divide-zinc-100">
+            <ul className="divide-y divide-border">
               {tombFollowups.map((f) => (
                 <li
                   key={f.id}
-                  className="flex items-center justify-between px-4 py-2 text-sm"
+                  className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm"
                 >
-                  <span className="truncate text-zinc-700">{f.reason}</span>
-                  <span className="text-xs text-zinc-500">
+                  <span className="truncate text-muted-foreground">{f.reason}</span>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                     {fmtDateTime(f.deletedAt)}
                   </span>
                 </li>
@@ -120,6 +120,6 @@ export default async function TombstonesPage() {
           )}
         </Card>
       </div>
-    </>
+    </div>
   );
 }

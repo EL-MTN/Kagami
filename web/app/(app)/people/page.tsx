@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { fmtRelative } from '@/lib/format';
+import { DataTable, DataRow, type DataTableColumn } from '@/components/shell';
+import { TableCell } from '@/components/ui/table';
 import {
   Badge,
-  Card,
-  Empty,
   ErrorBlock,
   Mono,
   PageHeader,
@@ -23,6 +23,14 @@ type Search = {
 };
 
 const PAGE_SIZE = 50;
+
+const COLUMNS: DataTableColumn[] = [
+  { key: 'name', label: 'Name', className: 'w-[28%]' },
+  { key: 'email', label: 'Email', className: 'w-[26%]' },
+  { key: 'tags', label: 'Tags', className: 'w-[20%]' },
+  { key: 'last', label: 'Last interaction', className: 'w-[14%]' },
+  { key: 'source', label: 'Source', className: 'w-[12%]' },
+];
 
 function buildQuery(sp: Search): ListPeopleQuery {
   const tag = sp.tag
@@ -77,31 +85,27 @@ export default async function PeoplePage({
     result = await api.listPeople(query);
   } catch (err) {
     return (
-      <>
+      <div className="space-y-6">
         <PageHeader title="People" />
         <ErrorBlock
           title="Couldn't load people"
           detail={err instanceof Error ? err.message : String(err)}
         />
-      </>
+      </div>
     );
   }
 
-  const tags = sp.tag
-    ? Array.isArray(sp.tag)
-      ? sp.tag
-      : [sp.tag]
-    : [];
+  const tags = sp.tag ? (Array.isArray(sp.tag) ? sp.tag : [sp.tag]) : [];
 
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
         title="People"
-        subtitle="Sorted by most recent interaction. Filter via the querystring."
+        description="Sorted by most recent interaction. Filter via the querystring."
       />
 
       <form
-        className="mb-4 flex flex-wrap gap-2"
+        className="flex flex-wrap items-center gap-2"
         action="/people"
         method="get"
       >
@@ -109,12 +113,12 @@ export default async function PeoplePage({
           name="q"
           defaultValue={sp.q ?? ''}
           placeholder="search name / notes / tags"
-          className="w-64 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm shadow-sm placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-300"
+          className="h-9 w-72 rounded-md border border-border bg-card px-3 text-sm shadow-xs placeholder:text-faint transition-colors focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/40"
         />
         <select
           name="source"
           defaultValue={sp.source ?? ''}
-          className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+          className="h-9 rounded-md border border-border bg-card px-2 text-sm transition-colors focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/40"
         >
           <option value="">any source</option>
           <option value="concierge">concierge</option>
@@ -123,25 +127,26 @@ export default async function PeoplePage({
           <option value="manual">manual</option>
           <option value="import">import</option>
         </select>
-        <label className="flex items-center gap-1 text-xs text-zinc-600">
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <input
             type="checkbox"
             name="includeTombstoned"
             value="true"
             defaultChecked={sp.includeTombstoned === 'true'}
+            className="accent-primary"
           />
           include tombstoned
         </label>
         <button
           type="submit"
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
+          className="h-9 rounded-md border border-border bg-card px-3 text-sm shadow-xs transition-colors hover:bg-accent"
         >
           Apply
         </button>
         {(sp.q || sp.source || sp.includeTombstoned || tags.length > 0) && (
           <Link
             href="/people"
-            className="self-center text-xs text-zinc-500 hover:text-zinc-700"
+            className="self-center text-xs text-faint transition-colors hover:text-muted-foreground"
           >
             clear
           </Link>
@@ -149,95 +154,77 @@ export default async function PeoplePage({
       </form>
 
       {tags.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-zinc-500">filter tags:</span>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-faint">filter tags:</span>
           {tags.map((t) => (
             <Link
               key={t}
               href={buildHref(sp, { tag: tags.filter((x) => x !== t) })}
-              className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-700 hover:bg-zinc-200"
+              className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-muted-foreground transition-colors hover:bg-accent"
             >
-              {t} <span className="text-zinc-400">×</span>
+              {t} <span className="text-faint">×</span>
             </Link>
           ))}
         </div>
       )}
 
-      <Card>
-        {result.items.length === 0 ? (
-          <div className="p-6">
-            <Empty>No people match these filters.</Empty>
-          </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-500">
-              <tr>
-                <th className="px-4 py-2 font-medium">Name</th>
-                <th className="px-4 py-2 font-medium">Email</th>
-                <th className="px-4 py-2 font-medium">Tags</th>
-                <th className="px-4 py-2 font-medium">Last interaction</th>
-                <th className="px-4 py-2 font-medium">Source</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {result.items.map((p) => (
-                <tr
-                  key={p.id}
-                  className={p.deletedAt ? 'opacity-50' : undefined}
-                >
-                  <td className="px-4 py-2">
-                    <div className="flex items-center gap-2">
-                      <PersonLink id={p.id} name={p.displayName} />
-                      {p.deletedAt ? <Badge tone="red">tombstoned</Badge> : null}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2 text-zinc-600">
-                    {p.primaryEmail ?? '—'}
-                  </td>
-                  <td className="px-4 py-2">
-                    <div className="flex flex-wrap gap-1">
-                      {p.tags.length === 0
-                        ? '—'
-                        : p.tags.map((t) => (
-                            <Link
-                              key={t}
-                              href={buildHref(sp, {
-                                tag: [...new Set([...tags, t])],
-                                cursor: null,
-                              })}
-                              className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-700 hover:bg-zinc-200"
-                            >
-                              {t}
-                            </Link>
-                          ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2 text-zinc-600">
-                    {fmtRelative(p.lastInteractionAt)}
-                  </td>
-                  <td className="px-4 py-2">
-                    <Mono>{p.source}</Mono>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
+      <DataTable
+        columns={COLUMNS}
+        rowCount={result.items.length}
+        empty="No people match these filters."
+      >
+        {result.items.map((p) => (
+          <DataRow key={p.id}>
+            <TableCell className={p.deletedAt ? 'opacity-50' : undefined}>
+              <div className="flex items-center gap-2">
+                <PersonLink id={p.id} name={p.displayName} />
+                {p.deletedAt ? <Badge tone="red">tombstoned</Badge> : null}
+              </div>
+            </TableCell>
+            <TableCell className="text-muted-foreground">
+              {p.primaryEmail ?? '—'}
+            </TableCell>
+            <TableCell>
+              <div className="flex flex-wrap gap-1">
+                {p.tags.length === 0
+                  ? '—'
+                  : p.tags.map((t) => (
+                      <Link
+                        key={t}
+                        href={buildHref(sp, {
+                          tag: [...new Set([...tags, t])],
+                          cursor: null,
+                        })}
+                        className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent"
+                      >
+                        {t}
+                      </Link>
+                    ))}
+              </div>
+            </TableCell>
+            <TableCell className="text-muted-foreground tabular-nums">
+              {fmtRelative(p.lastInteractionAt)}
+            </TableCell>
+            <TableCell>
+              <Mono>{p.source}</Mono>
+            </TableCell>
+          </DataRow>
+        ))}
+      </DataTable>
 
-      <div className="mt-4 flex items-center justify-between text-sm text-zinc-600">
-        <span>{result.items.length} shown</span>
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <span className="tabular-nums">{result.items.length} shown</span>
         {result.nextCursor ? (
           <Link
             href={buildHref(sp, { cursor: result.nextCursor })}
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 hover:bg-zinc-50"
+            className="rounded-md border border-border bg-card px-3 py-1.5 text-sm shadow-xs transition-colors hover:bg-accent"
           >
             Next page →
           </Link>
         ) : (
-          <span className="text-zinc-400">end of results</span>
+          <span className="text-faint">end of results</span>
         )}
       </div>
-    </>
+    </div>
   );
 }

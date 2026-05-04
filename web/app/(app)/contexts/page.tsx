@@ -32,45 +32,47 @@ export default async function ContextsPage({
     result = await api.listContexts({ limit: 200 });
   } catch (err) {
     return (
-      <>
+      <div className="space-y-6">
         <PageHeader title="Contexts" />
         <ErrorBlock
           title="Couldn't load contexts"
           detail={err instanceof Error ? err.message : String(err)}
         />
-      </>
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
         title="Contexts"
-        subtitle={`${result.items.length} distinct context tags across active interactions.`}
+        description={`${result.items.length} distinct context tags across active interactions.`}
       />
       {result.items.length === 0 ? (
         <Empty>No context tags yet.</Empty>
       ) : (
         <Card>
-          <ul className="divide-y divide-zinc-100">
+          <ul className="divide-y divide-border">
             {result.items.map((row) => (
               <li
                 key={row.tag}
-                className="flex items-center justify-between px-4 py-3"
+                className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-accent/50"
               >
                 <Link
                   href={`/contexts?tag=${encodeURIComponent(row.tag)}`}
-                  className="font-mono text-sm text-zinc-800 hover:underline"
+                  className="font-mono text-sm text-foreground transition-colors hover:text-primary"
                 >
                   {row.tag}
                 </Link>
-                <span className="text-sm text-zinc-500">{row.count}</span>
+                <span className="text-sm tabular-nums text-muted-foreground">
+                  {row.count}
+                </span>
               </li>
             ))}
           </ul>
         </Card>
       )}
-    </>
+    </div>
   );
 }
 
@@ -81,13 +83,13 @@ async function ContextDetail({ tag }: { tag: string }) {
     interactions = res.items;
   } catch (err) {
     return (
-      <>
+      <div className="space-y-6">
         <PageHeader title={tag} />
         <ErrorBlock
           title="Couldn't load interactions"
           detail={err instanceof Error ? err.message : String(err)}
         />
-      </>
+      </div>
     );
   }
 
@@ -105,12 +107,15 @@ async function ContextDetail({ tag }: { tag: string }) {
   );
 
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
         title={tag}
-        subtitle={`${interactions.length} interactions · ${implied.length} implied participants`}
-        right={
-          <Link href="/contexts" className="text-zinc-500 hover:text-zinc-900">
+        description={`${interactions.length} interactions · ${implied.length} implied participants`}
+        meta={
+          <Link
+            href="/contexts"
+            className="text-sm text-faint transition-colors hover:text-primary"
+          >
             ← all contexts
           </Link>
         }
@@ -125,17 +130,17 @@ async function ContextDetail({ tag }: { tag: string }) {
                 <Empty>No interactions tagged with this context.</Empty>
               </div>
             ) : (
-              <ul className="divide-y divide-zinc-100">
+              <ul className="divide-y divide-border">
                 {interactions.map((i) => (
-                  <li key={i.id} className="px-4 py-3">
-                    <div className="flex items-center gap-2 text-xs text-zinc-500">
+                  <li key={i.id} className="px-5 py-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <ChannelBadge channel={i.channel} />
-                      <span>{fmtDateTime(i.occurredAt)}</span>
+                      <span className="tabular-nums">{fmtDateTime(i.occurredAt)}</span>
                     </div>
-                    <p className="mt-1 text-sm font-medium text-zinc-900">
+                    <p className="mt-1 text-sm font-medium text-foreground">
                       {i.title}
                     </p>
-                    <p className="mt-1 text-xs text-zinc-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {i.participants
                         .map(
                           (p) =>
@@ -158,9 +163,9 @@ async function ContextDetail({ tag }: { tag: string }) {
                 <Empty>No participants.</Empty>
               </div>
             ) : (
-              <ul className="divide-y divide-zinc-100">
+              <ul className="divide-y divide-border">
                 {implied.map((p) => (
-                  <li key={p.id} className="px-4 py-2 text-sm">
+                  <li key={p.id} className="px-5 py-2.5 text-sm">
                     <PersonLink id={p.id} name={p.displayName} />
                   </li>
                 ))}
@@ -169,6 +174,6 @@ async function ContextDetail({ tag }: { tag: string }) {
           </Card>
         </aside>
       </div>
-    </>
+    </div>
   );
 }

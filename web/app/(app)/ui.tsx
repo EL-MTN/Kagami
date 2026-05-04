@@ -1,29 +1,9 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { Badge as BadgeBase } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
-export function PageHeader({
-  title,
-  subtitle,
-  right,
-}: {
-  title: string;
-  subtitle?: string;
-  right?: ReactNode;
-}) {
-  return (
-    <header className="mb-6 flex items-end justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-          {title}
-        </h1>
-        {subtitle ? (
-          <p className="mt-1 text-sm text-zinc-500">{subtitle}</p>
-        ) : null}
-      </div>
-      {right ? <div className="text-sm text-zinc-500">{right}</div> : null}
-    </header>
-  );
-}
+export { PageHeader } from '@/components/shell/page-header';
 
 export function Card({
   children,
@@ -34,7 +14,10 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-lg border border-zinc-200 bg-white ${className}`}
+      className={cn(
+        'overflow-hidden rounded-lg border border-border bg-card',
+        className,
+      )}
     >
       {children}
     </div>
@@ -43,46 +26,44 @@ export function Card({
 
 export function CardHeader({ children }: { children: ReactNode }) {
   return (
-    <div className="border-b border-zinc-200 px-4 py-3 text-sm font-medium text-zinc-700">
-      {children}
+    <div className="border-b border-border px-5 py-3">
+      <h3 className="kicker">{children}</h3>
     </div>
   );
 }
 
 export function Empty({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-md border border-dashed border-zinc-300 bg-white px-4 py-6 text-center text-sm text-zinc-500">
+    <div className="rounded-md border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-faint">
       {children}
     </div>
   );
 }
+
+type BadgeTone = 'default' | 'green' | 'amber' | 'red' | 'blue' | 'zinc';
 
 export function Badge({
   children,
   tone = 'default',
 }: {
   children: ReactNode;
-  tone?: 'default' | 'green' | 'amber' | 'red' | 'blue' | 'zinc';
+  tone?: BadgeTone;
 }) {
-  const tones: Record<string, string> = {
-    default: 'bg-zinc-100 text-zinc-700',
-    green: 'bg-emerald-100 text-emerald-700',
-    amber: 'bg-amber-100 text-amber-800',
-    red: 'bg-rose-100 text-rose-700',
-    blue: 'bg-sky-100 text-sky-700',
-    zinc: 'bg-zinc-200 text-zinc-700',
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tones[tone]}`}
-    >
-      {children}
-    </span>
-  );
+  const variant: Parameters<typeof BadgeBase>[0]['variant'] =
+    tone === 'green'
+      ? 'positive'
+      : tone === 'amber'
+        ? 'caution'
+        : tone === 'red'
+          ? 'critical'
+          : tone === 'blue'
+            ? 'default'
+            : 'muted';
+  return <BadgeBase variant={variant}>{children}</BadgeBase>;
 }
 
 export function ChannelBadge({ channel }: { channel: string }) {
-  const tone: 'blue' | 'amber' | 'green' | 'zinc' =
+  const tone: BadgeTone =
     channel === 'email'
       ? 'blue'
       : channel === 'calendar'
@@ -94,7 +75,7 @@ export function ChannelBadge({ channel }: { channel: string }) {
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  const tone: 'green' | 'red' | 'amber' | 'zinc' | 'default' =
+  const tone: BadgeTone =
     status === 'open'
       ? 'amber'
       : status === 'done'
@@ -127,10 +108,10 @@ export function ErrorBlock({
   detail?: string;
 }) {
   return (
-    <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+    <div className="rounded-md border border-critical/30 bg-critical/8 p-4 text-sm text-critical">
       <p className="font-medium">{title}</p>
       {detail ? (
-        <pre className="mt-2 whitespace-pre-wrap text-xs text-rose-700/80">
+        <pre className="mt-2 whitespace-pre-wrap font-mono text-xs text-critical/80">
           {detail}
         </pre>
       ) : null}
@@ -148,7 +129,7 @@ export function PersonLink({
   return (
     <Link
       href={`/people/${id}`}
-      className="text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-700"
+      className="text-foreground underline decoration-border underline-offset-2 transition-colors hover:decoration-rule-strong hover:text-primary"
     >
       {name ?? '(unnamed)'}
     </Link>
@@ -157,7 +138,7 @@ export function PersonLink({
 
 export function Mono({ children }: { children: ReactNode }) {
   return (
-    <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs text-zinc-700">
+    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
       {children}
     </code>
   );

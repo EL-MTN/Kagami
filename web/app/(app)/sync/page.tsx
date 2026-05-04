@@ -38,35 +38,35 @@ export default async function SyncPage() {
     ]);
   } catch (err) {
     return (
-      <>
+      <div className="space-y-6">
         <PageHeader title="Sync" />
         <ErrorBlock
           title="Couldn't load sync status"
           detail={err instanceof Error ? err.message : String(err)}
         />
-      </>
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
         title="Sync"
-        subtitle="Google OAuth grant + Gmail / Calendar ingest state."
+        description="Google OAuth grant + Gmail / Calendar ingest state."
       />
 
       <Card>
         <CardHeader>Google OAuth</CardHeader>
-        <div className="space-y-3 px-4 py-4 text-sm">
+        <div className="space-y-3 px-5 py-4 text-sm">
           {oauth.granted ? (
             <>
               <div className="flex items-center gap-2">
                 <Badge tone="green">granted</Badge>
-                <span className="text-zinc-600">
+                <span className="text-muted-foreground tabular-nums">
                   on {fmtDateTime(oauth.grantedAt)}
                 </span>
               </div>
-              <div className="text-xs text-zinc-500">scopes:</div>
+              <div className="kicker">scopes</div>
               <ul className="space-y-1">
                 {oauth.scopes.map((s) => (
                   <li key={s}>
@@ -77,11 +77,11 @@ export default async function SyncPage() {
               <div className="pt-2">
                 <a
                   href={oauthStartUrl()}
-                  className="inline-flex items-center rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
+                  className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm shadow-xs transition-colors hover:bg-accent"
                 >
                   Re-authorize
                 </a>
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="mt-1.5 text-xs text-faint">
                   Use this if Google revoked access (
                   <Mono>invalid_grant</Mono>) or to add scopes.
                 </p>
@@ -91,14 +91,14 @@ export default async function SyncPage() {
             <>
               <div className="flex items-center gap-2">
                 <Badge tone="amber">not granted</Badge>
-                <span className="text-zinc-600">
+                <span className="text-muted-foreground">
                   Connect a Google account to enable Gmail + Calendar ingest.
                 </span>
               </div>
               <div className="pt-2">
                 <a
                   href={oauthStartUrl()}
-                  className="inline-flex items-center rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700"
+                  className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                 >
                   Connect Google
                 </a>
@@ -108,30 +108,24 @@ export default async function SyncPage() {
         </div>
       </Card>
 
-      <div className="mt-6">
-        <IngestCard
-          title="Gmail ingest"
-          state={gmailState}
-          cursorLabel="History cursor"
-          cursorValue={gmailState.historyId}
-          granted={oauth.granted}
-          action={runGmailSyncAction}
-          bootstrappedWhen="historyId"
-        />
-      </div>
+      <IngestCard
+        title="Gmail ingest"
+        state={gmailState}
+        cursorLabel="History cursor"
+        cursorValue={gmailState.historyId}
+        granted={oauth.granted}
+        action={runGmailSyncAction}
+      />
 
-      <div className="mt-6">
-        <IngestCard
-          title="Calendar ingest"
-          state={gcalState}
-          cursorLabel="Sync token"
-          cursorValue={gcalState.syncToken}
-          granted={oauth.granted}
-          action={runGcalSyncAction}
-          bootstrappedWhen="syncToken"
-        />
-      </div>
-    </>
+      <IngestCard
+        title="Calendar ingest"
+        state={gcalState}
+        cursorLabel="Sync token"
+        cursorValue={gcalState.syncToken}
+        granted={oauth.granted}
+        action={runGcalSyncAction}
+      />
+    </div>
   );
 }
 
@@ -142,7 +136,6 @@ function IngestCard({
   cursorValue,
   granted,
   action,
-  bootstrappedWhen,
 }: {
   title: string;
   state: SyncState;
@@ -150,16 +143,15 @@ function IngestCard({
   cursorValue: string | null;
   granted: boolean;
   action: (fd: FormData) => Promise<void>;
-  bootstrappedWhen: 'historyId' | 'syncToken';
 }) {
   const isBootstrapped = Boolean(cursorValue);
   return (
     <Card>
       <CardHeader>{title}</CardHeader>
-      <div className="space-y-4 px-4 py-4 text-sm">
-        <div className="grid grid-cols-2 gap-y-2">
-          <div className="text-zinc-500">Status</div>
-          <div>
+      <div className="space-y-4 px-5 py-4 text-sm">
+        <dl className="grid grid-cols-[10rem_1fr] gap-y-2.5 text-sm">
+          <dt className="text-muted-foreground">Status</dt>
+          <dd>
             {state.pausedAt ? (
               <Badge tone="red">paused</Badge>
             ) : isBootstrapped ? (
@@ -167,45 +159,45 @@ function IngestCard({
             ) : (
               <Badge tone="amber">not bootstrapped</Badge>
             )}
-          </div>
-          <div className="text-zinc-500">Last run</div>
-          <div>
+          </dd>
+          <dt className="text-muted-foreground">Last run</dt>
+          <dd className="tabular-nums">
             {state.lastRunAt ? (
               <>
                 <span>{fmtDateTime(state.lastRunAt)}</span>{' '}
-                <span className="text-zinc-400">
+                <span className="text-faint">
                   ({fmtRelative(state.lastRunAt)})
                 </span>
               </>
             ) : (
-              <span className="text-zinc-400">never</span>
+              <span className="text-faint">never</span>
             )}
-          </div>
-          <div className="text-zinc-500">{cursorLabel}</div>
-          <div>
+          </dd>
+          <dt className="text-muted-foreground">{cursorLabel}</dt>
+          <dd>
             {cursorValue ? (
               <Mono>{cursorValue}</Mono>
             ) : (
-              <span className="text-zinc-400">—</span>
+              <span className="text-faint">—</span>
             )}
-          </div>
-          <div className="text-zinc-500">Error count</div>
-          <div>{state.errorCount}</div>
+          </dd>
+          <dt className="text-muted-foreground">Error count</dt>
+          <dd className="tabular-nums">{state.errorCount}</dd>
           {state.lastError ? (
             <>
-              <div className="text-zinc-500">Last error</div>
-              <div className="text-rose-700">
+              <dt className="text-muted-foreground">Last error</dt>
+              <dd className="text-critical">
                 <Mono>{state.lastError}</Mono>
-              </div>
+              </dd>
             </>
           ) : null}
           {state.pausedAt ? (
             <>
-              <div className="text-zinc-500">Paused at</div>
-              <div>{fmtDateTime(state.pausedAt)}</div>
+              <dt className="text-muted-foreground">Paused at</dt>
+              <dd className="tabular-nums">{fmtDateTime(state.pausedAt)}</dd>
             </>
           ) : null}
-        </div>
+        </dl>
 
         {granted ? (
           <form action={action} className="flex items-center gap-2">
@@ -214,18 +206,18 @@ function IngestCard({
                 <input type="hidden" name="force" value="true" />
                 <button
                   type="submit"
-                  className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-50"
+                  className="h-9 rounded-md border border-border bg-card px-3 text-sm font-medium shadow-xs transition-colors hover:bg-accent"
                 >
                   Force-run (clear pause)
                 </button>
-                <span className="text-xs text-zinc-500">
+                <span className="text-xs text-faint">
                   Try after a Re-authorize.
                 </span>
               </>
             ) : (
               <button
                 type="submit"
-                className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700"
+                className="h-9 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Run sync now
               </button>
@@ -234,7 +226,6 @@ function IngestCard({
         ) : (
           <Empty>Connect Google above before running ingest.</Empty>
         )}
-        {bootstrappedWhen === 'syncToken' && state.lastError === 'invalid_grant' ? null : null}
       </div>
     </Card>
   );
