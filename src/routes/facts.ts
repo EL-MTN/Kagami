@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { readFacts, type Fact } from '../storage/facts.js';
 import { appendSingleFact } from '../ingest/append.js';
-import { withVaultLock } from '../mutex.js';
 
 const AppendBody = z.object({
   text: z.string().min(1),
@@ -42,7 +41,7 @@ export const factsRouter = Router();
 factsRouter.post('/', async (req, res, next) => {
   try {
     const body = AppendBody.parse(req.body);
-    const result = await withVaultLock(() => appendSingleFact(body));
+    const result = await appendSingleFact(body);
     res.status(result.status === 'added' ? 201 : 200).json(result);
   } catch (err) {
     next(err);

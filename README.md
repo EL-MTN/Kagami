@@ -16,7 +16,6 @@ src/
   paths.ts               vault paths
   types.ts               shared schemas
   logger.ts              pino logger
-  mutex.ts               process-wide async lock for vault writes
   ingest/
     consolidate.ts       transcript → atomic facts + entities
     append.ts            single-fact append (md5 + cosine dedup)

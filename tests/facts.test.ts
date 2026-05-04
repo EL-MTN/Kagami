@@ -96,6 +96,27 @@ test('appendFacts inserts non-dupes alongside dupes in the same batch', async ()
   assert.ok(facts.some((f) => f.hash === 'h2'));
 });
 
+test('parallel appendFacts converge on the deduped union (no mutex)', async () => {
+  // Surrogate for the plan's "10 parallel consolidate() calls" stress
+  // test. Real consolidate() goes through the LLM and is excluded from
+  // the unit-test loop; the dedup contract that consolidate relies on
+  // lives at the appendFacts layer, which is what this test pins down.
+  const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
+  const sharedHashes = ['h1', 'h2', 'h3'];
+  const batches = Array.from({ length: 10 }, () =>
+    sharedHashes.map((h) =>
+      makeFact({ id: newFactId(), hash: h, text: `text-${h}` }),
+    ),
+  );
+  await Promise.all(batches.map((b) => appendFacts(b)));
+  const facts = await readFacts();
+  assert.equal(facts.length, sharedHashes.length);
+  assert.deepEqual(
+    facts.map((f) => f.hash).sort(),
+    [...sharedHashes].sort(),
+  );
+});
+
 test('rewriteFacts replaces all facts', async () => {
   const { appendFacts, rewriteFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
   await appendFacts([makeFact({ id: newFactId(), hash: 'old', text: 'old' })]);

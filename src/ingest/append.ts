@@ -19,7 +19,8 @@ import { logger } from '../logger.js';
 //   - embed and lemmatize for BM25
 //   - upsert entities so the entity-boost ranker picks it up
 //
-// Caller is expected to hold the vault mutex.
+// Concurrent callers are safe: appendFacts dedupes via the facts_hash_unique
+// index and upsertEntitiesFromFacts uses atomic per-entity upserts.
 
 const NEAR_DUPE_COSINE = 0.97;
 
