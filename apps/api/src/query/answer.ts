@@ -8,6 +8,7 @@ import {
   type MemoryFilters,
   type RankedFact,
 } from '../retrieval/embeddings.js';
+import { logger } from '../logger.js';
 
 // Single-shot answerer over Kioku's atomic-fact store. The hybrid
 // ranker (cosine + BM25 + entity boost) returns top-K facts; we group
@@ -90,8 +91,8 @@ export async function query(
   let facts: RankedFact[] = [];
   try {
     facts = await ranker(question, k, { filters: deps.filters });
-  } catch (err) {
-    console.error(`[kioku] fact ranker failed: ${(err as Error).message}`);
+  } catch (error) {
+    logger.error({ error }, 'fact ranker failed');
   }
 
   const memoriesText =

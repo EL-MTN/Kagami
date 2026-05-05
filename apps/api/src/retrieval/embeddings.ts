@@ -8,6 +8,7 @@ import {
   scoreAndRank,
 } from './scoring.js';
 import { extractEntities, lemmatizeForBm25 } from './text.js';
+import { logger } from '../logger.js';
 
 // Re-export so callers (ingest, query) can import the embed helpers
 // from a single module. Implementations live in llm.ts to avoid a
@@ -243,8 +244,8 @@ async function computeEntityBoosts(question: string): Promise<Map<string, number
   let qEmbeddings: number[][];
   try {
     qEmbeddings = await embedTexts(dedup);
-  } catch (err) {
-    console.error(`[entities] query-entity embed failed: ${(err as Error).message}`);
+  } catch (error) {
+    logger.error({ error }, 'query entity embed failed');
     return new Map();
   }
 

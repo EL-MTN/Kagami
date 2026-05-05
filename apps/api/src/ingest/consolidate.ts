@@ -14,6 +14,7 @@ import {
 import { lemmatizeForBm25 } from '../retrieval/text.js';
 import { upsertEntitiesFromFacts } from '../storage/entities.js';
 import { getOrComputeSessionSummary } from './session-summary.js';
+import { logger } from '../logger.js';
 
 // Kioku's atomic-fact extraction pipeline.
 //
@@ -215,8 +216,8 @@ export async function consolidate(
         abortSignal: AbortSignal.timeout(15_000),
       });
       batchEmb = r.embedding;
-    } catch (err) {
-      console.error('[ingest] step failed:', (err as Error).message);
+    } catch (error) {
+      logger.error({ error }, 'ingest batch embed failed');
       continue;
     }
 
@@ -257,8 +258,8 @@ export async function consolidate(
         abortSignal: AbortSignal.timeout(120_000),
       });
       extraction = r.object;
-    } catch (err) {
-      console.error('[ingest] step failed:', (err as Error).message);
+    } catch (error) {
+      logger.error({ error }, 'ingest extraction failed');
       continue;
     }
 
@@ -274,8 +275,8 @@ export async function consolidate(
         abortSignal: AbortSignal.timeout(30_000),
       });
       embeddings = r.embeddings;
-    } catch (err) {
-      console.error('[ingest] step failed:', (err as Error).message);
+    } catch (error) {
+      logger.error({ error }, 'ingest fact embed failed');
       continue;
     }
 
@@ -308,8 +309,8 @@ export async function consolidate(
     // entity store, linking fact ids to entities for boost-at-retrieval.
     try {
       await upsertEntitiesFromFacts(facts);
-    } catch (err) {
-      console.error('[ingest] entity upsert failed:', (err as Error).message);
+    } catch (error) {
+      logger.error({ error }, 'ingest entity upsert failed');
     }
     for (const f of facts) {
       recentlyExtracted.push({

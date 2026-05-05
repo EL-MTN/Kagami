@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { wrapLanguageModel } from 'ai';
 import type { LanguageModelV3Middleware } from '@ai-sdk/provider';
+import { logger } from './logger.js';
 
 // Provider profiles fill in URL + key defaults for common setups. Explicit
 // {LLM,EMBEDDING}_URL / _API_KEY env vars always win as overrides.
@@ -31,9 +32,7 @@ const emb = resolveEndpoint('EMBEDDING');
 const modelName = process.env.MODEL ?? '';
 
 if (!modelName) {
-  console.warn(
-    '[kioku] MODEL is unset. Set it in .env to whatever your provider exposes.',
-  );
+  logger.warn('MODEL is unset. Set it in .env to whatever your provider exposes.');
 }
 
 // `supportsStructuredOutputs: true` makes the provider send

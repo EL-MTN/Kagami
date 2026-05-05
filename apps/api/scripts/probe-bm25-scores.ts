@@ -16,6 +16,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { MongoClient } from 'mongodb';
+import { logger } from '../src/logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -346,8 +347,8 @@ if (process.env.KIOKU_PROBE_WORKER === '1') {
     process.exit(1);
   });
 } else {
-  orchestrate().catch((e) => {
-    console.error(e);
+  orchestrate().catch((error) => {
+    logger.fatal({ error }, 'bm25 probe failed');
     process.exit(1);
   });
 }
