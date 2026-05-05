@@ -1,26 +1,14 @@
-import Link from 'next/link';
-import { api } from '@/lib/api';
-import { fmtDateTime } from '@/lib/format';
-import type { Interaction, Person } from '@/lib/types';
-import {
-  Card,
-  CardHeader,
-  ChannelBadge,
-  Empty,
-  ErrorBlock,
-  PageHeader,
-  PersonLink,
-} from '../ui';
+import Link from "next/link";
+import { api } from "@/lib/api";
+import { fmtDateTime } from "@/lib/format";
+import type { Interaction, Person } from "@/lib/types";
+import { Card, CardHeader, ChannelBadge, Empty, ErrorBlock, PageHeader, PersonLink } from "../ui";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 type Search = { tag?: string };
 
-export default async function ContextsPage({
-  searchParams,
-}: {
-  searchParams: Promise<Search>;
-}) {
+export default async function ContextsPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
 
   if (sp.tag) {
@@ -64,9 +52,7 @@ export default async function ContextsPage({
                 >
                   {row.tag}
                 </Link>
-                <span className="text-sm tabular-nums text-muted-foreground">
-                  {row.count}
-                </span>
+                <span className="text-sm tabular-nums text-muted-foreground">{row.count}</span>
               </li>
             ))}
           </ul>
@@ -77,7 +63,7 @@ export default async function ContextsPage({
 }
 
 async function ContextDetail({ tag }: { tag: string }) {
-  let interactions: Interaction[] = [];
+  let interactions: Interaction[];
   try {
     const res = await api.listInteractions({ context: tag, limit: 200 });
     interactions = res.items;
@@ -94,11 +80,8 @@ async function ContextDetail({ tag }: { tag: string }) {
   }
 
   const personIds = new Set<string>();
-  for (const i of interactions)
-    for (const p of i.participants) personIds.add(p.personId);
-  const people = await Promise.all(
-    [...personIds].map((id) => api.getPerson(id).catch(() => null)),
-  );
+  for (const i of interactions) for (const p of i.participants) personIds.add(p.personId);
+  const people = await Promise.all([...personIds].map((id) => api.getPerson(id).catch(() => null)));
   const personById = new Map<string, Person>();
   for (const p of people) if (p) personById.set(p.id, p);
 
@@ -137,16 +120,11 @@ async function ContextDetail({ tag }: { tag: string }) {
                       <ChannelBadge channel={i.channel} />
                       <span className="tabular-nums">{fmtDateTime(i.occurredAt)}</span>
                     </div>
-                    <p className="mt-1 text-sm font-medium text-foreground">
-                      {i.title}
-                    </p>
+                    <p className="mt-1 text-sm font-medium text-foreground">{i.title}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {i.participants
-                        .map(
-                          (p) =>
-                            personById.get(p.personId)?.displayName ?? '?',
-                        )
-                        .join(', ')}
+                        .map((p) => personById.get(p.personId)?.displayName ?? "?")
+                        .join(", ")}
                     </p>
                   </li>
                 ))}

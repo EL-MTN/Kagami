@@ -1,7 +1,7 @@
-import { Types } from 'mongoose';
-import { Interaction } from './models/Interaction.js';
-import { Person } from './models/Person.js';
-import type { Source } from './models/base.js';
+import { Types } from "mongoose";
+import { Interaction } from "./models/Interaction.js";
+import { Person } from "./models/Person.js";
+import type { Source } from "./models/base.js";
 
 export type RecordInteractionInput = {
   occurredAt: Date;
@@ -17,10 +17,10 @@ export type RecordInteractionInput = {
     size?: number;
     ref?: string;
   }>;
-  sourceRef?: { provider: 'gmail' | 'gcal'; id: string } | null;
+  sourceRef?: { provider: "gmail" | "gcal"; id: string } | null;
   source: Source;
   sourceVersion?: string;
-  status?: 'active' | 'cancelled';
+  status?: "active" | "cancelled";
 };
 
 export type RecordOpts = {
@@ -39,10 +39,7 @@ export type RecordOpts = {
  * Returns null only when `skipIfDuplicate` is true and the unique sourceRef
  * partial index rejected the insert.
  */
-export async function recordInteraction(
-  input: RecordInteractionInput,
-  opts: RecordOpts = {},
-) {
+export async function recordInteraction(input: RecordInteractionInput, opts: RecordOpts = {}) {
   let created;
   try {
     created = await Interaction.create(input);
@@ -50,36 +47,30 @@ export async function recordInteraction(
     if (
       opts.skipIfDuplicate &&
       err &&
-      typeof err === 'object' &&
-      'code' in err &&
+      typeof err === "object" &&
+      "code" in err &&
       (err as { code: number }).code === 11000
     ) {
       return null;
     }
     throw err;
   }
-  const participants = (created.get('participants') as unknown as
-    | Array<{ personId: Types.ObjectId }>
-    | undefined) ?? [];
+  const participants =
+    (created.get("participants") as unknown as Array<{ personId: Types.ObjectId }> | undefined) ??
+    [];
   await touchLastInteraction(
     participants.map((p) => p.personId),
-    created.get('occurredAt') as Date,
+    created.get("occurredAt") as Date,
   );
   return created;
 }
 
-async function touchLastInteraction(
-  personIds: Types.ObjectId[],
-  occurredAt: Date,
-): Promise<void> {
+async function touchLastInteraction(personIds: Types.ObjectId[], occurredAt: Date): Promise<void> {
   const unique = [...new Set(personIds.map((id) => id.toHexString()))].map(
     (s) => new Types.ObjectId(s),
   );
   if (unique.length === 0) return;
-  await Person.updateMany(
-    { _id: { $in: unique } },
-    { $max: { lastInteractionAt: occurredAt } },
-  );
+  await Person.updateMany({ _id: { $in: unique } }, { $max: { lastInteractionAt: occurredAt } });
 }
 
 /**
@@ -92,19 +83,19 @@ async function touchLastInteraction(
  */
 export async function upsertInteractionBySourceRef(input: RecordInteractionInput) {
   if (!input.sourceRef) {
-    throw new Error('upsertInteractionBySourceRef requires a sourceRef');
+    throw new Error("upsertInteractionBySourceRef requires a sourceRef");
   }
   const filter = {
-    'sourceRef.provider': input.sourceRef.provider,
-    'sourceRef.id': input.sourceRef.id,
+    "sourceRef.provider": input.sourceRef.provider,
+    "sourceRef.id": input.sourceRef.id,
   };
   const set: Record<string, unknown> = {
     occurredAt: input.occurredAt,
     channel: input.channel,
     title: input.title,
-    body: input.body ?? '',
+    body: input.body ?? "",
     participants: input.participants,
-    status: input.status ?? 'active',
+    status: input.status ?? "active",
     sourceRef: input.sourceRef,
     source: input.source,
   };
@@ -124,16 +115,15 @@ export async function upsertInteractionBySourceRef(input: RecordInteractionInput
       setDefaultsOnInsert: true,
     },
   );
-  if (!doc) throw new Error('upsert returned no document');
+  if (!doc) throw new Error("upsert returned no document");
 
-  const status = (doc.get('status') as string | undefined) ?? 'active';
-  if (status === 'active') {
-    const participants = (doc.get('participants') as unknown as
-      | Array<{ personId: Types.ObjectId }>
-      | undefined) ?? [];
+  const status = (doc.get("status") as string | undefined) ?? "active";
+  if (status === "active") {
+    const participants =
+      (doc.get("participants") as unknown as Array<{ personId: Types.ObjectId }> | undefined) ?? [];
     await touchLastInteraction(
       participants.map((p) => p.personId),
-      doc.get('occurredAt') as Date,
+      doc.get("occurredAt") as Date,
     );
   }
   return doc;

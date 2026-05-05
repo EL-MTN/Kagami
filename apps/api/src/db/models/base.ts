@@ -1,18 +1,12 @@
-import type { SchemaOptions } from 'mongoose';
+import type { SchemaOptions } from "mongoose";
 
-export const SOURCE_VALUES = [
-  'concierge',
-  'gmail-sync',
-  'gcal-sync',
-  'manual',
-  'import',
-] as const;
+export const SOURCE_VALUES = ["concierge", "gmail-sync", "gcal-sync", "manual", "import"] as const;
 
 export type Source = (typeof SOURCE_VALUES)[number];
 
 export const baseSchemaOptions: SchemaOptions = {
   timestamps: true,
-  strict: 'throw',
+  strict: "throw",
   versionKey: false,
 };
 

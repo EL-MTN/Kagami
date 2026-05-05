@@ -1,6 +1,6 @@
-import type { GmailMessage } from './parse-message.js';
+import type { GmailMessage } from "./parse-message.js";
 
-const BASE = 'https://gmail.googleapis.com/gmail/v1';
+const BASE = "https://gmail.googleapis.com/gmail/v1";
 
 export type GmailProfile = {
   emailAddress: string;
@@ -52,9 +52,7 @@ export class GmailHttpError extends Error {
   }
 }
 
-export function makeGmailClient(
-  getAccessToken: () => Promise<string>,
-): GmailClient {
+export function makeGmailClient(getAccessToken: () => Promise<string>): GmailClient {
   async function call<T>(
     path: string,
     query: Record<string, string | number | undefined> = {},
@@ -65,33 +63,32 @@ export function makeGmailClient(
       if (v === undefined) continue;
       sp.set(k, String(v));
     }
-    const url = `${BASE}${path}${sp.size ? `?${sp.toString()}` : ''}`;
+    const url = `${BASE}${path}${sp.size ? `?${sp.toString()}` : ""}`;
     const res = await fetch(url, {
       headers: { authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
+      const text = await res.text().catch(() => "");
       throw new GmailHttpError(res.status, text);
     }
     return (await res.json()) as T;
   }
 
   return {
-    getProfile: () => call<GmailProfile>('/users/me/profile'),
+    getProfile: () => call<GmailProfile>("/users/me/profile"),
     listMessages: ({ q, pageToken, maxResults }) =>
-      call<GmailListMessagesResp>('/users/me/messages', {
+      call<GmailListMessagesResp>("/users/me/messages", {
         q,
         pageToken,
         maxResults,
       }),
-    getMessage: (id) =>
-      call<GmailMessage>(`/users/me/messages/${id}`, { format: 'full' }),
+    getMessage: (id) => call<GmailMessage>(`/users/me/messages/${id}`, { format: "full" }),
     listHistory: ({ startHistoryId, pageToken, maxResults }) =>
-      call<GmailHistoryResp>('/users/me/history', {
+      call<GmailHistoryResp>("/users/me/history", {
         startHistoryId,
         pageToken,
         maxResults,
-        historyTypes: 'messageAdded',
+        historyTypes: "messageAdded",
       }),
   };
 }

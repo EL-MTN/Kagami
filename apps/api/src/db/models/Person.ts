@@ -1,5 +1,5 @@
-import { Schema, model } from 'mongoose';
-import { baseSchemaOptions, provenanceFields } from './base.js';
+import { Schema, model } from "mongoose";
+import { baseSchemaOptions, provenanceFields } from "./base.js";
 
 const PersonSchema = new Schema(
   {
@@ -12,7 +12,7 @@ const PersonSchema = new Schema(
     },
     primaryOrgId: {
       type: Schema.Types.ObjectId,
-      ref: 'Organization',
+      ref: "Organization",
       default: null,
     },
     relationship: { type: String },
@@ -32,11 +32,8 @@ const PersonSchema = new Schema(
 
 PersonSchema.index({ primaryEmail: 1 }, { sparse: true });
 PersonSchema.index({ lastInteractionAt: -1 });
-PersonSchema.index(
-  { displayName: 'text', notes: 'text', tags: 'text' },
-  { name: 'people_text' },
-);
+PersonSchema.index({ displayName: "text", notes: "text", tags: "text" }, { name: "people_text" });
 PersonSchema.index({ deletedAt: 1 }, { sparse: true });
 
-export const Person = model('Person', PersonSchema);
-export type PersonDoc = ReturnType<(typeof Person)['hydrate']>;
+export const Person = model("Person", PersonSchema);
+export type PersonDoc = ReturnType<(typeof Person)["hydrate"]>;

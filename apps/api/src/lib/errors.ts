@@ -1,7 +1,7 @@
-import type { ErrorRequestHandler } from 'express';
-import mongoose from 'mongoose';
-import { ZodError } from 'zod';
-import { logger } from './logger.js';
+import type { ErrorRequestHandler } from "express";
+import mongoose from "mongoose";
+import { ZodError } from "zod";
+import { logger } from "./logger.js";
 
 export class HttpError extends Error {
   readonly status: number;
@@ -17,17 +17,13 @@ export class HttpError extends Error {
 
 export const errors = {
   badRequest: (message: string, details?: unknown) =>
-    new HttpError(400, 'bad_request', message, details),
-  unauthorized: (message = 'unauthorized') =>
-    new HttpError(401, 'unauthorized', message),
-  notFound: (message = 'not found') =>
-    new HttpError(404, 'not_found', message),
+    new HttpError(400, "bad_request", message, details),
+  unauthorized: (message = "unauthorized") => new HttpError(401, "unauthorized", message),
+  notFound: (message = "not found") => new HttpError(404, "not_found", message),
   conflict: (message: string, details?: unknown) =>
-    new HttpError(409, 'conflict', message, details),
-  rateLimited: (message = 'rate limited') =>
-    new HttpError(429, 'rate_limited', message),
-  internal: (message = 'internal error') =>
-    new HttpError(500, 'internal', message),
+    new HttpError(409, "conflict", message, details),
+  rateLimited: (message = "rate limited") => new HttpError(429, "rate_limited", message),
+  internal: (message = "internal error") => new HttpError(500, "internal", message),
 };
 
 function envelope(code: string, message: string, details?: unknown) {
@@ -45,31 +41,33 @@ export function makeErrorHandler(): ErrorRequestHandler {
       return;
     }
     if (err instanceof ZodError) {
-      res.status(400).json(envelope('bad_request', 'invalid input', err.issues));
+      res.status(400).json(envelope("bad_request", "invalid input", err.issues));
       return;
     }
     if (err instanceof mongoose.Error.ValidationError) {
-      res.status(400).json(envelope('bad_request', 'validation failed', err.errors));
+      res.status(400).json(envelope("bad_request", "validation failed", err.errors));
       return;
     }
     if (err instanceof mongoose.Error.CastError) {
-      res.status(400).json(envelope('bad_request', `invalid value for ${err.path}`));
+      res.status(400).json(envelope("bad_request", `invalid value for ${err.path}`));
       return;
     }
     if (err instanceof mongoose.Error.StrictModeError) {
-      res.status(400).json(envelope('bad_request', err.message));
+      res.status(400).json(envelope("bad_request", err.message));
       return;
     }
     if (
       err &&
-      typeof err === 'object' &&
-      'code' in err &&
+      typeof err === "object" &&
+      "code" in err &&
       (err as { code: number }).code === 11000
     ) {
-      res.status(409).json(envelope('conflict', 'duplicate key', (err as { keyValue?: unknown }).keyValue));
+      res
+        .status(409)
+        .json(envelope("conflict", "duplicate key", (err as { keyValue?: unknown }).keyValue));
       return;
     }
-    logger.error({ err }, 'unhandled error');
-    res.status(500).json(envelope('internal', 'internal error'));
+    logger.error({ err }, "unhandled error");
+    res.status(500).json(envelope("internal", "internal error"));
   };
 }

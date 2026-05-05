@@ -1,20 +1,17 @@
-import { Router } from 'express';
-import { Types } from 'mongoose';
-import { z } from 'zod';
-import { Followup } from '../db/models/Followup.js';
-import { Person } from '../db/models/Person.js';
-import { parseDurationMs } from '../lib/duration.js';
-import { errors } from '../lib/errors.js';
-import { serializeFollowup } from '../lib/serialize.js';
-import {
-  ISODateString,
-  ObjectIdString,
-} from '../schemas/common.js';
-import type { EndpointSpec } from '../manifest.js';
-import { FollowupResponseShape } from './followups.js';
+import { Router } from "express";
+import { Types } from "mongoose";
+import { z } from "zod";
+import { Followup } from "../db/models/Followup.js";
+import { Person } from "../db/models/Person.js";
+import { parseDurationMs } from "../lib/duration.js";
+import { errors } from "../lib/errors.js";
+import { serializeFollowup } from "../lib/serialize.js";
+import { ISODateString, ObjectIdString } from "../schemas/common.js";
+import type { EndpointSpec } from "../manifest.js";
+import { FollowupResponseShape } from "./followups.js";
 
 const DigestQuery = z.object({
-  window: z.string().default('P7D'),
+  window: z.string().default("P7D"),
 });
 
 const DigestPersonShape = z.object({
@@ -38,15 +35,13 @@ export const DigestResponseShape = z.object({
 
 export const digestRouter = Router();
 
-digestRouter.get('/digest', async (req, res) => {
+digestRouter.get("/digest", async (req, res) => {
   const q = DigestQuery.parse(req.query);
   let windowMs: number;
   try {
     windowMs = parseDurationMs(q.window);
   } catch (err) {
-    throw errors.badRequest(
-      err instanceof Error ? err.message : 'invalid window',
-    );
+    throw errors.badRequest(err instanceof Error ? err.message : "invalid window");
   }
 
   const now = new Date();
@@ -54,14 +49,14 @@ digestRouter.get('/digest', async (req, res) => {
 
   const [overdue, upcoming] = await Promise.all([
     Followup.find({
-      status: 'open',
+      status: "open",
       deletedAt: null,
       dueAt: { $lt: now },
     })
       .sort({ dueAt: 1, _id: 1 })
       .lean(),
     Followup.find({
-      status: 'open',
+      status: "open",
       deletedAt: null,
       dueAt: { $gte: now, $lte: windowEnd },
     })
@@ -103,7 +98,7 @@ digestRouter.get('/digest', async (req, res) => {
     const pid = (f.personId as Types.ObjectId | null)?.toHexString() ?? null;
     return {
       ...(base as Record<string, unknown>),
-      person: pid ? personById.get(pid) ?? null : null,
+      person: pid ? (personById.get(pid) ?? null) : null,
     };
   };
 
@@ -119,11 +114,11 @@ digestRouter.get('/digest', async (req, res) => {
 
 export const digestEndpoints: EndpointSpec[] = [
   {
-    name: 'get_digest',
-    method: 'GET',
-    path: '/v1/digest',
+    name: "get_digest",
+    method: "GET",
+    path: "/v1/digest",
     description:
-      'Overdue + upcoming open followups within the window (default P7D). Each followup is hydrated with {id, displayName, primaryEmail} for its person.',
+      "Overdue + upcoming open followups within the window (default P7D). Each followup is hydrated with {id, displayName, primaryEmail} for its person.",
     query: DigestQuery,
     response: DigestResponseShape,
   },

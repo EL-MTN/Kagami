@@ -1,16 +1,16 @@
-import { Types } from 'mongoose';
+import { Types } from "mongoose";
 
 const oidString = (v: unknown): string | null => {
   if (v == null) return null;
   if (v instanceof Types.ObjectId) return v.toHexString();
-  if (typeof v === 'string') return v;
+  if (typeof v === "string") return v;
   return null;
 };
 
 const handlesToObject = (h: unknown): Record<string, string> => {
   if (!h) return {};
   if (h instanceof Map) return Object.fromEntries(h) as Record<string, string>;
-  if (typeof h === 'object') return h as Record<string, string>;
+  if (typeof h === "object") return h as Record<string, string>;
   return {};
 };
 
@@ -60,20 +60,15 @@ export function serializeOrganization(d: AnyDoc | null | undefined) {
 
 export function serializeInteraction(d: AnyDoc | null | undefined) {
   if (!d) return null;
-  const sourceRef = d.sourceRef as
-    | { provider?: string; id?: string }
-    | null
-    | undefined;
+  const sourceRef = d.sourceRef as { provider?: string; id?: string } | null | undefined;
   return {
     id: oidString(d._id),
     occurredAt: d.occurredAt,
     channel: d.channel,
     title: d.title,
-    body: d.body ?? '',
+    body: d.body ?? "",
     sourceRef:
-      sourceRef && sourceRef.id
-        ? { provider: sourceRef.provider, id: sourceRef.id }
-        : null,
+      sourceRef && sourceRef.id ? { provider: sourceRef.provider, id: sourceRef.id } : null,
     participants: ((d.participants as AnyDoc[] | undefined) ?? []).map((p) => ({
       personId: oidString(p.personId),
       role: p.role,

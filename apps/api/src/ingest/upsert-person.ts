@@ -1,6 +1,6 @@
-import { Types } from 'mongoose';
-import { Person } from '../db/models/Person.js';
-import type { Source } from '../db/models/base.js';
+import { Types } from "mongoose";
+import { Person } from "../db/models/Person.js";
+import type { Source } from "../db/models/base.js";
 
 export type UpsertPersonInput = {
   email: string;
@@ -25,32 +25,30 @@ export type UpsertPersonResult = {
  *   manual undelete". Treat as a normal upsert: clear deletedAt + update.
  * - Match on lower-cased primaryEmail.
  */
-export async function upsertPerson(
-  input: UpsertPersonInput,
-): Promise<UpsertPersonResult> {
+export async function upsertPerson(input: UpsertPersonInput): Promise<UpsertPersonResult> {
   const email = input.email.toLowerCase().trim();
-  const displayName = (input.displayName ?? '').trim() || email;
+  const displayName = (input.displayName ?? "").trim() || email;
 
   const existing = await Person.findOne({ primaryEmail: email });
 
   if (existing) {
-    if (existing.get('suppressReingest')) {
+    if (existing.get("suppressReingest")) {
       return {
         personId: existing._id,
         created: false,
-        tombstonedSuppressed: existing.get('deletedAt') != null,
+        tombstonedSuppressed: existing.get("deletedAt") != null,
       };
     }
 
     const updates: Record<string, unknown> = {};
 
     // If the existing display name is missing or just the email, replace it.
-    const currentName = (existing.get('displayName') as string | undefined) ?? '';
+    const currentName = (existing.get("displayName") as string | undefined) ?? "";
     if (!currentName || currentName === email) {
       if (displayName !== email) updates.displayName = displayName;
     }
 
-    if (existing.get('deletedAt')) {
+    if (existing.get("deletedAt")) {
       // suppressReingest=false on a tombstoned row → un-tombstone.
       updates.deletedAt = null;
     }

@@ -1,9 +1,9 @@
-import { Schema, model } from 'mongoose';
-import { baseSchemaOptions, provenanceFields } from './base.js';
+import { Schema, model } from "mongoose";
+import { baseSchemaOptions, provenanceFields } from "./base.js";
 
 const OAuthTokenSchema = new Schema(
   {
-    provider: { type: String, required: true, enum: ['google'], unique: true },
+    provider: { type: String, required: true, enum: ["google"], unique: true },
     refreshToken: { type: String, required: true },
     scopes: { type: [String], default: [] },
     grantedAt: { type: Date, required: true },
@@ -14,5 +14,5 @@ const OAuthTokenSchema = new Schema(
 
 OAuthTokenSchema.index({ deletedAt: 1 }, { sparse: true });
 
-export const OAuthToken = model('OAuthToken', OAuthTokenSchema);
-export type OAuthTokenDoc = ReturnType<(typeof OAuthToken)['hydrate']>;
+export const OAuthToken = model("OAuthToken", OAuthTokenSchema);
+export type OAuthTokenDoc = ReturnType<(typeof OAuthToken)["hydrate"]>;

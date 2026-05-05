@@ -1,6 +1,6 @@
-import type { CalendarEvent } from './parse-event.js';
+import type { CalendarEvent } from "./parse-event.js";
 
-const BASE = 'https://www.googleapis.com/calendar/v3';
+const BASE = "https://www.googleapis.com/calendar/v3";
 
 export type ListEventsParams = {
   syncToken?: string;
@@ -31,34 +31,32 @@ export class CalendarHttpError extends Error {
 
 export class SyncTokenExpired extends Error {
   constructor() {
-    super('calendar syncToken expired (410 Gone)');
+    super("calendar syncToken expired (410 Gone)");
   }
 }
 
-export function makeCalendarClient(
-  getAccessToken: () => Promise<string>,
-): CalendarClient {
+export function makeCalendarClient(getAccessToken: () => Promise<string>): CalendarClient {
   return {
     async listEvents(params) {
       const token = await getAccessToken();
       const sp = new URLSearchParams();
-      sp.set('singleEvents', 'true');
-      sp.set('showDeleted', 'true');
-      sp.set('maxResults', String(params.maxResults ?? 250));
+      sp.set("singleEvents", "true");
+      sp.set("showDeleted", "true");
+      sp.set("maxResults", String(params.maxResults ?? 250));
       if (params.syncToken) {
-        sp.set('syncToken', params.syncToken);
+        sp.set("syncToken", params.syncToken);
       } else {
-        if (params.timeMin) sp.set('timeMin', params.timeMin);
-        sp.set('orderBy', 'startTime');
+        if (params.timeMin) sp.set("timeMin", params.timeMin);
+        sp.set("orderBy", "startTime");
       }
-      if (params.pageToken) sp.set('pageToken', params.pageToken);
+      if (params.pageToken) sp.set("pageToken", params.pageToken);
       const url = `${BASE}/calendars/primary/events?${sp.toString()}`;
       const res = await fetch(url, {
         headers: { authorization: `Bearer ${token}` },
       });
       if (res.status === 410) throw new SyncTokenExpired();
       if (!res.ok) {
-        const body = await res.text().catch(() => '');
+        const body = await res.text().catch(() => "");
         throw new CalendarHttpError(res.status, body);
       }
       return (await res.json()) as ListEventsResp;

@@ -1,32 +1,24 @@
-import { revalidatePath } from 'next/cache';
-import { api, oauthStartUrl } from '@/lib/api';
-import { fmtDateTime, fmtRelative } from '@/lib/format';
-import { Button } from '@/components/ui/button';
-import type { SyncState } from '@/lib/types';
-import {
-  Badge,
-  Card,
-  CardHeader,
-  Empty,
-  ErrorBlock,
-  Mono,
-  PageHeader,
-} from '../ui';
+import { revalidatePath } from "next/cache";
+import { api, oauthStartUrl } from "@/lib/api";
+import { fmtDateTime, fmtRelative } from "@/lib/format";
+import { Button } from "@/components/ui/button";
+import type { SyncState } from "@/lib/types";
+import { Badge, Card, CardHeader, Empty, ErrorBlock, Mono, PageHeader } from "../ui";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 async function runGmailSyncAction(formData: FormData) {
-  'use server';
-  const force = formData.get('force') === 'true';
+  "use server";
+  const force = formData.get("force") === "true";
   await api.runGmailSync(force);
-  revalidatePath('/sync');
+  revalidatePath("/sync");
 }
 
 async function runGcalSyncAction(formData: FormData) {
-  'use server';
-  const force = formData.get('force') === 'true';
+  "use server";
+  const force = formData.get("force") === "true";
   await api.runGcalSync(force);
-  revalidatePath('/sync');
+  revalidatePath("/sync");
 }
 
 export default async function SyncPage() {
@@ -51,10 +43,7 @@ export default async function SyncPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Sync"
-        description="Google OAuth grant + Gmail / Calendar ingest state."
-      />
+      <PageHeader title="Sync" description="Google OAuth grant + Gmail / Calendar ingest state." />
 
       <Card>
         <CardHeader>Google OAuth</CardHeader>
@@ -80,8 +69,7 @@ export default async function SyncPage() {
                   <a href={oauthStartUrl()}>Re-authorize</a>
                 </Button>
                 <p className="mt-1.5 text-xs text-faint">
-                  Use this if Google revoked access (
-                  <Mono>invalid_grant</Mono>) or to add scopes.
+                  Use this if Google revoked access (<Mono>invalid_grant</Mono>) or to add scopes.
                 </p>
               </div>
             </>
@@ -159,10 +147,8 @@ function IngestCard({
           <dd className="tabular-nums">
             {state.lastRunAt ? (
               <>
-                <span>{fmtDateTime(state.lastRunAt)}</span>{' '}
-                <span className="text-faint">
-                  ({fmtRelative(state.lastRunAt)})
-                </span>
+                <span>{fmtDateTime(state.lastRunAt)}</span>{" "}
+                <span className="text-faint">({fmtRelative(state.lastRunAt)})</span>
               </>
             ) : (
               <span className="text-faint">never</span>
@@ -170,11 +156,7 @@ function IngestCard({
           </dd>
           <dt className="text-muted-foreground">{cursorLabel}</dt>
           <dd>
-            {cursorValue ? (
-              <Mono>{cursorValue}</Mono>
-            ) : (
-              <span className="text-faint">—</span>
-            )}
+            {cursorValue ? <Mono>{cursorValue}</Mono> : <span className="text-faint">—</span>}
           </dd>
           <dt className="text-muted-foreground">Error count</dt>
           <dd className="tabular-nums">{state.errorCount}</dd>
@@ -202,9 +184,7 @@ function IngestCard({
                 <Button type="submit" variant="outline">
                   Force-run (clear pause)
                 </Button>
-                <span className="text-xs text-faint">
-                  Try after a Re-authorize.
-                </span>
+                <span className="text-xs text-faint">Try after a Re-authorize.</span>
               </>
             ) : (
               <Button type="submit">Run sync now</Button>

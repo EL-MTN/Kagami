@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 import {
   Table,
   TableBody,
@@ -6,7 +6,7 @@ import {
   TableHeader,
   TableRow,
   TableCell,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 
 export interface DataTableColumn {
   key: string;
@@ -40,11 +40,8 @@ export function DataTable({ columns, children, empty, rowCount }: DataTableProps
         <TableBody>
           {showEmpty ? (
             <TableRow className="hover:bg-transparent">
-              <TableCell
-                colSpan={columns.length}
-                className="py-12 text-center text-sm text-faint"
-              >
-                {empty ?? 'Nothing to show.'}
+              <TableCell colSpan={columns.length} className="py-12 text-center text-sm text-faint">
+                {empty ?? "Nothing to show."}
               </TableCell>
             </TableRow>
           ) : (

@@ -4,8 +4,8 @@ import {
   type CalendarClient,
   type ListEventsParams,
   type ListEventsResp,
-} from '../../src/ingest/calendar-client.js';
-import type { CalendarEvent } from '../../src/ingest/parse-event.js';
+} from "../../src/ingest/calendar-client.js";
+import type { CalendarEvent } from "../../src/ingest/parse-event.js";
 
 export class FakeCalendarClient implements CalendarClient {
   // Each call to listEvents shifts the next "snapshot" off this queue, allowing
@@ -18,7 +18,7 @@ export class FakeCalendarClient implements CalendarClient {
   // Last params seen — useful for assertions.
   lastParams: ListEventsParams | null = null;
 
-  enqueueBootstrap(events: CalendarEvent[], nextSyncToken = 'sync-1'): void {
+  enqueueBootstrap(events: CalendarEvent[], nextSyncToken = "sync-1"): void {
     this.responseQueue.push({ items: events, nextSyncToken });
   }
 

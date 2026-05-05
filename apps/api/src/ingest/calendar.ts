@@ -1,24 +1,20 @@
-import { Types } from 'mongoose';
-import type { Config } from '../config.js';
-import { SyncState } from '../db/models/SyncState.js';
-import { upsertInteractionBySourceRef } from '../db/recordInteraction.js';
-import { OAuthError } from '../lib/google-auth.js';
-import { logger } from '../lib/logger.js';
-import {
-  CalendarHttpError,
-  SyncTokenExpired,
-  type CalendarClient,
-} from './calendar-client.js';
+import { Types } from "mongoose";
+import type { Config } from "../config.js";
+import { SyncState } from "../db/models/SyncState.js";
+import { upsertInteractionBySourceRef } from "../db/recordInteraction.js";
+import { OAuthError } from "../lib/google-auth.js";
+import { logger } from "../lib/logger.js";
+import { CalendarHttpError, SyncTokenExpired, type CalendarClient } from "./calendar-client.js";
 import {
   parseCalendarEvent,
   type CalendarEvent,
   type ParsedAttendee,
   type ParsedEvent,
-} from './parse-event.js';
-import { upsertPerson } from './upsert-person.js';
+} from "./parse-event.js";
+import { upsertPerson } from "./upsert-person.js";
 
 export type CalendarSyncResult = {
-  status: 'ok' | 'paused' | 'no_grant' | 'error';
+  status: "ok" | "paused" | "no_grant" | "error";
   fetched: number;
   upserted: number;
   cancelled: number;
@@ -31,23 +27,23 @@ export type CalendarSyncResult = {
 const PAGE_SIZE = 250;
 
 async function loadOrInitState() {
-  const existing = await SyncState.findOne({ provider: 'gcal' });
+  const existing = await SyncState.findOne({ provider: "gcal" });
   if (existing) return existing;
   return await SyncState.create({
-    provider: 'gcal',
+    provider: "gcal",
     syncToken: null,
     historyId: null,
     lastRunAt: null,
     errorCount: 0,
     lastError: null,
     pausedAt: null,
-    source: 'gcal-sync',
+    source: "gcal-sync",
   });
 }
 
 async function pauseWith(message: string): Promise<void> {
   await SyncState.updateOne(
-    { provider: 'gcal' },
+    { provider: "gcal" },
     {
       $set: {
         pausedAt: new Date(),
@@ -65,14 +61,11 @@ async function recordRun(syncTokenAfter: string | null): Promise<void> {
     lastError: null,
   };
   if (syncTokenAfter !== null) update.syncToken = syncTokenAfter;
-  await SyncState.updateOne({ provider: 'gcal' }, { $set: update });
+  await SyncState.updateOne({ provider: "gcal" }, { $set: update });
 }
 
 async function clearSyncToken(): Promise<void> {
-  await SyncState.updateOne(
-    { provider: 'gcal' },
-    { $set: { syncToken: null } },
-  );
+  await SyncState.updateOne({ provider: "gcal" }, { $set: { syncToken: null } });
 }
 
 async function listAll(
@@ -106,7 +99,7 @@ async function processEvent(
     parsed = parseCalendarEvent(ev);
   } catch (err) {
     result.errors++;
-    logger.warn({ err, id: ev.id }, 'gcal: failed to parse event');
+    logger.warn({ err, id: ev.id }, "gcal: failed to parse event");
     return;
   }
 
@@ -114,26 +107,20 @@ async function processEvent(
   const participants: Array<{ personId: Types.ObjectId; role: string }> = [];
   const seen = new Set<string>();
 
-  const link = async (
-    a: ParsedAttendee,
-    role: 'from' | 'attendee',
-  ): Promise<void> => {
+  const link = async (a: ParsedAttendee, role: "from" | "attendee"): Promise<void> => {
     if (seen.has(a.email)) return;
     seen.add(a.email);
     try {
       const r = await upsertPerson({
         email: a.email,
-        displayName: a.displayName ?? '',
+        displayName: a.displayName ?? "",
         occurredAt: parsed.occurredAt,
-        source: 'gcal-sync',
+        source: "gcal-sync",
       });
       participants.push({ personId: r.personId, role });
     } catch (err) {
       result.errors++;
-      logger.warn(
-        { err, email: a.email, eventId: ev.id },
-        'gcal: upsertPerson failed',
-      );
+      logger.warn({ err, email: a.email, eventId: ev.id }, "gcal: upsertPerson failed");
     }
   };
 
@@ -144,8 +131,8 @@ async function processEvent(
   const others = parsed.attendees.filter((a) => !userSet.has(a.email));
   const attendees = others.length >= 2 ? others : parsed.attendees;
 
-  if (parsed.organizer) await link(parsed.organizer, 'from');
-  for (const a of attendees) await link(a, 'attendee');
+  if (parsed.organizer) await link(parsed.organizer, "from");
+  for (const a of attendees) await link(a, "attendee");
 
   if (participants.length === 0) {
     // No resolvable attendees — skip rather than violate the schema invariant.
@@ -156,23 +143,20 @@ async function processEvent(
   try {
     await upsertInteractionBySourceRef({
       occurredAt: parsed.occurredAt,
-      channel: 'calendar',
+      channel: "calendar",
       title: parsed.title,
       body: parsed.body,
       participants,
       ...(parsed.location ? { location: parsed.location } : {}),
-      sourceRef: { provider: 'gcal', id: parsed.id },
-      source: 'gcal-sync',
-      status: parsed.cancelled ? 'cancelled' : 'active',
+      sourceRef: { provider: "gcal", id: parsed.id },
+      source: "gcal-sync",
+      status: parsed.cancelled ? "cancelled" : "active",
     });
     result.upserted++;
     if (parsed.cancelled) result.cancelled++;
   } catch (err) {
     result.errors++;
-    logger.warn(
-      { err, id: ev.id },
-      'gcal: upsertInteractionBySourceRef failed',
-    );
+    logger.warn({ err, id: ev.id }, "gcal: upsertInteractionBySourceRef failed");
   }
   // Suppress unused-config warning — kept for symmetry with gmail worker.
   void config;
@@ -216,7 +200,7 @@ export async function runCalendarSync(args: {
 }): Promise<CalendarSyncResult> {
   const { config, client } = args;
   const result: CalendarSyncResult = {
-    status: 'ok',
+    status: "ok",
     fetched: 0,
     upserted: 0,
     cancelled: 0,
@@ -226,15 +210,15 @@ export async function runCalendarSync(args: {
   };
 
   const state = await loadOrInitState();
-  if (state.get('pausedAt') && !args.force) {
+  if (state.get("pausedAt") && !args.force) {
     return {
       ...result,
-      status: 'paused',
-      message: (state.get('lastError') as string | null) ?? 'paused',
+      status: "paused",
+      message: (state.get("lastError") as string | null) ?? "paused",
     };
   }
 
-  const startToken = state.get('syncToken') as string | null;
+  const startToken = state.get("syncToken") as string | null;
 
   try {
     let after: string | null;
@@ -244,7 +228,7 @@ export async function runCalendarSync(args: {
         : await bootstrap(client, config, result);
     } catch (err) {
       if (err instanceof SyncTokenExpired) {
-        logger.warn('gcal: syncToken expired; clearing and re-bootstrapping');
+        logger.warn("gcal: syncToken expired; clearing and re-bootstrapping");
         await clearSyncToken();
         result.resyncedFromBootstrap = true;
         after = await bootstrap(client, config, result);
@@ -257,48 +241,46 @@ export async function runCalendarSync(args: {
     return result;
   } catch (err) {
     if (err instanceof OAuthError) {
-      if (err.code === 'invalid_grant') {
-        await pauseWith('invalid_grant');
+      if (err.code === "invalid_grant") {
+        await pauseWith("invalid_grant");
         return {
           ...result,
-          status: 'paused',
-          message: 'invalid_grant — re-grant required',
+          status: "paused",
+          message: "invalid_grant — re-grant required",
         };
       }
-      if (err.code === 'no_grant') {
+      if (err.code === "no_grant") {
         return {
           ...result,
-          status: 'no_grant',
-          message: 'no Google OAuth grant on file',
+          status: "no_grant",
+          message: "no Google OAuth grant on file",
         };
       }
     }
     if (err instanceof CalendarHttpError && err.status === 401) {
-      await pauseWith('invalid_grant');
+      await pauseWith("invalid_grant");
       return {
         ...result,
-        status: 'paused',
-        message: 'calendar returned 401 — re-grant required',
+        status: "paused",
+        message: "calendar returned 401 — re-grant required",
       };
     }
     const message = err instanceof Error ? err.message : String(err);
     await SyncState.updateOne(
-      { provider: 'gcal' },
+      { provider: "gcal" },
       {
         $set: { lastError: message, lastRunAt: new Date() },
         $inc: { errorCount: 1 },
       },
     );
-    logger.error({ err }, 'gcal sync failed');
-    return { ...result, status: 'error', message };
+    logger.error({ err }, "gcal sync failed");
+    return { ...result, status: "error", message };
   }
 }
 
-export async function runCalendarSyncOnce(
-  config: Config,
-): Promise<CalendarSyncResult> {
-  const { makeCalendarClient } = await import('./calendar-client.js');
-  const { getAccessToken } = await import('../lib/google-auth.js');
+export async function runCalendarSyncOnce(config: Config): Promise<CalendarSyncResult> {
+  const { makeCalendarClient } = await import("./calendar-client.js");
+  const { getAccessToken } = await import("../lib/google-auth.js");
   const client = makeCalendarClient(() => getAccessToken(config));
   return runCalendarSync({ config, client });
 }

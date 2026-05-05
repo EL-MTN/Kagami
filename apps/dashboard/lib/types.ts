@@ -42,13 +42,7 @@ export type Organization = {
   updatedAt: string;
 };
 
-export type Channel =
-  | 'email'
-  | 'calendar'
-  | 'in_person'
-  | 'call'
-  | 'message'
-  | 'manual';
+export type Channel = "email" | "calendar" | "in_person" | "call" | "message" | "manual";
 
 export type Interaction = {
   id: string;
@@ -66,7 +60,7 @@ export type Interaction = {
     ref: string | null;
   }[];
   context: string[];
-  status: 'active' | 'cancelled';
+  status: "active" | "cancelled";
   source: string;
   sourceVersion: string | null;
   deletedAt: string | null;
@@ -77,9 +71,9 @@ export type Interaction = {
 export type Followup = {
   id: string;
   personId: string;
-  direction: 'i_owe' | 'they_owe';
+  direction: "i_owe" | "they_owe";
   dueAt: string | null;
-  status: 'open' | 'done' | 'snoozed' | 'dismissed';
+  status: "open" | "done" | "snoozed" | "dismissed";
   reason: string;
   sourceInteractionId: string | null;
   source: string;
@@ -100,7 +94,7 @@ export type ListPeopleQuery = {
   hasOpenFollowup?: boolean;
   source?: string;
   includeTombstoned?: boolean;
-  sort?: '_id:-1' | 'lastInteractionAt:-1';
+  sort?: "_id:-1" | "lastInteractionAt:-1";
 };
 
 export type ContextRow = { tag: string; count: number };
@@ -116,7 +110,7 @@ export type ListInteractionsQuery = {
   occurredBefore?: string;
   occurredAfter?: string;
   query?: string;
-  status?: 'active' | 'cancelled' | 'any';
+  status?: "active" | "cancelled" | "any";
   source?: string;
   includeTombstoned?: boolean;
 };
@@ -125,8 +119,8 @@ export type ListFollowupsQuery = {
   limit?: number;
   cursor?: string;
   personId?: string;
-  direction?: 'i_owe' | 'they_owe';
-  status?: 'open' | 'done' | 'snoozed' | 'dismissed';
+  direction?: "i_owe" | "they_owe";
+  status?: "open" | "done" | "snoozed" | "dismissed";
   dueBefore?: string;
   dueAfter?: string;
   includeTombstoned?: boolean;
@@ -137,7 +131,7 @@ export type OAuthStatus =
   | { granted: true; scopes: string[]; grantedAt: string };
 
 export type SyncState = {
-  provider: 'gmail' | 'gcal';
+  provider: "gmail" | "gcal";
   historyId: string | null;
   syncToken: string | null;
   lastRunAt: string | null;
@@ -147,7 +141,7 @@ export type SyncState = {
 };
 
 export type RunSyncResult = {
-  status: 'ok' | 'paused' | 'no_grant' | 'error';
+  status: "ok" | "paused" | "no_grant" | "error";
   fetched: number;
   inserted: number;
   skippedExisting: number;
@@ -158,7 +152,7 @@ export type RunSyncResult = {
 };
 
 export type RunCalendarSyncResult = {
-  status: 'ok' | 'paused' | 'no_grant' | 'error';
+  status: "ok" | "paused" | "no_grant" | "error";
   fetched: number;
   upserted: number;
   cancelled: number;

@@ -1,16 +1,8 @@
-import { api } from '@/lib/api';
-import { fmtDateTime } from '@/lib/format';
-import {
-  Card,
-  CardHeader,
-  Empty,
-  ErrorBlock,
-  Mono,
-  PageHeader,
-  PersonLink,
-} from '../ui';
+import { api } from "@/lib/api";
+import { fmtDateTime } from "@/lib/format";
+import { Card, CardHeader, Empty, ErrorBlock, Mono, PageHeader, PersonLink } from "../ui";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 const PEEK = 200;
 
@@ -19,7 +11,7 @@ export default async function TombstonesPage() {
   try {
     [people, interactions, followups] = await Promise.all([
       api.listPeople({ includeTombstoned: true, limit: PEEK }),
-      api.listInteractions({ includeTombstoned: true, limit: PEEK, status: 'any' }),
+      api.listInteractions({ includeTombstoned: true, limit: PEEK, status: "any" }),
       api.listFollowups({ includeTombstoned: true, limit: PEEK }),
     ]);
   } catch (err) {
@@ -55,13 +47,10 @@ export default async function TombstonesPage() {
           ) : (
             <ul className="divide-y divide-border">
               {tombPeople.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex items-center justify-between px-5 py-2.5 text-sm"
-                >
+                <li key={p.id} className="flex items-center justify-between px-5 py-2.5 text-sm">
                   <PersonLink id={p.id} name={p.displayName} />
                   <span className="text-xs tabular-nums text-muted-foreground">
-                    {p.suppressReingest ? 'suppressReingest=true · ' : ''}
+                    {p.suppressReingest ? "suppressReingest=true · " : ""}
                     {fmtDateTime(p.deletedAt)}
                   </span>
                 </li>
@@ -71,9 +60,7 @@ export default async function TombstonesPage() {
         </Card>
 
         <Card>
-          <CardHeader>
-            Tombstoned interactions ({tombInteractions.length})
-          </CardHeader>
+          <CardHeader>Tombstoned interactions ({tombInteractions.length})</CardHeader>
           {tombInteractions.length === 0 ? (
             <div className="p-4">
               <Empty>None.</Empty>
@@ -96,9 +83,7 @@ export default async function TombstonesPage() {
         </Card>
 
         <Card>
-          <CardHeader>
-            Tombstoned followups ({tombFollowups.length})
-          </CardHeader>
+          <CardHeader>Tombstoned followups ({tombFollowups.length})</CardHeader>
           {tombFollowups.length === 0 ? (
             <div className="p-4">
               <Empty>None.</Empty>

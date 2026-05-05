@@ -1,15 +1,12 @@
-import { Router } from 'express';
-import { Types } from 'mongoose';
-import { z } from 'zod';
-import { Followup } from '../db/models/Followup.js';
-import {
-  FOLLOWUP_DIRECTIONS,
-  FOLLOWUP_STATUSES,
-} from '../db/models/Followup.js';
-import { SOURCE_VALUES } from '../db/models/base.js';
-import { encodeCursor, decodeCursor } from '../lib/cursor.js';
-import { errors } from '../lib/errors.js';
-import { serializeFollowup } from '../lib/serialize.js';
+import { Router } from "express";
+import { Types } from "mongoose";
+import { z } from "zod";
+import { Followup } from "../db/models/Followup.js";
+import { FOLLOWUP_DIRECTIONS, FOLLOWUP_STATUSES } from "../db/models/Followup.js";
+import { SOURCE_VALUES } from "../db/models/base.js";
+import { encodeCursor, decodeCursor } from "../lib/cursor.js";
+import { errors } from "../lib/errors.js";
+import { serializeFollowup } from "../lib/serialize.js";
 import {
   BoolFlag,
   DateInput,
@@ -18,8 +15,8 @@ import {
   ListResponse,
   ObjectIdString,
   Pagination,
-} from '../schemas/common.js';
-import type { EndpointSpec } from '../manifest.js';
+} from "../schemas/common.js";
+import type { EndpointSpec } from "../manifest.js";
 
 export const FollowupResponseShape = z.object({
   id: ObjectIdString,
@@ -57,7 +54,7 @@ export const FollowupUpdateBody = z
 export const ListFollowupsQuery = Pagination.extend({
   personId: ObjectIdString.optional(),
   direction: z.enum(FOLLOWUP_DIRECTIONS).optional(),
-  status: z.enum(FOLLOWUP_STATUSES).default('open'),
+  status: z.enum(FOLLOWUP_STATUSES).default("open"),
   dueBefore: DateInput.optional(),
   dueAfter: DateInput.optional(),
   includeTombstoned: BoolFlag.optional(),
@@ -65,7 +62,7 @@ export const ListFollowupsQuery = Pagination.extend({
 
 export const followupsRouter = Router();
 
-followupsRouter.get('/followups', async (req, res) => {
+followupsRouter.get("/followups", async (req, res) => {
   const q = ListFollowupsQuery.parse(req.query);
   const filter: Record<string, unknown> = { status: q.status };
   if (!q.includeTombstoned) filter.deletedAt = null;
@@ -98,7 +95,7 @@ followupsRouter.get('/followups', async (req, res) => {
   res.json(body);
 });
 
-followupsRouter.post('/followups', async (req, res) => {
+followupsRouter.post("/followups", async (req, res) => {
   const body = FollowupCreateBody.parse(req.body);
   const doc = await Followup.create({
     personId: new Types.ObjectId(body.personId),
@@ -108,12 +105,12 @@ followupsRouter.post('/followups', async (req, res) => {
     ...(body.sourceInteractionId
       ? { sourceInteractionId: new Types.ObjectId(body.sourceInteractionId) }
       : {}),
-    source: 'concierge',
+    source: "concierge",
   });
   res.status(201).json(serializeFollowup(doc.toObject()));
 });
 
-followupsRouter.patch('/followups/:id', async (req, res) => {
+followupsRouter.patch("/followups/:id", async (req, res) => {
   const { id } = IdParam.parse(req.params);
   const body = FollowupUpdateBody.parse(req.body);
   const update: Record<string, unknown> = { status: body.status };
@@ -125,52 +122,52 @@ followupsRouter.patch('/followups/:id', async (req, res) => {
     { $set: update },
     { new: true, runValidators: true },
   ).lean();
-  if (!doc) throw errors.notFound('followup not found');
+  if (!doc) throw errors.notFound("followup not found");
   res.json(serializeFollowup(doc));
 });
 
-followupsRouter.delete('/followups/:id', async (req, res) => {
+followupsRouter.delete("/followups/:id", async (req, res) => {
   const { id } = IdParam.parse(req.params);
   const doc = await Followup.findOneAndUpdate(
     { _id: id, deletedAt: null },
     { $set: { deletedAt: new Date() } },
     { new: true },
   ).lean();
-  if (!doc) throw errors.notFound('followup not found');
+  if (!doc) throw errors.notFound("followup not found");
   res.status(200).json(serializeFollowup(doc));
 });
 
 export const followupsEndpoints: EndpointSpec[] = [
   {
-    name: 'list_followups',
-    method: 'GET',
-    path: '/v1/followups',
-    description: 'List followups (default status=open).',
+    name: "list_followups",
+    method: "GET",
+    path: "/v1/followups",
+    description: "List followups (default status=open).",
     query: ListFollowupsQuery,
     response: ListResponse(FollowupResponseShape),
   },
   {
-    name: 'create_followup',
-    method: 'POST',
-    path: '/v1/followups',
-    description: 'Create a followup. Mashiro sets direction.',
+    name: "create_followup",
+    method: "POST",
+    path: "/v1/followups",
+    description: "Create a followup. Mashiro sets direction.",
     body: FollowupCreateBody,
     response: FollowupResponseShape,
   },
   {
-    name: 'update_followup',
-    method: 'PATCH',
-    path: '/v1/followups/:id',
-    description: 'Update a followup status (complete/snooze/dismiss).',
+    name: "update_followup",
+    method: "PATCH",
+    path: "/v1/followups/:id",
+    description: "Update a followup status (complete/snooze/dismiss).",
     params: IdParam,
     body: FollowupUpdateBody,
     response: FollowupResponseShape,
   },
   {
-    name: 'tombstone_followup',
-    method: 'DELETE',
-    path: '/v1/followups/:id',
-    description: 'Soft-delete a followup.',
+    name: "tombstone_followup",
+    method: "DELETE",
+    path: "/v1/followups/:id",
+    description: "Soft-delete a followup.",
     params: IdParam,
     response: FollowupResponseShape,
   },

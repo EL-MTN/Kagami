@@ -1,12 +1,12 @@
-import { Schema, model } from 'mongoose';
-import { baseSchemaOptions, provenanceFields } from './base.js';
+import { Schema, model } from "mongoose";
+import { baseSchemaOptions, provenanceFields } from "./base.js";
 
 const SyncStateSchema = new Schema(
   {
     provider: {
       type: String,
       required: true,
-      enum: ['gmail', 'gcal'],
+      enum: ["gmail", "gcal"],
       unique: true,
     },
     historyId: { type: String, default: null },
@@ -22,5 +22,5 @@ const SyncStateSchema = new Schema(
 
 SyncStateSchema.index({ deletedAt: 1 }, { sparse: true });
 
-export const SyncState = model('SyncState', SyncStateSchema);
-export type SyncStateDoc = ReturnType<(typeof SyncState)['hydrate']>;
+export const SyncState = model("SyncState", SyncStateSchema);
+export type SyncStateDoc = ReturnType<(typeof SyncState)["hydrate"]>;

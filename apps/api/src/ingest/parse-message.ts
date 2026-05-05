@@ -49,7 +49,7 @@ export function parseAddress(raw: string): ParsedAddress | null {
   if (!raw) return null;
   const m = raw.match(ADDRESS_RE);
   if (!m || !m[2]) return null;
-  const name = (m[1] ?? '').trim() || null;
+  const name = (m[1] ?? "").trim() || null;
   return { name, email: m[2].toLowerCase() };
 }
 
@@ -60,7 +60,7 @@ export function parseAddressList(raw: string | undefined): ParsedAddress[] {
   const out: ParsedAddress[] = [];
   let depth = 0;
   let inQuote = false;
-  let buf = '';
+  let buf = "";
   for (const ch of raw) {
     if (ch === '"' && depth === 0) {
       inQuote = !inQuote;
@@ -71,15 +71,15 @@ export function parseAddressList(raw: string | undefined): ParsedAddress[] {
       buf += ch;
       continue;
     }
-    if (ch === '<') depth++;
-    else if (ch === '>') depth = Math.max(0, depth - 1);
-    if ((ch === ',' || ch === ';') && depth === 0) {
+    if (ch === "<") depth++;
+    else if (ch === ">") depth = Math.max(0, depth - 1);
+    if ((ch === "," || ch === ";") && depth === 0) {
       const piece = buf.trim();
       if (piece) {
         const a = parseAddress(piece);
         if (a) out.push(a);
       }
-      buf = '';
+      buf = "";
       continue;
     }
     buf += ch;
@@ -102,19 +102,12 @@ function headerMap(headers: GmailHeader[] | undefined): Map<string, string> {
 }
 
 function decodeBase64Url(s: string): Buffer {
-  return Buffer.from(s, 'base64url');
+  return Buffer.from(s, "base64url");
 }
 
-function findPartByMime(
-  payload: GmailPart | undefined,
-  mimeType: string,
-): GmailPart | null {
+function findPartByMime(payload: GmailPart | undefined, mimeType: string): GmailPart | null {
   if (!payload) return null;
-  if (
-    payload.mimeType === mimeType &&
-    payload.body?.data &&
-    !payload.filename
-  ) {
+  if (payload.mimeType === mimeType && payload.body?.data && !payload.filename) {
     return payload;
   }
   if (payload.parts) {
@@ -147,58 +140,50 @@ function collectAttachments(
 
 function stripHtml(html: string): string {
   return html
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<\/?(?:p|br|li|div|h[1-6]|tr)\b[^>]*>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<\/?(?:p|br|li|div|h[1-6]|tr)\b[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
 function extractBody(payload: GmailPart | undefined): string {
   // Prefer text/plain per spec; fall back to text/html stripped.
-  const plain = findPartByMime(payload, 'text/plain');
+  const plain = findPartByMime(payload, "text/plain");
   if (plain?.body?.data) {
-    return decodeBase64Url(plain.body.data).toString('utf8');
+    return decodeBase64Url(plain.body.data).toString("utf8");
   }
   // Top-level body (non-multipart messages).
-  if (
-    payload?.mimeType?.startsWith('text/plain') &&
-    payload.body?.data &&
-    !payload.filename
-  ) {
-    return decodeBase64Url(payload.body.data).toString('utf8');
+  if (payload?.mimeType?.startsWith("text/plain") && payload.body?.data && !payload.filename) {
+    return decodeBase64Url(payload.body.data).toString("utf8");
   }
-  const html = findPartByMime(payload, 'text/html');
+  const html = findPartByMime(payload, "text/html");
   if (html?.body?.data) {
-    return stripHtml(decodeBase64Url(html.body.data).toString('utf8'));
+    return stripHtml(decodeBase64Url(html.body.data).toString("utf8"));
   }
-  if (
-    payload?.mimeType?.startsWith('text/html') &&
-    payload.body?.data &&
-    !payload.filename
-  ) {
-    return stripHtml(decodeBase64Url(payload.body.data).toString('utf8'));
+  if (payload?.mimeType?.startsWith("text/html") && payload.body?.data && !payload.filename) {
+    return stripHtml(decodeBase64Url(payload.body.data).toString("utf8"));
   }
-  return '';
+  return "";
 }
 
 export function parseGmailMessage(msg: GmailMessage): ParsedMessage {
   const h = headerMap(msg.payload?.headers);
-  const subject = h.get('subject') ?? '(no subject)';
-  const from = parseAddress(h.get('from') ?? '');
-  const to = parseAddressList(h.get('to'));
-  const cc = parseAddressList(h.get('cc'));
-  const bcc = parseAddressList(h.get('bcc'));
-  const hasListUnsubscribe = h.has('list-unsubscribe');
-  const dateHeader = h.get('date');
+  const subject = h.get("subject") ?? "(no subject)";
+  const from = parseAddress(h.get("from") ?? "");
+  const to = parseAddressList(h.get("to"));
+  const cc = parseAddressList(h.get("cc"));
+  const bcc = parseAddressList(h.get("bcc"));
+  const hasListUnsubscribe = h.has("list-unsubscribe");
+  const dateHeader = h.get("date");
   let occurredAt: Date | null = null;
   if (dateHeader) {
     const d = new Date(dateHeader);
@@ -226,7 +211,7 @@ export function parseGmailMessage(msg: GmailMessage): ParsedMessage {
 
 export function senderDomain(addr: ParsedAddress | null): string | null {
   if (!addr) return null;
-  const at = addr.email.lastIndexOf('@');
+  const at = addr.email.lastIndexOf("@");
   if (at < 0) return null;
   return addr.email.slice(at + 1).toLowerCase();
 }

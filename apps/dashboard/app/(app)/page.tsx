@@ -1,6 +1,6 @@
-import { api } from '@/lib/api';
-import { fmtDateTime, fmtRelative } from '@/lib/format';
-import type { Followup, Interaction, Person } from '@/lib/types';
+import { api } from "@/lib/api";
+import { fmtDateTime, fmtRelative } from "@/lib/format";
+import type { Followup, Interaction, Person } from "@/lib/types";
 import {
   Card,
   CardHeader,
@@ -10,23 +10,21 @@ import {
   ErrorBlock,
   PageHeader,
   PersonLink,
-} from './ui';
+} from "./ui";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 async function fetchData() {
   const now = new Date().toISOString();
   const [overdue, upcoming, recent] = await Promise.all([
-    api.listFollowups({ status: 'open', dueBefore: now, limit: 25 }),
-    api.listFollowups({ status: 'open', dueAfter: now, limit: 25 }),
+    api.listFollowups({ status: "open", dueBefore: now, limit: 25 }),
+    api.listFollowups({ status: "open", dueAfter: now, limit: 25 }),
     api.listInteractions({ limit: 15 }),
   ]);
   const personIds = new Set<string>();
   for (const f of [...overdue.items, ...upcoming.items]) personIds.add(f.personId);
   for (const i of recent.items) for (const p of i.participants) personIds.add(p.personId);
-  const people = await Promise.all(
-    [...personIds].map((id) => api.getPerson(id).catch(() => null)),
-  );
+  const people = await Promise.all([...personIds].map((id) => api.getPerson(id).catch(() => null)));
   const personById = new Map<string, Person>();
   for (const p of people) if (p) personById.set(p.id, p);
   return { overdue, upcoming, recent, personById };
@@ -137,18 +135,12 @@ function FollowupRow({ f, person }: { f: Followup; person?: Person }) {
   );
 }
 
-function InteractionRow({
-  i,
-  personById,
-}: {
-  i: Interaction;
-  personById: Map<string, Person>;
-}) {
+function InteractionRow({ i, personById }: { i: Interaction; personById: Map<string, Person> }) {
   const names = i.participants
     .slice(0, 3)
-    .map((p) => personById.get(p.personId)?.displayName ?? '?')
-    .join(', ');
-  const more = i.participants.length > 3 ? ` +${i.participants.length - 3}` : '';
+    .map((p) => personById.get(p.personId)?.displayName ?? "?")
+    .join(", ");
+  const more = i.participants.length > 3 ? ` +${i.participants.length - 3}` : "";
   return (
     <li className="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-accent/50">
       <div className="mt-1 shrink-0">

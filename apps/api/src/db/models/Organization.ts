@@ -1,5 +1,5 @@
-import { Schema, model } from 'mongoose';
-import { baseSchemaOptions, provenanceFields } from './base.js';
+import { Schema, model } from "mongoose";
+import { baseSchemaOptions, provenanceFields } from "./base.js";
 
 const OrganizationSchema = new Schema(
   {
@@ -16,5 +16,5 @@ const OrganizationSchema = new Schema(
 OrganizationSchema.index({ domain: 1 }, { unique: true, sparse: true });
 OrganizationSchema.index({ deletedAt: 1 }, { sparse: true });
 
-export const Organization = model('Organization', OrganizationSchema);
-export type OrganizationDoc = ReturnType<(typeof Organization)['hydrate']>;
+export const Organization = model("Organization", OrganizationSchema);
+export type OrganizationDoc = ReturnType<(typeof Organization)["hydrate"]>;

@@ -1,9 +1,9 @@
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
-import { api, ApiError, config } from '@/lib/api';
-import { fmtDate, fmtDateTime, fmtRelative } from '@/lib/format';
-import { Button } from '@/components/ui/button';
-import type { Followup, Interaction, Person } from '@/lib/types';
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { api, ApiError, config } from "@/lib/api";
+import { fmtDate, fmtDateTime, fmtRelative } from "@/lib/format";
+import { Button } from "@/components/ui/button";
+import type { Followup, Interaction, Person } from "@/lib/types";
 import {
   Badge,
   Card,
@@ -16,9 +16,9 @@ import {
   PageHeader,
   PersonLink,
   StatusBadge,
-} from '../../ui';
+} from "../../ui";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 type Search = {
   channel?: string;
@@ -33,13 +33,10 @@ function isOutbound(
   userEmails: string[],
   peopleById: Map<string, Person>,
 ): boolean {
-  const fromParticipants = i.participants.filter((p) => p.role === 'from');
+  const fromParticipants = i.participants.filter((p) => p.role === "from");
   for (const p of fromParticipants) {
     const fromPerson = peopleById.get(p.personId);
-    if (
-      fromPerson?.primaryEmail &&
-      userEmails.includes(fromPerson.primaryEmail.toLowerCase())
-    ) {
+    if (fromPerson?.primaryEmail && userEmails.includes(fromPerson.primaryEmail.toLowerCase())) {
       return true;
     }
   }
@@ -85,11 +82,9 @@ export default async function PersonPage({
         ...(sp.occurredBefore ? { occurredBefore: sp.occurredBefore } : {}),
         ...(sp.occurredAfter ? { occurredAfter: sp.occurredAfter } : {}),
         ...(sp.source ? { source: sp.source } : {}),
-        ...(sp.status === 'any' || sp.status === 'cancelled'
-          ? { status: sp.status }
-          : {}),
+        ...(sp.status === "any" || sp.status === "cancelled" ? { status: sp.status } : {}),
       }),
-      api.listFollowups({ personId: id, status: 'open', limit: 25 }),
+      api.listFollowups({ personId: id, status: "open", limit: 25 }),
     ]);
     if (person.primaryOrgId) {
       org = await api.getOrganization(person.primaryOrgId).catch(() => null);
@@ -120,13 +115,9 @@ export default async function PersonPage({
     <div className="space-y-6">
       <PageHeader
         title={person.displayName}
-        description={[
-          person.relationship,
-          org ? `@ ${org.name}` : null,
-          person.primaryEmail,
-        ]
+        description={[person.relationship, org ? `@ ${org.name}` : null, person.primaryEmail]
           .filter(Boolean)
-          .join(' · ')}
+          .join(" · ")}
         meta={
           <div className="flex items-center gap-2">
             {person.deletedAt ? <Badge tone="red">tombstoned</Badge> : null}
@@ -151,9 +142,7 @@ export default async function PersonPage({
                     <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                       <div className="flex items-center gap-2">
                         <ChannelBadge channel={i.channel} />
-                        {i.status !== 'active' ? (
-                          <StatusBadge status={i.status} />
-                        ) : null}
+                        {i.status !== "active" ? <StatusBadge status={i.status} /> : null}
                         {(() => {
                           const lookup = new Map(participantsById);
                           lookup.set(person.id, person);
@@ -163,19 +152,13 @@ export default async function PersonPage({
                             <Badge tone="zinc">inbound</Badge>
                           );
                         })()}
-                        <span className="tabular-nums">
-                          {fmtDateTime(i.occurredAt)}
-                        </span>
+                        <span className="tabular-nums">{fmtDateTime(i.occurredAt)}</span>
                       </div>
                       <Mono>{i.source}</Mono>
                     </div>
-                    <p className="mt-1.5 text-sm font-medium text-foreground">
-                      {i.title}
-                    </p>
+                    <p className="mt-1.5 text-sm font-medium text-foreground">{i.title}</p>
                     {i.body ? (
-                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                        {i.body}
-                      </p>
+                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{i.body}</p>
                     ) : null}
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       {i.participants
@@ -184,15 +167,8 @@ export default async function PersonPage({
                           const other = participantsById.get(p.personId);
                           return (
                             <span key={p.personId + p.role}>
-                              <span className="text-faint">{p.role}:</span>{' '}
-                              {other ? (
-                                <PersonLink
-                                  id={other.id}
-                                  name={other.displayName}
-                                />
-                              ) : (
-                                '?'
-                              )}
+                              <span className="text-faint">{p.role}:</span>{" "}
+                              {other ? <PersonLink id={other.id} name={other.displayName} /> : "?"}
                             </span>
                           );
                         })}
@@ -240,12 +216,10 @@ export default async function PersonPage({
                     <div className="flex items-center justify-between gap-2">
                       <DirectionBadge direction={f.direction} />
                       <span className="text-xs tabular-nums text-muted-foreground">
-                        {f.dueAt ? fmtRelative(f.dueAt) : 'no due date'}
+                        {f.dueAt ? fmtRelative(f.dueAt) : "no due date"}
                       </span>
                     </div>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {f.reason}
-                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">{f.reason}</p>
                   </li>
                 ))}
               </ul>
@@ -256,35 +230,27 @@ export default async function PersonPage({
             <CardHeader>Detail</CardHeader>
             <dl className="grid grid-cols-3 gap-y-2.5 px-5 py-4 text-sm">
               <Detail label="First seen" value={fmtDate(person.firstSeen)} />
-              <Detail
-                label="Last interaction"
-                value={fmtDate(person.lastInteractionAt)}
-              />
-              <Detail label="Birthday" value={person.birthday ?? '—'} />
-              <Detail label="Phones" value={person.phones.join(', ') || '—'} />
+              <Detail label="Last interaction" value={fmtDate(person.lastInteractionAt)} />
+              <Detail label="Birthday" value={person.birthday ?? "—"} />
+              <Detail label="Phones" value={person.phones.join(", ") || "—"} />
               <Detail
                 label="Emails"
-                value={person.emails.length ? person.emails.join(', ') : '—'}
+                value={person.emails.length ? person.emails.join(", ") : "—"}
               />
               <Detail
                 label="Handles"
                 value={
                   Object.keys(person.handles).length === 0
-                    ? '—'
+                    ? "—"
                     : Object.entries(person.handles)
                         .map(([k, v]) => `${k}:${v}`)
-                        .join(', ')
+                        .join(", ")
                 }
               />
-              <Detail label="Tags" value={person.tags.join(', ') || '—'} />
+              <Detail label="Tags" value={person.tags.join(", ") || "—"} />
               <Detail label="Source" value={<Mono>{person.source}</Mono>} />
-              <Detail
-                label="suppressReingest"
-                value={person.suppressReingest ? 'yes' : 'no'}
-              />
-              {person.notes ? (
-                <Detail label="Notes" value={person.notes} />
-              ) : null}
+              <Detail label="suppressReingest" value={person.suppressReingest ? "yes" : "no"} />
+              {person.notes ? <Detail label="Notes" value={person.notes} /> : null}
             </dl>
           </Card>
         </aside>
@@ -306,14 +272,14 @@ function Detail({ label, value }: { label: string; value: React.ReactNode }) {
 
 function FilterBar({ sp, basePath }: { sp: Search; basePath: string }) {
   const inputCls =
-    'h-8 rounded-md border border-border bg-card px-2 text-xs transition-colors focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/40';
+    "h-8 rounded-md border border-border bg-card px-2 text-xs transition-colors focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/40";
   return (
     <form
       action={basePath}
       method="get"
       className="flex flex-wrap gap-2 border-b border-border px-5 py-3"
     >
-      <select name="channel" defaultValue={sp.channel ?? ''} className={inputCls}>
+      <select name="channel" defaultValue={sp.channel ?? ""} className={inputCls}>
         <option value="">any channel</option>
         <option value="email">email</option>
         <option value="calendar">calendar</option>
@@ -322,11 +288,7 @@ function FilterBar({ sp, basePath }: { sp: Search; basePath: string }) {
         <option value="message">message</option>
         <option value="manual">manual</option>
       </select>
-      <select
-        name="status"
-        defaultValue={sp.status ?? 'active'}
-        className={inputCls}
-      >
+      <select name="status" defaultValue={sp.status ?? "active"} className={inputCls}>
         <option value="active">active</option>
         <option value="cancelled">cancelled</option>
         <option value="any">any status</option>
@@ -334,13 +296,13 @@ function FilterBar({ sp, basePath }: { sp: Search; basePath: string }) {
       <input
         type="date"
         name="occurredAfter"
-        defaultValue={sp.occurredAfter?.slice(0, 10) ?? ''}
+        defaultValue={sp.occurredAfter?.slice(0, 10) ?? ""}
         className={inputCls}
       />
       <input
         type="date"
         name="occurredBefore"
-        defaultValue={sp.occurredBefore?.slice(0, 10) ?? ''}
+        defaultValue={sp.occurredBefore?.slice(0, 10) ?? ""}
         className={inputCls}
       />
       <Button type="submit" variant="outline" size="sm">

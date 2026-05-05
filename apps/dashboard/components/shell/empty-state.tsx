@@ -1,13 +1,13 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
 interface EmptyStateProps {
   children: ReactNode;
   /** "inline" inside a card with no border; "card" stands alone with dashed border. */
-  variant?: 'card' | 'inline';
+  variant?: "card" | "inline";
 }
 
-export function EmptyState({ children, variant = 'card' }: EmptyStateProps) {
-  if (variant === 'inline') {
+export function EmptyState({ children, variant = "card" }: EmptyStateProps) {
+  if (variant === "inline") {
     return <p className="py-12 text-center text-sm text-faint">{children}</p>;
   }
   return (

@@ -1,12 +1,12 @@
-import { Router } from 'express';
-import { Types } from 'mongoose';
-import { z } from 'zod';
-import { Followup } from '../db/models/Followup.js';
-import { Person } from '../db/models/Person.js';
-import { SOURCE_VALUES } from '../db/models/base.js';
-import { encodeCursor, decodeCursor } from '../lib/cursor.js';
-import { errors } from '../lib/errors.js';
-import { serializePerson } from '../lib/serialize.js';
+import { Router } from "express";
+import { Types } from "mongoose";
+import { z } from "zod";
+import { Followup } from "../db/models/Followup.js";
+import { Person } from "../db/models/Person.js";
+import { SOURCE_VALUES } from "../db/models/base.js";
+import { encodeCursor, decodeCursor } from "../lib/cursor.js";
+import { errors } from "../lib/errors.js";
+import { serializePerson } from "../lib/serialize.js";
 import {
   BoolFlag,
   DateInput,
@@ -15,13 +15,13 @@ import {
   ListResponse,
   ObjectIdString,
   Pagination,
-} from '../schemas/common.js';
-import type { EndpointSpec } from '../manifest.js';
+} from "../schemas/common.js";
+import type { EndpointSpec } from "../manifest.js";
 import {
   ListInteractionsQuery,
   listInteractionsForFilter,
   InteractionResponseShape,
-} from './interactions.js';
+} from "./interactions.js";
 
 const Birthday = z.union([
   z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -75,15 +75,13 @@ export const ListPeopleQuery = Pagination.extend({
   tag: z
     .union([z.string(), z.array(z.string())])
     .optional()
-    .transform((v) =>
-      v === undefined ? undefined : Array.isArray(v) ? v : [v],
-    ),
+    .transform((v) => (v === undefined ? undefined : Array.isArray(v) ? v : [v])),
   lastInteractionBefore: DateInput.optional(),
   lastInteractionAfter: DateInput.optional(),
   hasOpenFollowup: BoolFlag.optional(),
   source: z.enum(SOURCE_VALUES).optional(),
   includeTombstoned: BoolFlag.optional(),
-  sort: z.enum(['_id:-1', 'lastInteractionAt:-1']).default('_id:-1'),
+  sort: z.enum(["_id:-1", "lastInteractionAt:-1"]).default("_id:-1"),
 });
 
 type LiaCursor = { lia: string | null; id: string };
@@ -91,7 +89,7 @@ type IdCursor = { id: string };
 
 export const peopleRouter = Router();
 
-peopleRouter.get('/people', async (req, res) => {
+peopleRouter.get("/people", async (req, res) => {
   const q = ListPeopleQuery.parse(req.query);
   const filter: Record<string, unknown> = {};
   if (!q.includeTombstoned) filter.deletedAt = null;
@@ -107,8 +105,8 @@ peopleRouter.get('/people', async (req, res) => {
   if (q.query) filter.$text = { $search: q.query };
 
   if (q.hasOpenFollowup !== undefined) {
-    const openIds = await Followup.distinct('personId', {
-      status: 'open',
+    const openIds = await Followup.distinct("personId", {
+      status: "open",
       deletedAt: null,
     });
     filter._id = q.hasOpenFollowup ? { $in: openIds } : { $nin: openIds };
@@ -118,18 +116,16 @@ peopleRouter.get('/people', async (req, res) => {
   //   _id:-1                 — simple cursor: {id}
   //   lastInteractionAt:-1   — compound cursor: {lia, id}, null bucket comes last
   const sort: Record<string, 1 | -1> =
-    q.sort === 'lastInteractionAt:-1'
-      ? { lastInteractionAt: -1, _id: -1 }
-      : { _id: -1 };
+    q.sort === "lastInteractionAt:-1" ? { lastInteractionAt: -1, _id: -1 } : { _id: -1 };
 
   if (q.cursor) {
-    if (q.sort === 'lastInteractionAt:-1') {
+    if (q.sort === "lastInteractionAt:-1") {
       const c = decodeCursor<LiaCursor>(q.cursor);
       const cId = new Types.ObjectId(c.id);
       if (c.lia === null) {
         // Already in the trailing null bucket — only nulls remain.
         filter.lastInteractionAt = null;
-        filter._id = { ...((filter._id) ?? {}), $lt: cId };
+        filter._id = { ...(filter._id ?? {}), $lt: cId };
       } else {
         const cDate = new Date(c.lia);
         const cursorBranches: Record<string, unknown>[] = [
@@ -145,13 +141,16 @@ peopleRouter.get('/people', async (req, res) => {
     } else {
       const c = decodeCursor<IdCursor>(q.cursor);
       filter._id = {
-        ...((filter._id) ?? {}),
+        ...(filter._id ?? {}),
         $lt: new Types.ObjectId(c.id),
       };
     }
   }
 
-  const docs = await Person.find(filter).sort(sort).limit(q.limit + 1).lean();
+  const docs = await Person.find(filter)
+    .sort(sort)
+    .limit(q.limit + 1)
+    .lean();
   const hasMore = docs.length > q.limit;
   const page = hasMore ? docs.slice(0, -1) : docs;
   const items = page.map(serializePerson);
@@ -160,11 +159,9 @@ peopleRouter.get('/people', async (req, res) => {
     | undefined;
   const body: { items: unknown[]; nextCursor?: string } = { items };
   if (hasMore && last) {
-    if (q.sort === 'lastInteractionAt:-1') {
+    if (q.sort === "lastInteractionAt:-1") {
       const lia =
-        last.lastInteractionAt instanceof Date
-          ? last.lastInteractionAt.toISOString()
-          : null;
+        last.lastInteractionAt instanceof Date ? last.lastInteractionAt.toISOString() : null;
       body.nextCursor = encodeCursor({ lia, id: last._id.toHexString() });
     } else {
       body.nextCursor = encodeCursor({ id: last._id.toHexString() });
@@ -173,24 +170,24 @@ peopleRouter.get('/people', async (req, res) => {
   res.json(body);
 });
 
-peopleRouter.get('/people/:id', async (req, res) => {
+peopleRouter.get("/people/:id", async (req, res) => {
   const { id } = IdParam.parse(req.params);
   const doc = await Person.findOne({ _id: id, deletedAt: null }).lean();
-  if (!doc) throw errors.notFound('person not found');
+  if (!doc) throw errors.notFound("person not found");
   res.json(serializePerson(doc));
 });
 
-peopleRouter.post('/people', async (req, res) => {
+peopleRouter.post("/people", async (req, res) => {
   const body = PersonCreateBody.parse(req.body);
   const doc = await Person.create({
     ...body,
     firstSeen: new Date(),
-    source: 'concierge',
+    source: "concierge",
   });
   res.status(201).json(serializePerson(doc.toObject()));
 });
 
-peopleRouter.patch('/people/:id', async (req, res) => {
+peopleRouter.patch("/people/:id", async (req, res) => {
   const { id } = IdParam.parse(req.params);
   const body = PersonUpdateBody.parse(req.body);
   const doc = await Person.findOneAndUpdate(
@@ -198,22 +195,22 @@ peopleRouter.patch('/people/:id', async (req, res) => {
     { $set: body },
     { new: true, runValidators: true },
   ).lean();
-  if (!doc) throw errors.notFound('person not found');
+  if (!doc) throw errors.notFound("person not found");
   res.json(serializePerson(doc));
 });
 
-peopleRouter.delete('/people/:id', async (req, res) => {
+peopleRouter.delete("/people/:id", async (req, res) => {
   const { id } = IdParam.parse(req.params);
   const doc = await Person.findOneAndUpdate(
     { _id: id, deletedAt: null },
     { $set: { deletedAt: new Date(), suppressReingest: true } },
     { new: true },
   ).lean();
-  if (!doc) throw errors.notFound('person not found');
+  if (!doc) throw errors.notFound("person not found");
   res.status(200).json(serializePerson(doc));
 });
 
-peopleRouter.get('/people/:id/interactions', async (req, res) => {
+peopleRouter.get("/people/:id/interactions", async (req, res) => {
   const { id } = IdParam.parse(req.params);
   // Reuse the interactions list filter, but pin personId.
   const q = ListInteractionsQuery.parse({ ...req.query, personId: id });
@@ -223,51 +220,51 @@ peopleRouter.get('/people/:id/interactions', async (req, res) => {
 
 export const peopleEndpoints: EndpointSpec[] = [
   {
-    name: 'find_people',
-    method: 'GET',
-    path: '/v1/people',
-    description: 'List people, with filter DSL + cursor pagination.',
+    name: "find_people",
+    method: "GET",
+    path: "/v1/people",
+    description: "List people, with filter DSL + cursor pagination.",
     query: ListPeopleQuery,
     response: ListResponse(PersonResponseShape),
   },
   {
-    name: 'get_person',
-    method: 'GET',
-    path: '/v1/people/:id',
-    description: 'Fetch one person by id (live rows only).',
+    name: "get_person",
+    method: "GET",
+    path: "/v1/people/:id",
+    description: "Fetch one person by id (live rows only).",
     params: IdParam,
     response: PersonResponseShape,
   },
   {
-    name: 'add_person',
-    method: 'POST',
-    path: '/v1/people',
-    description: 'Create a person (concierge-sourced).',
+    name: "add_person",
+    method: "POST",
+    path: "/v1/people",
+    description: "Create a person (concierge-sourced).",
     body: PersonCreateBody,
     response: PersonResponseShape,
   },
   {
-    name: 'update_person',
-    method: 'PATCH',
-    path: '/v1/people/:id',
-    description: 'Patch a person; firstSeen + lastInteractionAt are not settable.',
+    name: "update_person",
+    method: "PATCH",
+    path: "/v1/people/:id",
+    description: "Patch a person; firstSeen + lastInteractionAt are not settable.",
     params: IdParam,
     body: PersonUpdateBody,
     response: PersonResponseShape,
   },
   {
-    name: 'tombstone_person',
-    method: 'DELETE',
-    path: '/v1/people/:id',
-    description: 'Soft-delete a person; sets suppressReingest=true.',
+    name: "tombstone_person",
+    method: "DELETE",
+    path: "/v1/people/:id",
+    description: "Soft-delete a person; sets suppressReingest=true.",
     params: IdParam,
     response: PersonResponseShape,
   },
   {
-    name: 'get_interactions_for',
-    method: 'GET',
-    path: '/v1/people/:id/interactions',
-    description: 'List interactions where the person is a participant.',
+    name: "get_interactions_for",
+    method: "GET",
+    path: "/v1/people/:id/interactions",
+    description: "List interactions where the person is a participant.",
     params: IdParam,
     query: ListInteractionsQuery,
     response: ListResponse(InteractionResponseShape),

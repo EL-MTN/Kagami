@@ -1,15 +1,15 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import type { Config } from '../config.js';
-import { SyncState } from '../db/models/SyncState.js';
-import { runCalendarSyncOnce } from '../ingest/calendar.js';
-import { runGmailSyncOnce } from '../ingest/gmail.js';
-import { errors } from '../lib/errors.js';
-import { ISODateString } from '../schemas/common.js';
-import type { EndpointSpec } from '../manifest.js';
+import { Router } from "express";
+import { z } from "zod";
+import type { Config } from "../config.js";
+import { SyncState } from "../db/models/SyncState.js";
+import { runCalendarSyncOnce } from "../ingest/calendar.js";
+import { runGmailSyncOnce } from "../ingest/gmail.js";
+import { errors } from "../lib/errors.js";
+import { ISODateString } from "../schemas/common.js";
+import type { EndpointSpec } from "../manifest.js";
 
 export const SyncStateResponse = z.object({
-  provider: z.enum(['gmail', 'gcal']),
+  provider: z.enum(["gmail", "gcal"]),
   historyId: z.string().nullable(),
   syncToken: z.string().nullable(),
   lastRunAt: ISODateString.nullable(),
@@ -19,7 +19,7 @@ export const SyncStateResponse = z.object({
 });
 
 export const RunSyncResponse = z.object({
-  status: z.enum(['ok', 'paused', 'no_grant', 'error']),
+  status: z.enum(["ok", "paused", "no_grant", "error"]),
   fetched: z.number(),
   inserted: z.number(),
   skippedExisting: z.number(),
@@ -30,7 +30,7 @@ export const RunSyncResponse = z.object({
 });
 
 export const RunCalendarSyncResponse = z.object({
-  status: z.enum(['ok', 'paused', 'no_grant', 'error']),
+  status: z.enum(["ok", "paused", "no_grant", "error"]),
   fetched: z.number(),
   upserted: z.number(),
   cancelled: z.number(),
@@ -40,18 +40,16 @@ export const RunCalendarSyncResponse = z.object({
   message: z.string().optional(),
 });
 
-export const RunSyncBody = z
-  .object({ force: z.boolean().optional() })
-  .strict();
+export const RunSyncBody = z.object({ force: z.boolean().optional() }).strict();
 
 export function makeSyncRouter(config: Config): Router {
   const r = Router();
 
-  r.get('/sync/gmail/state', async (_req, res) => {
-    const doc = await SyncState.findOne({ provider: 'gmail' }).lean();
+  r.get("/sync/gmail/state", async (_req, res) => {
+    const doc = await SyncState.findOne({ provider: "gmail" }).lean();
     if (!doc) {
       res.json({
-        provider: 'gmail',
+        provider: "gmail",
         historyId: null,
         syncToken: null,
         lastRunAt: null,
@@ -62,7 +60,7 @@ export function makeSyncRouter(config: Config): Router {
       return;
     }
     res.json({
-      provider: 'gmail',
+      provider: "gmail",
       historyId: doc.historyId ?? null,
       syncToken: doc.syncToken ?? null,
       lastRunAt: doc.lastRunAt ?? null,
@@ -72,19 +70,16 @@ export function makeSyncRouter(config: Config): Router {
     });
   });
 
-  r.post('/sync/gmail/run', async (req, res) => {
+  r.post("/sync/gmail/run", async (req, res) => {
     const body = RunSyncBody.parse(req.body ?? {});
     if (!config.KIZUNA_OAUTH_ENCRYPTION_KEY) {
       throw errors.badRequest(
-        'KIZUNA_OAUTH_ENCRYPTION_KEY is not set; cannot decrypt refresh token',
+        "KIZUNA_OAUTH_ENCRYPTION_KEY is not set; cannot decrypt refresh token",
       );
     }
     const result = await runGmailSyncOnce(config);
-    if (body.force && result.status === 'paused') {
-      await SyncState.updateOne(
-        { provider: 'gmail' },
-        { $set: { pausedAt: null } },
-      );
+    if (body.force && result.status === "paused") {
+      await SyncState.updateOne({ provider: "gmail" }, { $set: { pausedAt: null } });
       const second = await runGmailSyncOnce(config);
       res.json(second);
       return;
@@ -92,11 +87,11 @@ export function makeSyncRouter(config: Config): Router {
     res.json(result);
   });
 
-  r.get('/sync/gcal/state', async (_req, res) => {
-    const doc = await SyncState.findOne({ provider: 'gcal' }).lean();
+  r.get("/sync/gcal/state", async (_req, res) => {
+    const doc = await SyncState.findOne({ provider: "gcal" }).lean();
     if (!doc) {
       res.json({
-        provider: 'gcal',
+        provider: "gcal",
         historyId: null,
         syncToken: null,
         lastRunAt: null,
@@ -107,7 +102,7 @@ export function makeSyncRouter(config: Config): Router {
       return;
     }
     res.json({
-      provider: 'gcal',
+      provider: "gcal",
       historyId: doc.historyId ?? null,
       syncToken: doc.syncToken ?? null,
       lastRunAt: doc.lastRunAt ?? null,
@@ -117,19 +112,16 @@ export function makeSyncRouter(config: Config): Router {
     });
   });
 
-  r.post('/sync/gcal/run', async (req, res) => {
+  r.post("/sync/gcal/run", async (req, res) => {
     const body = RunSyncBody.parse(req.body ?? {});
     if (!config.KIZUNA_OAUTH_ENCRYPTION_KEY) {
       throw errors.badRequest(
-        'KIZUNA_OAUTH_ENCRYPTION_KEY is not set; cannot decrypt refresh token',
+        "KIZUNA_OAUTH_ENCRYPTION_KEY is not set; cannot decrypt refresh token",
       );
     }
     const result = await runCalendarSyncOnce(config);
-    if (body.force && result.status === 'paused') {
-      await SyncState.updateOne(
-        { provider: 'gcal' },
-        { $set: { pausedAt: null } },
-      );
+    if (body.force && result.status === "paused") {
+      await SyncState.updateOne({ provider: "gcal" }, { $set: { pausedAt: null } });
       const second = await runCalendarSyncOnce(config);
       res.json(second);
       return;
@@ -142,34 +134,34 @@ export function makeSyncRouter(config: Config): Router {
 
 export const syncEndpoints: EndpointSpec[] = [
   {
-    name: 'get_gmail_sync_state',
-    method: 'GET',
-    path: '/v1/sync/gmail/state',
-    description: 'Return the Gmail sync state (historyId, lastRunAt, errors, pause).',
+    name: "get_gmail_sync_state",
+    method: "GET",
+    path: "/v1/sync/gmail/state",
+    description: "Return the Gmail sync state (historyId, lastRunAt, errors, pause).",
     response: SyncStateResponse,
   },
   {
-    name: 'run_gmail_sync',
-    method: 'POST',
-    path: '/v1/sync/gmail/run',
+    name: "run_gmail_sync",
+    method: "POST",
+    path: "/v1/sync/gmail/run",
     description:
-      'Run a Gmail sync pass synchronously. Bootstrap on first run; incremental thereafter. Returns counts + final historyId.',
+      "Run a Gmail sync pass synchronously. Bootstrap on first run; incremental thereafter. Returns counts + final historyId.",
     body: RunSyncBody,
     response: RunSyncResponse,
   },
   {
-    name: 'get_calendar_sync_state',
-    method: 'GET',
-    path: '/v1/sync/gcal/state',
-    description: 'Return the Calendar sync state.',
+    name: "get_calendar_sync_state",
+    method: "GET",
+    path: "/v1/sync/gcal/state",
+    description: "Return the Calendar sync state.",
     response: SyncStateResponse,
   },
   {
-    name: 'run_calendar_sync',
-    method: 'POST',
-    path: '/v1/sync/gcal/run',
+    name: "run_calendar_sync",
+    method: "POST",
+    path: "/v1/sync/gcal/run",
     description:
-      'Run a Calendar sync pass synchronously. Bootstrap on first run; sync-token-incremental thereafter. Reconciles edits + cancellations on existing events.',
+      "Run a Calendar sync pass synchronously. Bootstrap on first run; sync-token-incremental thereafter. Reconciles edits + cancellations on existing events.",
     body: RunSyncBody,
     response: RunCalendarSyncResponse,
   },

@@ -2,7 +2,7 @@
 
 export type CalendarEvent = {
   id: string;
-  status?: 'confirmed' | 'tentative' | 'cancelled';
+  status?: "confirmed" | "tentative" | "cancelled";
   summary?: string;
   description?: string;
   location?: string;
@@ -38,9 +38,7 @@ export type ParsedEvent = {
   attendees: ParsedAttendee[];
 };
 
-function parseStart(
-  start: CalendarEvent['start'],
-): Date {
+function parseStart(start: CalendarEvent["start"]): Date {
   if (!start) return new Date();
   if (start.dateTime) {
     const d = new Date(start.dateTime);
@@ -57,14 +55,14 @@ function parseStart(
 function normalizeEmail(s: string | undefined): string | null {
   if (!s) return null;
   const trimmed = s.trim().toLowerCase();
-  if (!trimmed.includes('@')) return null;
+  if (!trimmed.includes("@")) return null;
   return trimmed;
 }
 
 export function parseCalendarEvent(ev: CalendarEvent): ParsedEvent {
-  const cancelled = ev.status === 'cancelled';
-  const title = ev.summary?.trim() || '(no title)';
-  const body = ev.description ?? '';
+  const cancelled = ev.status === "cancelled";
+  const title = ev.summary?.trim() || "(no title)";
+  const body = ev.description ?? "";
   const location = ev.location?.trim() || null;
   const occurredAt = parseStart(ev.start);
 

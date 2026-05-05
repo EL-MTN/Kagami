@@ -6,15 +6,14 @@ const SHORT_RE = /^(\d+)([dhw])$/i;
 
 export function parseDurationMs(input: string): number {
   const trimmed = input.trim();
-  if (!trimmed) throw new Error('empty duration');
+  if (!trimmed) throw new Error("empty duration");
 
   let normalized = trimmed.toUpperCase();
   const short = SHORT_RE.exec(trimmed);
   if (short) {
     const n = short[1]!;
     const unit = short[2]!.toUpperCase();
-    normalized =
-      unit === 'H' ? `PT${n}H` : unit === 'W' ? `P${n}W` : `P${n}D`;
+    normalized = unit === "H" ? `PT${n}H` : unit === "W" ? `P${n}W` : `P${n}D`;
   }
 
   const m = ISO_RE.exec(normalized);

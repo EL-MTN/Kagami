@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import 'dotenv/config';
+import { readFileSync } from "node:fs";
+import "dotenv/config";
 
 type ParsedCard = {
   displayName: string;
@@ -11,23 +11,25 @@ type ParsedCard = {
 };
 
 function unfold(raw: string): string {
-  return raw.replace(/\r?\n[ \t]/g, '');
+  return raw.replace(/\r?\n[ \t]/g, "");
 }
 
 function unescape(v: string): string {
-  return v.replace(/\\n/g, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\');
+  return v.replace(/\\n/g, "\n").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\");
 }
 
-function splitProperty(line: string): { name: string; params: Record<string, string>; value: string } | null {
-  const colon = line.indexOf(':');
+function splitProperty(
+  line: string,
+): { name: string; params: Record<string, string>; value: string } | null {
+  const colon = line.indexOf(":");
   if (colon < 0) return null;
   const head = line.slice(0, colon);
   const value = line.slice(colon + 1);
-  const [rawName = '', ...paramParts] = head.split(';');
+  const [rawName = "", ...paramParts] = head.split(";");
   const params: Record<string, string> = {};
   for (const p of paramParts) {
-    const eq = p.indexOf('=');
-    if (eq < 0) params[p.toUpperCase()] = '';
+    const eq = p.indexOf("=");
+    if (eq < 0) params[p.toUpperCase()] = "";
     else params[p.slice(0, eq).toUpperCase()] = p.slice(eq + 1);
   }
   return { name: rawName.toUpperCase(), params, value };
@@ -35,35 +37,35 @@ function splitProperty(line: string): { name: string; params: Record<string, str
 
 function parseCard(block: string): ParsedCard | null {
   const lines = block.split(/\r?\n/);
-  let displayName = '';
+  let displayName = "";
   const emails = new Set<string>();
   const phones = new Set<string>();
   let birthday: string | undefined;
   let notes: string | undefined;
 
   for (const line of lines) {
-    if (!line || line.startsWith('BEGIN:') || line.startsWith('END:')) continue;
+    if (!line || line.startsWith("BEGIN:") || line.startsWith("END:")) continue;
     const prop = splitProperty(line);
     if (!prop) continue;
-    if (prop.name === 'PHOTO' || prop.name === 'X-IMAGE' || prop.name.startsWith('X-AB')) continue;
+    if (prop.name === "PHOTO" || prop.name === "X-IMAGE" || prop.name.startsWith("X-AB")) continue;
     switch (prop.name) {
-      case 'FN':
+      case "FN":
         displayName = unescape(prop.value).trim();
         break;
-      case 'EMAIL': {
+      case "EMAIL": {
         const v = prop.value.trim().toLowerCase();
         if (v && /.+@.+\..+/.test(v)) emails.add(v);
         break;
       }
-      case 'TEL': {
+      case "TEL": {
         const v = prop.value.trim();
         if (v) phones.add(v);
         break;
       }
-      case 'BDAY':
+      case "BDAY":
         birthday = prop.value.trim();
         break;
-      case 'NOTE':
+      case "NOTE":
         notes = unescape(prop.value).trim();
         break;
     }
@@ -107,17 +109,17 @@ function buildPayload(card: ParsedCard): Record<string, unknown> {
 async function main(): Promise<void> {
   const file = process.argv[2];
   if (!file) {
-    console.error('usage: tsx scripts/import-vcards.ts <path-to.vcf>');
+    console.error("usage: tsx scripts/import-vcards.ts <path-to.vcf>");
     process.exit(1);
   }
   const apiKey = process.env.KIZUNA_API_KEY;
   if (!apiKey) {
-    console.error('KIZUNA_API_KEY not set in env');
+    console.error("KIZUNA_API_KEY not set in env");
     process.exit(1);
   }
-  const baseUrl = process.env.KIZUNA_API_URL ?? 'http://127.0.0.1:3000';
+  const baseUrl = process.env.KIZUNA_API_URL ?? "http://127.0.0.1:3000";
 
-  const raw = readFileSync(file, 'utf8');
+  const raw = readFileSync(file, "utf8");
   const cards = parseAll(raw);
   console.log(`parsed ${cards.length} contacts from ${file}`);
 
@@ -129,9 +131,9 @@ async function main(): Promise<void> {
   for (const card of cards) {
     const payload = buildPayload(card);
     const res = await fetch(`${baseUrl}/v1/people`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'content-type': 'application/json',
+        "content-type": "application/json",
         authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(payload),
@@ -149,7 +151,7 @@ async function main(): Promise<void> {
 
   console.log(`ok=${ok} conflict=${conflict} failed=${bad}`);
   if (failures.length) {
-    console.log('first failures:');
+    console.log("first failures:");
     for (const f of failures.slice(0, 5)) {
       console.log(`  - ${f.name}: ${f.status} ${f.body}`);
     }

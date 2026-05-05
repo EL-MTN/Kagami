@@ -1,18 +1,14 @@
-import { Router } from 'express';
-import { Types } from 'mongoose';
-import { z } from 'zod';
-import { Interaction } from '../db/models/Interaction.js';
-import { Person } from '../db/models/Person.js';
-import {
-  CHANNEL_VALUES,
-  INTERACTION_STATUS,
-  PARTICIPANT_ROLES,
-} from '../db/models/Interaction.js';
-import { SOURCE_VALUES } from '../db/models/base.js';
-import { recordInteraction } from '../db/recordInteraction.js';
-import { encodeCursor, decodeCursor } from '../lib/cursor.js';
-import { errors } from '../lib/errors.js';
-import { serializeInteraction } from '../lib/serialize.js';
+import { Router } from "express";
+import { Types } from "mongoose";
+import { z } from "zod";
+import { Interaction } from "../db/models/Interaction.js";
+import { Person } from "../db/models/Person.js";
+import { CHANNEL_VALUES, INTERACTION_STATUS, PARTICIPANT_ROLES } from "../db/models/Interaction.js";
+import { SOURCE_VALUES } from "../db/models/base.js";
+import { recordInteraction } from "../db/recordInteraction.js";
+import { encodeCursor, decodeCursor } from "../lib/cursor.js";
+import { errors } from "../lib/errors.js";
+import { serializeInteraction } from "../lib/serialize.js";
 import {
   BoolFlag,
   DateInput,
@@ -21,8 +17,8 @@ import {
   ListResponse,
   ObjectIdString,
   Pagination,
-} from '../schemas/common.js';
-import type { EndpointSpec } from '../manifest.js';
+} from "../schemas/common.js";
+import type { EndpointSpec } from "../manifest.js";
 
 const ParticipantInput = z
   .object({
@@ -46,7 +42,7 @@ export const ParticipantResponse = z.object({
 });
 
 export const SourceRefResponse = z.object({
-  provider: z.enum(['gmail', 'gcal']),
+  provider: z.enum(["gmail", "gcal"]),
   id: z.string(),
 });
 
@@ -97,7 +93,7 @@ export const ListInteractionsQuery = Pagination.extend({
   occurredBefore: DateInput.optional(),
   occurredAfter: DateInput.optional(),
   query: z.string().optional(),
-  status: z.enum([...INTERACTION_STATUS, 'any'] as const).default('active'),
+  status: z.enum([...INTERACTION_STATUS, "any"] as const).default("active"),
   source: z.enum(SOURCE_VALUES).optional(),
   includeTombstoned: BoolFlag.optional(),
 });
@@ -107,19 +103,18 @@ export type ListInteractionsQueryT = z.infer<typeof ListInteractionsQuery>;
 export async function listInteractionsForFilter(q: ListInteractionsQueryT) {
   const filter: Record<string, unknown> = {};
   if (!q.includeTombstoned) filter.deletedAt = null;
-  if (q.status !== 'any') filter.status = q.status;
+  if (q.status !== "any") filter.status = q.status;
   if (q.channel) filter.channel = q.channel;
   if (q.context) filter.context = q.context;
   if (q.source) filter.source = q.source;
-  if (q.personId)
-    filter['participants.personId'] = new Types.ObjectId(q.personId);
+  if (q.personId) filter["participants.personId"] = new Types.ObjectId(q.personId);
   if (q.orgId) {
     // Two-step join: people in org → interactions with those participants.
-    const peopleIds = await Person.distinct('_id', {
+    const peopleIds = await Person.distinct("_id", {
       primaryOrgId: new Types.ObjectId(q.orgId),
       deletedAt: null,
     });
-    filter['participants.personId'] = { $in: peopleIds };
+    filter["participants.personId"] = { $in: peopleIds };
   }
   if (q.occurredBefore || q.occurredAfter) {
     const range: Record<string, Date> = {};
@@ -152,19 +147,19 @@ export async function listInteractionsForFilter(q: ListInteractionsQueryT) {
 
 export const interactionsRouter = Router();
 
-interactionsRouter.get('/interactions', async (req, res) => {
+interactionsRouter.get("/interactions", async (req, res) => {
   const q = ListInteractionsQuery.parse(req.query);
   const result = await listInteractionsForFilter(q);
   res.json(result);
 });
 
-interactionsRouter.post('/interactions', async (req, res) => {
+interactionsRouter.post("/interactions", async (req, res) => {
   const body = InteractionCreateBody.parse(req.body);
   const created = await recordInteraction({
     occurredAt: new Date(body.occurredAt),
     channel: body.channel,
     title: body.title,
-    body: body.body ?? '',
+    body: body.body ?? "",
     participants: body.participants.map((p) => ({
       personId: new Types.ObjectId(p.personId),
       role: p.role,
@@ -172,48 +167,46 @@ interactionsRouter.post('/interactions', async (req, res) => {
     ...(body.context !== undefined ? { context: body.context } : {}),
     ...(body.location !== undefined ? { location: body.location } : {}),
     ...(body.attachments !== undefined ? { attachments: body.attachments } : {}),
-    source: 'concierge',
+    source: "concierge",
   });
   // recordInteraction can only return null when skipIfDuplicate is set,
   // which the concierge write path doesn't pass.
   res.status(201).json(serializeInteraction(created!.toObject()));
 });
 
-interactionsRouter.delete('/interactions/:id', async (req, res) => {
+interactionsRouter.delete("/interactions/:id", async (req, res) => {
   const { id } = IdParam.parse(req.params);
   const doc = await Interaction.findOneAndUpdate(
     { _id: id, deletedAt: null },
     { $set: { deletedAt: new Date() } },
     { new: true },
   ).lean();
-  if (!doc) throw errors.notFound('interaction not found');
+  if (!doc) throw errors.notFound("interaction not found");
   res.status(200).json(serializeInteraction(doc));
 });
 
 export const interactionsEndpoints: EndpointSpec[] = [
   {
-    name: 'list_interactions',
-    method: 'GET',
-    path: '/v1/interactions',
-    description: 'List interactions with filter DSL + cursor pagination.',
+    name: "list_interactions",
+    method: "GET",
+    path: "/v1/interactions",
+    description: "List interactions with filter DSL + cursor pagination.",
     query: ListInteractionsQuery,
     response: ListResponse(InteractionResponseShape),
   },
   {
-    name: 'log_interaction',
-    method: 'POST',
-    path: '/v1/interactions',
-    description:
-      'Insert an interaction; updates lastInteractionAt on each participant via $max.',
+    name: "log_interaction",
+    method: "POST",
+    path: "/v1/interactions",
+    description: "Insert an interaction; updates lastInteractionAt on each participant via $max.",
     body: InteractionCreateBody,
     response: InteractionResponseShape,
   },
   {
-    name: 'tombstone_interaction',
-    method: 'DELETE',
-    path: '/v1/interactions/:id',
-    description:
-      'Soft-delete an interaction. Does NOT roll back lastInteractionAt.',
+    name: "tombstone_interaction",
+    method: "DELETE",
+    path: "/v1/interactions/:id",
+    description: "Soft-delete an interaction. Does NOT roll back lastInteractionAt.",
     params: IdParam,
     response: InteractionResponseShape,
   },

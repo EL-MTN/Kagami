@@ -1,9 +1,9 @@
-import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 export type EndpointSpec = {
   name: string;
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method: "GET" | "POST" | "PATCH" | "DELETE";
   path: string;
   description: string;
   params?: z.ZodTypeAny;
@@ -29,12 +29,12 @@ export function buildManifest(endpoints: EndpointSpec[]): {
 } {
   const toJson = (s: z.ZodTypeAny, name: string) =>
     zodToJsonSchema(s as Parameters<typeof zodToJsonSchema>[0], {
-      target: 'jsonSchema7',
+      target: "jsonSchema7",
       name,
     });
 
   return {
-    version: 'v1',
+    version: "v1",
     endpoints: endpoints.map((e) => {
       const out: ManifestEndpoint = {
         name: e.name,
