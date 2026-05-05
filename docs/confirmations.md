@@ -42,7 +42,7 @@ User: "send Alice an email saying we're meeting at 3pm"
   │
   ├─► User taps Approve
   ├─► Telegram callback_query: data = "confirm:<id>:approve"
-  ├─► bot.ts handler:
+  ├─► platform/telegram/bot.ts callback handler:
   │     1. Load PendingConfirmation, validate (chat-scoped, status, expiry)
   │     2. resolvePendingConfirmation(id, "approved")  ← atomic, BEFORE dispatch
   │     3. answerCallbackQuery({ text: "Working…" })   ← dismiss spinner
@@ -113,7 +113,7 @@ Atomic transitions live in `resolvePendingConfirmation(id, verdict, resultText?)
 - `sendConfirmationPrompt(chatId, text, confirmationId): Promise<string | undefined>` — post a message with [Approve][Deny] buttons; return the platform message id.
 - `editConfirmationPrompt(chatId, messageId, text): Promise<void>` — replace the body with a terminal-state line and remove the keyboard.
 
-Telegram implementation in `apps/bot/src/platform/telegram/adapter.ts` uses Grammy's `InlineKeyboard` with callback data `confirm:<id>:<approve|deny>`. The callback handler in `bot.ts` parses that pattern.
+Telegram implementation in `apps/bot/src/platform/telegram/adapter.ts` uses Grammy's `InlineKeyboard` with callback data `confirm:<id>:<approve|deny>`. The callback handler in `apps/bot/src/platform/telegram/bot.ts` parses that pattern (regex: `/^confirm:([a-f0-9]{24}):(approve|deny)$/`).
 
 ## Adding a gated tool
 
@@ -130,7 +130,7 @@ iMessage has no inline buttons and no third-party message editing. The confirmat
 
 ## Dashboard surface
 
-`/confirmations` (`apps/dashboard/src/app/confirmations/page.tsx`) shows pending rows and the most recent resolved ones. Each card surfaces origin (conversation / routine / watcher), tool name, args (expandable JSON), expiry countdown for pending rows, and the resolution result for resolved rows. The sidebar Confirmations link carries a count badge sourced from `getPendingConfirmationCount()`. The Overview page (`/`) also previews the top three pending rows with a caution badge in the page header — see `apps/dashboard/src/app/page.tsx`.
+`/confirmations` (`apps/dashboard/src/app/confirmations/page.tsx`) is a tabbed view (`?view=pending` default, `?view=history` for the most recent 50 resolved). Each card surfaces origin (conversation / routine / watcher), tool name, args (expandable JSON), expiry countdown for pending rows, and the resolution result for resolved rows — rendered by `apps/dashboard/src/components/confirmation-card.tsx`. The sidebar count badge is sourced from `getPendingConfirmationCount()`. The Overview page (`apps/dashboard/src/app/page.tsx`) previews the top three pending rows with a caution badge in the page header.
 
 Queries live in `apps/dashboard/src/lib/queries/confirmations.ts`: `getPendingConfirmationList()`, `getRecentResolvedConfirmations(limit)`, `getPendingConfirmationCount()`.
 

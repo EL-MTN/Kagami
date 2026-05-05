@@ -44,7 +44,7 @@ Forwards to `@kokoro/memory.recall()` → `POST /recall`. Kioku ranks via cosine
 
 ### Sweeper probe
 
-Before re-ingesting a `pending` session, the sweeper calls `hasFactsForSession(sourceSession)` to check if Kioku already has facts tagged with that session. If so, it just marks `done` instead of re-ingesting (avoids paraphrased duplicates from extraction-LLM variance).
+Before re-ingesting a `pending` session, the sweeper calls `hasFactsForSession("raw/" + convo.sessionId)` to check if Kioku already has facts tagged with that session (Kioku tags transcript-extracted facts under the `raw/<sessionId>` source). If so, it just marks `done` instead of re-ingesting (avoids paraphrased duplicates from extraction-LLM variance).
 
 ### External MCP clients
 
@@ -61,26 +61,30 @@ When `getOrCreateSession` rolls over a stale session (>1h idle) and a new messag
 - `apps/bot/src/scheduler/proactive.ts` — proactive messages
 - `apps/bot/src/services/confirmation-events.ts` — when a tap-to-approve resolves
 
-Each calls `ingestClosedSession(convo)` — fire-and-forget. The new turn doesn't wait. On success the conversation's `ingestStatus` flips `pending → done` and `ingestedAt` is recorded.
+Each calls `ingestClosedSession(convo)` — fire-and-forget. The new turn doesn't wait. The helper short-circuits when the closed conversation has no user/assistant content (it just flips `ingestStatus` to `done` so the sweeper doesn't pick it up); otherwise it serializes via `buildTranscript` and calls Kioku's `POST /sessions`. On success the conversation's `ingestStatus` flips `pending → done` and `ingestedAt` is recorded; on failure `ingestAttempts` is bumped and the sweeper takes over.
+
+The transcript shape (see `packages/memory/src/transcript.ts`) is YAML-frontmatter markdown — `id`, `started_at`, then `## t-N user` / `## t-N assistant` blocks. System and tool messages are dropped; only user/assistant turns with non-empty content are emitted.
 
 ### Sweeper-driven (correctness layer)
 
-Every 5 minutes the proactive scheduler runs both sweepers:
+Every 5 minutes the maintenance scheduler (`apps/bot/src/scheduler/maintenance.ts`, started from `apps/bot/src/index.ts`) runs both sweepers on the same tick — stale-active first, pending-ingest second:
 
-- **`sweepPendingIngests`** — finds `{closed && (ingestStatus pending or absent) && closedAt < now-60s}`, probes Kioku for existing facts via `hasFactsForSession`, ingests if absent. Catches anything that failed the immediate trigger. Matches legacy documents that pre-date the `ingestStatus` field.
-- **`sweepStaleActiveSessions`** — finds `{active && updatedAt < now-6h}`, closes them, marks `ingestStatus: "pending"`. The next pending sweep ingests them. Catches sessions where the user idled for days and never returned.
+- **`sweepPendingIngests`** — finds `{closed && (ingestStatus pending or absent) && closedAt < now-60s}` (default `stalenessMs: 60_000`, `maxPerSweep: 10`, ordered oldest-first by `closedAt`). For each match it probes Kioku via `hasFactsForSession("raw/<sessionId>")` and, if facts already exist, marks the conversation `done` ("reconciled"). Otherwise it calls `ingestClosedSessionAwaited`. Matches legacy documents that pre-date the `ingestStatus` field via `$or: [{ ingestStatus: "pending" }, { ingestStatus: { $exists: false } }]`.
+- **`sweepStaleActiveSessions`** — finds `{active && updatedAt < now-6h}` (default `idleHours: 6`, `maxPerSweep: 50`), flips them to `closed` with a fresh `closedAt`, and explicitly sets `ingestStatus: "pending"` so the next pending sweep picks them up. Catches sessions where the user idled for days and never returned.
 
 A one-shot run also fires 30s after process start so a fresh boot recovers anything that was pending when the previous process died.
+
+This scheduler used to live in `proactive.ts`; commit a1d8f36 ("Extract maintenance jobs out of proactive scheduler") moved it out alongside daily DB cleanup.
 
 The trigger is the latency optimization; the sweeper is the correctness layer. If the trigger ever misses (Kioku down, future fifth call site, manual `closeSession`, crash mid-trigger), the sweeper recovers within minutes.
 
 ### LLM-driven — `rememberFact` tool
 
-When Mashiro decides a fact is worth keeping across sessions, she calls `rememberFact(text, eventDate?)`. Forwards to `@kokoro/memory.appendFact()` → `POST /facts`. Kioku does md5 + cosine ≥0.97 dedup, embeds, lemmatizes, and upserts entities. Idempotent — calling twice with the same text returns `{status: "duplicate", reason: "hash"}` with the existing id. Available in conversational paths; **excluded from watcher contexts** (watchers are read-only).
+When Mashiro decides a fact is worth keeping across sessions, she calls `rememberFact(text, eventDate?)` (defined in `apps/bot/src/ai/tools/memory.ts`). Forwards to `@kokoro/memory.appendFact()` → `POST /facts` with `source_session: "rememberFact"`. Kioku does md5 + cosine dedup, embeds, lemmatizes, and upserts entities. Idempotent — calling twice with the same text returns `{status: "duplicate", reason: "hash"}` with the existing id. Available in conversational paths; **excluded from watcher contexts** (watchers are read-only). The exact cosine threshold lives in Kioku, not Kokoro.
 
 ### Place-learning (passive)
 
-`apps/bot/src/services/location.ts:learnPlace` watches for frequent visits: 3+ stored locations within 200m / 30 days. When the threshold trips, it calls `appendFact` with `"User frequently visits {placeName} ({placeCategory})."` Format is stable so md5 dedup catches re-saves.
+`apps/bot/src/services/location.ts:learnPlace` watches for frequent visits: 3+ stored locations within 200m / 30 days. When the threshold trips, it calls `appendFact` (with `source_session: "location-learning"`) with `"User frequently visits {placeName} ({placeCategory})."` Format is stable so md5 dedup catches re-saves.
 
 ## Conversation schema
 

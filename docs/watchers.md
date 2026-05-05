@@ -20,10 +20,9 @@ Use a watcher when the question is **"tell me when X happens"** — price drops,
 
 ```
 apps/bot/src/services/watcher-executor.ts   — single-tick executor
-apps/bot/src/scheduler/watchers.ts          — 60s cron poller + startup recovery
-apps/bot/src/ai/tools/manage-watchers.ts    — LLM tool: create/list/update/delete/enable/disable/snooze
-apps/bot/src/ai/tools/report-watcher-result.ts — terminating tool the executor parses
-apps/bot/src/ai/tools/index.ts              — `watcherTools(ctx)` assembles the read-only subset
+apps/bot/src/scheduler/watchers.ts          — 60s cron poller + 3s manual-run poller + startup recovery
+apps/bot/src/ai/tools/watchers.ts           — `manageWatchers` (create/list/update/delete/enable/disable/snooze) + `reportWatcherResult` terminator
+apps/bot/src/ai/tools/index.ts              — `watcherTools(ctx)` and `routineToolsUnderWatcher(ctx)` assemble the read-only subset
 packages/db/src/models/watcher.ts           — Watcher + WatcherLog Mongoose models
 ```
 
