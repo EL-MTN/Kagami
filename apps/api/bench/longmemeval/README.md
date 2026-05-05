@@ -37,6 +37,7 @@ LLM_PROVIDER=openai MODEL=gpt-4o-mini OPENAI_API_KEY=$OPENAI_API_KEY \
 ```
 
 Flags:
+
 - `--limit N` — number of items to run (default: 5)
 - `--judge-model <id>` — override the model used for judging (default: same as `MODEL`)
 - `--data <path>` — dataset JSON path (default: `bench/longmemeval/data/longmemeval_oracle.json`)

@@ -1,14 +1,14 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import { readFacts, type Fact } from '../storage/facts.js';
-import { readHistoryFor } from '../storage/history.js';
-import { appendFactsBulk, appendSingleFact } from '../ingest/append.js';
+import { Router } from "express";
+import { z } from "zod";
+import { readFacts, type Fact } from "../storage/facts.js";
+import { readHistoryFor } from "../storage/history.js";
+import { appendFactsBulk, appendSingleFact } from "../ingest/append.js";
 
 const AppendBody = z.object({
   text: z.string().min(1),
   event_date: z
     .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'event_date must be YYYY-MM-DD')
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "event_date must be YYYY-MM-DD")
     .optional(),
   source_session: z.string().optional(),
   user_id: z.string().optional(),
@@ -23,11 +23,11 @@ const ListQuery = z.object({
   offset: z.coerce.number().int().nonnegative().optional(),
   since: z
     .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'since must be YYYY-MM-DD')
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "since must be YYYY-MM-DD")
     .optional(),
   until: z
     .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'until must be YYYY-MM-DD')
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "until must be YYYY-MM-DD")
     .optional(),
   source_session: z.string().optional(),
   user_id: z.string().optional(),
@@ -47,11 +47,11 @@ function publicFact(f: Fact) {
 
 export const factsRouter = Router();
 
-factsRouter.post('/', async (req, res, next) => {
+factsRouter.post("/", async (req, res, next) => {
   try {
     const body = AppendBody.parse(req.body);
     const result = await appendSingleFact(body);
-    res.status(result.status === 'added' ? 201 : 200).json(result);
+    res.status(result.status === "added" ? 201 : 200).json(result);
   } catch (err) {
     next(err);
   }
@@ -64,11 +64,11 @@ const BulkBody = z.object({
   facts: z.array(AppendBody).min(1).max(500),
 });
 
-factsRouter.post('/bulk', async (req, res, next) => {
+factsRouter.post("/bulk", async (req, res, next) => {
   try {
     const body = BulkBody.parse(req.body);
     const results = await appendFactsBulk(body.facts);
-    const added = results.filter((r) => r.status === 'added').length;
+    const added = results.filter((r) => r.status === "added").length;
     const duplicates = results.length - added;
     res.status(201).json({ results, added, duplicates });
   } catch (err) {
@@ -76,7 +76,7 @@ factsRouter.post('/bulk', async (req, res, next) => {
   }
 });
 
-factsRouter.get('/count', async (_req, res, next) => {
+factsRouter.get("/count", async (_req, res, next) => {
   try {
     const facts = await readFacts();
     res.json({ count: facts.length });
@@ -85,7 +85,7 @@ factsRouter.get('/count', async (_req, res, next) => {
   }
 });
 
-factsRouter.get('/', async (req, res, next) => {
+factsRouter.get("/", async (req, res, next) => {
   try {
     const q = ListQuery.parse(req.query);
     const limit = q.limit ?? 100;
@@ -106,9 +106,10 @@ factsRouter.get('/', async (req, res, next) => {
     if (q.agent_id !== undefined) {
       facts = facts.filter((f) => f.agent_id === q.agent_id);
     }
-    facts.sort((a, b) =>
-      (b.event_date || '').localeCompare(a.event_date || '') ||
-      b.created_at.localeCompare(a.created_at),
+    facts.sort(
+      (a, b) =>
+        (b.event_date || "").localeCompare(a.event_date || "") ||
+        b.created_at.localeCompare(a.created_at),
     );
     const total = facts.length;
     const page = facts.slice(offset, offset + limit).map(publicFact);
@@ -118,7 +119,7 @@ factsRouter.get('/', async (req, res, next) => {
   }
 });
 
-factsRouter.get('/:id/history', async (req, res, next) => {
+factsRouter.get("/:id/history", async (req, res, next) => {
   try {
     const events = await readHistoryFor(req.params.id);
     res.json({ id: req.params.id, events });
@@ -127,12 +128,12 @@ factsRouter.get('/:id/history', async (req, res, next) => {
   }
 });
 
-factsRouter.get('/:id', async (req, res, next) => {
+factsRouter.get("/:id", async (req, res, next) => {
   try {
     const facts = await readFacts();
     const f = facts.find((x) => x.id === req.params.id);
     if (!f) {
-      res.status(404).json({ error: 'not_found' });
+      res.status(404).json({ error: "not_found" });
       return;
     }
     res.json(publicFact(f));

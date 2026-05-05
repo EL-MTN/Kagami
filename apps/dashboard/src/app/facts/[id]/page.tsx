@@ -14,11 +14,7 @@ const eventStyles: Record<HistoryEvent["event"], { Icon: typeof Plus; tone: stri
   DELETE: { Icon: Trash2, tone: "text-critical border-critical/30 bg-critical/10" },
 };
 
-export default async function FactDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function FactDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [fact, history] = await Promise.all([getFact(id), getFactHistory(id)]);
   if (!fact) notFound();
@@ -63,9 +59,7 @@ export default async function FactDetailPage({
             </Badge>
           )}
         </div>
-        <p className="mt-5 font-display text-2xl leading-relaxed text-foreground">
-          {fact.text}
-        </p>
+        <p className="mt-5 font-display text-2xl leading-relaxed text-foreground">{fact.text}</p>
       </article>
 
       <section className="grid gap-6 lg:grid-cols-2">

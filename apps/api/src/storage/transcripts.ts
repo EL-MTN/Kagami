@@ -1,6 +1,6 @@
-import type { Collection } from 'mongodb';
-import { getDb } from './mongo.js';
-import type { Transcript } from '../types.js';
+import type { Collection } from "mongodb";
+import { getDb } from "./mongo.js";
+import type { Transcript } from "../types.js";
 
 // Source-of-truth for the messages a session was extracted from. Holds
 // the parsed transcript so re-ingest is filesystem-free: consolidate()
@@ -13,19 +13,19 @@ import type { Transcript } from '../types.js';
 // rows; the transcript collection itself stores the bare id.
 
 interface TranscriptDoc {
-  _id: string;                 // sessionId
+  _id: string; // sessionId
   user_id?: string;
   run_id?: string;
   agent_id?: string;
-  started_at: string;          // ISO timestamp from frontmatter
-  turns: Transcript['turns'];
-  created_at: string;          // ISO timestamp of first ingest
-  updated_at: string;          // ISO timestamp of latest upsert
+  started_at: string; // ISO timestamp from frontmatter
+  turns: Transcript["turns"];
+  created_at: string; // ISO timestamp of first ingest
+  updated_at: string; // ISO timestamp of latest upsert
 }
 
 async function transcriptsCol(): Promise<Collection<TranscriptDoc>> {
   const db = await getDb();
-  return db.collection<TranscriptDoc>('transcripts');
+  return db.collection<TranscriptDoc>("transcripts");
 }
 
 export interface UpsertTranscriptInput {
@@ -57,9 +57,7 @@ export async function upsertTranscript(input: UpsertTranscriptInput): Promise<vo
   );
 }
 
-export async function readTranscriptBySessionId(
-  sessionId: string,
-): Promise<Transcript | null> {
+export async function readTranscriptBySessionId(sessionId: string): Promise<Transcript | null> {
   const col = await transcriptsCol();
   const doc = await col.findOne({ _id: sessionId });
   if (!doc) return null;

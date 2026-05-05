@@ -1,20 +1,15 @@
-import fs from 'node:fs/promises';
-import { createHash } from 'node:crypto';
-import { z } from 'zod';
-import { embed, embedMany, cosineSimilarity, generateObject } from 'ai';
-import type { Transcript } from '../types.js';
-import { getEmbeddingModel, model } from '../llm.js';
-import { paths } from '../paths.js';
-import {
-  appendFacts,
-  newFactId,
-  readFactsInScope,
-  type Fact,
-} from '../storage/facts.js';
-import { lemmatizeForBm25 } from '../retrieval/text.js';
-import { upsertEntitiesFromFacts } from '../storage/entities.js';
-import { getOrComputeSessionSummary } from './session-summary.js';
-import { logger } from '../logger.js';
+import fs from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { z } from "zod";
+import { embed, embedMany, cosineSimilarity, generateObject } from "ai";
+import type { Transcript } from "../types.js";
+import { getEmbeddingModel, model } from "../llm.js";
+import { paths } from "../paths.js";
+import { appendFacts, newFactId, readFactsInScope, type Fact } from "../storage/facts.js";
+import { lemmatizeForBm25 } from "../retrieval/text.js";
+import { upsertEntitiesFromFacts } from "../storage/entities.js";
+import { getOrComputeSessionSummary } from "./session-summary.js";
+import { logger } from "../logger.js";
 
 // Kioku's atomic-fact extraction pipeline.
 //
@@ -40,21 +35,21 @@ const LAST_K_MESSAGES = 20;
 // on the wire; normalizeCategory clamps unknown / empty values to 'misc'
 // so a confused model still produces a usable category tag.
 const CATEGORIES = [
-  'personal_details',
-  'family',
-  'professional_details',
-  'sports',
-  'travel',
-  'food',
-  'music',
-  'health',
-  'technology',
-  'hobbies',
-  'fashion',
-  'entertainment',
-  'milestones',
-  'user_preferences',
-  'misc',
+  "personal_details",
+  "family",
+  "professional_details",
+  "sports",
+  "travel",
+  "food",
+  "music",
+  "health",
+  "technology",
+  "hobbies",
+  "fashion",
+  "entertainment",
+  "milestones",
+  "user_preferences",
+  "misc",
 ] as const;
 const KNOWN_CATEGORIES = new Set<string>(CATEGORIES);
 
@@ -69,9 +64,9 @@ const ExtractionResult = z.object({
 });
 
 export function normalizeCategory(raw: string | undefined): string {
-  if (!raw) return 'misc';
+  if (!raw) return "misc";
   const c = raw.trim().toLowerCase();
-  return KNOWN_CATEGORIES.has(c) ? c : 'misc';
+  return KNOWN_CATEGORIES.has(c) ? c : "misc";
 }
 
 export const KIOKU_CATEGORIES: readonly string[] = CATEGORIES;
@@ -91,17 +86,17 @@ let cachedSystemPrompt: string | null = null;
 async function getSystemPrompt(): Promise<string> {
   if (cachedSystemPrompt) return cachedSystemPrompt;
   const promptPath = `${paths.prompts}/extraction.md`;
-  cachedSystemPrompt = await fs.readFile(promptPath, 'utf8');
+  cachedSystemPrompt = await fs.readFile(promptPath, "utf8");
   return cachedSystemPrompt;
 }
 
 function formatMessages(msgs: Message[]): string {
-  if (msgs.length === 0) return '[]';
+  if (msgs.length === 0) return "[]";
   return JSON.stringify(msgs);
 }
 
 function formatMemories(mems: Array<{ id: string; text: string }>): string {
-  if (mems.length === 0) return '[]';
+  if (mems.length === 0) return "[]";
   return JSON.stringify(mems);
 }
 
@@ -115,21 +110,15 @@ export function buildExtractionUserPrompt(opts: {
   summary?: string;
 }): string {
   const sections: string[] = [];
-  sections.push(`## Summary\n${opts.summary ?? ''}`);
-  sections.push(
-    `## Last k Messages\n${formatMessages(opts.lastKMessages ?? [])}`,
-  );
-  sections.push(
-    `## Recently Extracted Memories\n${formatMemories(opts.recentlyExtracted ?? [])}`,
-  );
-  sections.push(
-    `## Existing Memories\n${formatMemories(opts.existingMemories ?? [])}`,
-  );
+  sections.push(`## Summary\n${opts.summary ?? ""}`);
+  sections.push(`## Last k Messages\n${formatMessages(opts.lastKMessages ?? [])}`);
+  sections.push(`## Recently Extracted Memories\n${formatMemories(opts.recentlyExtracted ?? [])}`);
+  sections.push(`## Existing Memories\n${formatMemories(opts.existingMemories ?? [])}`);
   sections.push(`## New Messages\n${formatMessages(opts.newMessages)}`);
   sections.push(`## Observation Date\n${opts.observationDate}`);
   sections.push(`## Current Date\n${opts.currentDate}`);
-  sections.push('# Output:');
-  return sections.join('\n\n');
+  sections.push("# Output:");
+  return sections.join("\n\n");
 }
 
 function topKByCosine(
@@ -148,11 +137,11 @@ function topKByCosine(
 }
 
 function normalizeRole(role: string): string {
-  return role.toLowerCase() === 'user' ? 'user' : 'assistant';
+  return role.toLowerCase() === "user" ? "user" : "assistant";
 }
 
 export interface ConsolidateOptions {
-  user_id?: string;        // defaults to 'default'
+  user_id?: string; // defaults to 'default'
   run_id?: string;
   agent_id?: string;
   metadata?: Record<string, unknown>; // applied to every fact extracted in this run
@@ -166,7 +155,7 @@ export async function consolidate(
   const sessionDate = String(transcript.frontmatter.started_at).slice(0, 10);
   const currentDate = new Date().toISOString().slice(0, 10);
 
-  const userId = opts.user_id ?? 'default';
+  const userId = opts.user_id ?? "default";
   const runId = opts.run_id;
   const agentId = opts.agent_id;
   const metadata = opts.metadata;
@@ -206,7 +195,7 @@ export async function consolidate(
     batches += 1;
 
     const lastK = messages.slice(Math.max(0, i - LAST_K_MESSAGES), i);
-    const batchText = batch.map((m) => m.content).join(' ');
+    const batchText = batch.map((m) => m.content).join(" ");
 
     let batchEmb: number[];
     try {
@@ -217,7 +206,7 @@ export async function consolidate(
       });
       batchEmb = r.embedding;
     } catch (error) {
-      logger.error({ error }, 'ingest batch embed failed');
+      logger.error({ error }, "ingest batch embed failed");
       continue;
     }
 
@@ -259,7 +248,7 @@ export async function consolidate(
       });
       extraction = r.object;
     } catch (error) {
-      logger.error({ error }, 'ingest extraction failed');
+      logger.error({ error }, "ingest extraction failed");
       continue;
     }
 
@@ -276,14 +265,14 @@ export async function consolidate(
       });
       embeddings = r.embeddings;
     } catch (error) {
-      logger.error({ error }, 'ingest fact embed failed');
+      logger.error({ error }, "ingest fact embed failed");
       continue;
     }
 
     const facts: Fact[] = [];
     for (let j = 0; j < extraction.memory.length; j++) {
       const m = extraction.memory[j]!;
-      const hash = createHash('md5').update(m.text).digest('hex');
+      const hash = createHash("md5").update(m.text).digest("hex");
       if (seenHashes.has(hash)) continue;
       seenHashes.add(hash);
       facts.push({
@@ -310,7 +299,7 @@ export async function consolidate(
     try {
       await upsertEntitiesFromFacts(facts);
     } catch (error) {
-      logger.error({ error }, 'ingest entity upsert failed');
+      logger.error({ error }, "ingest entity upsert failed");
     }
     for (const f of facts) {
       recentlyExtracted.push({

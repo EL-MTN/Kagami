@@ -1,14 +1,14 @@
-import { Router } from 'express';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { z } from 'zod';
-import { query } from './query/answer.js';
-import { recall } from './query/recall.js';
-import { readFacts } from './storage/facts.js';
-import { readHistoryFor } from './storage/history.js';
-import { appendFactsBulk, appendSingleFact } from './ingest/append.js';
-import { ingestSessionFromString } from './ingest/sessions.js';
-import { logger } from './logger.js';
+import { Router } from "express";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
+import { query } from "./query/answer.js";
+import { recall } from "./query/recall.js";
+import { readFacts } from "./storage/facts.js";
+import { readHistoryFor } from "./storage/history.js";
+import { appendFactsBulk, appendSingleFact } from "./ingest/append.js";
+import { ingestSessionFromString } from "./ingest/sessions.js";
+import { logger } from "./logger.js";
 
 // Shared zod shape for the mem0-OSS-style filter payload, surfaced on
 // every read tool that can prefilter. Mirrors src/routes/filters.ts but
@@ -18,9 +18,7 @@ const filtersShape = {
   run_id: z.string().optional(),
   agent_id: z.string().optional(),
   category: z.string().optional(),
-  metadata: z
-    .record(z.union([z.string(), z.number(), z.boolean()]))
-    .optional(),
+  metadata: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
 };
 const FiltersInput = z.object(filtersShape).optional();
 
@@ -31,26 +29,32 @@ const FiltersInput = z.object(filtersShape).optional();
 // REST directly.
 
 function ok(text: string) {
-  return { content: [{ type: 'text' as const, text }] };
+  return { content: [{ type: "text" as const, text }] };
 }
 
 function fail(text: string) {
-  return { content: [{ type: 'text' as const, text }], isError: true };
+  return { content: [{ type: "text" as const, text }], isError: true };
 }
 
 function buildServer(): McpServer {
-  const server = new McpServer({ name: 'kioku', version: '0.1.0' });
+  const server = new McpServer({ name: "kioku", version: "0.1.0" });
 
   server.registerTool(
-    'recall',
+    "recall",
     {
       description:
-        'Return ranked atomic facts for a query — hybrid (cosine + BM25 + entity boost), no LLM. Use this when you want raw fact retrieval and will reason over the results yourself.',
+        "Return ranked atomic facts for a query — hybrid (cosine + BM25 + entity boost), no LLM. Use this when you want raw fact retrieval and will reason over the results yourself.",
       inputSchema: {
         query: z.string(),
         k: z.number().int().positive().max(100).optional(),
-        since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        since: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        until: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
         filters: FiltersInput,
       },
     },
@@ -65,10 +69,10 @@ function buildServer(): McpServer {
   );
 
   server.registerTool(
-    'query',
+    "query",
     {
       description:
-        'Answer a question from the memory vault using top-K atomic facts. Returns {answer, citations}. Use this when you want a synthesized answer; use `recall` if you want raw facts.',
+        "Answer a question from the memory vault using top-K atomic facts. Returns {answer, citations}. Use this when you want a synthesized answer; use `recall` if you want raw facts.",
       inputSchema: { question: z.string(), filters: FiltersInput },
     },
     async ({ question, filters }) => {
@@ -81,13 +85,16 @@ function buildServer(): McpServer {
   );
 
   server.registerTool(
-    'append_fact',
+    "append_fact",
     {
       description:
         'Add a single atomic fact to the vault. Dedups against existing facts (md5 + cosine). Returns {id, status: "added"|"duplicate"}.',
       inputSchema: {
         text: z.string(),
-        event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        event_date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
         source_session: z.string().optional(),
         user_id: z.string().optional(),
         run_id: z.string().optional(),
@@ -111,7 +118,10 @@ function buildServer(): McpServer {
   // individually. Returns one result per input in order.
   const appendFactInputShape = {
     text: z.string(),
-    event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    event_date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
     source_session: z.string().optional(),
     user_id: z.string().optional(),
     run_id: z.string().optional(),
@@ -120,10 +130,10 @@ function buildServer(): McpServer {
     category: z.string().optional(),
   };
   server.registerTool(
-    'append_facts',
+    "append_facts",
     {
       description:
-        'Add multiple atomic facts to the vault in one call (no LLM extraction). Equivalent to mem0 add(infer=False). Each input is independently deduped (md5 + cosine). Returns {results, added, duplicates}.',
+        "Add multiple atomic facts to the vault in one call (no LLM extraction). Equivalent to mem0 add(infer=False). Each input is independently deduped (md5 + cosine). Returns {results, added, duplicates}.",
       inputSchema: {
         facts: z.array(z.object(appendFactInputShape)).min(1).max(500),
       },
@@ -131,10 +141,8 @@ function buildServer(): McpServer {
     async ({ facts }) => {
       try {
         const results = await appendFactsBulk(facts);
-        const added = results.filter((r) => r.status === 'added').length;
-        return ok(
-          JSON.stringify({ results, added, duplicates: results.length - added }),
-        );
+        const added = results.filter((r) => r.status === "added").length;
+        return ok(JSON.stringify({ results, added, duplicates: results.length - added }));
       } catch (e) {
         return fail(String(e));
       }
@@ -142,10 +150,10 @@ function buildServer(): McpServer {
   );
 
   server.registerTool(
-    'ingest_session',
+    "ingest_session",
     {
       description:
-        'Extract atomic facts from a raw transcript string. Returns {sessionId, added, batches, summaryFactId}.',
+        "Extract atomic facts from a raw transcript string. Returns {sessionId, added, batches, summaryFactId}.",
       inputSchema: {
         transcript: z.string(),
         generate_summary: z.boolean().optional(),
@@ -173,9 +181,9 @@ function buildServer(): McpServer {
   );
 
   server.registerTool(
-    'fact_count',
+    "fact_count",
     {
-      description: 'Return the number of atomic facts currently stored in the vault.',
+      description: "Return the number of atomic facts currently stored in the vault.",
       inputSchema: {},
     },
     async () => {
@@ -189,10 +197,10 @@ function buildServer(): McpServer {
   );
 
   server.registerTool(
-    'fact_history',
+    "fact_history",
     {
       description:
-        'Return the audit journal for one fact (ADD/UPDATE/DELETE events, newest first).',
+        "Return the audit journal for one fact (ADD/UPDATE/DELETE events, newest first).",
       inputSchema: { id: z.string() },
     },
     async ({ id }) => {
@@ -213,24 +221,24 @@ export const mcpRouter = Router();
 // Stateless: a fresh transport (and server connection) per request. The
 // MCP-over-HTTP semantics don't need session state for our tool set —
 // every call is a one-shot tool invocation.
-mcpRouter.post('/', async (req, res) => {
+mcpRouter.post("/", async (req, res) => {
   try {
     const server = buildServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
-    res.on('close', () => {
+    res.on("close", () => {
       void transport.close();
       void server.close();
     });
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   } catch (err) {
-    logger.error({ err: (err as Error).message }, 'mcp request failed');
+    logger.error({ err: (err as Error).message }, "mcp request failed");
     if (!res.headersSent) {
       res.status(500).json({
-        jsonrpc: '2.0',
-        error: { code: -32603, message: 'Internal error' },
+        jsonrpc: "2.0",
+        error: { code: -32603, message: "Internal error" },
         id: null,
       });
     }
@@ -240,18 +248,18 @@ mcpRouter.post('/', async (req, res) => {
 // Stateless mode doesn't need GET (server-initiated streams) or DELETE
 // (session termination), but clients may probe — return JSON-RPC errors
 // that conform to MCP's transport expectations.
-mcpRouter.get('/', (_req, res) => {
+mcpRouter.get("/", (_req, res) => {
   res.status(405).json({
-    jsonrpc: '2.0',
-    error: { code: -32000, message: 'Method not allowed (stateless mode).' },
+    jsonrpc: "2.0",
+    error: { code: -32000, message: "Method not allowed (stateless mode)." },
     id: null,
   });
 });
 
-mcpRouter.delete('/', (_req, res) => {
+mcpRouter.delete("/", (_req, res) => {
   res.status(405).json({
-    jsonrpc: '2.0',
-    error: { code: -32000, message: 'Method not allowed (stateless mode).' },
+    jsonrpc: "2.0",
+    error: { code: -32000, message: "Method not allowed (stateless mode)." },
     id: null,
   });
 });

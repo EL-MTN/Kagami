@@ -1,7 +1,7 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import { query } from '../query/answer.js';
-import { FiltersSchema } from './filters.js';
+import { Router } from "express";
+import { z } from "zod";
+import { query } from "../query/answer.js";
+import { FiltersSchema } from "./filters.js";
 
 const QueryBody = z.object({
   question: z.string().min(1),
@@ -11,7 +11,7 @@ const QueryBody = z.object({
 
 export const queryRouter = Router();
 
-queryRouter.post('/', async (req, res, next) => {
+queryRouter.post("/", async (req, res, next) => {
   try {
     const body = QueryBody.parse(req.body);
     const result = await query(body.question, {

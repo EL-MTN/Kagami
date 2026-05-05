@@ -5,11 +5,11 @@
 // Usage:
 //   tsx scripts/cc-ingest-chunked.ts <session.jsonl> [--chunk-size N] [--char-cap N]
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { consolidate } from '../src/ingest/consolidate.ts';
-import { parseTranscript } from '../src/ingest/transcript.ts';
-import { upsertTranscript } from '../src/storage/transcripts.ts';
+import fs from "node:fs";
+import path from "node:path";
+import { consolidate } from "../src/ingest/consolidate.ts";
+import { parseTranscript } from "../src/ingest/transcript.ts";
+import { upsertTranscript } from "../src/storage/transcripts.ts";
 
 interface Args {
   in: string;
@@ -22,12 +22,12 @@ function parseArgs(): Args {
   const inPath = a[0];
   if (!inPath) {
     console.error(
-      'usage: tsx scripts/cc-ingest-chunked.ts <session.jsonl> [--chunk-size N] [--char-cap N]',
+      "usage: tsx scripts/cc-ingest-chunked.ts <session.jsonl> [--chunk-size N] [--char-cap N]",
     );
     process.exit(1);
   }
-  const cs = a.indexOf('--chunk-size');
-  const cc = a.indexOf('--char-cap');
+  const cs = a.indexOf("--chunk-size");
+  const cc = a.indexOf("--char-cap");
   return {
     in: inPath,
     chunkSize: cs >= 0 ? Number(a[cs + 1]) : 25,
@@ -36,39 +36,39 @@ function parseArgs(): Args {
 }
 
 interface Turn {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   text: string;
   timestamp: string;
 }
 
 function extractText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
   return content
     .map((b) => {
-      if (typeof b === 'string') return b;
-      if (b && typeof b === 'object' && (b as { type: string }).type === 'text') {
+      if (typeof b === "string") return b;
+      if (b && typeof b === "object" && (b as { type: string }).type === "text") {
         return (b as { text: string }).text;
       }
-      return '';
+      return "";
     })
     .filter(Boolean)
-    .join('\n\n');
+    .join("\n\n");
 }
 
 function isSystemNoise(text: string): boolean {
   const trimmed = text.trim();
   return (
-    trimmed.startsWith('<system-reminder>') ||
-    trimmed.startsWith('<command-name>') ||
-    trimmed.startsWith('Caveat:') ||
-    trimmed.startsWith('<local-command-stdout>')
+    trimmed.startsWith("<system-reminder>") ||
+    trimmed.startsWith("<command-name>") ||
+    trimmed.startsWith("Caveat:") ||
+    trimmed.startsWith("<local-command-stdout>")
   );
 }
 
 function loadTurns(file: string): Turn[] {
   const turns: Turn[] = [];
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
     if (!line) continue;
     let evt: { type?: string; message?: { content?: unknown }; timestamp?: string };
     try {
@@ -76,34 +76,34 @@ function loadTurns(file: string): Turn[] {
     } catch {
       continue;
     }
-    if (evt.type !== 'user' && evt.type !== 'assistant') continue;
+    if (evt.type !== "user" && evt.type !== "assistant") continue;
     const text = extractText(evt.message?.content).trim();
     if (!text || isSystemNoise(text)) continue;
-    turns.push({ role: evt.type, text, timestamp: evt.timestamp ?? '' });
+    turns.push({ role: evt.type, text, timestamp: evt.timestamp ?? "" });
   }
   return turns;
 }
 
 function clip(s: string, cap: number): string {
-  return s.length <= cap ? s : s.slice(0, cap).trimEnd() + '\n\n[…truncated…]';
+  return s.length <= cap ? s : s.slice(0, cap).trimEnd() + "\n\n[…truncated…]";
 }
 
 function render(turns: Turn[], id: string, startedAt: string, charCap: number): string {
-  const lines = ['---', `id: ${id}`, `started_at: ${startedAt}`, '---', ''];
+  const lines = ["---", `id: ${id}`, `started_at: ${startedAt}`, "---", ""];
   turns.forEach((t, i) => {
-    const seq = String(i + 1).padStart(4, '0');
+    const seq = String(i + 1).padStart(4, "0");
     lines.push(`## t-${seq} ${t.role}`);
     lines.push(clip(t.text, charCap));
-    lines.push('');
+    lines.push("");
   });
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 const args = parseArgs();
 const all = loadTurns(args.in);
 const sessionId = path
-  .basename(args.in, '.jsonl')
-  .replace(/[^a-zA-Z0-9-]/g, '-')
+  .basename(args.in, ".jsonl")
+  .replace(/[^a-zA-Z0-9-]/g, "-")
   .slice(0, 32);
 
 const totals = { added: 0, batches: 0 };
@@ -112,7 +112,7 @@ const chunkCount = Math.ceil(all.length / args.chunkSize);
 for (let i = 0; i < all.length; i += args.chunkSize) {
   const chunkIdx = Math.floor(i / args.chunkSize) + 1;
   const chunk = all.slice(i, i + args.chunkSize);
-  const id = `${sessionId}-c${String(chunkIdx).padStart(2, '0')}`;
+  const id = `${sessionId}-c${String(chunkIdx).padStart(2, "0")}`;
   const startedAt = chunk[0]?.timestamp || new Date().toISOString();
   const transcript = parseTranscript(render(chunk, id, startedAt, args.charCap));
   await upsertTranscript({ transcript });
@@ -125,4 +125,4 @@ for (let i = 0; i < all.length; i += args.chunkSize) {
   totals.batches += r.batches;
 }
 
-console.log('TOTAL:', JSON.stringify(totals));
+console.log("TOTAL:", JSON.stringify(totals));

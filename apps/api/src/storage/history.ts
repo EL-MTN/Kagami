@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import type { Collection } from 'mongodb';
-import { getDb } from './mongo.js';
+import { randomUUID } from "node:crypto";
+import type { Collection } from "mongodb";
+import { getDb } from "./mongo.js";
 
 // Audit log of fact mutations. Modeled on mem0's history table:
 // every ADD / UPDATE / DELETE leaves a row, capturing old + new text
@@ -14,7 +14,7 @@ import { getDb } from './mongo.js';
 // Indexed by { memory_id, created_at desc } via ensureIndexes() so a
 // fact's full journal is one cheap range scan.
 
-export type HistoryEventKind = 'ADD' | 'UPDATE' | 'DELETE';
+export type HistoryEventKind = "ADD" | "UPDATE" | "DELETE";
 
 export interface HistoryEvent {
   id: string;
@@ -22,11 +22,11 @@ export interface HistoryEvent {
   event: HistoryEventKind;
   old_text?: string;
   new_text?: string;
-  actor: string;            // free-form: 'system', 'consolidate', 'append', etc.
-  created_at: string;       // ISO timestamp
+  actor: string; // free-form: 'system', 'consolidate', 'append', etc.
+  created_at: string; // ISO timestamp
 }
 
-interface HistoryDoc extends Omit<HistoryEvent, 'id'> {
+interface HistoryDoc extends Omit<HistoryEvent, "id"> {
   _id: string;
 }
 
@@ -37,7 +37,7 @@ function fromDoc(d: HistoryDoc): HistoryEvent {
 
 async function historyCol(): Promise<Collection<HistoryDoc>> {
   const db = await getDb();
-  return db.collection<HistoryDoc>('history');
+  return db.collection<HistoryDoc>("history");
 }
 
 export interface RecordEventInput {
@@ -55,7 +55,7 @@ function buildDoc(input: RecordEventInput): HistoryDoc {
     event: input.event,
     ...(input.old_text !== undefined ? { old_text: input.old_text } : {}),
     ...(input.new_text !== undefined ? { new_text: input.new_text } : {}),
-    actor: input.actor ?? 'system',
+    actor: input.actor ?? "system",
     created_at: new Date().toISOString(),
   };
 }
@@ -75,9 +75,6 @@ export async function recordEvents(inputs: RecordEventInput[]): Promise<void> {
 // { memory_id, created_at: -1 } makes this an index-only scan.
 export async function readHistoryFor(memoryId: string): Promise<HistoryEvent[]> {
   const col = await historyCol();
-  const docs = await col
-    .find({ memory_id: memoryId })
-    .sort({ created_at: -1 })
-    .toArray();
+  const docs = await col.find({ memory_id: memoryId }).sort({ created_at: -1 }).toArray();
   return docs.map(fromDoc);
 }

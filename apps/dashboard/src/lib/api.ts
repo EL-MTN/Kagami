@@ -74,16 +74,18 @@ export async function getFactCount(): Promise<{ count: number }> {
   return api("/facts/count");
 }
 
-export async function listFacts(params: {
-  limit?: number;
-  offset?: number;
-  since?: string;
-  until?: string;
-  source_session?: string;
-  user_id?: string;
-  run_id?: string;
-  agent_id?: string;
-} = {}): Promise<FactsListResponse> {
+export async function listFacts(
+  params: {
+    limit?: number;
+    offset?: number;
+    since?: string;
+    until?: string;
+    source_session?: string;
+    user_id?: string;
+    run_id?: string;
+    agent_id?: string;
+  } = {},
+): Promise<FactsListResponse> {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== "") qs.set(k, String(v));
@@ -105,17 +107,11 @@ export async function getFactHistory(id: string): Promise<{ id: string; events: 
   return api(`/facts/${id}/history`);
 }
 
-export async function recall(body: {
-  query: string;
-  k?: number;
-}): Promise<RecallResponse> {
+export async function recall(body: { query: string; k?: number }): Promise<RecallResponse> {
   return api("/recall", { method: "POST", body: JSON.stringify(body) });
 }
 
-export async function query(body: {
-  question: string;
-  k?: number;
-}): Promise<QueryResponse> {
+export async function query(body: { question: string; k?: number }): Promise<QueryResponse> {
   return api("/query", { method: "POST", body: JSON.stringify(body) });
 }
 

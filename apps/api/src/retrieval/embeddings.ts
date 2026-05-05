@@ -1,14 +1,9 @@
-import { cosineSimilarity } from 'ai';
-import { embedQuestion, embedTexts } from '../llm.js';
-import { getDb } from '../storage/mongo.js';
-import {
-  ENTITY_BOOST_WEIGHT,
-  getBm25Params,
-  normalizeBm25,
-  scoreAndRank,
-} from './scoring.js';
-import { extractEntities, lemmatizeForBm25 } from './text.js';
-import { logger } from '../logger.js';
+import { cosineSimilarity } from "ai";
+import { embedQuestion, embedTexts } from "../llm.js";
+import { getDb } from "../storage/mongo.js";
+import { ENTITY_BOOST_WEIGHT, getBm25Params, normalizeBm25, scoreAndRank } from "./scoring.js";
+import { extractEntities, lemmatizeForBm25 } from "./text.js";
+import { logger } from "../logger.js";
 
 // Re-export so callers (ingest, query) can import the embed helpers
 // from a single module. Implementations live in llm.ts to avoid a
@@ -81,7 +76,7 @@ interface EntityRow {
 
 export const defaultFactRanker: FactRanker = async (question, k, opts = {}) => {
   const db = await getDb();
-  const facts = db.collection<FactRow>('facts');
+  const facts = db.collection<FactRow>("facts");
 
   // Step 1: preprocess query.
   const queryLemmatized = lemmatizeForBm25(question);
@@ -105,8 +100,8 @@ export const defaultFactRanker: FactRanker = async (question, k, opts = {}) => {
     .aggregate<{ _id: string }>([
       {
         $vectorSearch: {
-          index: 'facts_vec',
-          path: 'embedding',
+          index: "facts_vec",
+          path: "embedding",
           queryVector: qEmb,
           numCandidates: internalLimit * 10,
           limit: internalLimit,
@@ -126,23 +121,21 @@ export const defaultFactRanker: FactRanker = async (question, k, opts = {}) => {
           .aggregate<{ _id: string; bm25_raw: number }>([
             {
               $search: {
-                index: 'facts_text',
+                index: "facts_text",
                 ...(searchFilter
                   ? {
                       compound: {
-                        must: [
-                          { text: { query: queryLemmatized, path: 'text_lemmatized' } },
-                        ],
+                        must: [{ text: { query: queryLemmatized, path: "text_lemmatized" } }],
                         filter: searchFilter,
                       },
                     }
                   : {
-                      text: { query: queryLemmatized, path: 'text_lemmatized' },
+                      text: { query: queryLemmatized, path: "text_lemmatized" },
                     }),
               },
             },
             { $limit: internalLimit },
-            { $project: { _id: 1, bm25_raw: { $meta: 'searchScore' } } },
+            { $project: { _id: 1, bm25_raw: { $meta: "searchScore" } } },
           ])
           .toArray()
       : [];
@@ -161,7 +154,7 @@ export const defaultFactRanker: FactRanker = async (question, k, opts = {}) => {
     _id: { $in: Array.from(ids) },
     ...(metadataMatch ?? {}),
   };
-  const docs = (await facts
+  const docs = await facts
     .find(fetchFilter)
     .project<FactRow>({
       text: 1,
@@ -171,7 +164,7 @@ export const defaultFactRanker: FactRanker = async (question, k, opts = {}) => {
       created_at: 1,
       embedding: 1,
     })
-    .toArray());
+    .toArray();
 
   // Step 6: cosine in app. Preserves the existing scoring math exactly
   // — same threshold, same units as the JSONL implementation.
@@ -195,13 +188,7 @@ export const defaultFactRanker: FactRanker = async (question, k, opts = {}) => {
   const entityBoosts = await computeEntityBoosts(question);
 
   // Step 9: combine + rank.
-  const ranked = scoreAndRank(
-    semanticResults,
-    bm25Scores,
-    entityBoosts,
-    SEMANTIC_THRESHOLD,
-    k,
-  );
+  const ranked = scoreAndRank(semanticResults, bm25Scores, entityBoosts, SEMANTIC_THRESHOLD, k);
 
   const docById = new Map(docs.map((d) => [d._id, d]));
   return ranked
@@ -245,12 +232,12 @@ async function computeEntityBoosts(question: string): Promise<Map<string, number
   try {
     qEmbeddings = await embedTexts(dedup);
   } catch (error) {
-    logger.error({ error }, 'query entity embed failed');
+    logger.error({ error }, "query entity embed failed");
     return new Map();
   }
 
   const db = await getDb();
-  const entities = db.collection<EntityRow>('entities');
+  const entities = db.collection<EntityRow>("entities");
 
   // Same cosine-recompute pattern as the fact path: $vectorSearch surfaces
   // candidates, but we recompute cosine in app so the threshold of 0.5
@@ -261,8 +248,8 @@ async function computeEntityBoosts(question: string): Promise<Map<string, number
       .aggregate<EntityRow>([
         {
           $vectorSearch: {
-            index: 'entities_vec',
-            path: 'embedding',
+            index: "entities_vec",
+            path: "embedding",
             queryVector: qEmb,
             numCandidates: ENTITY_VS_NUM_CANDIDATES,
             limit: ENTITY_VS_LIMIT,
@@ -290,9 +277,7 @@ async function computeEntityBoosts(question: string): Promise<Map<string, number
 // fields declared as `type: filter` in the vector index. Only scope and
 // category are pre-declared; metadata is dynamic and post-filters via
 // buildMetadataMatch().
-function buildVectorSearchFilter(
-  filters?: MemoryFilters,
-): Record<string, unknown> | undefined {
+function buildVectorSearchFilter(filters?: MemoryFilters): Record<string, unknown> | undefined {
   if (!filters) return undefined;
   const clauses: Record<string, unknown> = {};
   if (filters.user_id !== undefined) clauses.user_id = { $eq: filters.user_id };
@@ -311,16 +296,16 @@ function buildSearchCompoundFilter(
   if (!filters) return undefined;
   const clauses: Array<Record<string, unknown>> = [];
   if (filters.user_id !== undefined) {
-    clauses.push({ equals: { path: 'user_id', value: filters.user_id } });
+    clauses.push({ equals: { path: "user_id", value: filters.user_id } });
   }
   if (filters.run_id !== undefined) {
-    clauses.push({ equals: { path: 'run_id', value: filters.run_id } });
+    clauses.push({ equals: { path: "run_id", value: filters.run_id } });
   }
   if (filters.agent_id !== undefined) {
-    clauses.push({ equals: { path: 'agent_id', value: filters.agent_id } });
+    clauses.push({ equals: { path: "agent_id", value: filters.agent_id } });
   }
   if (filters.category !== undefined) {
-    clauses.push({ equals: { path: 'category', value: filters.category } });
+    clauses.push({ equals: { path: "category", value: filters.category } });
   }
   return clauses.length === 0 ? undefined : clauses;
 }
@@ -328,9 +313,7 @@ function buildSearchCompoundFilter(
 // Mongo $match for arbitrary metadata.<key> filters. Applied after the
 // candidate doc fetch, so it acts as a final gate on the union of the
 // dense + lexical hits. Values are matched exactly via $eq.
-function buildMetadataMatch(
-  filters?: MemoryFilters,
-): Record<string, unknown> | undefined {
+function buildMetadataMatch(filters?: MemoryFilters): Record<string, unknown> | undefined {
   if (!filters?.metadata) return undefined;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(filters.metadata)) {

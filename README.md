@@ -63,6 +63,7 @@ State lives entirely in Mongo — no filesystem-backed vault.
 ### Pipeline
 
 **Ingest** (`consolidate(transcript)`):
+
 1. Chunk the transcript into 2-message batches (one user + one assistant turn).
 2. For each batch, look up the top-10 most-similar existing facts as dedup context.
 3. Call the extraction prompt → get back `{memory: [{id, text}]}`.
@@ -71,10 +72,11 @@ State lives entirely in Mongo — no filesystem-backed vault.
 6. Extract proper-noun and quoted-text entities from each new fact; per-entity `updateOne` with `$setOnInsert` + `$addToSet` on `linked_memory_ids` (race-safe under concurrent ingest).
 
 **Query** (`query(question)`):
+
 1. Embed and lemmatize the question.
 2. `$vectorSearch` on `facts_vec` — top `max(K*4, 60)` by cosine.
 3. `$search` BM25 on `facts_text` (whole-corpus) — top `max(K*4, 60)` by lexical match. Whole-corpus instead of cosine-prefiltered closes the recall ceiling: a fact strong on keywords but weak on cosine can still enter the top-K.
-4. Union the candidate _id sets, fetch full docs, recompute cosine in app to preserve the existing scoring math.
+4. Union the candidate \_id sets, fetch full docs, recompute cosine in app to preserve the existing scoring math.
 5. Entity extraction on the question; for each query entity, `$vectorSearch` on `entities_vec` and boost the linked facts.
 6. Fuse the three signals via additive scoring: `(semantic + bm25 + entity_boost) / max_possible`, where `entity_boost ≤ 0.5` and `max_possible = 1 + (bm25 ? 1 : 0) + (entity ? 0.5 : 0)` adapts to which channels fired so the combined score stays in [0, 1]. Take top-K = 50.
 7. Group surviving facts by date (newest-first), feed to the answerer prompt, strip `<mem_thinking>` block from output.
@@ -111,6 +113,7 @@ OPENAI_API_KEY=sk-...
 Provider profiles supply URL+key defaults so a typical setup is one line per role. Any OpenAI-compatible endpoint works (LM Studio, OpenAI, vLLM, Ollama, etc.) by setting the explicit `*_URL`/`*_API_KEY` overrides. The provider abstraction is `@ai-sdk/openai-compatible`.
 
 Common combinations:
+
 - **All-local**: `LLM_PROVIDER=lmstudio`, `EMBEDDING_PROVIDER=lmstudio`, `MODEL=<your-loaded-model>`.
 - **All-OpenAI**: `LLM_PROVIDER=openai`, `EMBEDDING_PROVIDER=openai`, `MODEL=gpt-4o-mini`, `EMBEDDING_MODEL=text-embedding-3-small`, `OPENAI_API_KEY=sk-...`.
 - **Hybrid (cheap chat, free embed)**: `LLM_PROVIDER=openai` + `MODEL=gpt-4o-mini` for the answerer; `EMBEDDING_PROVIDER=lmstudio` + `EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5` for the embeddings.
@@ -146,15 +149,15 @@ The MCP surface is mounted at `/mcp` on the API server (streamable HTTP transpor
 
 ## MCP tools
 
-| Tool | Purpose |
-|---|---|
+| Tool             | Purpose                                                                   |
+| ---------------- | ------------------------------------------------------------------------- |
 | `ingest_session` | Extract facts from a raw transcript string + write a session-summary fact |
-| `append_fact` | Add one fact verbatim (no LLM). Accepts scope + metadata + category |
-| `append_facts` | Bulk infer=false add (mem0-OSS-style). Up to 500 facts in one call |
-| `recall` | Hybrid retrieval (no LLM). Accepts scope/metadata/category filters |
-| `query` | Answer a question using top-K hybrid retrieval. Accepts the same filters |
-| `fact_count` | Return the number of atomic facts currently stored |
-| `fact_history` | Return the audit journal (ADD/UPDATE/DELETE) for one fact |
+| `append_fact`    | Add one fact verbatim (no LLM). Accepts scope + metadata + category       |
+| `append_facts`   | Bulk infer=false add (mem0-OSS-style). Up to 500 facts in one call        |
+| `recall`         | Hybrid retrieval (no LLM). Accepts scope/metadata/category filters        |
+| `query`          | Answer a question using top-K hybrid retrieval. Accepts the same filters  |
+| `fact_count`     | Return the number of atomic facts currently stored                        |
+| `fact_history`   | Return the audit journal (ADD/UPDATE/DELETE) for one fact                 |
 
 ## Design notes
 

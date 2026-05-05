@@ -13,29 +13,130 @@
 //   - QUOTED:  text inside single or double quotes
 
 const STOPWORDS = new Set<string>([
-  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'but', 'by', 'do',
-  'does', 'for', 'from', 'had', 'has', 'have', 'he', 'her', 'him', 'his',
-  'how', 'i', 'if', 'in', 'is', 'it', 'its', 'me', 'my', 'no', 'not',
-  'of', 'on', 'or', 'our', 's', 'she', 'so', 't', 'than', 'that', 'the',
-  'their', 'them', 'they', 'this', 'to', 'was', 'we', 'were', 'what',
-  'when', 'where', 'which', 'who', 'why', 'will', 'with', 'would', 'you',
-  'your', 'yours', 'am', 'being', 'did', 'doing',
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "but",
+  "by",
+  "do",
+  "does",
+  "for",
+  "from",
+  "had",
+  "has",
+  "have",
+  "he",
+  "her",
+  "him",
+  "his",
+  "how",
+  "i",
+  "if",
+  "in",
+  "is",
+  "it",
+  "its",
+  "me",
+  "my",
+  "no",
+  "not",
+  "of",
+  "on",
+  "or",
+  "our",
+  "s",
+  "she",
+  "so",
+  "t",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "they",
+  "this",
+  "to",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your",
+  "yours",
+  "am",
+  "being",
+  "did",
+  "doing",
 ]);
 
 const _GENERIC_CAPS = new Set<string>([
-  'works', 'items', 'things', 'stuff', 'resources', 'options', 'tips',
-  'ideas', 'steps', 'ways', 'methods', 'tools', 'features', 'benefits',
-  'examples', 'details', 'notes', 'instructions', 'guidelines',
-  'recommendations', 'suggestions', 'overview', 'summary', 'conclusion',
-  'introduction', 'pros', 'cons', 'advantages', 'disadvantages',
+  "works",
+  "items",
+  "things",
+  "stuff",
+  "resources",
+  "options",
+  "tips",
+  "ideas",
+  "steps",
+  "ways",
+  "methods",
+  "tools",
+  "features",
+  "benefits",
+  "examples",
+  "details",
+  "notes",
+  "instructions",
+  "guidelines",
+  "recommendations",
+  "suggestions",
+  "overview",
+  "summary",
+  "conclusion",
+  "introduction",
+  "pros",
+  "cons",
+  "advantages",
+  "disadvantages",
   // The extraction prompt always leads facts with "User..." — drop it
   // as an entity since it would link to ~every memory and provide zero
   // discriminative signal. Bare month/day names go too; the answerer's
   // prompt-level date arithmetic handles them separately.
-  'user', 'assistant',
-  'january', 'february', 'march', 'april', 'may', 'june', 'july',
-  'august', 'september', 'october', 'november', 'december',
-  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+  "user",
+  "assistant",
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
 ]);
 
 // Porter-lite: collapses the common English suffixes that BM25 keyword
@@ -43,12 +144,12 @@ const _GENERIC_CAPS = new Set<string>([
 // proper Porter stemmer on irregular forms; fine for keyword matching.
 function stem(word: string): string {
   if (word.length < 4) return word;
-  if (word.endsWith('sses')) return word.slice(0, -2);            // classes → class
-  if (word.endsWith('ies') && word.length > 4) return word.slice(0, -3) + 'y'; // berries → berry
-  if (word.endsWith('s') && !word.endsWith('ss') && !word.endsWith('us')) return word.slice(0, -1);
-  if (word.endsWith('ing') && word.length > 5) return word.slice(0, -3);
-  if (word.endsWith('ed') && word.length > 4) return word.slice(0, -2);
-  if (word.endsWith('ly') && word.length > 4) return word.slice(0, -2);
+  if (word.endsWith("sses")) return word.slice(0, -2); // classes → class
+  if (word.endsWith("ies") && word.length > 4) return word.slice(0, -3) + "y"; // berries → berry
+  if (word.endsWith("s") && !word.endsWith("ss") && !word.endsWith("us")) return word.slice(0, -1);
+  if (word.endsWith("ing") && word.length > 5) return word.slice(0, -3);
+  if (word.endsWith("ed") && word.length > 4) return word.slice(0, -2);
+  if (word.endsWith("ly") && word.length > 4) return word.slice(0, -2);
   return word;
 }
 
@@ -64,11 +165,11 @@ export function lemmatizeForBm25(text: string): string {
     if (stemmed.length > 0) tokens.push(stemmed);
     // Keep the original -ing form alongside the stem so noun uses
     // ("meeting") still match document occurrences without POS tagging.
-    if (tok.endsWith('ing') && tok !== stemmed && tok.length > 4) {
+    if (tok.endsWith("ing") && tok !== stemmed && tok.length > 4) {
       tokens.push(tok);
     }
   }
-  return tokens.join(' ');
+  return tokens.join(" ");
 }
 
 // Match runs of capitalized words (proper-noun phrases). Skips known
@@ -78,7 +179,7 @@ export function lemmatizeForBm25(text: string): string {
 const PROPER_RE = /\b([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)*)\b/g;
 const QUOTED_RE = /"([^"\n]+)"|'([^'\n]+)'/g;
 
-export type EntityType = 'PROPER' | 'QUOTED';
+export type EntityType = "PROPER" | "QUOTED";
 export interface Entity {
   type: EntityType;
   text: string;
@@ -93,7 +194,7 @@ export function extractEntities(text: string): Entity[] {
     if (!ent) continue;
     const lower = ent.toLowerCase();
     // Skip single capitalized words that are just generic English.
-    if (!ent.includes(' ')) {
+    if (!ent.includes(" ")) {
       if (_GENERIC_CAPS.has(lower)) continue;
       if (STOPWORDS.has(lower)) continue;
       // Single short proper nouns are usually false positives from
@@ -103,16 +204,16 @@ export function extractEntities(text: string): Entity[] {
     const key = `PROPER:${lower}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ type: 'PROPER', text: ent });
+    out.push({ type: "PROPER", text: ent });
   }
 
   for (const m of text.matchAll(QUOTED_RE)) {
-    const ent = (m[1] ?? m[2] ?? '').trim();
+    const ent = (m[1] ?? m[2] ?? "").trim();
     if (!ent || ent.length > 100) continue;
     const key = `QUOTED:${ent.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ type: 'QUOTED', text: ent });
+    out.push({ type: "QUOTED", text: ent });
   }
 
   return out;

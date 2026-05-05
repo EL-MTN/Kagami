@@ -1,11 +1,11 @@
-import { z } from 'zod';
-import { generateObject } from 'ai';
-import { parseTranscript } from './transcript.js';
-import { consolidate } from './consolidate.js';
-import { appendSingleFact } from './append.js';
-import { upsertTranscript } from '../storage/transcripts.js';
-import { model } from '../llm.js';
-import { logger } from '../logger.js';
+import { z } from "zod";
+import { generateObject } from "ai";
+import { parseTranscript } from "./transcript.js";
+import { consolidate } from "./consolidate.js";
+import { appendSingleFact } from "./append.js";
+import { upsertTranscript } from "../storage/transcripts.js";
+import { model } from "../llm.js";
+import { logger } from "../logger.js";
 
 // Session ingest. Accepts a raw transcript string (matter front-matter
 // + `## t-N <role>` headings), persists the parsed transcript to the
@@ -22,7 +22,7 @@ const SummarySchema = z.object({
   topics: z
     .string()
     .describe(
-      'A short comma-separated list of the substantive topics the conversation covered. No filler; no leading verb.',
+      "A short comma-separated list of the substantive topics the conversation covered. No filler; no leading verb.",
     ),
 });
 
@@ -31,7 +31,7 @@ const SUMMARY_SYSTEM = `You summarize a conversation transcript into one short, 
 function buildSummaryPrompt(turns: Array<{ role: string; text: string }>): string {
   const body = turns
     .map((t) => `${t.role}: ${t.text}`)
-    .join('\n')
+    .join("\n")
     .slice(0, 12000); // hard cap so giant transcripts don't blow the context
   return `Transcript:\n${body}\n\nReturn the topics field.`;
 }
@@ -51,18 +51,15 @@ async function generateSummaryClause(
     });
     return object.topics.trim() || null;
   } catch (err) {
-    logger.warn(
-      { err: (err as Error).message },
-      'summary clause generation failed',
-    );
+    logger.warn({ err: (err as Error).message }, "summary clause generation failed");
     return null;
   }
 }
 
 export interface IngestSessionInput {
-  transcript: string;        // raw markdown body (frontmatter + turns)
+  transcript: string; // raw markdown body (frontmatter + turns)
   generateSummary?: boolean; // default true
-  user_id?: string;          // default 'default'
+  user_id?: string; // default 'default'
   run_id?: string;
   agent_id?: string;
   metadata?: Record<string, unknown>;

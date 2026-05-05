@@ -9,7 +9,7 @@
 // fired) so the combined score stays in [0, 1] regardless of which
 // channels are active for a given query.
 
-import { lemmatizeForBm25 } from './text.js';
+import { lemmatizeForBm25 } from "./text.js";
 
 export const ENTITY_BOOST_WEIGHT = 0.5;
 
@@ -27,10 +27,7 @@ export const ENTITY_BOOST_WEIGHT = 0.5;
 //   - irrelevant tail             → <0.15
 //
 // See scripts/probe-bm25-scores.ts for the sampling tool used to refit.
-export function getBm25Params(
-  query: string,
-  lemmatized?: string,
-): [number, number] {
+export function getBm25Params(query: string, lemmatized?: string): [number, number] {
   const lem = lemmatized ?? lemmatizeForBm25(query);
   const numTerms = lem.split(/\s+/).filter(Boolean).length || 1;
   if (numTerms <= 3) return [1.5, 1.5];
@@ -40,22 +37,18 @@ export function getBm25Params(
   return [3.5, 1.0];
 }
 
-export function normalizeBm25(
-  rawScore: number,
-  midpoint: number,
-  steepness: number,
-): number {
+export function normalizeBm25(rawScore: number, midpoint: number, steepness: number): number {
   return 1.0 / (1.0 + Math.exp(-steepness * (rawScore - midpoint)));
 }
 
 export interface SemanticCandidate {
   id: string;
-  score: number;            // semantic score in [0, 1]
+  score: number; // semantic score in [0, 1]
 }
 
 export interface RankedResult {
   id: string;
-  score: number;            // combined score in [0, 1]
+  score: number; // combined score in [0, 1]
 }
 
 // Gate by semantic threshold, then add BM25 and entity boost (each
