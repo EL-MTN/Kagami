@@ -12,7 +12,8 @@ import { mcpRouter } from './mcp.js';
 import { ensureIndexes } from './storage/indexes.js';
 import { closeMongo } from './storage/mongo.js';
 
-const PORT = Number.parseInt(process.env.KIOKU_PORT ?? '7777', 10);
+// `PORT` is injected by `portless run`; `KIOKU_PORT` is the manual override.
+const PORT = Number.parseInt(process.env.PORT ?? process.env.KIOKU_PORT ?? '7777', 10);
 const HOST = process.env.KIOKU_HOST ?? '127.0.0.1';
 
 const app = express();

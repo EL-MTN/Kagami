@@ -1,0 +1,39 @@
+{
+  "name": "@kioku/api",
+  "version": "0.1.0",
+  "description": "Personal long-term memory subsystem for an agentic assistant.",
+  "private": true,
+  "type": "module",
+  "portless": "api.kioku",
+  "scripts": {
+    "dev": "portless run tsx watch src/server.ts",
+    "start": "node --import tsx src/server.ts",
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ tests/ scripts/",
+    "lint:fix": "eslint src/ tests/ scripts/ --fix"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^2.0.41",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "ai": "^6.0.168",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "gray-matter": "^4.0.3",
+    "mongodb": "^7.2.0",
+    "openai": "^4.0.0",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@kioku/eslint-config": "*",
+    "@kioku/typescript-config": "*",
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.19.39",
+    "mongodb-memory-server": "^11.1.0",
+    "portless": "^0.12.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}

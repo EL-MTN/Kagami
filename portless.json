@@ -1,0 +1,6 @@
+{
+  "apps": {
+    "apps/dashboard": { "name": "kioku" },
+    "apps/api": { "name": "api.kioku" }
+  }
+}
