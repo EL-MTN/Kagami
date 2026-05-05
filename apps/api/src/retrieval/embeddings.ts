@@ -49,8 +49,7 @@ export type FactRanker = (
 //
 // The two search passes run independently against the whole corpus, so
 // a fact that's weak on cosine but strong on keyword (or vice versa)
-// can still enter the top-K — this is the recall ceiling Kioku-on-JSONL
-// hit, where BM25 only saw the cosine-prefiltered window.
+// can still enter the top-K.
 
 const SEMANTIC_THRESHOLD = 0.1;
 const ENTITY_SIM_THRESHOLD = 0.5;
@@ -112,9 +111,8 @@ export const defaultFactRanker: FactRanker = async (question, k, opts = {}) => {
     ])
     .toArray();
 
-  // Step 4: BM25 top-N via $search over the whole corpus. Whole-corpus
-  // is the deliberate behavior change vs JSONL Kioku, where BM25 was
-  // restricted to the cosine-prefiltered window.
+  // Step 4: BM25 top-N via $search over the whole corpus (no
+  // cosine prefilter — see file header for the recall rationale).
   const bm25Hits =
     queryLemmatized.length > 0
       ? await facts
@@ -166,8 +164,8 @@ export const defaultFactRanker: FactRanker = async (question, k, opts = {}) => {
     })
     .toArray();
 
-  // Step 6: cosine in app. Preserves the existing scoring math exactly
-  // — same threshold, same units as the JSONL implementation.
+  // Step 6: cosine in app. Atlas's vectorSearchScore uses (1+cos)/2
+  // which doesn't line up with SEMANTIC_THRESHOLD=0.1, so recompute.
   const semanticResults = docs.map((d) => ({
     id: d._id,
     score: cosineSimilarity(qEmb, d.embedding),
@@ -241,7 +239,7 @@ async function computeEntityBoosts(question: string): Promise<Map<string, number
 
   // Same cosine-recompute pattern as the fact path: $vectorSearch surfaces
   // candidates, but we recompute cosine in app so the threshold of 0.5
-  // means raw cosine similarity (matching the JSONL implementation).
+  // means raw cosine similarity.
   const boosts = new Map<string, number>();
   for (const qEmb of qEmbeddings) {
     const hits = await entities

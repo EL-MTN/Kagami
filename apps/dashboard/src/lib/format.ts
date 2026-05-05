@@ -16,10 +16,6 @@ export function formatRelative(input: string | Date): string {
   return `${years}y ago`;
 }
 
-export function formatNumber(n: number): string {
-  return n.toLocaleString();
-}
-
 export function monthKey(eventDate: string): string {
   return eventDate.slice(0, 7);
 }
