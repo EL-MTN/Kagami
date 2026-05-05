@@ -4,7 +4,7 @@ Web dashboard for managing and inspecting Kokoro's data, built with Next.js 15 +
 
 ## Design System
 
-The dashboard uses **"Kokoro Daylight" (心)** — a warm-paper light theme tuned for observability rather than mood. The earlier "Noir Atelier" dark palette was retired because it traded legibility for atmosphere, which is the wrong tradeoff for a surface whose job is scanning numbers and statuses.
+The dashboard uses **"Kokoro Daylight" (心)** — a warm-paper light theme tuned for observability rather than mood. The earlier "Noir Atelier" dark palette was retired because it traded legibility for atmosphere, which is the wrong tradeoff for a surface whose job is scanning numbers and statuses. The palette lives in `apps/dashboard/src/app/globals.css` (`@theme inline` block) and the wordmark 心 in the sidebar is the canonical brand mark.
 
 ### Typography
 
@@ -37,7 +37,7 @@ Three text levels only — no opacity ladder. Components must use one of:
 | `text-muted-foreground` | Secondary content (descriptions, captions, secondary cells)   |
 | `text-faint`            | Tertiary metadata (timestamps, counts, "30 days" annotations) |
 
-Avoid `text-muted-foreground/30..70` etc. The `/N` modifier antipattern was swept out in the Daylight switch and is regression-prone.
+Avoid `text-muted-foreground/30..70` etc. The `/N` modifier antipattern was swept out in the Kokoro Daylight switch and is regression-prone.
 
 ### Visual Details
 
@@ -65,10 +65,12 @@ When `DASHBOARD_PASSWORD` is set, the `middleware.ts` middleware enforces HTTP B
 
 ## Running
 
+The dashboard runs under [Portless](https://github.com/vercel-labs/portless) (declared in `apps/dashboard/package.json` as `"portless": "kokoro"`, with `dev` set to `portless run next dev`). It serves at `https://kokoro.localhost` with HTTPS auto-trusted and the underlying Next.js port assigned dynamically. First run prompts once for sudo to install the local CA.
+
 ```bash
 npm run dev          # starts both bot and dashboard via turbo
 # or
-cd apps/dashboard && npm run dev   # dashboard only (port 3000)
+cd apps/dashboard && npm run dev   # dashboard only (Portless-served at https://kokoro.localhost)
 ```
 
 ## Pages
@@ -78,7 +80,6 @@ cd apps/dashboard && npm run dev   # dashboard only (port 3000)
 | `/`                       | Overview — pending-intent surface (preview of awaiting confirmations), stat cards, emotional trend chart, recent activity feed        |
 | `/conversations`          | Paginated table with status filter (all/active/closed) and chat-ID search; columns: session, chat, status, messages, platform, dates  |
 | `/conversations/[id]`     | Conversation detail — header metadata + scrollable message history with chat bubbles                                                  |
-| `/memories`               | Type pills (fact/episode/milestone/working with counts) plus tone, importance, and source filters; paginated cards                    |
 | `/confirmations`          | Pending and recently-resolved approval-gated tool calls with origin (conversation/routine/watcher), tool name, args, expiry countdown |
 | `/reminders`              | Reminder table with pending/fired/all pill filter (with counts), message, fire time, status, chat ID, created                         |
 | `/routines`               | Routine management — table with enable/disable, create, import, export                                                                |
@@ -118,7 +119,6 @@ All in `src/lib/queries/`:
 
 - `overview.ts` — `getOverviewStats()`, `getEmotionalTrend()`, `getRecentActivity()`
 - `conversations.ts` — `getConversationList(page, options?)` with `status` and `search` (chatId regex) filters; `getConversationDetail(id)`
-- `memories.ts` — `getMemoriesByType(type, page, options?)` with `tone` (positive/neutral/negative), `importance` (low/medium/high), and `source` (regex) filters; `getMemoryTypeCounts()`
 - `confirmations.ts` — `getPendingConfirmationList()`, `getRecentResolvedConfirmations(limit)`, `getPendingConfirmationCount()`
 - `reminders.ts` — `getReminderList(showFired?)`
 - `routines.ts` — `getRoutineList()`, `getRoutineDetail(id)`, `getRoutineLogList(routineId, limit, before?)`
@@ -180,7 +180,6 @@ This allows the dashboard to import `@kokoro/db` → `@kokoro/shared` without `p
 | `emotional-indicator.tsx`            | Server         | Trend badge (rising/falling/stable)                                                                                                         |
 | `activity-feed.tsx`                  | Server         | Recent conversations + memories interleaved by time                                                                                         |
 | `message-bubble.tsx`                 | Server         | Chat message with role-based styling, tool call display                                                                                     |
-| `memory-card.tsx`                    | Server         | Memory content with importance/type badges                                                                                                  |
 | `pagination.tsx`                     | Server         | Simple prev/next page links                                                                                                                 |
 | `routines/routine-table.tsx`         | Client         | Interactive routine list with name/description search, enabled/cron filters, enable/disable toggle (with rollback toast on failure), delete |
 | `routines/routine-editor.tsx`        | Client         | Inline routine editing with live cron preview, dirty tracking, Cmd+S save, navigate-away guard                                              |
@@ -215,7 +214,7 @@ This allows the dashboard to import `@kokoro/db` → `@kokoro/shared` without `p
 | `DataRow`         | Server | Standard `<tr>` styling (border + hover) so callers don't restate it.                                                                                                                                            |
 | `EmptyState`      | Server | Empty-state messaging in dashed-border card or inline form.                                                                                                                                                      |
 
-`/conversations`, `/memories`, `/reminders`, `/confirmations` use `LinkFilterPills` + URL-synced `SearchInput` so filter state is shareable and survives reload. `/routines` and `/watchers` use the controlled `FilterPills` + controlled `SearchInput` because their interactive state (toggle, delete, create) lives in client-side React state.
+`/conversations`, `/reminders`, `/confirmations` use `LinkFilterPills` + URL-synced `SearchInput` so filter state is shareable and survives reload. `/routines` and `/watchers` use the controlled `FilterPills` + controlled `SearchInput` because their interactive state (toggle, delete, create) lives in client-side React state.
 
 ## Dependencies
 

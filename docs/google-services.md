@@ -60,10 +60,8 @@ apps/bot/src/scheduler/
 └── reminders.ts          Reminder polling scheduler
 
 apps/bot/src/ai/tools/
-├── check-email.ts        LLM tool for reading email
-├── send-email.ts         LLM tool for sending email
-├── manage-calendar.ts    LLM tool for calendar
-└── manage-reminders.ts   LLM tool for reminders
+├── email.ts              LLM tools for reading + sending email (checkEmail, sendEmail)
+└── calendar.ts           LLM tools for calendar + reminders (manageCalendar, manageReminders)
 ```
 
 ### Google Auth (`apps/bot/src/services/google-auth.ts`)
@@ -72,10 +70,11 @@ Lazy singleton `OAuth2Client` from the `googleapis` package. Reads credentials f
 
 ### Gmail Service (`apps/bot/src/services/gmail.ts`)
 
-| Function                        | Description                                                      |
-| ------------------------------- | ---------------------------------------------------------------- |
-| `listUnreadEmails(maxResults?)` | Lists unread emails with metadata (from, subject, snippet, date) |
-| `getEmailById(messageId)`       | Retrieves full email body (plain text, truncated to 2000 chars)  |
+| Function                           | Description                                                      |
+| ---------------------------------- | ---------------------------------------------------------------- |
+| `listUnreadEmails(maxResults?)`    | Lists unread emails with metadata (from, subject, snippet, date) |
+| `getEmailById(messageId)`          | Retrieves full email body (plain text, truncated to 2000 chars)  |
+| `sendEmail({ to, subject, body })` | Sends an email via the Gmail API                                 |
 
 ### Calendar Service (`apps/bot/src/services/google-calendar.ts`)
 
@@ -109,6 +108,11 @@ Reminders are stored in MongoDB and polled by a scheduler.
 - **Parameters**: `{ maxResults?: number, emailId?: string }`
 - **Behavior**: Lists unread emails or retrieves a specific email by ID
 - **Returns**: `{ success, count?, emails? }` or `{ success, email }` or `{ success: false, reason }`
+
+### sendEmail
+
+- **Parameters**: `{ to: string, subject: string, body: string }`
+- **Behavior**: Sends an email on behalf of the user. Approval-gated via the confirmation primitive (see `docs/confirmations.md`).
 
 ### manageCalendar
 

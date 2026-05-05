@@ -89,22 +89,21 @@ When `STT_PROVIDER` is configured (see [voice.md](voice.md)), inbound iMessage v
 
 ## Inbox behavior summary
 
-| Event                                 | Action                                              |
-| ------------------------------------- | --------------------------------------------------- |
-| Text from allowlisted handle in 1:1   | Run normal AI pipeline                              |
-| YES/NO reply when exactly 1 pending   | Pre-AI parser resolves the confirmation; no AI call |
-| Image attachment                      | Decoded base64 → GridFS → standard pipeline         |
-| Voice attachment (audio/\*)           | Surfaced as `[voice note]`, runs AI pipeline        |
-| Group chat (`iMessage;+;…`)           | Ignored with debug log                              |
-| Outgoing message (`isFromMe: true`)   | Ignored                                             |
-| Reaction / tapback                    | Ignored                                             |
-| Duplicate event (same `message.guid`) | Skipped (LRU dedupe, 200 entries)                   |
-| Non-allowlisted handle                | Blocked + warning log                               |
-| Rate limit (>15/min per handle)       | Dropped silently                                    |
+| Event                                 | Action                                                                                                                        |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Text from allowlisted handle in 1:1   | Run normal AI pipeline                                                                                                        |
+| YES/NO reply when exactly 1 pending   | Pre-AI parser resolves the confirmation; no AI call                                                                           |
+| Image attachment                      | Decoded base64 → GridFS → standard pipeline                                                                                   |
+| Voice attachment (audio/\*)           | Transcribed via STT (if `STT_PROVIDER` set) → `[voice] <transcript>`; otherwise `[voice note]` placeholder. Runs AI pipeline. |
+| Group chat (`iMessage;+;…`)           | Ignored with debug log                                                                                                        |
+| Outgoing message (`isFromMe: true`)   | Ignored                                                                                                                       |
+| Reaction / tapback                    | Ignored                                                                                                                       |
+| Duplicate event (same `message.guid`) | Skipped (LRU dedupe, 200 entries)                                                                                             |
+| Non-allowlisted handle                | Blocked + warning log                                                                                                         |
+| Rate limit (>15/min per handle)       | Dropped silently                                                                                                              |
 
 ## What's deferred
 
 - **Group chats.** The webhook ignores `iMessage;+;…` chatGuids. Adding groups means deciding how Mashiro participates (mention-only? always?) and handling per-message handle vs. shared chatGuid.
 - **Reactions / tapbacks.** Could be surfaced as conversation context (`[goshujin-sama liked your message]`) but adds noise without clear value.
-- **Voice transcription.** Lands with the broader STT feature so both platforms get it together.
 - **Scheduler routing UI.** The dashboard treats reminders/routines/watchers as platform-agnostic — they work on either platform based on chatId prefix, but there's no UI surface to filter by platform yet.

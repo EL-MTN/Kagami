@@ -69,21 +69,22 @@ Two MongoDB collections back the routine system: `Routine` (definitions) and `Ro
 
 ### Routine
 
-| Field                  | Type                  | Description                                                                                  |
-| ---------------------- | --------------------- | -------------------------------------------------------------------------------------------- |
-| `chatId`               | `string`              | Telegram chat this routine belongs to                                                        |
-| `name`                 | `string`              | Unique name within the chat (used as identifier for `useRoutine`)                            |
-| `description`          | `string`              | What the routine does — shown in the system prompt routine listing                           |
-| `prompt`               | `string`              | Execution instructions — sent as the user message in the LLM call                            |
-| `parameters`           | `IRoutineParameter[]` | Typed parameter definitions (see below)                                                      |
-| `cronSchedule`         | `string \| null`      | Cron expression for automatic scheduling, or null for on-demand                              |
-| `reportMode`           | `"always" \| "alert"` | Whether to message the user after every run or only on noteworthy/failed runs                |
-| `nextRunAt`            | `Date \| null`        | Next scheduled execution time (computed from cron)                                           |
-| `manualRunRequestedAt` | `Date \| null`        | Set by the dashboard "Run Now" action; cleared atomically when the bot's scheduler claims it |
-| `enabled`              | `boolean`             | Whether the routine is active (default: `true`)                                              |
-| `version`              | `number`              | Incremented on every update                                                                  |
-| `createdAt`            | `Date`                | Mongoose timestamp                                                                           |
-| `updatedAt`            | `Date`                | Mongoose timestamp                                                                           |
+| Field                  | Type                  | Description                                                                                                                      |
+| ---------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `chatId`               | `string`              | Telegram chat this routine belongs to                                                                                            |
+| `name`                 | `string`              | Unique name within the chat (used as identifier for `useRoutine`)                                                                |
+| `description`          | `string`              | What the routine does — shown in the system prompt routine listing                                                               |
+| `prompt`               | `string`              | Execution instructions — sent as the user message in the LLM call                                                                |
+| `parameters`           | `IRoutineParameter[]` | Typed parameter definitions (see below)                                                                                          |
+| `cronSchedule`         | `string \| null`      | Cron expression for automatic scheduling, or null for on-demand                                                                  |
+| `reportMode`           | `"always" \| "alert"` | Whether to message the user after every run or only on noteworthy/failed runs                                                    |
+| `purity`               | `"read" \| "action"`  | `"read"` = observation only (safe for watchers). `"action"` = mutates external state. Defaults to `"action"` (conservative gate) |
+| `nextRunAt`            | `Date \| null`        | Next scheduled execution time (computed from cron)                                                                               |
+| `manualRunRequestedAt` | `Date \| null`        | Set by the dashboard "Run Now" action; cleared atomically when the bot's scheduler claims it                                     |
+| `enabled`              | `boolean`             | Whether the routine is active (default: `true`)                                                                                  |
+| `version`              | `number`              | Incremented on every update                                                                                                      |
+| `createdAt`            | `Date`                | Mongoose timestamp                                                                                                               |
+| `updatedAt`            | `Date`                | Mongoose timestamp                                                                                                               |
 
 ### Routine Parameters
 
@@ -115,11 +116,12 @@ Each parameter has:
 - `{ chatId: 1 }` — list routines for a chat
 - `{ chatId: 1, name: 1 }` — unique compound index (enforces name uniqueness per chat)
 - `{ enabled: 1, nextRunAt: 1 }` — efficient query for due cron routines
+- `{ manualRunRequestedAt: 1 }` — used by `claimPendingManualRun` to find dashboard-triggered runs
 - `{ routineId: 1, startedAt: -1 }` — log lookup by routine, most recent first
 
 ## Tools
 
-Three tools expose the routine system to the LLM. All are always registered (not conditional on config). Defined in `apps/bot/src/ai/tools/manage-routines.ts`, `apps/bot/src/ai/tools/search-routines.ts`, and `apps/bot/src/ai/tools/use-routine.ts`.
+Three tools expose the routine system to the LLM. `manageRoutines` and `searchRoutines` are always registered; `useRoutine` is registered only when below `MAX_ROUTINE_DEPTH`. All three are defined in `apps/bot/src/ai/tools/routines.ts`.
 
 ### manageRoutines
 
@@ -137,6 +139,7 @@ CRUD operations for routine definitions. Actions: `create`, `list`, `update`, `d
 | `parameters`   | optional                     | Typed parameter definitions array                                |
 | `cronSchedule` | optional                     | Cron expression (omit for on-demand only)                        |
 | `reportMode`   | create                       | `"always"` or `"alert"`                                          |
+| `purity`       | optional                     | `"read"` or `"action"` — defaults to `"action"` if omitted       |
 
 **Validation rules:**
 
@@ -148,7 +151,7 @@ CRUD operations for routine definitions. Actions: `create`, `list`, `update`, `d
 
 ### searchRoutines
 
-Searches enabled routines by keyword. Defined in `apps/bot/src/ai/tools/search-routines.ts`.
+Searches enabled routines by keyword.
 
 **Parameters:**
 
@@ -156,7 +159,7 @@ Searches enabled routines by keyword. Defined in `apps/bot/src/ai/tools/search-r
 | --------- | -------- | -------------------------------------------------------- |
 | `query`   | no       | Keywords to match against routine names and descriptions |
 
-**Returns:** `{ success, count, routines: [{ name, description, parameters, cronSchedule, reportMode }] }`
+**Returns:** `{ success, count, routines: [{ name, description, parameters, cronSchedule, reportMode, purity }] }`
 
 Call with no query to list all enabled routines. Keywords are matched as substrings against the concatenation of routine name and description — all terms must match.
 
@@ -175,11 +178,14 @@ Invokes a routine by name. The routine executes as a sub-`generateText()` call a
 
 1. Checks recursion depth against `MAX_ROUTINE_DEPTH` (3)
 2. Looks up the routine by `{chatId, name}` — rejects if not found or disabled
-3. Validates and coerces parameters against the routine's parameter schema (type coercion for string/number/boolean, JSON parsing for array/object, default filling, extra params passed through)
-4. Calls `executeRoutine()` with `trigger: "routine"` and `depth + 1`
-5. Returns `{ success, routineName, result }` synchronously
+3. If `callingContext === "watcher"`, rejects any routine whose `purity !== "read"` so watchers cannot indirectly mutate state
+4. Validates and coerces parameters against the routine's parameter schema (type coercion for string/number/boolean, JSON parsing for array/object, default filling, extra params passed through)
+5. Calls `executeRoutine()` with `trigger: "routine"`, `depth + 1`, and the inherited `callingContext`
+6. Returns `{ success, routineName, result }` synchronously
 
 **Depth gating:** The `useRoutine` tool is only registered when `depth < MAX_ROUTINE_DEPTH`. At depth 3, the tool is omitted from the tool set entirely, so the LLM cannot attempt further nesting.
+
+**Watcher purity gate:** When invoked from a watcher, `useRoutine` is bound with `callingContext: "watcher"`. The gate is propagated transitively, and the routine executor assembles its tool set via `routineToolsUnderWatcher()` (the same read-only subset watchers use) so a "read" routine cannot mutate state through its own tool palette.
 
 ## Execution Model
 
@@ -311,7 +317,7 @@ After execution (success or failure), the next run time is computed from the **p
 
 ### Cleanup
 
-Old routine logs (completed or failed, older than 90 days) are cleaned up by the daily cleanup routine in the proactive scheduler.
+Old routine logs (completed or failed, older than 90 days) are cleaned up by the daily cleanup job in the maintenance scheduler (`apps/bot/src/scheduler/maintenance.ts`, via `cleanupOldRoutineLogs`).
 
 ## Composability and Depth Limiting
 
@@ -347,15 +353,16 @@ RoutineLog (Routine A, trigger: "cron")
 
 ## File Map
 
-| File                                        | Purpose                                                                                                                                  |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/db/src/models/routine.ts`         | Mongoose models (`Routine`, `RoutineLog`), CRUD helpers, log helpers                                                                     |
-| `apps/bot/src/ai/tools/manage-routines.ts`  | `manageRoutines` tool (create/list/update/delete/enable/disable)                                                                         |
-| `apps/bot/src/ai/tools/search-routines.ts`  | `searchRoutines` tool (keyword discovery of available routines)                                                                          |
-| `apps/bot/src/ai/tools/use-routine.ts`      | `useRoutine` tool (invoke by name with parameters)                                                                                       |
-| `apps/bot/src/services/routine-executor.ts` | `executeRoutine()` — prompt assembly, `generateText()`, logging, reporting; `silent` option suppresses Telegram delivery                 |
-| `apps/bot/src/scheduler/routines.ts`        | Routine scheduler — cron polling (60 s) + manual-run polling (3 s)                                                                       |
-| `packages/shared/src/routine-validation.ts` | Shared cron validation (`isValidCron`, `computeNextRunAt`, `validateCronAndDefaults`) used by both the bot tool and dashboard API routes |
-| `apps/bot/src/ai/tools/index.ts`            | Tool registration with depth gating                                                                                                      |
-| `apps/bot/src/ai/context-assembler.ts`      | Routine context injection into system prompt                                                                                             |
-| `apps/bot/src/ai/prompts.ts`                | `ROUTINE_BEHAVIOR_INSTRUCTIONS` constant                                                                                                 |
+| File                                        | Purpose                                                                                                                                                  |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/db/src/models/routine.ts`         | Mongoose models (`Routine`, `RoutineLog`), CRUD helpers, log helpers, `claimPendingManualRun`, `resetStaleRunningRoutineLogs`, `cleanupOldRoutineLogs`   |
+| `apps/bot/src/ai/tools/routines.ts`         | All three routine tools — `manageRoutines`, `searchRoutines`, `useRoutine` — plus parameter coercion / validation                                        |
+| `apps/bot/src/services/routine-executor.ts` | `executeRoutine()` — prompt assembly, `generateText()`, logging, reporting; `silent` suppresses Telegram delivery; `callingContext` carries watcher gate |
+| `apps/bot/src/scheduler/routines.ts`        | Routine scheduler — cron polling (60 s) + manual-run polling (3 s) + startup recovery                                                                    |
+| `apps/bot/src/scheduler/maintenance.ts`     | Daily cleanup job that prunes old `RoutineLog` rows (extracted from the proactive scheduler in a1d8f36)                                                  |
+| `packages/shared/src/routine-validation.ts` | Shared cron validation (`isValidCron`, `computeNextRunAt`, `validateCronAndDefaults`) used by both the bot tool and dashboard API routes                 |
+| `apps/bot/src/ai/tools/index.ts`            | Tool registration with depth gating; `routineToolsUnderWatcher()` produces the read-only subset for routines invoked under a watcher                     |
+| `apps/bot/src/ai/context-assembler.ts`      | Routine context injection into system prompt (compact name listing)                                                                                      |
+| `apps/bot/src/ai/prompts.ts`                | `ROUTINE_BEHAVIOR_INSTRUCTIONS` constant                                                                                                                 |
+| `apps/dashboard/src/app/routines/`          | Dashboard pages — list view and per-routine editor (added in 3183af2)                                                                                    |
+| `apps/dashboard/src/app/api/routines/`      | Dashboard API — list/create, per-id read/update/delete, `/[id]/run` (Run-Now, sets `manualRunRequestedAt`), `/[id]/logs`, `/export`                      |

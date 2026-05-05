@@ -11,13 +11,15 @@ kokoro/                          # npm workspaces + Turborepo
 ├── apps/
 │   ├── bot/                      # Telegram + iMessage bot app
 │   │   ├── src/
-│   │   │   ├── ai/               # provider, prompts, response, context-assembler, generate
-│   │   │   │   └── tools/        # all tool files (incl. memory.ts — Kioku tool factories)
+│   │   │   ├── ai/               # provider, prompts, response, context-assembler, generate, acknowledge, token-tracker
+│   │   │   │   └── tools/        # tool files grouped by domain (memory, media, email, calendar, browse, web-search, routines, watchers, confirmations)
 │   │   │   ├── context/          # image generation (generator.ts, types.ts)
 │   │   │   ├── platform/         # registry.ts + telegram/ + imessage/ (multi-adapter)
-│   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, cron, routine-executor, watcher-executor, location
-│   │   │   └── scheduler/        # proactive (incl. Kioku ingest sweeper), reminders, routines, watchers
-│   │   └── context/              # soul (personality), reference images, settings (data)
+│   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, web-search, routine-executor, watcher-executor, location, geocoding, gated-actions, confirmation-events
+│   │   │   ├── scheduler/        # proactive, reminders, routines, watchers, maintenance (cleanup + Kioku ingest sweeper)
+│   │   │   ├── stt/              # speech-to-text (cloud Whisper / local whisper.cpp)
+│   │   │   └── tts/              # text-to-speech generation
+│   │   └── context/              # soul.md (personality), reference images, settings, image-prefix (data)
 │   └── dashboard/                # Next.js dashboard (routine + watcher management, observability)
 ├── packages/
 │   ├── typescript-config/        # shared tsconfig bases (JSON only)
@@ -68,11 +70,15 @@ kokoro/                          # npm workspaces + Turborepo
 │  │    tools/     │  │   prompts    │                 │
 │  │ searchMemory  │  │  (system +   │                 │
 │  │ rememberFact  │  │   format)    │                 │
-│  │ photo/email/  │  └──────────────┘                 │
-│  │ cal/reminders │                                    │
-│  │ browse/web    │                                    │
+│  │ sendPhoto     │  └──────────────┘                 │
+│  │ sendVoice     │                                    │
+│  │ email/cal/    │                                    │
+│  │   reminders   │                                    │
+│  │ browse        │                                    │
+│  │ webSearch     │                                    │
 │  │ routines      │                                    │
 │  │ watchers      │                                    │
+│  │ confirmations │                                    │
 │  └──────┬───────┘                                    │
 └─────────┼────────────────────────────────────────────┘
           │
@@ -95,15 +101,25 @@ kokoro/                          # npm workspaces + Turborepo
 └──────────┘
 
 ┌──────────────────────────┐
-│   Proactive Scheduler    │    ← apps/bot/src/scheduler/
+│   Proactive Scheduler    │    ← apps/bot/src/scheduler/proactive.ts
 │                          │
 │ timers ─► idle check     │
 │        ─► active hours   │
 │        ─► generate msg   │
 │        ─► persist state  │
-│        ─► daily cleanup  │
-│        ─► Kioku sweeper  │
-│           (5 min tick)   │
+└──────────────────────────┘
+
+┌──────────────────────────┐
+│   Maintenance Scheduler  │    ← apps/bot/src/scheduler/maintenance.ts
+│                          │
+│ daily cleanup            │
+│  (reminders, conv'ns,    │
+│   routine + watcher logs,│
+│   location history)      │
+│ Kioku ingest sweeper     │
+│  (5 min tick: stale-     │
+│   active + pending       │
+│   ingest retries)        │
 └──────────────────────────┘
 
 ┌──────────────────────────┐
@@ -152,8 +168,12 @@ kokoro/                          # npm workspaces + Turborepo
 │   Image Generation       │    ← apps/bot/src/context/
 │                          │
 │ reference loader         │
-│  ─► outfit/setting pick  │
-│  ─► xAI Grok Imagine     │
+│  ─► face/body/outfit     │
+│     + setting pick       │
+│  ─► provider/model from  │
+│     IMAGE_GENERATION_    │
+│     MODEL (e.g. xai/     │
+│     grok-imagine-image)  │
 │  ─► buffer ─► send       │
 └──────────────────────────┘
 ```
@@ -217,52 +237,58 @@ The scheduler sends unprompted messages to maintain engagement:
 - **Startup**: 30–60 minute delay after boot
 - **Persistence**: next-fire timestamps saved to MongoDB (survives restarts)
 - **Reset**: any user message reschedules the next proactive to 1.5–2.5h out
-- **Kioku ingest sweeper**: every 5 minutes, drives any `closed && ingestStatus: "pending"` conversations to `done` (retrying through Kioku outages) and closes `active` sessions idle past 6h so they become eligible for ingest. See [memory.md](memory.md).
-- **Daily cleanup**: removes fired reminders (>30 days), closed conversations (>90 days), old routine logs (>90 days), and old location history (>90 days)
 
 When firing, the scheduler uses `getOrCreateSession` to get the active session, assembles a proactive system prompt with sessionId, and injects a synthetic nudge if no recent user message exists.
 
+Daily cleanup and the Kioku ingest sweeper used to live here, but have been extracted into the **Maintenance Scheduler** (`apps/bot/src/scheduler/maintenance.ts`):
+
+- **Kioku ingest sweeper**: every 5 minutes, drives any `closed && ingestStatus: "pending"` conversations to `done` (retrying through Kioku outages) and closes `active` sessions idle past the threshold so they become eligible for ingest. See [memory.md](memory.md).
+- **Daily cleanup**: removes fired reminders (>30 days), closed conversations (>90 days), old routine logs (>90 days), old watcher logs (>90 days), and old location history (>90 days).
+
 ## Package Boundaries
 
-| Package             | Purpose                                              | Key Exports                                                                                                                                                                                                   |
-| ------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@kokoro/shared`    | Config, logging, markdown, platform types            | `config`, `logger`, `parseMarkdown`, `toMarkdown`, `IncomingMessage`, `PlatformAdapter`, cron + routine validation helpers                                                                                    |
-| `@kokoro/db`        | MongoDB connection, all models, GridFS               | `connectDB`, `disconnectDB`, `Conversation`, `Reminder`, `SchedulerState`, `Routine`, `RoutineLog`, `LocationHistory`, `PendingConfirmation`, `readImage`, `writeImage`, all model CRUD functions             |
-| `@kokoro/memory`    | Kioku HTTP client + conversation→transcript glue     | `recall`, `appendFact`, `getFactById`, `getFactCount`, `hasFactsForSession`, `ingestSession`, `buildTranscript`, `ingestClosedSession`, `sweepPendingIngests`, `sweepStaleActiveSessions`, `KiokuClientError` |
-| `@kokoro/bot`       | Telegram + iMessage bot, AI layer, tools, schedulers | App entry point — not imported by other packages                                                                                                                                                              |
-| `@kokoro/dashboard` | Next.js dashboard (read + write CRUD)                | Overview, conversations, reminders, routines, watchers, usage pages                                                                                                                                           |
+| Package             | Purpose                                              | Key Exports                                                                                                                                                                                                                                                       |
+| ------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@kokoro/shared`    | Config, logging, markdown, platform types            | `config`, `validateConfig`, `logger`, `parseMarkdown`, `haversineMeters`, `IncomingMessage`, `PlatformAdapter`, `computeNextRunAt`, `validateCronAndDefaults`                                                                                                     |
+| `@kokoro/db`        | MongoDB connection, all models, GridFS               | `connectDB`, `disconnectDB`, `Conversation`, `Reminder`, `SchedulerState`, `TokenUsage`, `Routine`, `RoutineLog`, `Watcher`, `WatcherLog`, `LocationHistory`, `PendingConfirmation`, `readImage`/`writeImage`, `readAudio`/`writeAudio`, all model CRUD functions |
+| `@kokoro/memory`    | Kioku HTTP client + conversation→transcript glue     | `recall`, `appendFact`, `getFactById`, `getFactCount`, `hasFactsForSession`, `ingestSession`, `buildTranscript`, `ingestClosedSession`, `sweepPendingIngests`, `sweepStaleActiveSessions`, `KiokuClientError`                                                     |
+| `@kokoro/bot`       | Telegram + iMessage bot, AI layer, tools, schedulers | App entry point — not imported by other packages                                                                                                                                                                                                                  |
+| `@kokoro/dashboard` | Next.js dashboard (read + write CRUD)                | Overview, conversations, reminders, routines, watchers, confirmations, usage pages                                                                                                                                                                                |
 
 ### Bot-Internal Modules
 
-| Directory                         | Purpose                                                                                                      |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `apps/bot/src/ai/`                | LLM integration, prompt assembly, tool orchestration                                                         |
-| `apps/bot/src/ai/tools/`          | Tool implementations available to the LLM                                                                    |
-| `apps/bot/src/platform/`          | `registry.ts` (AdapterRegistry + platformForChatId helper)                                                   |
-| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup (Grammy long-polling)                                                           |
-| `apps/bot/src/platform/imessage/` | BlueBubbles adapter + REST client + webhook server (opt-in, see docs/imessage.md)                            |
-| `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Cron, Routine executor, Geocoding, Location, Gated-action dispatcher |
-| `apps/bot/src/scheduler/`         | Proactive, reminder, routine scheduling                                                                      |
-| `apps/bot/src/context/`           | Image reference loading + generation                                                                         |
-| `apps/bot/src/stt/`               | Speech-to-text (Whisper-compatible API, cloud or local whisper.cpp); see docs/voice.md                       |
+| Directory                         | Purpose                                                                                                                                                           |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/bot/src/ai/`                | LLM integration, prompt assembly, tool orchestration                                                                                                              |
+| `apps/bot/src/ai/tools/`          | Tool implementations available to the LLM                                                                                                                         |
+| `apps/bot/src/platform/`          | `registry.ts` (AdapterRegistry + platformForChatId helper)                                                                                                        |
+| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup (Grammy long-polling)                                                                                                                |
+| `apps/bot/src/platform/imessage/` | BlueBubbles adapter + REST client + webhook server (opt-in, see docs/imessage.md)                                                                                 |
+| `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Web search (Brave), Routine executor, Watcher executor, Geocoding, Location, Gated-action dispatcher, Confirmation events |
+| `apps/bot/src/scheduler/`         | Proactive, reminder, routine, watcher, maintenance (cleanup + Kioku sweeper)                                                                                      |
+| `apps/bot/src/context/`           | Image reference loading + generation                                                                                                                              |
+| `apps/bot/src/stt/`               | Speech-to-text (Whisper-compatible API, cloud or local whisper.cpp); see docs/voice.md                                                                            |
+| `apps/bot/src/tts/`               | Text-to-speech generation for outbound voice notes                                                                                                                |
 
 ## Boot Sequence
 
-1. Validate TELEGRAM_BOT_TOKEN
-2. Connect to MongoDB
-3. Load image context (reference images + setting descriptions)
-4. Create Telegram bot with handlers (allowlist → rate limit → message handlers)
-5. Start bot (long-polling)
-6. Start proactive scheduler (restore timers from DB, start daily cleanup)
-7. Start reminder scheduler (polls every 60s, fires pending reminders)
-8. Start routine scheduler (reset stale locks, polls every 60s, executes due routines)
-9. Start watcher scheduler (reset stale locks, archive expired, polls every 60s, runs due detection ticks)
+1. `validateConfig()` — fail fast on missing LLM/embedding keys
+2. Require `TELEGRAM_BOT_TOKEN`
+3. Connect to MongoDB
+4. Load image context (reference images, settings, image-prefix)
+5. Create platform `AdapterRegistry`; create + start Telegram bot (long-polling) and register its adapter
+6. If `BLUEBUBBLES_HOST` + `BLUEBUBBLES_PASSWORD` are set: register the iMessage adapter and start the BlueBubbles webhook listener
+7. Start proactive scheduler (restore persisted timers from DB)
+8. Start reminder scheduler (polls every 60s, fires pending reminders)
+9. Start routine scheduler (reset stale locks, polls every 60s, executes due routines)
+10. Start watcher scheduler (reset stale locks, archive expired, polls every 60s, runs due detection ticks)
+11. Start maintenance scheduler (startup + daily cleanup; startup + 5-min Kioku ingest sweep)
 
-Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, stop routine scheduler, stop watcher scheduler, shutdown browser, disconnect DB.
+Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, stop routine scheduler, stop watcher scheduler, stop maintenance scheduler, stop BlueBubbles webhook (if running), shutdown browser, disconnect DB.
 
 ## Key Design Decisions
 
-- **Internal packages pattern** — npm workspaces + Turborepo. Library packages (`shared`, `db`, `memory`) export raw TypeScript source via `exports: { ".": "./src/index.ts" }`. No build step for libraries; consumers resolve source directly. Only `bot` and `dashboard` have build scripts (tsup and Next.js respectively). The bot's tsup config uses `noExternal: [/^@kokoro\//]` to inline all workspace packages into a single bundle.
+- **Internal packages pattern** — npm workspaces + Turborepo. Library packages (`shared`, `db`, `memory`) export raw TypeScript source via `exports: { ".": "./src/index.ts" }`. No build step for libraries; consumers resolve source directly. Only `bot` and `dashboard` have build scripts (esbuild and Next.js respectively). The bot's esbuild config (`apps/bot/build.ts`) uses an `externalize-non-kokoro` plugin: every bare import is externalized except `@kokoro/*`, which gets inlined into the single ESM bundle.
 - **Session-based conversations** — sessions close after 1 hour of inactivity, replacing daily scoping. Eliminates cross-midnight amnesia.
 - **Long-term memory delegated to Kioku** — `@kokoro/memory` is a typed HTTP client; the actual atomic-fact store + hybrid retrieval lives in a separate Kioku service (`KIOKU_URL`, default `http://localhost:7777`). See [memory.md](memory.md) for the full subsystem map.
 - **On-demand retrieval, not eager loading** — the system prompt carries zero facts. The LLM calls `searchMemory` when it needs context. Better retrieval (cosine + BM25 + entity boost) replaces the old tier-and-merge compression strategy.
