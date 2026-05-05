@@ -35,7 +35,7 @@ export function QueryPlayground() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ question: text, k }),
       });
-      const json = await res.json();
+      const json = (await res.json()) as QueryResult & { error?: string };
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       setResult(json);
       setElapsed(performance.now() - t0);
@@ -49,7 +49,12 @@ export function QueryPlayground() {
 
   return (
     <div className="space-y-8">
-      <form onSubmit={onSubmit} className="space-y-3">
+      <form
+        onSubmit={(e) => {
+          void onSubmit(e);
+        }}
+        className="space-y-3"
+      >
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
