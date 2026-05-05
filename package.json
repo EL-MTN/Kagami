@@ -18,9 +18,7 @@
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "dev:api": "turbo run dev --filter=@kizuna/api",
-    "dev:dashboard": "turbo run dev --filter=@kizuna/dashboard",
-    "smoke": "npm -w @kizuna/api run smoke",
-    "smoke:dashboard": "npm -w @kizuna/api run smoke:dashboard"
+    "dev:dashboard": "turbo run dev --filter=@kizuna/dashboard"
   },
   "devDependencies": {
     "portless": "^0.12.0",

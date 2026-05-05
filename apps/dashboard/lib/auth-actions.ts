@@ -5,7 +5,8 @@ import { redirect } from 'next/navigation';
 import { SESSION_COOKIE, checkApiKey, makeSessionToken } from './session';
 
 export async function loginAction(formData: FormData): Promise<void> {
-  const key = String(formData.get('key') ?? '');
+  const raw = formData.get('key');
+  const key = typeof raw === 'string' ? raw : '';
   if (!checkApiKey(key)) {
     redirect('/login?error=1');
   }

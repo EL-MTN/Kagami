@@ -7,7 +7,6 @@ export type AuthContext = {
 };
 
 declare module 'express-serve-static-core' {
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   interface Request {
     auth?: AuthContext;
   }

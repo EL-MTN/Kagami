@@ -4,12 +4,12 @@ const oidString = (v: unknown): string | null => {
   if (v == null) return null;
   if (v instanceof Types.ObjectId) return v.toHexString();
   if (typeof v === 'string') return v;
-  return String(v);
+  return null;
 };
 
 const handlesToObject = (h: unknown): Record<string, string> => {
   if (!h) return {};
-  if (h instanceof Map) return Object.fromEntries(h);
+  if (h instanceof Map) return Object.fromEntries(h) as Record<string, string>;
   if (typeof h === 'object') return h as Record<string, string>;
   return {};
 };

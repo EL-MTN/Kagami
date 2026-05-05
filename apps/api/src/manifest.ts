@@ -28,7 +28,10 @@ export function buildManifest(endpoints: EndpointSpec[]): {
   endpoints: ManifestEndpoint[];
 } {
   const toJson = (s: z.ZodTypeAny, name: string) =>
-    zodToJsonSchema(s, { target: 'jsonSchema7', name });
+    zodToJsonSchema(s as Parameters<typeof zodToJsonSchema>[0], {
+      target: 'jsonSchema7',
+      name,
+    });
 
   return {
     version: 'v1',

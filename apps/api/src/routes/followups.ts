@@ -93,7 +93,7 @@ followupsRouter.get('/followups', async (req, res) => {
   const body: { items: unknown[]; nextCursor?: string } = { items };
   if (hasMore && last)
     body.nextCursor = encodeCursor({
-      id: (last._id as Types.ObjectId).toHexString(),
+      id: last._id.toHexString(),
     });
   res.json(body);
 });

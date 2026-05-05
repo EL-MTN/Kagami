@@ -129,7 +129,7 @@ peopleRouter.get('/people', async (req, res) => {
       if (c.lia === null) {
         // Already in the trailing null bucket — only nulls remain.
         filter.lastInteractionAt = null;
-        filter._id = { ...((filter._id as object) ?? {}), $lt: cId };
+        filter._id = { ...((filter._id) ?? {}), $lt: cId };
       } else {
         const cDate = new Date(c.lia);
         const cursorBranches: Record<string, unknown>[] = [
@@ -145,7 +145,7 @@ peopleRouter.get('/people', async (req, res) => {
     } else {
       const c = decodeCursor<IdCursor>(q.cursor);
       filter._id = {
-        ...((filter._id as object) ?? {}),
+        ...((filter._id) ?? {}),
         $lt: new Types.ObjectId(c.id),
       };
     }

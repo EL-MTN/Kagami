@@ -7,7 +7,9 @@
     "dev": "portless run next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint app components lib",
+    "lint:fix": "eslint app components lib --fix"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -20,10 +22,13 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
+    "@kizuna/eslint-config": "*",
+    "@kizuna/typescript-config": "*",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "eslint": "^9.17.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0"

@@ -36,7 +36,7 @@ export async function upsertPerson(
   if (existing) {
     if (existing.get('suppressReingest')) {
       return {
-        personId: existing._id as Types.ObjectId,
+        personId: existing._id,
         created: false,
         tombstonedSuppressed: existing.get('deletedAt') != null,
       };
@@ -60,7 +60,7 @@ export async function upsertPerson(
     }
 
     return {
-      personId: existing._id as Types.ObjectId,
+      personId: existing._id,
       created: false,
       tombstonedSuppressed: false,
     };
@@ -74,7 +74,7 @@ export async function upsertPerson(
     source: input.source,
   });
   return {
-    personId: created._id as Types.ObjectId,
+    personId: created._id,
     created: true,
     tombstonedSuppressed: false,
   };

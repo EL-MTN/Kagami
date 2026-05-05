@@ -23,7 +23,7 @@ function splitProperty(line: string): { name: string; params: Record<string, str
   if (colon < 0) return null;
   const head = line.slice(0, colon);
   const value = line.slice(colon + 1);
-  const [rawName, ...paramParts] = head.split(';');
+  const [rawName = '', ...paramParts] = head.split(';');
   const params: Record<string, string> = {};
   for (const p of paramParts) {
     const eq = p.indexOf('=');

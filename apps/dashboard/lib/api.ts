@@ -51,8 +51,15 @@ const qs = (q?: Record<string, unknown>): string => {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(q)) {
     if (v === undefined || v === null || v === '') continue;
-    if (Array.isArray(v)) for (const x of v) sp.append(k, String(x));
-    else sp.set(k, String(v));
+    if (Array.isArray(v)) {
+      for (const x of v) {
+        if (typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean') {
+          sp.append(k, String(x));
+        }
+      }
+    } else if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      sp.set(k, String(v));
+    }
   }
   const s = sp.toString();
   return s ? `?${s}` : '';
@@ -60,29 +67,19 @@ const qs = (q?: Record<string, unknown>): string => {
 
 export const api = {
   listPeople: (q?: ListPeopleQuery) =>
-    kz<ListResp<Person>>(`/v1/people${qs(q as Record<string, unknown> | undefined)}`),
+    kz<ListResp<Person>>(`/v1/people${qs(q)}`),
   getPerson: (id: string) => kz<Person>(`/v1/people/${id}`),
   getPersonInteractions: (id: string, q?: ListInteractionsQuery) =>
-    kz<ListResp<Interaction>>(
-      `/v1/people/${id}/interactions${qs(q as Record<string, unknown> | undefined)}`,
-    ),
+    kz<ListResp<Interaction>>(`/v1/people/${id}/interactions${qs(q)}`),
   listInteractions: (q?: ListInteractionsQuery) =>
-    kz<ListResp<Interaction>>(
-      `/v1/interactions${qs(q as Record<string, unknown> | undefined)}`,
-    ),
+    kz<ListResp<Interaction>>(`/v1/interactions${qs(q)}`),
   listFollowups: (q?: ListFollowupsQuery) =>
-    kz<ListResp<Followup>>(
-      `/v1/followups${qs(q as Record<string, unknown> | undefined)}`,
-    ),
+    kz<ListResp<Followup>>(`/v1/followups${qs(q)}`),
   listOrganizations: (q?: ListOrganizationsQuery) =>
-    kz<ListResp<Organization>>(
-      `/v1/organizations${qs(q as Record<string, unknown> | undefined)}`,
-    ),
+    kz<ListResp<Organization>>(`/v1/organizations${qs(q)}`),
   getOrganization: (id: string) => kz<Organization>(`/v1/organizations/${id}`),
   listContexts: (q?: ListContextsQuery) =>
-    kz<{ items: ContextRow[] }>(
-      `/v1/contexts${qs(q as Record<string, unknown> | undefined)}`,
-    ),
+    kz<{ items: ContextRow[] }>(`/v1/contexts${qs(q)}`),
   oauthStatus: () => kz<OAuthStatus>('/oauth/google/status'),
   gmailSyncState: () => kz<SyncState>('/v1/sync/gmail/state'),
   runGmailSync: (force?: boolean) =>

@@ -104,7 +104,7 @@ digestRouter.get('/digest', async (req, res) => {
     return {
       ...(base as Record<string, unknown>),
       person: pid ? personById.get(pid) ?? null : null,
-    } as never;
+    };
   };
 
   res.json({
