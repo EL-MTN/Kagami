@@ -135,29 +135,29 @@ All three load via `next/font/google` with CSS variable injection in `app/layout
 
 ### Color palette (OKLch)
 
-| Token                   | Value                          | Use                                                 |
-| ----------------------- | ------------------------------ | --------------------------------------------------- |
-| `--color-background`    | `oklch(0.985 0.006 85)`        | Vellum                                              |
-| `--color-card`          | `oklch(0.998 0.004 85)`        | Paper raised                                        |
-| `--color-foreground`    | `oklch(0.22 0.015 60)`         | Sumi ink                                            |
-| `--color-muted-foreground` | `oklch(0.45 0.012 60)`      | Secondary text                                      |
-| `--color-faint`         | `oklch(0.62 0.010 60)`         | Tertiary metadata (timestamps, counts)              |
-| `--color-border`        | `oklch(0.91 0.008 75)`         | Warm rule                                           |
-| `--color-rule-strong`   | `oklch(0.84 0.010 75)`         | Stronger separator                                  |
-| `--color-primary`       | `oklch(0.48 0.085 205)`        | Teal ink — links, primary action                    |
-| `--color-positive`      | `oklch(0.58 0.13 155)`         | Moss — success, "in_person" / "call" badges         |
-| `--color-caution`       | `oklch(0.68 0.14 75)`          | Amber — warn, "calendar" badge, `i_owe` direction   |
-| `--color-critical`      | `oklch(0.55 0.18 25)`          | Terracotta — error, tombstone marker                |
+| Token                      | Value                   | Use                                               |
+| -------------------------- | ----------------------- | ------------------------------------------------- |
+| `--color-background`       | `oklch(0.985 0.006 85)` | Vellum                                            |
+| `--color-card`             | `oklch(0.998 0.004 85)` | Paper raised                                      |
+| `--color-foreground`       | `oklch(0.22 0.015 60)`  | Sumi ink                                          |
+| `--color-muted-foreground` | `oklch(0.45 0.012 60)`  | Secondary text                                    |
+| `--color-faint`            | `oklch(0.62 0.010 60)`  | Tertiary metadata (timestamps, counts)            |
+| `--color-border`           | `oklch(0.91 0.008 75)`  | Warm rule                                         |
+| `--color-rule-strong`      | `oklch(0.84 0.010 75)`  | Stronger separator                                |
+| `--color-primary`          | `oklch(0.48 0.085 205)` | Teal ink — links, primary action                  |
+| `--color-positive`         | `oklch(0.58 0.13 155)`  | Moss — success, "in_person" / "call" badges       |
+| `--color-caution`          | `oklch(0.68 0.14 75)`   | Amber — warn, "calendar" badge, `i_owe` direction |
+| `--color-critical`         | `oklch(0.55 0.18 25)`   | Terracotta — error, tombstone marker              |
 
 ### Text-level contract
 
 Three text levels — no opacity ladder. Components must use one of:
 
-| Token                    | Use                                                      |
-| ------------------------ | -------------------------------------------------------- |
-| `text-foreground`        | Primary content                                          |
-| `text-muted-foreground`  | Secondary content (descriptions, captions)               |
-| `text-faint`             | Tertiary metadata (timestamps, counts)                   |
+| Token                   | Use                                        |
+| ----------------------- | ------------------------------------------ |
+| `text-foreground`       | Primary content                            |
+| `text-muted-foreground` | Secondary content (descriptions, captions) |
+| `text-faint`            | Tertiary metadata (timestamps, counts)     |
 
 Avoid `text-muted-foreground/30..70` etc.
 
@@ -171,21 +171,21 @@ Avoid `text-muted-foreground/30..70` etc.
 
 ### Channel badge mapping (`app/(app)/ui.tsx::ChannelBadge`)
 
-| Channel       | Tone   |
-| ------------- | ------ |
-| `email`       | blue   |
-| `calendar`    | amber  |
-| `in_person`   | green  |
-| `call`        | green  |
-| `message`     | zinc   |
-| `manual`      | zinc   |
+| Channel     | Tone  |
+| ----------- | ----- |
+| `email`     | blue  |
+| `calendar`  | amber |
+| `in_person` | green |
+| `call`      | green |
+| `message`   | zinc  |
+| `manual`    | zinc  |
 
 Followup direction (`DirectionBadge`):
 
-| Direction   | Tone   | Label       |
-| ----------- | ------ | ----------- |
-| `i_owe`     | amber  | "I owe"     |
-| `they_owe`  | blue   | "they owe"  |
+| Direction  | Tone  | Label      |
+| ---------- | ----- | ---------- |
+| `i_owe`    | amber | "I owe"    |
+| `they_owe` | blue  | "they owe" |
 
 ## API surface used
 

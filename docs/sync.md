@@ -198,16 +198,16 @@ That's the whole point of `sourceRef` carrying the provider's stable ID instead 
 
 ## Failure modes — quick reference
 
-| Trigger                                              | What happens                                                                                                  |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `OAuthToken` row missing                             | `OAuthError('no_grant')` → `result.status = 'no_grant'`. Not a pause; just an empty run.                       |
-| `KIZUNA_OAUTH_ENCRYPTION_KEY` missing                | Caught at the route level (`POST /v1/sync/.../run`) — `400 bad_request`. Direct calls to the worker raise `OAuthError('refresh_failed')`. |
-| Google rejects the refresh token (`invalid_grant`)   | `pauseWith('invalid_grant')` → `pausedAt` set, `errorCount++`. Worker stays paused until re-grant or `force: true`. |
-| Gmail 401 inside `getMessage`                        | Re-raised as `OAuthError('invalid_grant')` so the run pauses cleanly mid-batch.                                |
-| Calendar 410 on syncToken                            | `clearSyncToken()` + rebootstrap; `resyncedFromBootstrap: true` in the result.                                 |
-| Single message / event fails to fetch or parse        | `result.errors++`, `logger.warn`, continue to next ID. Whole run still succeeds.                               |
-| Mongo dup-key on `sourceRef`                          | `recordInteraction` returns `null` (`skipIfDuplicate`); `result.skippedExisting++`.                            |
-| Tombstoned `Person` (with `suppressReingest: true`)  | New interactions still link via the existing `personId`. The Person row itself is left alone.                   |
+| Trigger                                             | What happens                                                                                                                              |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `OAuthToken` row missing                            | `OAuthError('no_grant')` → `result.status = 'no_grant'`. Not a pause; just an empty run.                                                  |
+| `KIZUNA_OAUTH_ENCRYPTION_KEY` missing               | Caught at the route level (`POST /v1/sync/.../run`) — `400 bad_request`. Direct calls to the worker raise `OAuthError('refresh_failed')`. |
+| Google rejects the refresh token (`invalid_grant`)  | `pauseWith('invalid_grant')` → `pausedAt` set, `errorCount++`. Worker stays paused until re-grant or `force: true`.                       |
+| Gmail 401 inside `getMessage`                       | Re-raised as `OAuthError('invalid_grant')` so the run pauses cleanly mid-batch.                                                           |
+| Calendar 410 on syncToken                           | `clearSyncToken()` + rebootstrap; `resyncedFromBootstrap: true` in the result.                                                            |
+| Single message / event fails to fetch or parse      | `result.errors++`, `logger.warn`, continue to next ID. Whole run still succeeds.                                                          |
+| Mongo dup-key on `sourceRef`                        | `recordInteraction` returns `null` (`skipIfDuplicate`); `result.skippedExisting++`.                                                       |
+| Tombstoned `Person` (with `suppressReingest: true`) | New interactions still link via the existing `personId`. The Person row itself is left alone.                                             |
 
 ## Ad-hoc imports
 

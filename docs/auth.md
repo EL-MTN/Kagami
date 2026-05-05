@@ -4,15 +4,15 @@ Single-user-per-deployment. There is no user table — `KIZUNA_API_KEY` is the b
 
 ## At a glance
 
-| Layer                     | Mechanism                                                                                              | Source                                |
-| ------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------- |
-| `/v1/*` (API)             | `Authorization: Bearer <KIZUNA_API_KEY>` — `crypto.timingSafeEqual` compare                            | `apps/api/src/lib/auth.ts`            |
-| `/oauth/google/start`     | Bearer header OR `?key=<KIZUNA_API_KEY>` (so a plain `<a href>` works from the dashboard)              | `apps/api/src/routes/oauth.ts`        |
-| `/oauth/google/callback`  | HMAC-SHA-256 signed CSRF state token (10-min TTL, secret = `KIZUNA_API_KEY`); no API key on the wire   | `apps/api/src/lib/oauth-state.ts`     |
-| `/oauth/google/status`    | Bearer header OR `?key=`                                                                               | `apps/api/src/routes/oauth.ts`        |
-| Refresh token at rest     | AES-256-GCM, key = `KIZUNA_OAUTH_ENCRYPTION_KEY` (base64 32 bytes), random 12-byte IV per write        | `apps/api/src/lib/encryption.ts`      |
-| Dashboard sessions        | HMAC-signed cookie (`kizuna_session`), secret = `KIZUNA_API_KEY`, 30-day TTL                            | `apps/dashboard/lib/session.ts`       |
-| Ingest "self" detection   | `USER_EMAILS` allowlist (lowercased, comma-separated)                                                   | `apps/api/src/config.ts`              |
+| Layer                    | Mechanism                                                                                            | Source                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `/v1/*` (API)            | `Authorization: Bearer <KIZUNA_API_KEY>` — `crypto.timingSafeEqual` compare                          | `apps/api/src/lib/auth.ts`        |
+| `/oauth/google/start`    | Bearer header OR `?key=<KIZUNA_API_KEY>` (so a plain `<a href>` works from the dashboard)            | `apps/api/src/routes/oauth.ts`    |
+| `/oauth/google/callback` | HMAC-SHA-256 signed CSRF state token (10-min TTL, secret = `KIZUNA_API_KEY`); no API key on the wire | `apps/api/src/lib/oauth-state.ts` |
+| `/oauth/google/status`   | Bearer header OR `?key=`                                                                             | `apps/api/src/routes/oauth.ts`    |
+| Refresh token at rest    | AES-256-GCM, key = `KIZUNA_OAUTH_ENCRYPTION_KEY` (base64 32 bytes), random 12-byte IV per write      | `apps/api/src/lib/encryption.ts`  |
+| Dashboard sessions       | HMAC-signed cookie (`kizuna_session`), secret = `KIZUNA_API_KEY`, 30-day TTL                         | `apps/dashboard/lib/session.ts`   |
+| Ingest "self" detection  | `USER_EMAILS` allowlist (lowercased, comma-separated)                                                | `apps/api/src/config.ts`          |
 
 ## Bearer auth on `/v1/*`
 
@@ -20,22 +20,19 @@ Single-user-per-deployment. There is no user table — `KIZUNA_API_KEY` is the b
 
 ```ts
 export function bearerAuth(apiKey: string): RequestHandler {
-  const expected = Buffer.from(apiKey, 'utf8');
+  const expected = Buffer.from(apiKey, "utf8");
   return (req, _res, next) => {
-    const header = req.header('authorization');
-    if (!header?.toLowerCase().startsWith('bearer ')) {
-      next(errors.unauthorized('missing bearer token'));
+    const header = req.header("authorization");
+    if (!header?.toLowerCase().startsWith("bearer ")) {
+      next(errors.unauthorized("missing bearer token"));
       return;
     }
-    const provided = Buffer.from(header.slice(7).trim(), 'utf8');
-    if (
-      provided.length !== expected.length ||
-      !timingSafeEqual(provided, expected)
-    ) {
-      next(errors.unauthorized('invalid bearer token'));
+    const provided = Buffer.from(header.slice(7).trim(), "utf8");
+    if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+      next(errors.unauthorized("invalid bearer token"));
       return;
     }
-    req.auth = { source: 'concierge' };
+    req.auth = { source: "concierge" };
     next();
   };
 }
@@ -51,7 +48,7 @@ The OAuth handlers can't sit behind `bearerAuth` middleware because the browser 
 
 ### `GET /oauth/google/start`
 
-Reads the API key from `Authorization: Bearer …` *or* `?key=`. The `?key=` form exists so the dashboard can render a plain `<a href={oauthStartUrl()}>Connect Google</a>` instead of a JS-driven fetch + redirect.
+Reads the API key from `Authorization: Bearer …` _or_ `?key=`. The `?key=` form exists so the dashboard can render a plain `<a href={oauthStartUrl()}>Connect Google</a>` instead of a JS-driven fetch + redirect.
 
 Both paths use a constant-time compare. Then:
 
@@ -98,7 +95,11 @@ Bearer-gated. Returns one of:
 ```
 
 ```json
-{ "granted": true, "scopes": ["https://...gmail.readonly", "https://...calendar.readonly"], "grantedAt": "2026-04-01T..." }
+{
+  "granted": true,
+  "scopes": ["https://...gmail.readonly", "https://...calendar.readonly"],
+  "grantedAt": "2026-04-01T..."
+}
 ```
 
 The dashboard's `/sync` page polls this and decides whether to render "Connect Google" or "Re-authorize" + the worker control surfaces.
@@ -151,11 +152,11 @@ The cache is process-local. In a multi-instance deploy, each worker would refres
 
 `OAuthError` codes: `'no_grant'` (no row in `oauthtokens`), `'invalid_grant'` (Google rejected the refresh), `'refresh_failed'` (network / other). The sync workers map these to `result.status`:
 
-| `OAuthError.code`  | `result.status` | Side effect on `SyncState`                 |
-| ------------------ | --------------- | ------------------------------------------ |
-| `'no_grant'`       | `'no_grant'`    | None — no row to mutate                    |
-| `'invalid_grant'`  | `'paused'`      | `pauseWith('invalid_grant')`                |
-| `'refresh_failed'` | `'error'`       | `lastError` written, `errorCount++`        |
+| `OAuthError.code`  | `result.status` | Side effect on `SyncState`          |
+| ------------------ | --------------- | ----------------------------------- |
+| `'no_grant'`       | `'no_grant'`    | None — no row to mutate             |
+| `'invalid_grant'`  | `'paused'`      | `pauseWith('invalid_grant')`        |
+| `'refresh_failed'` | `'error'`       | `lastError` written, `errorCount++` |
 
 ## `USER_EMAILS` allowlist
 

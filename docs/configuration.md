@@ -34,7 +34,7 @@ Notes:
 
 - `KIZUNA_API_KEY` is **also** the HMAC secret for the OAuth CSRF state token (`apps/api/src/lib/oauth-state.ts`) and for the dashboard's session cookie (`apps/dashboard/lib/session.ts`). Rotating it invalidates active dashboard sessions and any in-flight OAuth state — both are recoverable (re-login, re-start the OAuth flow).
 - `KIZUNA_OAUTH_ENCRYPTION_KEY` is decoded from base64; the resulting buffer must be exactly 32 bytes. The schema rejects anything else with "must be a base64-encoded 32-byte key."
-- `USER_EMAILS` controls the ingest workers' "self" detection — see [sync.md](sync.md) and [auth.md](auth.md). It is *not* an authentication boundary.
+- `USER_EMAILS` controls the ingest workers' "self" detection — see [sync.md](sync.md) and [auth.md](auth.md). It is _not_ an authentication boundary.
 - `KIZUNA_INGEST_INTERVAL_SEC=0` disables the in-process scheduler entirely. Manual triggers via `POST /v1/sync/{gmail,gcal}/run` work regardless. Set to `300` (5 min) for typical dev use.
 - `PORT` only applies when running standalone. Under `npm run dev`, Portless picks an ephemeral port and routes `https://api.kizuna.localhost` to it.
 
@@ -70,7 +70,7 @@ Both apps register through `portless.json` at the repo root:
 {
   "apps": {
     "apps/dashboard": { "name": "kizuna" },
-    "apps/api":       { "name": "api.kizuna" }
+    "apps/api": { "name": "api.kizuna" }
   }
 }
 ```

@@ -56,26 +56,36 @@ apps/api/test/
 `apps/api/test/helpers/harness.ts`:
 
 ```ts
-export const TEST_API_KEY = 'test-api-key-1234567890abcdef';
+export const TEST_API_KEY = "test-api-key-1234567890abcdef";
 
 export async function startHarness(): Promise<TestHarness> {
-  const container = await new GenericContainer('mongo:7').withExposedPorts(27017).start();
+  const container = await new GenericContainer("mongo:7").withExposedPorts(27017).start();
   const uri = `mongodb://${container.getHost()}:${container.getMappedPort(27017)}/kizuna_test`;
-  const encryptionKey = randomBytes(32).toString('base64');
+  const encryptionKey = randomBytes(32).toString("base64");
 
   const config = loadConfig({
     KIZUNA_API_KEY: TEST_API_KEY,
     MONGO_URI: uri,
-    USER_EMAILS: 'test@example.com',
-    GOOGLE_OAUTH_CLIENT_ID: 'test-client-id',
-    GOOGLE_OAUTH_CLIENT_SECRET: 'test-client-secret',
-    GOOGLE_OAUTH_REDIRECT_URI: 'https://api.kizuna.localhost/oauth/google/callback',
+    USER_EMAILS: "test@example.com",
+    GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
+    GOOGLE_OAUTH_CLIENT_SECRET: "test-client-secret",
+    GOOGLE_OAUTH_REDIRECT_URI: "https://api.kizuna.localhost/oauth/google/callback",
     KIZUNA_OAUTH_ENCRYPTION_KEY: encryptionKey,
   });
 
   const db = await connectDb(config.MONGO_URI);
   const app = createApp({ db, config });
-  return { app, db, apiKey: TEST_API_KEY, uri, encryptionKey, stop: async () => { await db.close(); await container.stop(); } };
+  return {
+    app,
+    db,
+    apiKey: TEST_API_KEY,
+    uri,
+    encryptionKey,
+    stop: async () => {
+      await db.close();
+      await container.stop();
+    },
+  };
 }
 ```
 
@@ -83,8 +93,12 @@ Per-file lifecycle:
 
 ```ts
 let h: TestHarness;
-beforeAll(async () => { h = await startHarness(); });
-afterAll(async () => { await h.stop(); });
+beforeAll(async () => {
+  h = await startHarness();
+});
+afterAll(async () => {
+  await h.stop();
+});
 beforeEach(async () => {
   await Promise.all([
     Person.deleteMany({}),
@@ -104,20 +118,32 @@ The `singleFork` config means files in the same run reuse the same Vitest worker
 ```ts
 const auth = () => `Bearer ${h.apiKey}`;
 const post = (p: string, body?: object) =>
-  request(h.app).post(p).set('authorization', auth()).send(body);
+  request(h.app).post(p).set("authorization", auth()).send(body);
 
-it('creates a person with source=concierge and firstSeen set', async () => {
-  const r = await post('/v1/people', { displayName: 'Sarah Connor', primaryEmail: 'Sarah@Example.com' });
+it("creates a person with source=concierge and firstSeen set", async () => {
+  const r = await post("/v1/people", {
+    displayName: "Sarah Connor",
+    primaryEmail: "Sarah@Example.com",
+  });
   expect(r.status).toBe(201);
-  expect(r.body).toMatchObject({ source: 'concierge', primaryEmail: 'sarah@example.com' });
+  expect(r.body).toMatchObject({ source: "concierge", primaryEmail: "sarah@example.com" });
 });
 ```
 
 ### Spying on Google clients
 
 ```ts
-const spy = vi.spyOn(OAuth2Client.prototype, 'getToken') as unknown as { mockResolvedValue: (v: unknown) => unknown };
-spy.mockResolvedValue({ tokens: { refresh_token: '1//refresh-fake', scope: 'gmail.readonly calendar.readonly', expiry_date: Date.now() + 3_500_000 }, res: null });
+const spy = vi.spyOn(OAuth2Client.prototype, "getToken") as unknown as {
+  mockResolvedValue: (v: unknown) => unknown;
+};
+spy.mockResolvedValue({
+  tokens: {
+    refresh_token: "1//refresh-fake",
+    scope: "gmail.readonly calendar.readonly",
+    expiry_date: Date.now() + 3_500_000,
+  },
+  res: null,
+});
 ```
 
 The dashboard never appears in tests. The OAuth callback is exercised by minting a valid signed state from `GET /oauth/google/start`, then issuing the callback request with a mocked `getToken`.
@@ -126,7 +152,15 @@ The dashboard never appears in tests. The OAuth callback is exercised by minting
 
 ```ts
 const client = new FakeGmailClient();
-client.add(buildPlainMessage({ id: 'm1', from: 'sarah@acme.com', to: 'me@example.com', subject: 'Hi', body: 'Hello' }));
+client.add(
+  buildPlainMessage({
+    id: "m1",
+    from: "sarah@acme.com",
+    to: "me@example.com",
+    subject: "Hi",
+    body: "Hello",
+  }),
+);
 const result = await runGmailSync({ config, client });
 expect(result.inserted).toBe(1);
 ```
@@ -136,14 +170,14 @@ The `runGmailSync({ config, client })` and `runCalendarSync({ config, client })`
 ### Pause + resume
 
 ```ts
-client.fail401AtMessageId = 'm2';
+client.fail401AtMessageId = "m2";
 const first = await runGmailSync({ config, client });
-expect(first.status).toBe('paused');
-const state = await SyncState.findOne({ provider: 'gmail' });
+expect(first.status).toBe("paused");
+const state = await SyncState.findOne({ provider: "gmail" });
 expect(state?.pausedAt).toBeTruthy();
 
 const forced = await runGmailSync({ config, client, force: true });
-expect(forced.status).toBe('ok');
+expect(forced.status).toBe("ok");
 ```
 
 ## Commands
@@ -159,23 +193,23 @@ The first run pulls `mongo:7` (~600 MB). Subsequent runs reuse the cached image.
 
 ## What's covered
 
-| Area                                  | Coverage                                                                                                              |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `config.ts` env parsing               | `config.test.ts`                                                                                                       |
-| `duration.ts` (ISO + short forms)     | `duration.test.ts`                                                                                                     |
-| `encryption.ts` (AES-256-GCM)         | `encryption.test.ts`                                                                                                   |
-| `oauth-state.ts` (signed CSRF state)  | `oauth-state.test.ts`                                                                                                  |
-| `parse-message.ts` (Gmail parser)     | `parse-message.test.ts`                                                                                                |
-| `parse-event.ts` (Calendar parser)    | `parse-event.test.ts`                                                                                                  |
-| `upsertPerson` semantics              | `upsert-person.test.ts` — find-or-create, suppressReingest, un-tombstone                                              |
-| `/v1/people` cursor + sort            | `people-sort.test.ts` — `lastInteractionAt:-1` compound cursor + null bucket                                          |
-| `/v1/digest`                          | `digest.test.ts`                                                                                                       |
-| `/v1/contexts`                        | `contexts.test.ts`                                                                                                     |
-| `/health` + `/v1/*` bearer-auth        | `health.test.ts`                                                                                                       |
-| OAuth start/callback/status            | `oauth.test.ts` — including refresh-token encryption-at-rest verification                                              |
-| CRUD across people/orgs/interactions/followups | `v1.test.ts`                                                                                                  |
-| Gmail ingest end-to-end                | `gmail-ingest.test.ts` — bootstrap, incremental, skip-self, newsletter blocklist, dedup via `sourceRef`, pause/resume |
-| Calendar ingest end-to-end             | `gcal-ingest.test.ts` — bootstrap, incremental, 410 → re-bootstrap, cancellation, edit reconciliation                 |
+| Area                                           | Coverage                                                                                                              |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `config.ts` env parsing                        | `config.test.ts`                                                                                                      |
+| `duration.ts` (ISO + short forms)              | `duration.test.ts`                                                                                                    |
+| `encryption.ts` (AES-256-GCM)                  | `encryption.test.ts`                                                                                                  |
+| `oauth-state.ts` (signed CSRF state)           | `oauth-state.test.ts`                                                                                                 |
+| `parse-message.ts` (Gmail parser)              | `parse-message.test.ts`                                                                                               |
+| `parse-event.ts` (Calendar parser)             | `parse-event.test.ts`                                                                                                 |
+| `upsertPerson` semantics                       | `upsert-person.test.ts` — find-or-create, suppressReingest, un-tombstone                                              |
+| `/v1/people` cursor + sort                     | `people-sort.test.ts` — `lastInteractionAt:-1` compound cursor + null bucket                                          |
+| `/v1/digest`                                   | `digest.test.ts`                                                                                                      |
+| `/v1/contexts`                                 | `contexts.test.ts`                                                                                                    |
+| `/health` + `/v1/*` bearer-auth                | `health.test.ts`                                                                                                      |
+| OAuth start/callback/status                    | `oauth.test.ts` — including refresh-token encryption-at-rest verification                                             |
+| CRUD across people/orgs/interactions/followups | `v1.test.ts`                                                                                                          |
+| Gmail ingest end-to-end                        | `gmail-ingest.test.ts` — bootstrap, incremental, skip-self, newsletter blocklist, dedup via `sourceRef`, pause/resume |
+| Calendar ingest end-to-end                     | `gcal-ingest.test.ts` — bootstrap, incremental, 410 → re-bootstrap, cancellation, edit reconciliation                 |
 
 ## What's not covered
 

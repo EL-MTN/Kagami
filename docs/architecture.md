@@ -204,6 +204,7 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 ```
 
 The Calendar tick is structurally identical except:
+
 - bootstrap is `events.list({ timeMin })` over `KIZUNA_GCAL_BACKFILL_DAYS`,
 - incremental uses `syncToken` rather than `historyId`,
 - 410 Gone on syncToken triggers `clearSyncToken()` + re-bootstrap (`resyncedFromBootstrap = true`),
@@ -239,16 +240,16 @@ See [sync.md](sync.md) for the full state machine.
 
 ## Module Map
 
-| Directory                     | Purpose                                                                                                                            |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/api/src/db/models/`     | Mongoose schemas (Person, Organization, Interaction, Followup, OAuthToken, SyncState) + `base.ts` provenance fields. See [data-model.md](data-model.md). |
-| `apps/api/src/db/recordInteraction.ts` | The only insert path for `interactions`; maintains `Person.lastInteractionAt`.                                            |
-| `apps/api/src/ingest/`        | Gmail + Calendar workers (state machines, paging, error mapping), pure parsers, `upsertPerson`, in-process scheduler. See [sync.md](sync.md). |
-| `apps/api/src/routes/`        | One Express router per resource. Each exports both the router and an `EndpointSpec[]` so the manifest stays in sync.                |
-| `apps/api/src/lib/`           | Cross-cutting helpers — auth middleware, error envelope, AES-256-GCM, signed CSRF state, OAuth client + cached access token, base64url cursor, ISO duration parser, mongo→wire serializer, pino singleton. |
-| `apps/api/src/manifest.ts`    | `zodToJsonSchema` factory used by `routes/manifest.ts` to render `GET /v1/_manifest` (OpenAPI-shaped endpoint catalog).             |
-| `apps/dashboard/app/`         | Next.js 15 App Router. `(app)` route group is auth-gated; `(auth)` holds `/login`. See [dashboard.md](dashboard.md).                |
-| `apps/dashboard/lib/`         | Typed API client, hand-mirrored response types, HMAC session cookie, formatters.                                                   |
+| Directory                              | Purpose                                                                                                                                                                                                    |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/src/db/models/`              | Mongoose schemas (Person, Organization, Interaction, Followup, OAuthToken, SyncState) + `base.ts` provenance fields. See [data-model.md](data-model.md).                                                   |
+| `apps/api/src/db/recordInteraction.ts` | The only insert path for `interactions`; maintains `Person.lastInteractionAt`.                                                                                                                             |
+| `apps/api/src/ingest/`                 | Gmail + Calendar workers (state machines, paging, error mapping), pure parsers, `upsertPerson`, in-process scheduler. See [sync.md](sync.md).                                                              |
+| `apps/api/src/routes/`                 | One Express router per resource. Each exports both the router and an `EndpointSpec[]` so the manifest stays in sync.                                                                                       |
+| `apps/api/src/lib/`                    | Cross-cutting helpers — auth middleware, error envelope, AES-256-GCM, signed CSRF state, OAuth client + cached access token, base64url cursor, ISO duration parser, mongo→wire serializer, pino singleton. |
+| `apps/api/src/manifest.ts`             | `zodToJsonSchema` factory used by `routes/manifest.ts` to render `GET /v1/_manifest` (OpenAPI-shaped endpoint catalog).                                                                                    |
+| `apps/dashboard/app/`                  | Next.js 15 App Router. `(app)` route group is auth-gated; `(auth)` holds `/login`. See [dashboard.md](dashboard.md).                                                                                       |
+| `apps/dashboard/lib/`                  | Typed API client, hand-mirrored response types, HMAC session cookie, formatters.                                                                                                                           |
 
 ## Cross-cutting Concerns
 

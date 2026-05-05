@@ -23,16 +23,16 @@ Mongoose options shared by every schema (`base.ts`):
 
 ```ts
 baseSchemaOptions = {
-  timestamps: true,    // createdAt / updatedAt
-  strict: 'throw',     // unknown fields on write throw → 400 bad_request
-  versionKey: false,   // no __v
-}
+  timestamps: true, // createdAt / updatedAt
+  strict: "throw", // unknown fields on write throw → 400 bad_request
+  versionKey: false, // no __v
+};
 
 provenanceFields = {
-  source:        { type: String, required: true, enum: SOURCE_VALUES },
+  source: { type: String, required: true, enum: SOURCE_VALUES },
   sourceVersion: { type: String },
-  deletedAt:     { type: Date, default: null },
-}
+  deletedAt: { type: Date, default: null },
+};
 ```
 
 `SOURCE_VALUES = ['concierge', 'gmail-sync', 'gcal-sync', 'manual', 'import']`.
@@ -77,12 +77,12 @@ The Person tombstone additionally sets `suppressReingest: true`, so a future Gma
 
 Indexes:
 
-| Name           | Key                                                    | Purpose                                              |
-| -------------- | ------------------------------------------------------ | ---------------------------------------------------- |
-| `primaryEmail_1` | `{ primaryEmail: 1 }` (sparse)                       | `upsertPerson` find-or-create lookup; sparse so `null` doesn't bloat the index |
-| `lastInteractionAt_-1` | `{ lastInteractionAt: -1 }`                    | People list under `?sort=lastInteractionAt:-1`       |
-| `people_text`  | `{ displayName: 'text', notes: 'text', tags: 'text' }` | `?query=…` search                                    |
-| `deletedAt_1`  | `{ deletedAt: 1 }` (sparse)                            | Tombstone scan                                       |
+| Name                   | Key                                                    | Purpose                                                                        |
+| ---------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `primaryEmail_1`       | `{ primaryEmail: 1 }` (sparse)                         | `upsertPerson` find-or-create lookup; sparse so `null` doesn't bloat the index |
+| `lastInteractionAt_-1` | `{ lastInteractionAt: -1 }`                            | People list under `?sort=lastInteractionAt:-1`                                 |
+| `people_text`          | `{ displayName: 'text', notes: 'text', tags: 'text' }` | `?query=…` search                                                              |
+| `deletedAt_1`          | `{ deletedAt: 1 }` (sparse)                            | Tombstone scan                                                                 |
 
 `primaryEmail` is **not unique** on purpose — multiple Person rows with the same email can briefly coexist (e.g. mid-merge), and the ingest path's `upsertPerson` is the keeper of "one row per email" in practice.
 
@@ -105,10 +105,10 @@ Indexes:
 
 Indexes:
 
-| Name              | Key                          | Purpose                                  |
-| ----------------- | ---------------------------- | ---------------------------------------- |
-| `domain_1`        | `{ domain: 1 }` (unique sparse) | One org per domain; `null` rows allowed |
-| `deletedAt_1`     | `{ deletedAt: 1 }` (sparse)  | Tombstone scan                           |
+| Name          | Key                             | Purpose                                 |
+| ------------- | ------------------------------- | --------------------------------------- |
+| `domain_1`    | `{ domain: 1 }` (unique sparse) | One org per domain; `null` rows allowed |
+| `deletedAt_1` | `{ deletedAt: 1 }` (sparse)     | Tombstone scan                          |
 
 ### `interactions`
 
@@ -148,14 +148,14 @@ INTERACTION_STATUS = ['active', 'cancelled']
 
 Indexes:
 
-| Name                            | Key                                                         | Purpose                                                                                                                                       |
-| ------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `occurredAt_-1`                 | `{ occurredAt: -1 }`                                        | Time-sorted lists, digest                                                                                                                     |
-| `participants.personId_1_occurredAt_-1` | `{ 'participants.personId': 1, occurredAt: -1 }`     | Per-person interaction timeline                                                                                                               |
-| **`interactions_sourceRef_unique`** | `{ 'sourceRef.provider': 1, 'sourceRef.id': 1 }` (unique partial: `'sourceRef.id': { $type: 'string' }`) | One interaction per Gmail message / Calendar event. Concierge-created rows have `sourceRef: null` and are exempt from the partial filter. Hard guarantee that ingest replays don't duplicate. |
-| `context_1_occurredAt_-1`       | `{ context: 1, occurredAt: -1 }`                            | `/v1/contexts` aggregation, `?context=…` filter                                                                                               |
-| `interactions_text`             | `{ title: 'text', body: 'text' }`                           | `?query=…` search                                                                                                                             |
-| `deletedAt_1`                   | `{ deletedAt: 1 }` (sparse)                                 | Tombstone scan                                                                                                                                |
+| Name                                    | Key                                                                                                      | Purpose                                                                                                                                                                                       |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `occurredAt_-1`                         | `{ occurredAt: -1 }`                                                                                     | Time-sorted lists, digest                                                                                                                                                                     |
+| `participants.personId_1_occurredAt_-1` | `{ 'participants.personId': 1, occurredAt: -1 }`                                                         | Per-person interaction timeline                                                                                                                                                               |
+| **`interactions_sourceRef_unique`**     | `{ 'sourceRef.provider': 1, 'sourceRef.id': 1 }` (unique partial: `'sourceRef.id': { $type: 'string' }`) | One interaction per Gmail message / Calendar event. Concierge-created rows have `sourceRef: null` and are exempt from the partial filter. Hard guarantee that ingest replays don't duplicate. |
+| `context_1_occurredAt_-1`               | `{ context: 1, occurredAt: -1 }`                                                                         | `/v1/contexts` aggregation, `?context=…` filter                                                                                                                                               |
+| `interactions_text`                     | `{ title: 'text', body: 'text' }`                                                                        | `?query=…` search                                                                                                                                                                             |
+| `deletedAt_1`                           | `{ deletedAt: 1 }` (sparse)                                                                              | Tombstone scan                                                                                                                                                                                |
 
 **Schema validators**:
 
@@ -198,11 +198,11 @@ FOLLOWUP_STATUSES   = ['open', 'done', 'snoozed', 'dismissed']
 
 Indexes:
 
-| Name                                | Key                                                | Purpose                                                                                                          |
-| ----------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `status_1_dueAt_1`                  | `{ status: 1, dueAt: 1 }`                          | Digest queries (`overdue` = open + dueAt<now; `upcoming` = open + now<=dueAt<=end)                              |
-| `personId_1_direction_1_status_1`   | `{ personId: 1, direction: 1, status: 1 }`         | Per-person followup lists                                                                                        |
-| `deletedAt_1`                       | `{ deletedAt: 1 }` (sparse)                        | Tombstone scan                                                                                                   |
+| Name                              | Key                                        | Purpose                                                                            |
+| --------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `status_1_dueAt_1`                | `{ status: 1, dueAt: 1 }`                  | Digest queries (`overdue` = open + dueAt<now; `upcoming` = open + now<=dueAt<=end) |
+| `personId_1_direction_1_status_1` | `{ personId: 1, direction: 1, status: 1 }` | Per-person followup lists                                                          |
+| `deletedAt_1`                     | `{ deletedAt: 1 }` (sparse)                | Tombstone scan                                                                     |
 
 ### `oauthtokens`
 
@@ -236,10 +236,10 @@ The decrypted refresh token is exchanged for an access token by `getAccessToken(
 
 Indexes:
 
-| Name           | Key                          | Purpose                          |
-| -------------- | ---------------------------- | -------------------------------- |
-| (auto)         | `{ provider: 1 }` (unique)   | One token per provider           |
-| `deletedAt_1`  | `{ deletedAt: 1 }` (sparse)  | (Tombstone scan; not currently exercised — token revocation is via re-grant + `findOneAndUpdate` upsert.) |
+| Name          | Key                         | Purpose                                                                                                   |
+| ------------- | --------------------------- | --------------------------------------------------------------------------------------------------------- |
+| (auto)        | `{ provider: 1 }` (unique)  | One token per provider                                                                                    |
+| `deletedAt_1` | `{ deletedAt: 1 }` (sparse) | (Tombstone scan; not currently exercised — token revocation is via re-grant + `findOneAndUpdate` upsert.) |
 
 ### `syncstates`
 
@@ -261,10 +261,10 @@ Indexes:
 
 Indexes:
 
-| Name           | Key                          | Purpose                                |
-| -------------- | ---------------------------- | -------------------------------------- |
-| (auto)         | `{ provider: 1 }` (unique)   | One row per provider                   |
-| `deletedAt_1`  | `{ deletedAt: 1 }` (sparse)  | Tombstone scan (not currently used)    |
+| Name          | Key                         | Purpose                             |
+| ------------- | --------------------------- | ----------------------------------- |
+| (auto)        | `{ provider: 1 }` (unique)  | One row per provider                |
+| `deletedAt_1` | `{ deletedAt: 1 }` (sparse) | Tombstone scan (not currently used) |
 
 The semantics around `historyId`, `syncToken`, `pausedAt`, and `force` are documented in [sync.md](sync.md).
 
