@@ -19,7 +19,7 @@ after(async () => {
   await replSet.stop();
 });
 
-test('ensureIndexes creates btree indexes on facts/entities/history', async () => {
+void test('ensureIndexes creates btree indexes on facts/entities/history', async () => {
   const { ensureIndexes } = await import('../src/storage/indexes.ts');
   const { getDb } = await import('../src/storage/mongo.ts');
 
@@ -36,7 +36,7 @@ test('ensureIndexes creates btree indexes on facts/entities/history', async () =
   assert.ok(histIdx.find((i) => i.name === 'history_memory_created'));
 });
 
-test('ensureIndexes is idempotent across calls', async () => {
+void test('ensureIndexes is idempotent across calls', async () => {
   const { ensureIndexes } = await import('../src/storage/indexes.ts');
   await ensureIndexes({ allowMissingSearch: true });
   await ensureIndexes({ allowMissingSearch: true });

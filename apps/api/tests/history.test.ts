@@ -41,7 +41,7 @@ function makeFact(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test('appendFacts emits one ADD event per inserted fact', async () => {
+void test('appendFacts emits one ADD event per inserted fact', async () => {
   const { appendFacts, newFactId } = await import('../src/storage/facts.ts');
   const { readHistoryFor } = await import('../src/storage/history.ts');
   const a = makeFact({ id: newFactId(), hash: 'h-a', text: 'A' });
@@ -57,7 +57,7 @@ test('appendFacts emits one ADD event per inserted fact', async () => {
   assert.equal(histB[0]!.event, 'ADD');
 });
 
-test('appendFacts does not emit ADD events for hash dupes', async () => {
+void test('appendFacts does not emit ADD events for hash dupes', async () => {
   const { appendFacts, newFactId } = await import('../src/storage/facts.ts');
   const { readHistoryFor } = await import('../src/storage/history.ts');
   const original = makeFact({ id: newFactId(), hash: 'h1', text: 'orig' });
@@ -73,7 +73,7 @@ test('appendFacts does not emit ADD events for hash dupes', async () => {
   assert.equal(origHistory.length, 1);
 });
 
-test('readHistoryFor returns events newest first', async () => {
+void test('readHistoryFor returns events newest first', async () => {
   const { recordEvent, readHistoryFor } = await import('../src/storage/history.ts');
   await recordEvent({ memory_id: 'mid', event: 'ADD', new_text: 'a' });
   await new Promise((r) => setTimeout(r, 5));

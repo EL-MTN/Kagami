@@ -38,7 +38,7 @@ function makeDoc(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test('text_lower unique index rejects duplicate keys', async () => {
+void test('text_lower unique index rejects duplicate keys', async () => {
   const { getDb } = await import('../src/storage/mongo.ts');
   const db = await getDb();
   await db.collection('entities').insertOne(makeDoc({ text: 'Mira' }) as never);
@@ -48,7 +48,7 @@ test('text_lower unique index rejects duplicate keys', async () => {
   );
 });
 
-test('parallel upsert-style updateOnes converge on union of linked_memory_ids', async () => {
+void test('parallel upsert-style updateOnes converge on union of linked_memory_ids', async () => {
   // Mirrors the atomic-upsert pattern upsertEntitiesFromFacts uses,
   // without going through embedTexts (which needs a live provider).
   // Demonstrates that two writers racing on the same text_lower end up

@@ -38,13 +38,12 @@ if (!modelName) {
 // `supportsStructuredOutputs: true` makes the provider send
 // `response_format: { type: "json_schema", ... }` instead of the default
 // `json_object`, which LM Studio rejects with "must be 'json_schema' or 'text'".
-// The option is honored at runtime but isn't in the public settings type.
 const provider = createOpenAICompatible({
   name: 'llm',
   baseURL: llm.baseURL,
   apiKey: llm.apiKey,
   supportsStructuredOutputs: true,
-} as Parameters<typeof createOpenAICompatible>[0]);
+});
 
 // Embeddings can target a different endpoint than chat — e.g. chat=OpenAI
 // gpt-4o-mini while embeddings run through a local LM Studio nomic model.

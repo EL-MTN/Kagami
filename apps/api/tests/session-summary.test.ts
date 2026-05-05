@@ -29,7 +29,7 @@ interface CachedSummary {
   created_at: string;
 }
 
-test('getOrComputeSessionSummary returns the cached summary without recomputing', async () => {
+void test('getOrComputeSessionSummary returns the cached summary without recomputing', async () => {
   const { getDb } = await import('../src/storage/mongo.ts');
   const db = await getDb();
   await db.collection<CachedSummary>('session_summaries').insertOne({
@@ -58,7 +58,7 @@ test('getOrComputeSessionSummary returns the cached summary without recomputing'
   assert.equal(out, 'pre-cached narrative summary');
 });
 
-test('getOrComputeSessionSummary on empty turns short-circuits to empty', async () => {
+void test('getOrComputeSessionSummary on empty turns short-circuits to empty', async () => {
   const { getOrComputeSessionSummary } = await import(
     '../src/ingest/session-summary.ts'
   );
