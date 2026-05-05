@@ -1,0 +1,44 @@
+{
+  "name": "@kokoro/bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "portless run tsx watch src/index.ts",
+    "build": "tsx build.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.58",
+    "@ai-sdk/elevenlabs": "^1.0.0",
+    "@ai-sdk/google": "^3.0.43",
+    "@ai-sdk/openai": "^3.0.41",
+    "@ai-sdk/xai": "^3.0.67",
+    "@browserbasehq/stagehand": "^3.0.0",
+    "@kokoro/db": "*",
+    "@kokoro/memory": "*",
+    "@kokoro/shared": "*",
+    "ai": "^6.0.116",
+    "cron-parser": "^5.5.0",
+    "date-fns": "^4.1.0",
+    "dotenv": "^16.4.0",
+    "googleapis": "^171.4.0",
+    "grammy": "^1.30.0",
+    "gray-matter": "^4.0.3",
+    "mongoose": "^8.9.0",
+    "pino": "^9.6.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@kokoro/eslint-config": "*",
+    "@kokoro/typescript-config": "*",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^10.0.1",
+    "pino-pretty": "^13.1.3",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

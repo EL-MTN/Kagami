@@ -1,0 +1,4 @@
+{
+  "extends": "@kokoro/typescript-config/library.json",
+  "include": ["src", "tests"]
+}

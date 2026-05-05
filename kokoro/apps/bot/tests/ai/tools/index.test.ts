@@ -1,0 +1,199 @@
+import { fakeAdapter } from "@kokoro/test-utils";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * The registry's behavior is governed entirely by `config` flags:
+ *   - GOOGLE_OAUTH_CLIENT_ID gates email/calendar/reminders + the gated
+ *     confirmation primitive.
+ *   - BROWSER_ENABLED gates browse + (also) the confirmation primitive.
+ *   - IMAGE_GENERATION_MODEL gates sendPhoto.
+ *   - TTS_PROVIDER gates sendVoice.
+ *
+ * Mock `@kokoro/shared.config` per test by overriding via vi.hoisted +
+ * `vi.resetModules()` so each scenario re-loads the registry against the
+ * scenario's config.
+ */
+
+const { mockConfig } = vi.hoisted(() => {
+  const mockConfig: Record<string, unknown> = {};
+  return { mockConfig };
+});
+
+vi.mock("@kokoro/shared", async (orig) => ({
+  ...(await orig()),
+  config: mockConfig,
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    fatal: vi.fn(),
+    trace: vi.fn(),
+  },
+}));
+
+vi.mock("../../../src/services/routine-executor", () => ({
+  // Allow up to 3 levels of nesting; the registry uses this constant to gate
+  // useRoutine registration.
+  MAX_ROUTINE_DEPTH: 3,
+  executeRoutine: vi.fn(),
+}));
+
+import { allTools, watcherTools, routineToolsUnderWatcher } from "../../../src/ai/tools/index";
+
+const adapter = fakeAdapter();
+const baseCtx = {
+  chatId: "chat-1",
+  adapter,
+  sessionId: "sess-1",
+};
+
+beforeEach(() => {
+  // Wipe and re-seed mockConfig before each test. Keys removed via delete so
+  // optional checks (config.X being undefined) actually flow through.
+  for (const key of Object.keys(mockConfig)) {
+    delete mockConfig[key];
+  }
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("allTools — minimum-config baseline", () => {
+  it("registers the always-on tools (routine mgmt, watcher mgmt, memory) with no flags set", () => {
+    const tools = allTools(baseCtx);
+    const names = Object.keys(tools).sort();
+    expect(names).toEqual(
+      [
+        "manageRoutines",
+        "manageWatchers",
+        "rememberFact",
+        "searchMemory",
+        "searchRoutines",
+        "useRoutine",
+      ].sort(),
+    );
+  });
+});
+
+describe("allTools — feature flags", () => {
+  it("registers sendPhoto when IMAGE_GENERATION_MODEL is set", () => {
+    mockConfig.IMAGE_GENERATION_MODEL = "xai/grok-imagine-image";
+    expect(Object.keys(allTools(baseCtx))).toContain("sendPhoto");
+  });
+
+  it("registers sendVoice when TTS_PROVIDER is set", () => {
+    mockConfig.TTS_PROVIDER = "elevenlabs/eleven_flash_v2_5";
+    expect(Object.keys(allTools(baseCtx))).toContain("sendVoice");
+  });
+
+  it("registers email + calendar + reminders + confirmation primitives when Google OAuth is set", () => {
+    mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
+    const names = Object.keys(allTools(baseCtx));
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "checkEmail",
+        "sendEmail",
+        "manageCalendar",
+        "manageReminders",
+        "requestConfirmation",
+        "cancelConfirmation",
+      ]),
+    );
+  });
+
+  it("registers browse + confirmation primitives when BROWSER_ENABLED is true", () => {
+    mockConfig.BROWSER_ENABLED = true;
+    const names = Object.keys(allTools(baseCtx));
+    expect(names).toContain("browse");
+    expect(names).toContain("requestConfirmation");
+    expect(names).toContain("cancelConfirmation");
+  });
+
+  it("does NOT register confirmation primitives when neither Google OAuth nor browser is enabled", () => {
+    const names = Object.keys(allTools(baseCtx));
+    expect(names).not.toContain("requestConfirmation");
+    expect(names).not.toContain("cancelConfirmation");
+  });
+});
+
+describe("allTools — useRoutine recursion gate", () => {
+  it("registers useRoutine when depth < MAX_ROUTINE_DEPTH", () => {
+    expect(Object.keys(allTools({ ...baseCtx, routineDepth: 0 }))).toContain("useRoutine");
+    expect(Object.keys(allTools({ ...baseCtx, routineDepth: 2 }))).toContain("useRoutine");
+  });
+
+  it("excludes useRoutine at MAX_ROUTINE_DEPTH (= 3)", () => {
+    expect(Object.keys(allTools({ ...baseCtx, routineDepth: 3 }))).not.toContain("useRoutine");
+  });
+});
+
+describe("watcherTools — read-only invariant", () => {
+  it("excludes every mutating tool — sends, calendar writes, reminders, routine/watcher CRUD, confirmation primitives", () => {
+    mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
+    mockConfig.BROWSER_ENABLED = true;
+    mockConfig.IMAGE_GENERATION_MODEL = "stub";
+    mockConfig.TTS_PROVIDER = "stub";
+
+    const names = Object.keys(watcherTools(baseCtx));
+    const forbidden = [
+      "sendEmail",
+      "sendPhoto",
+      "sendVoice",
+      "manageCalendar", // mutating; readOnly variant is `listCalendarEvents`
+      "manageReminders",
+      "manageRoutines",
+      "manageWatchers",
+      "requestConfirmation",
+      "cancelConfirmation",
+      "searchRoutines",
+      "rememberFact", // mutates the vault; searchMemory (read-only) is allowed
+    ];
+    for (const f of forbidden) {
+      expect(names, `watcherTools must not include ${f}`).not.toContain(f);
+    }
+  });
+
+  it("includes the watcher-specific terminator and read-only observation tools", () => {
+    mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
+    mockConfig.BROWSER_ENABLED = true;
+
+    const names = Object.keys(watcherTools(baseCtx));
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "checkEmail",
+        "listCalendarEvents", // the readOnly variant exposed under this name
+        "browse",
+        "useRoutine",
+        "reportWatcherResult",
+        "searchMemory",
+      ]),
+    );
+  });
+
+  it("excludes useRoutine at MAX_ROUTINE_DEPTH", () => {
+    expect(Object.keys(watcherTools({ ...baseCtx, routineDepth: 3 }))).not.toContain("useRoutine");
+  });
+});
+
+describe("routineToolsUnderWatcher — read-only invariant transitive", () => {
+  it("returns the same read-only subset as watcherTools — minus reportWatcherResult", () => {
+    mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
+    mockConfig.BROWSER_ENABLED = true;
+
+    const watcher = Object.keys(watcherTools(baseCtx)).sort();
+    const routine = Object.keys(routineToolsUnderWatcher(baseCtx)).sort();
+    expect(routine).toEqual(watcher.filter((n) => n !== "reportWatcherResult"));
+  });
+
+  it("does not include any mutating surface", () => {
+    mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
+    mockConfig.BROWSER_ENABLED = true;
+
+    const names = Object.keys(routineToolsUnderWatcher(baseCtx));
+    expect(names).not.toContain("sendEmail");
+    expect(names).not.toContain("manageCalendar");
+    expect(names).not.toContain("requestConfirmation");
+  });
+});
