@@ -4,6 +4,7 @@ import { getDb } from './mongo.js';
 import { embedTexts } from '../llm.js';
 import { extractEntities } from '../retrieval/text.js';
 import type { Fact } from './facts.js';
+import { logger } from '../logger.js';
 
 // Per-vault entity store. Each row: an entity text + embedding + the
 // set of fact ids that mention it. At query time, query entities are
@@ -76,8 +77,8 @@ export async function upsertEntitiesFromFacts(
   if (newKeys.length > 0) {
     try {
       newEmbeddings = await embedTexts(newKeys.map((k) => pending.get(k)!.display));
-    } catch (err) {
-      console.error('[entities] embed failed:', (err as Error).message);
+    } catch (error) {
+      logger.error({ error }, 'entity embed failed');
       return { created: 0, linked: 0 };
     }
   }

@@ -12,6 +12,7 @@ import { generateText } from 'ai';
 import { MongoClient } from 'mongodb';
 import { model as defaultModel, llmEndpoint } from '../src/llm.js';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { logger } from '../src/logger.js';
 
 // Per-item DB names: each worker gets its own kioku DB so retrieval
 // over fact A doesn't see facts from fact B. Sanitized to satisfy
@@ -371,7 +372,7 @@ function truncate(s: unknown, n: number): string {
   return str.length <= n ? str : str.slice(0, n - 1) + '…';
 }
 
-main().catch((e) => {
-  console.error(e);
+main().catch((error) => {
+  logger.fatal({ error }, 'longmemeval failed');
   process.exit(1);
 });
