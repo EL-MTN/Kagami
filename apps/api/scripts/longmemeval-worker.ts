@@ -11,10 +11,10 @@
 //
 // Output: writes a JSON file at --result with the prediction + timings.
 
-import fs from 'node:fs/promises';
+import fs from "node:fs/promises";
 
 interface LMESession {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
 }
 
@@ -50,24 +50,24 @@ function parseArgs(): { itemPath: string; resultPath: string } {
     }
     return args[i + 1]!;
   };
-  return { itemPath: get('--item'), resultPath: get('--result') };
+  return { itemPath: get("--item"), resultPath: get("--result") };
 }
 
 async function main() {
   const { itemPath, resultPath } = parseArgs();
   if (!process.env.KIOKU_MONGO_DB) {
-    throw new Error('KIOKU_MONGO_DB must be set (orchestrator sets it per item)');
+    throw new Error("KIOKU_MONGO_DB must be set (orchestrator sets it per item)");
   }
 
-  const item = JSON.parse(await fs.readFile(itemPath, 'utf8')) as LMEItem;
+  const item = JSON.parse(await fs.readFile(itemPath, "utf8")) as LMEItem;
 
   // Lazy-import after env is set so mongo.ts picks up KIOKU_MONGO_DB.
-  const { ensureIndexes } = await import('../src/storage/indexes.js');
-  const { getDb, closeMongo } = await import('../src/storage/mongo.js');
-  const { consolidate } = await import('../src/ingest/consolidate.js');
-  const { parseTranscript } = await import('../src/ingest/transcript.js');
-  const { upsertTranscript } = await import('../src/storage/transcripts.js');
-  const { query } = await import('../src/query/answer.js');
+  const { ensureIndexes } = await import("../src/storage/indexes.js");
+  const { getDb, closeMongo } = await import("../src/storage/mongo.js");
+  const { consolidate } = await import("../src/ingest/consolidate.js");
+  const { parseTranscript } = await import("../src/ingest/transcript.js");
+  const { upsertTranscript } = await import("../src/storage/transcripts.js");
+  const { query } = await import("../src/query/answer.js");
 
   // Per-item DB starts empty — build the indexes the storage + retrieval
   // layers depend on before any read/write. Idempotent for --keep-vaults
@@ -87,14 +87,16 @@ async function main() {
   // Skip ingest entirely when the per-item DB already has facts. Lets
   // bench reruns with --keep-vaults isolate query/judge changes without
   // paying for re-extraction.
-  const factsCount = await (await getDb()).collection('facts').countDocuments({});
+  const factsCount = await (await getDb()).collection("facts").countDocuments({});
   const skipIngest = factsCount > 0;
   if (!skipIngest) {
     for (let i = 0; i < sessions.length; i++) {
       const sid = sessionIds[i]!;
       const transcript = parseTranscript(formatTranscript(sid, dates[i]!, sessions[i]!));
       await upsertTranscript({ transcript });
-      process.stderr.write(`[worker ${item.question_id}] ingesting ${sid} (${sessions[i]!.length} turns)\n`);
+      process.stderr.write(
+        `[worker ${item.question_id}] ingesting ${sid} (${sessions[i]!.length} turns)\n`,
+      );
       await consolidate(transcript);
     }
   } else {
@@ -104,7 +106,7 @@ async function main() {
 
   process.stderr.write(`[worker ${item.question_id}] querying\n`);
   const queryStart = Date.now();
-  let prediction = '';
+  let prediction = "";
   let citations: string[] = [];
   let err: string | undefined;
   try {
@@ -132,39 +134,38 @@ async function main() {
   process.stderr.write(`[worker ${item.question_id}] done\n`);
 }
 
-function formatTranscript(
-  sessionId: string,
-  date: string,
-  turns: LMESession[],
-): string {
+function formatTranscript(sessionId: string, date: string, turns: LMESession[]): string {
   const startedAt = isoFromDate(date);
   const header = `---\nid: ${sessionId}\nstarted_at: ${startedAt}\n---\n\n`;
   const body = turns
     .map((t, i) => {
-      const turnId = `t-${String(i + 1).padStart(4, '0')}`;
+      const turnId = `t-${String(i + 1).padStart(4, "0")}`;
       return `## ${turnId} ${t.role}\n${t.content.trim()}`;
     })
-    .join('\n\n');
-  return header + body + '\n';
+    .join("\n\n");
+  return header + body + "\n";
 }
 
 // LongMemEval dates arrive as e.g. "2023/04/10 (Mon) 17:50" — slashes for
 // the date, a parenthesized day-of-week, and a HH:MM time. Some sources may
 // also be ISO already. Normalize to a valid ISO-8601 string.
 function isoFromDate(raw: string): string {
-  const s = raw.trim().replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+  const s = raw
+    .trim()
+    .replace(/\s*\([^)]*\)\s*/g, " ")
+    .trim();
   if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return new Date(s).toISOString();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(`${s}T00:00:00Z`).toISOString();
   // Convert "YYYY/MM/DD HH:MM[:SS]" → "YYYY-MM-DDTHH:MM[:SS]Z"
   const m = s.match(/^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
   if (m) {
     const [, y, mo, dd, hh, mm, ss] = m;
-    return `${y}-${mo}-${dd}T${hh}:${mm}:${ss ?? '00'}Z`;
+    return `${y}-${mo}-${dd}T${hh}:${mm}:${ss ?? "00"}Z`;
   }
-  const norm = s.replace(/\//g, '-').replace(' ', 'T');
-  const d = new Date(norm.endsWith('Z') ? norm : `${norm}Z`);
+  const norm = s.replace(/\//g, "-").replace(" ", "T");
+  const d = new Date(norm.endsWith("Z") ? norm : `${norm}Z`);
   if (isNaN(d.getTime())) {
-    return new Date('2024-01-01T00:00:00Z').toISOString();
+    return new Date("2024-01-01T00:00:00Z").toISOString();
   }
   return d.toISOString();
 }

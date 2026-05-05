@@ -35,10 +35,7 @@ function buildSparkline(facts: Fact[], days = 30): number[] {
 }
 
 export default async function OverviewPage() {
-  const [{ count }, listed] = await Promise.all([
-    getFactCount(),
-    listFacts({ limit: 500 }),
-  ]);
+  const [{ count }, listed] = await Promise.all([getFactCount(), listFacts({ limit: 500 })]);
 
   const facts = listed.facts;
   const recent = facts.slice(0, 6);
@@ -79,9 +76,7 @@ export default async function OverviewPage() {
         <div className="rounded-lg border border-border bg-card p-6">
           <div className="flex items-baseline justify-between">
             <h3 className="kicker">Memory stratum</h3>
-            <p className="text-[11px] tabular-nums text-faint">
-              by event date, deepest = oldest
-            </p>
+            <p className="text-[11px] tabular-nums text-faint">by event date, deepest = oldest</p>
           </div>
           <div className="mt-5">
             <Stratum layers={months.map((m) => ({ monthKey: m.key, count: m.count }))} />
@@ -119,9 +114,7 @@ export default async function OverviewPage() {
                 {categories.slice(0, 6).map((c) => (
                   <li key={c.key} className="flex items-center justify-between gap-3 text-sm">
                     <span className="truncate text-foreground">{c.key}</span>
-                    <span className="font-mono text-[11px] tabular-nums text-faint">
-                      {c.count}
-                    </span>
+                    <span className="font-mono text-[11px] tabular-nums text-faint">{c.count}</span>
                   </li>
                 ))}
               </ul>

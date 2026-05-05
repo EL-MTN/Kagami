@@ -1,8 +1,4 @@
-import {
-  defaultFactRanker,
-  type MemoryFilters,
-  type RankedFact,
-} from '../retrieval/embeddings.js';
+import { defaultFactRanker, type MemoryFilters, type RankedFact } from "../retrieval/embeddings.js";
 
 // Ranked fact retrieval without the answerer LLM. Wraps the hybrid
 // ranker so HTTP callers (and the bot) can pull top-K facts directly
@@ -18,8 +14,8 @@ export interface RecalledFact {
 
 export interface RecallOptions {
   k?: number;
-  since?: string;        // ISO date, inclusive lower bound on event_date
-  until?: string;        // ISO date, inclusive upper bound on event_date
+  since?: string; // ISO date, inclusive lower bound on event_date
+  until?: string; // ISO date, inclusive upper bound on event_date
   // Mem0-OSS-shaped scope + filters. Pushed down to $vectorSearch /
   // $search where the field is index-declared; metadata is post-filtered.
   filters?: MemoryFilters;
@@ -27,10 +23,7 @@ export interface RecallOptions {
 
 const DEFAULT_K = 10;
 
-export async function recall(
-  query: string,
-  opts: RecallOptions = {},
-): Promise<RecalledFact[]> {
+export async function recall(query: string, opts: RecallOptions = {}): Promise<RecalledFact[]> {
   const k = opts.k ?? DEFAULT_K;
   // Over-fetch when date filters are present so post-filter still
   // yields ~k results in the common case.

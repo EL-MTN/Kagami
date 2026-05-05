@@ -1,7 +1,7 @@
-import { randomUUID } from 'node:crypto';
-import type { Collection } from 'mongodb';
-import { getDb } from './mongo.js';
-import { recordEvents, type RecordEventInput } from './history.js';
+import { randomUUID } from "node:crypto";
+import type { Collection } from "mongodb";
+import { getDb } from "./mongo.js";
+import { recordEvents, type RecordEventInput } from "./history.js";
 
 // Atomic-fact storage. Each row is one Fact in the `facts` collection.
 // The embedding is stored alongside the text so retrieval is just
@@ -21,10 +21,10 @@ export interface Fact {
   user_id: string;
   run_id?: string;
   agent_id?: string;
-  created_at: string;       // ISO timestamp of ingestion
-  event_date: string;       // session timestamp the fact was extracted from
-  source_session: string;   // e.g. "raw/answer_4be1b6b4_1"
-  hash: string;             // md5 of text for dedup checks (unique-indexed)
+  created_at: string; // ISO timestamp of ingestion
+  event_date: string; // session timestamp the fact was extracted from
+  source_session: string; // e.g. "raw/answer_4be1b6b4_1"
+  hash: string; // md5 of text for dedup checks (unique-indexed)
   embedding: number[];
   // Free-form metadata. Stored as-is; flat string/number/boolean keys are
   // filterable at query time via post-vector-search $match. Nested objects
@@ -39,7 +39,7 @@ export interface Fact {
 
 // Internal Mongo doc shape: the public `id` field maps to `_id` so we
 // have one canonical identifier per row (matches the schema in plan.md).
-interface FactDoc extends Omit<Fact, 'id'> {
+interface FactDoc extends Omit<Fact, "id"> {
   _id: string;
 }
 
@@ -55,7 +55,7 @@ function fromDoc(d: FactDoc): Fact {
 
 async function factsCol(): Promise<Collection<FactDoc>> {
   const db = await getDb();
-  return db.collection<FactDoc>('facts');
+  return db.collection<FactDoc>("facts");
 }
 
 export function newFactId(): string {
@@ -110,8 +110,7 @@ export async function appendFacts(facts: Fact[], actor?: string): Promise<void> 
       result?: { insertedIds?: Record<number, unknown> };
     };
     const errs = Array.isArray(e.writeErrors) ? e.writeErrors : [];
-    const allDupes =
-      e.code === 11000 || (errs.length > 0 && errs.every((w) => w.code === 11000));
+    const allDupes = e.code === 11000 || (errs.length > 0 && errs.every((w) => w.code === 11000));
     if (!allDupes) throw err;
     const ids = e.insertedIds ?? e.result?.insertedIds ?? {};
     insertedIndices = new Set(Object.keys(ids).map(Number));
@@ -123,7 +122,7 @@ export async function appendFacts(facts: Fact[], actor?: string): Promise<void> 
     if (!insertedIndices.has(i)) continue;
     events.push({
       memory_id: facts[i]!.id,
-      event: 'ADD',
+      event: "ADD",
       new_text: facts[i]!.text,
       actor,
     });

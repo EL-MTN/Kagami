@@ -1,7 +1,7 @@
-import type { Collection, Db } from 'mongodb';
-import { getDb } from './mongo.js';
-import { logger } from '../logger.js';
-import { embedQuestion } from '../llm.js';
+import type { Collection, Db } from "mongodb";
+import { getDb } from "./mongo.js";
+import { logger } from "../logger.js";
+import { embedQuestion } from "../llm.js";
 
 // Idempotent index setup. Safe to call on every startup — Mongo's
 // createIndex / createSearchIndex are no-ops when an equivalent index
@@ -23,21 +23,21 @@ const SEARCH_POLL_TIMEOUT_MS = 180_000;
 // authoritative source — that way an EMBEDDING_MODEL change is detected
 // at startup (via the drift check below) instead of at the next write.
 async function probeEmbeddingDim(): Promise<number> {
-  const v = await embedQuestion('probe');
+  const v = await embedQuestion("probe");
   if (!Array.isArray(v) || v.length === 0) {
-    throw new Error('embedding provider returned empty vector for probe');
+    throw new Error("embedding provider returned empty vector for probe");
   }
   return v.length;
 }
 
 interface SearchIndexSpec {
   name: string;
-  type?: 'search' | 'vectorSearch';
+  type?: "search" | "vectorSearch";
   definition: Record<string, unknown>;
 }
 
 async function ensureBtreeIndexes(db: Db): Promise<void> {
-  const facts: Collection = db.collection('facts');
+  const facts: Collection = db.collection("facts");
 
   // Hash-dedup index. Scoped by (user_id, run_id, agent_id) so identical
   // text under different scopes does not collide. The legacy index was
@@ -57,17 +57,14 @@ async function ensureBtreeIndexes(db: Db): Promise<void> {
   }
   const legacyHash = existingIndexes.find(
     (i) =>
-      i.name === 'facts_hash_unique' &&
-      i.key &&
-      Object.keys(i.key).length === 1 &&
-      'hash' in i.key,
+      i.name === "facts_hash_unique" && i.key && Object.keys(i.key).length === 1 && "hash" in i.key,
   );
   if (legacyHash) {
-    await facts.dropIndex('facts_hash_unique');
+    await facts.dropIndex("facts_hash_unique");
   }
   await facts.createIndex(
     { user_id: 1, run_id: 1, agent_id: 1, hash: 1 },
-    { name: 'facts_hash_unique', unique: true },
+    { name: "facts_hash_unique", unique: true },
   );
 
   // Same scope-prefix story for the read-side compound index. Pre-scope
@@ -75,31 +72,28 @@ async function ensureBtreeIndexes(db: Db): Promise<void> {
   // filters too. Same drop-and-recreate dance.
   const legacyUserCreated = existingIndexes.find(
     (i) =>
-      i.name === 'facts_user_created' &&
+      i.name === "facts_user_created" &&
       i.key &&
       Object.keys(i.key).length === 2 &&
-      'user_id' in i.key &&
-      'created_at' in i.key,
+      "user_id" in i.key &&
+      "created_at" in i.key,
   );
   if (legacyUserCreated) {
-    await facts.dropIndex('facts_user_created');
+    await facts.dropIndex("facts_user_created");
   }
   await facts.createIndex(
     { user_id: 1, run_id: 1, agent_id: 1, created_at: -1 },
-    { name: 'facts_user_created' },
+    { name: "facts_user_created" },
   );
 
-  const entities: Collection = db.collection('entities');
+  const entities: Collection = db.collection("entities");
   await entities.createIndex(
     { text_lower: 1 },
-    { name: 'entities_text_lower_unique', unique: true },
+    { name: "entities_text_lower_unique", unique: true },
   );
 
-  const history: Collection = db.collection('history');
-  await history.createIndex(
-    { memory_id: 1, created_at: -1 },
-    { name: 'history_memory_created' },
-  );
+  const history: Collection = db.collection("history");
+  await history.createIndex({ memory_id: 1, created_at: -1 }, { name: "history_memory_created" });
 }
 
 interface ExistingSearchIndex {
@@ -127,34 +121,30 @@ async function listSearchIndexes(coll: Collection): Promise<ExistingSearchIndex[
 }
 
 function existingVectorDim(idx: ExistingSearchIndex): number | undefined {
-  const f = idx.latestDefinition?.fields?.find((x) => x.type === 'vector');
+  const f = idx.latestDefinition?.fields?.find((x) => x.type === "vector");
   return f?.numDimensions;
 }
 
-function existingFieldAnalyzer(
-  idx: ExistingSearchIndex,
-  fieldPath: string,
-): string | undefined {
+function existingFieldAnalyzer(idx: ExistingSearchIndex, fieldPath: string): string | undefined {
   return idx.latestDefinition?.mappings?.fields?.[fieldPath]?.analyzer;
 }
 
 function existingFilterFieldPaths(idx: ExistingSearchIndex): Set<string> {
   const out = new Set<string>();
   for (const f of idx.latestDefinition?.fields ?? []) {
-    if (f.type === 'filter' && f.path) out.add(f.path);
+    if (f.type === "filter" && f.path) out.add(f.path);
   }
   return out;
 }
 
 function expectedFilterFieldPaths(spec: SearchIndexSpec): string[] {
-  const fields = (spec.definition.fields as Array<{ type?: string; path?: string }> | undefined) ?? [];
-  return fields.filter((f) => f.type === 'filter' && f.path).map((f) => f.path!);
+  const fields =
+    (spec.definition.fields as Array<{ type?: string; path?: string }> | undefined) ?? [];
+  return fields.filter((f) => f.type === "filter" && f.path).map((f) => f.path!);
 }
 
 function expectedMappedFieldPaths(spec: SearchIndexSpec): string[] {
-  const m = spec.definition.mappings as
-    | { fields?: Record<string, unknown> }
-    | undefined;
+  const m = spec.definition.mappings as { fields?: Record<string, unknown> } | undefined;
   return m?.fields ? Object.keys(m.fields) : [];
 }
 
@@ -207,21 +197,21 @@ async function ensureSearchIndex(
     const haveMapped = existingMappedFieldPaths(match);
     const missingMapped = wantMapped.filter((p) => !haveMapped.has(p));
     if (missingFilters.length > 0 || missingMapped.length > 0) {
-      if (spec.type === 'vectorSearch') {
+      if (spec.type === "vectorSearch") {
         logger.info(
           { index: spec.name, missingFilters },
-          'recreating vectorSearch index (additive schema drift; updateSearchIndex not supported for vectorSearch)',
+          "recreating vectorSearch index (additive schema drift; updateSearchIndex not supported for vectorSearch)",
         );
         await coll.dropSearchIndex(spec.name);
         await coll.createSearchIndex({
           name: spec.name,
-          type: 'vectorSearch',
+          type: "vectorSearch",
           definition: spec.definition,
         });
       } else {
         logger.info(
           { index: spec.name, missingMapped },
-          'updating search index in place (additive schema drift)',
+          "updating search index in place (additive schema drift)",
         );
         await coll.updateSearchIndex(spec.name, spec.definition);
       }
@@ -243,15 +233,15 @@ async function waitForSearchIndexReady(coll: Collection, name: string): Promise<
   while (Date.now() < deadline) {
     const indexes = await listSearchIndexes(coll);
     const idx = indexes.find((i) => i.name === name);
-    if (idx && (idx.status === 'READY' || idx.queryable === true)) return;
+    if (idx && (idx.status === "READY" || idx.queryable === true)) return;
     await new Promise((r) => setTimeout(r, SEARCH_POLL_INTERVAL_MS));
   }
   throw new Error(`search index ${name} did not reach READY within ${SEARCH_POLL_TIMEOUT_MS}ms`);
 }
 
 async function ensureSearchAndVectorIndexes(db: Db): Promise<void> {
-  const facts = db.collection('facts');
-  const entities = db.collection('entities');
+  const facts = db.collection("facts");
+  const entities = db.collection("entities");
 
   // Probe Atlas Search support BEFORE hitting the embedding provider — on
   // vanilla mongo this throws and the outer catch swallows it (when
@@ -269,20 +259,20 @@ async function ensureSearchAndVectorIndexes(db: Db): Promise<void> {
   await ensureSearchIndex(
     facts,
     {
-      name: 'facts_vec',
-      type: 'vectorSearch',
+      name: "facts_vec",
+      type: "vectorSearch",
       definition: {
         fields: [
           {
-            type: 'vector',
-            path: 'embedding',
+            type: "vector",
+            path: "embedding",
             numDimensions: dim,
-            similarity: 'cosine',
+            similarity: "cosine",
           },
-          { type: 'filter', path: 'user_id' },
-          { type: 'filter', path: 'run_id' },
-          { type: 'filter', path: 'agent_id' },
-          { type: 'filter', path: 'category' },
+          { type: "filter", path: "user_id" },
+          { type: "filter", path: "run_id" },
+          { type: "filter", path: "agent_id" },
+          { type: "filter", path: "category" },
         ],
       },
     },
@@ -301,41 +291,41 @@ async function ensureSearchAndVectorIndexes(db: Db): Promise<void> {
   await ensureSearchIndex(
     facts,
     {
-      name: 'facts_text',
+      name: "facts_text",
       definition: {
         mappings: {
           dynamic: false,
           fields: {
             text_lemmatized: {
-              type: 'string',
-              analyzer: 'lucene.whitespace',
+              type: "string",
+              analyzer: "lucene.whitespace",
             },
-            user_id: { type: 'token' },
-            run_id: { type: 'token' },
-            agent_id: { type: 'token' },
-            category: { type: 'token' },
+            user_id: { type: "token" },
+            run_id: { type: "token" },
+            agent_id: { type: "token" },
+            category: { type: "token" },
           },
         },
       },
     },
     existingFacts,
     undefined,
-    { path: 'text_lemmatized', analyzer: 'lucene.whitespace' },
+    { path: "text_lemmatized", analyzer: "lucene.whitespace" },
   );
 
   // entities_vec: cosine vector search over entity embeddings.
   await ensureSearchIndex(
     entities,
     {
-      name: 'entities_vec',
-      type: 'vectorSearch',
+      name: "entities_vec",
+      type: "vectorSearch",
       definition: {
         fields: [
           {
-            type: 'vector',
-            path: 'embedding',
+            type: "vector",
+            path: "embedding",
             numDimensions: dim,
-            similarity: 'cosine',
+            similarity: "cosine",
           },
         ],
       },
@@ -352,12 +342,12 @@ function isSearchUnsupportedError(err: unknown): boolean {
   // only care about btree indexes.
   const e = err as { code?: number; codeName?: string; message?: string };
   if (e?.code === 40324 || e?.code === 115 || e?.code === 59) return true;
-  const msg = e?.message ?? '';
+  const msg = e?.message ?? "";
   return (
-    msg.includes('$listSearchIndexes') ||
-    msg.includes('Atlas') ||
-    msg.includes('SearchNotEnabled') ||
-    msg.includes('search index')
+    msg.includes("$listSearchIndexes") ||
+    msg.includes("Atlas") ||
+    msg.includes("SearchNotEnabled") ||
+    msg.includes("search index")
   );
 }
 
@@ -378,7 +368,7 @@ export async function ensureIndexes(opts: EnsureIndexesOptions = {}): Promise<vo
     if (opts.allowMissingSearch && isSearchUnsupportedError(err)) {
       logger.warn(
         { err: (err as Error).message },
-        'search/vector indexes skipped — server lacks Atlas Search support',
+        "search/vector indexes skipped — server lacks Atlas Search support",
       );
       return;
     }

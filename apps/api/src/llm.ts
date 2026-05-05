@@ -1,24 +1,22 @@
-import 'dotenv/config';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { wrapLanguageModel } from 'ai';
-import type { LanguageModelV3Middleware } from '@ai-sdk/provider';
-import { logger } from './logger.js';
+import "dotenv/config";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { wrapLanguageModel } from "ai";
+import type { LanguageModelV3Middleware } from "@ai-sdk/provider";
+import { logger } from "./logger.js";
 
 // Provider profiles fill in URL + key defaults for common setups. Explicit
 // {LLM,EMBEDDING}_URL / _API_KEY env vars always win as overrides.
 const PROFILES = {
-  lmstudio: { baseURL: 'http://localhost:1234/v1', apiKey: 'lm-studio' },
-  openai: { baseURL: 'https://api.openai.com/v1', apiKey: process.env.OPENAI_API_KEY ?? '' },
+  lmstudio: { baseURL: "http://localhost:1234/v1", apiKey: "lm-studio" },
+  openai: { baseURL: "https://api.openai.com/v1", apiKey: process.env.OPENAI_API_KEY ?? "" },
 } as const;
 
 type ProviderName = keyof typeof PROFILES;
 
-function resolveEndpoint(role: 'LLM' | 'EMBEDDING'): { baseURL: string; apiKey: string } {
-  const providerName = (process.env[`${role}_PROVIDER`] ?? 'lmstudio').toLowerCase();
+function resolveEndpoint(role: "LLM" | "EMBEDDING"): { baseURL: string; apiKey: string } {
+  const providerName = (process.env[`${role}_PROVIDER`] ?? "lmstudio").toLowerCase();
   if (!(providerName in PROFILES)) {
-    throw new Error(
-      `Unknown ${role}_PROVIDER='${providerName}'. Use 'lmstudio' or 'openai'.`,
-    );
+    throw new Error(`Unknown ${role}_PROVIDER='${providerName}'. Use 'lmstudio' or 'openai'.`);
   }
   const profile = PROFILES[providerName as ProviderName];
   return {
@@ -27,19 +25,19 @@ function resolveEndpoint(role: 'LLM' | 'EMBEDDING'): { baseURL: string; apiKey: 
   };
 }
 
-const llm = resolveEndpoint('LLM');
-const emb = resolveEndpoint('EMBEDDING');
-const modelName = process.env.MODEL ?? '';
+const llm = resolveEndpoint("LLM");
+const emb = resolveEndpoint("EMBEDDING");
+const modelName = process.env.MODEL ?? "";
 
 if (!modelName) {
-  logger.warn('MODEL is unset. Set it in .env to whatever your provider exposes.');
+  logger.warn("MODEL is unset. Set it in .env to whatever your provider exposes.");
 }
 
 // `supportsStructuredOutputs: true` makes the provider send
 // `response_format: { type: "json_schema", ... }` instead of the default
 // `json_object`, which LM Studio rejects with "must be 'json_schema' or 'text'".
 const provider = createOpenAICompatible({
-  name: 'llm',
+  name: "llm",
   baseURL: llm.baseURL,
   apiKey: llm.apiKey,
   supportsStructuredOutputs: true,
@@ -52,7 +50,7 @@ const embeddingProvider =
   emb.baseURL === llm.baseURL && emb.apiKey === llm.apiKey
     ? provider
     : createOpenAICompatible({
-        name: 'embeddings',
+        name: "embeddings",
         baseURL: emb.baseURL,
         apiKey: emb.apiKey,
       });
@@ -72,23 +70,21 @@ export const llmEndpoint = llm;
 // Tool-call results are untouched — when the model emits a tool_call
 // alongside reasoning, the tool_call part survives unchanged.
 const reasoningToContentMiddleware: LanguageModelV3Middleware = {
-  specificationVersion: 'v3',
+  specificationVersion: "v3",
   wrapGenerate: async ({ doGenerate }) => {
     const result = await doGenerate();
-    const hasText = result.content.some(
-      (p) => p.type === 'text' && p.text.trim().length > 0,
-    );
+    const hasText = result.content.some((p) => p.type === "text" && p.text.trim().length > 0);
     if (hasText) return result;
     const reasoning = result.content
-      .filter((p): p is { type: 'reasoning'; text: string } => p.type === 'reasoning')
+      .filter((p): p is { type: "reasoning"; text: string } => p.type === "reasoning")
       .map((p) => p.text)
-      .join('');
+      .join("");
     if (reasoning.trim().length === 0) return result;
     return {
       ...result,
       content: [
-        ...result.content.filter((p) => p.type !== 'text' && p.type !== 'reasoning'),
-        { type: 'text', text: reasoning },
+        ...result.content.filter((p) => p.type !== "text" && p.type !== "reasoning"),
+        { type: "text", text: reasoning },
       ],
     };
   },
@@ -100,14 +96,13 @@ export const model = wrapLanguageModel({
 });
 
 export function getEmbeddingModel() {
-  const name =
-    process.env.EMBEDDING_MODEL ?? 'text-embedding-nomic-embed-text-v1.5';
+  const name = process.env.EMBEDDING_MODEL ?? "text-embedding-nomic-embed-text-v1.5";
   return embeddingProvider.textEmbeddingModel(name);
 }
 
 // Embedding helpers live in llm.ts (alongside the model factory) to
 // avoid a circular import between embeddings.ts and entities.ts.
-import { embed, embedMany } from 'ai';
+import { embed, embedMany } from "ai";
 
 export async function embedQuestion(q: string): Promise<number[]> {
   const { embedding } = await embed({
@@ -128,4 +123,3 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
   });
   return embeddings;
 }
-

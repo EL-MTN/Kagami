@@ -1,10 +1,10 @@
-import { randomUUID } from 'node:crypto';
-import type { Collection } from 'mongodb';
-import { getDb } from './mongo.js';
-import { embedTexts } from '../llm.js';
-import { extractEntities } from '../retrieval/text.js';
-import type { Fact } from './facts.js';
-import { logger } from '../logger.js';
+import { randomUUID } from "node:crypto";
+import type { Collection } from "mongodb";
+import { getDb } from "./mongo.js";
+import { embedTexts } from "../llm.js";
+import { extractEntities } from "../retrieval/text.js";
+import type { Fact } from "./facts.js";
+import { logger } from "../logger.js";
 
 // Per-vault entity store. Each row: an entity text + embedding + the
 // set of fact ids that mention it. At query time, query entities are
@@ -17,14 +17,14 @@ interface EntityDoc {
   text: string;
   // Case-insensitive upsert key. Indexed unique by ensureIndexes().
   text_lower: string;
-  entity_type: string;          // 'PROPER' | 'QUOTED'
+  entity_type: string; // 'PROPER' | 'QUOTED'
   embedding: number[];
-  linked_memory_ids: string[];  // sorted, deduped
+  linked_memory_ids: string[]; // sorted, deduped
 }
 
 async function entitiesCol(): Promise<Collection<EntityDoc>> {
   const db = await getDb();
-  return db.collection<EntityDoc>('entities');
+  return db.collection<EntityDoc>("entities");
 }
 
 // For each fact, extract entities and either link the fact_id to an
@@ -78,7 +78,7 @@ export async function upsertEntitiesFromFacts(
     try {
       newEmbeddings = await embedTexts(newKeys.map((k) => pending.get(k)!.display));
     } catch (error) {
-      logger.error({ error }, 'entity embed failed');
+      logger.error({ error }, "entity embed failed");
       return { created: 0, linked: 0 };
     }
   }
@@ -124,10 +124,7 @@ export async function upsertEntitiesFromFacts(
     const memIds = Array.from(p.mems);
     ops.push(
       col
-        .updateOne(
-          { text_lower: key },
-          { $addToSet: { linked_memory_ids: { $each: memIds } } },
-        )
+        .updateOne({ text_lower: key }, { $addToSet: { linked_memory_ids: { $each: memIds } } })
         .then(() => {
           linked += memIds.length;
         }),

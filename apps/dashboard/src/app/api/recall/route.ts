@@ -7,9 +7,6 @@ export async function POST(req: Request) {
     const result = await recall(body);
     return NextResponse.json(result);
   } catch (err) {
-    return NextResponse.json(
-      { error: (err as Error).message },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: (err as Error).message }, { status: 502 });
   }
 }

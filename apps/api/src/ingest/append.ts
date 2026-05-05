@@ -1,15 +1,10 @@
-import { createHash } from 'node:crypto';
-import { cosineSimilarity } from 'ai';
-import { embedQuestion } from '../llm.js';
-import { lemmatizeForBm25 } from '../retrieval/text.js';
-import {
-  appendFacts,
-  newFactId,
-  readFactsInScope,
-  type Fact,
-} from '../storage/facts.js';
-import { upsertEntitiesFromFacts } from '../storage/entities.js';
-import { logger } from '../logger.js';
+import { createHash } from "node:crypto";
+import { cosineSimilarity } from "ai";
+import { embedQuestion } from "../llm.js";
+import { lemmatizeForBm25 } from "../retrieval/text.js";
+import { appendFacts, newFactId, readFactsInScope, type Fact } from "../storage/facts.js";
+import { upsertEntitiesFromFacts } from "../storage/entities.js";
+import { logger } from "../logger.js";
 
 // Single-fact append path. Bypasses the transcript-batch extraction
 // pipeline in consolidate.ts — the caller has already decided this is a
@@ -43,27 +38,25 @@ function withAppendLock<T>(fn: () => Promise<T>): Promise<T> {
 
 export interface AppendFactInput {
   text: string;
-  event_date?: string;     // YYYY-MM-DD; defaults to today
+  event_date?: string; // YYYY-MM-DD; defaults to today
   source_session?: string; // free-form caller-supplied tag
   user_id?: string;
   run_id?: string;
   agent_id?: string;
   metadata?: Record<string, unknown>;
-  category?: string;       // optional; not auto-categorized for raw adds
+  category?: string; // optional; not auto-categorized for raw adds
 }
 
-export type AppendStatus = 'added' | 'duplicate';
+export type AppendStatus = "added" | "duplicate";
 
 export interface AppendFactResult {
   id: string;
   status: AppendStatus;
-  reason?: 'hash' | 'cosine';
+  reason?: "hash" | "cosine";
   similarity?: number;
 }
 
-export function appendSingleFact(
-  input: AppendFactInput,
-): Promise<AppendFactResult> {
+export function appendSingleFact(input: AppendFactInput): Promise<AppendFactResult> {
   return withAppendLock(() => appendSingleFactImpl(input));
 }
 
@@ -75,9 +68,7 @@ export function appendSingleFact(
 // Sequenced under the same append lock as the single-fact path, so the
 // cosine near-dupe check can't race against itself across inputs in the
 // same call. Returns one result per input in order.
-export async function appendFactsBulk(
-  inputs: AppendFactInput[],
-): Promise<AppendFactResult[]> {
+export async function appendFactsBulk(inputs: AppendFactInput[]): Promise<AppendFactResult[]> {
   if (inputs.length === 0) return [];
   return withAppendLock(async () => {
     const results: AppendFactResult[] = [];
@@ -88,19 +79,17 @@ export async function appendFactsBulk(
   });
 }
 
-async function appendSingleFactImpl(
-  input: AppendFactInput,
-): Promise<AppendFactResult> {
+async function appendSingleFactImpl(input: AppendFactInput): Promise<AppendFactResult> {
   const text = input.text.trim();
   if (!text) {
-    throw new Error('text must be non-empty');
+    throw new Error("text must be non-empty");
   }
 
-  const userId = input.user_id ?? 'default';
+  const userId = input.user_id ?? "default";
   const runId = input.run_id;
   const agentId = input.agent_id;
 
-  const hash = createHash('md5').update(text).digest('hex');
+  const hash = createHash("md5").update(text).digest("hex");
   // Scope-bound dedup: an identical fact under (alice, none, none) does
   // not block writing the same text under (bob, none, none).
   const existing = await readFactsInScope({
@@ -110,7 +99,7 @@ async function appendSingleFactImpl(
   });
   const hashHit = existing.find((f) => f.hash === hash);
   if (hashHit) {
-    return { id: hashHit.id, status: 'duplicate', reason: 'hash' };
+    return { id: hashHit.id, status: "duplicate", reason: "hash" };
   }
 
   const embedding = await embedQuestion(text);
@@ -127,8 +116,8 @@ async function appendSingleFactImpl(
   if (bestId && bestSim >= NEAR_DUPE_COSINE) {
     return {
       id: bestId,
-      status: 'duplicate',
-      reason: 'cosine',
+      status: "duplicate",
+      reason: "cosine",
       similarity: bestSim,
     };
   }
@@ -143,7 +132,7 @@ async function appendSingleFactImpl(
     ...(agentId !== undefined ? { agent_id: agentId } : {}),
     created_at: new Date().toISOString(),
     event_date: input.event_date ?? today,
-    source_session: input.source_session ?? '',
+    source_session: input.source_session ?? "",
     hash,
     embedding,
     ...(input.metadata ? { metadata: input.metadata } : {}),
@@ -156,9 +145,9 @@ async function appendSingleFactImpl(
   } catch (err) {
     logger.warn(
       { err: (err as Error).message, factId: fact.id },
-      'entity upsert failed for single-fact append',
+      "entity upsert failed for single-fact append",
     );
   }
 
-  return { id: fact.id, status: 'added' };
+  return { id: fact.id, status: "added" };
 }

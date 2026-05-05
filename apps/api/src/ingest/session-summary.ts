@@ -1,8 +1,8 @@
-import { z } from 'zod';
-import { generateObject } from 'ai';
-import { model } from '../llm.js';
-import { getDb } from '../storage/mongo.js';
-import { logger } from '../logger.js';
+import { z } from "zod";
+import { generateObject } from "ai";
+import { model } from "../llm.js";
+import { getDb } from "../storage/mongo.js";
+import { logger } from "../logger.js";
 
 // Per-session narrative summary, fed into the extraction prompt's
 // `## Summary` slot. mem0 OSS uses a rolling summary that captures the
@@ -16,12 +16,12 @@ import { logger } from '../logger.js';
 // keyed by source_session so re-ingest is free.
 
 interface SessionSummaryDoc {
-  _id: string;             // source_session, e.g. "raw/answer_4be1b6b4_1"
+  _id: string; // source_session, e.g. "raw/answer_4be1b6b4_1"
   user_id?: string;
   run_id?: string;
   agent_id?: string;
   summary: string;
-  turn_count: number;      // number of turns the summary was computed over
+  turn_count: number; // number of turns the summary was computed over
   created_at: string;
 }
 
@@ -29,7 +29,7 @@ const NarrativeSummarySchema = z.object({
   summary: z
     .string()
     .describe(
-      'A 4-8 sentence narrative summary of the conversation. Lead with established personal context (names, relationships, locations) and then the substantive topics covered. Past tense. No greeting, no meta-commentary.',
+      "A 4-8 sentence narrative summary of the conversation. Lead with established personal context (names, relationships, locations) and then the substantive topics covered. Past tense. No greeting, no meta-commentary.",
     ),
 });
 
@@ -45,15 +45,13 @@ export interface SessionSummaryScope {
 
 async function summariesCol() {
   const db = await getDb();
-  return db.collection<SessionSummaryDoc>('session_summaries');
+  return db.collection<SessionSummaryDoc>("session_summaries");
 }
 
-function buildSummaryUserPrompt(
-  turns: Array<{ role: string; text: string }>,
-): string {
+function buildSummaryUserPrompt(turns: Array<{ role: string; text: string }>): string {
   const body = turns
     .map((t) => `${t.role}: ${t.text}`)
-    .join('\n')
+    .join("\n")
     .slice(0, TURN_BUDGET_CHARS);
   return `Transcript:\n${body}\n\nReturn the summary field.`;
 }
@@ -61,7 +59,7 @@ function buildSummaryUserPrompt(
 async function generateNarrativeSummary(
   turns: Array<{ role: string; text: string }>,
 ): Promise<string> {
-  if (turns.length === 0) return '';
+  if (turns.length === 0) return "";
   try {
     const { object } = await generateObject({
       model,
@@ -75,9 +73,9 @@ async function generateNarrativeSummary(
   } catch (err) {
     logger.warn(
       { err: (err as Error).message },
-      'session narrative summary failed — extraction will proceed without one',
+      "session narrative summary failed — extraction will proceed without one",
     );
-    return '';
+    return "";
   }
 }
 
@@ -98,7 +96,7 @@ export async function getOrComputeSessionSummary(opts: {
   }
 
   const summary = await generateNarrativeSummary(opts.turns);
-  if (!summary) return '';
+  if (!summary) return "";
 
   const doc: SessionSummaryDoc = {
     _id: opts.sourceSession,
@@ -111,10 +109,6 @@ export async function getOrComputeSessionSummary(opts: {
   };
   // upsert so a concurrent ingester that wrote first wins; we don't
   // need our value to land if someone beat us to it.
-  await col.updateOne(
-    { _id: opts.sourceSession },
-    { $setOnInsert: doc },
-    { upsert: true },
-  );
+  await col.updateOne({ _id: opts.sourceSession }, { $setOnInsert: doc }, { upsert: true });
   return summary;
 }

@@ -15,6 +15,7 @@ IMPORTANT: For comparison/savings questions, BOTH costs must come from USER-stat
 IMPORTANT: If the query uses a specific but WRONG role/title/entity (e.g., asks about experience as a "Sales Manager" but memories say "Senior Sales Engineer"), do NOT answer as if they match — instead say you don't have the information! Always lean towards abstention in these cases! Do not mix up different role titles, they are not the same roles and you should say you don't have information.
 
 Before answering, reason step-by-step inside <mem_thinking> tags:
+
 - List every relevant memory; try to list all memories relevant to what the user wants to do! Eg. List memory of Payment management apps if query is about paying someone; list memory of travel management apps if query is about going somewhere.
 
 - For counting: enumerate each item with date. Apply the question's EXACT verb/qualifier strictly (e.g., "LED" = leader only, "BAKED" = completed baking only, "RAISED" = total from events user participated in (include team/event totals), "COMPLETED writing" = each distinct finished piece). Count multiple items in a single memory separately. Do a SECOND full scan of all memories after initial count — items at positions 30-200 are commonly missed. Verify each item is a completed action (past tense), not a plan ("plans to", "intends to").
@@ -43,9 +44,9 @@ Similarly, when memories give two numbers for the same metric (e.g., "has 1,250 
 4. **Temporal reference points**: "How many days ago did X when Y happened" — compute interval between X and Y, NOT between X and today.
 
 5. **Counting and ordering**: Scan ALL memories first to last. Build a numbered list in <mem_thinking> with date and position. Deduplicate by matching dates/descriptions. Count items in a single memory separately.
-Any addition to a list on the same day as a stated count is already included in the count
+   Any addition to a list on the same day as a stated count is already included in the count
 
-When asked to count all instances of an event *before* a specific one, obviously don't include the specific one in the count. Eg. "how many restaurants did i visit before eating at Pizza Hut?". Obviously don't include Pizza Hut in the count
+When asked to count all instances of an event _before_ a specific one, obviously don't include the specific one in the count. Eg. "how many restaurants did i visit before eating at Pizza Hut?". Obviously don't include Pizza Hut in the count
 
 6. **Use only the memories**: Don't invent numbers, prices, or addresses.
 
@@ -55,11 +56,10 @@ When asked to count all instances of an event *before* a specific one, obviously
 - The question asks about a specific event that doesn't exist, even if a related topic does
 
 - IMPORTANT: If the query uses a specific but WRONG role/title/entity (e.g., asks about experience as a "Sales Manager" but memories say "Senior Sales Engineer"), do NOT answer as if they match — instead say you don't have the information! Always lean towards abstention in these cases! Do not mix up different role titles, they are not the same roles and you should say you don't have information.
-
-   - For comparison/ordering, BOTH items must be present as completed events
-   If query asks to compare timings of two tasks and one of them did not even happen, abstain.
-   Before abstaining, do a keyword scan of ALL memories (they're chronological, not relevance-sorted — check positions 1-200). Only abstain if NO keywords match.
-   EXCEPTIONS: For suggestion questions, don't abstain for lack of real-time info — recommend based on known preferences. If you lack exact brand but have the store, output the store.
+  - For comparison/ordering, BOTH items must be present as completed events
+    If query asks to compare timings of two tasks and one of them did not even happen, abstain.
+    Before abstaining, do a keyword scan of ALL memories (they're chronological, not relevance-sorted — check positions 1-200). Only abstain if NO keywords match.
+    EXCEPTIONS: For suggestion questions, don't abstain for lack of real-time info — recommend based on known preferences. If you lack exact brand but have the store, output the store.
 
 8. **Yes/no and comparison**: "Did I ever do X?" with no matching memory = "No." For comparisons, find both values across all memories and compare directly.
 
@@ -72,38 +72,42 @@ When a query asks: "when I decided to do X", it means they are asking when X was
 11. **Connect memories across topics**: Facts needed for computation are often in unrelated conversations (age in travel advice + relative's age in birthday discussion; cashback rate in membership talk + purchase amount in expense tracking). Search ALL memories for each fact independently.
 
 12. **Personalization**: For suggestions/recommendations:
-   - Prioritize personal preferences over informational content
-   - Apply known preferences to new contexts — don't abstain for unfamiliar destinations
-   - Acknowledge prior work before suggesting next steps
-   - Respect anti-preferences — check every suggestion against known dislikes
-   - Reference existing tools owned, not to acquire
-   - Lead with personalization, don't pad with generic alternatives
-   - Suggest similar things to the user as their habits. Eg. Logging basketball scores in a app they do usually. Eg. Adding travel logs to a travel logging app they use usually.
-   - IMPORTANT: Scan ALL top memories for user-owned tools, apps, and resources relevant to the question. If the user has a travel card (Suica), a trip organizer app (TripIt), a budgeting tool, etc., mention ALL of them — not just the most obvious one. Do a SECOND pass of the top 30 memories specifically looking for apps, tools, and resources the user has mentioned owning or using.
+
+- Prioritize personal preferences over informational content
+- Apply known preferences to new contexts — don't abstain for unfamiliar destinations
+- Acknowledge prior work before suggesting next steps
+- Respect anti-preferences — check every suggestion against known dislikes
+- Reference existing tools owned, not to acquire
+- Lead with personalization, don't pad with generic alternatives
+- Suggest similar things to the user as their habits. Eg. Logging basketball scores in a app they do usually. Eg. Adding travel logs to a travel logging app they use usually.
+- IMPORTANT: Scan ALL top memories for user-owned tools, apps, and resources relevant to the question. If the user has a travel card (Suica), a trip organizer app (TripIt), a budgeting tool, etc., mention ALL of them — not just the most obvious one. Do a SECOND pass of the top 30 memories specifically looking for apps, tools, and resources the user has mentioned owning or using.
 
 13. **Reasonable deduction**:
+
 - Infer from patterns
-IMPORTANT: Assume that similar items referenced in the same sentence have the same type.
-Eg. "User ate lunch, which was the third meal with this chicken fajitas". This means the other meals with these chicken fajitas were lunch meals too, should be treated as explicit lunches.
+  IMPORTANT: Assume that similar items referenced in the same sentence have the same type.
+  Eg. "User ate lunch, which was the third meal with this chicken fajitas". This means the other meals with these chicken fajitas were lunch meals too, should be treated as explicit lunches.
 
 14. IMPORTANT: If two pieces of memory directly contradict each other (not just an update, a direct contradiction), then assume that the memory that was created later is true. Doesn't matter if a different one "appears" more reliable. If on the same day, trust the one at a later time.
 
 - Chronological actions:
-If the user is watching the 11th episode of a series is watching it normally, assume they have completed the earlier 10 too.
+  If the user is watching the 11th episode of a series is watching it normally, assume they have completed the earlier 10 too.
 
 - If you lack a name but have a description, answer with the description.
 
 **Memory grouping rules**: Memories under the same date heading are from the same conversation.
+
 - A count + "added X items" on the SAME date = count already includes them
 - "Aims to beat X" = X is the current value
 - "Previous" = the value superseded by a more recent one
 - Events described as just completed ("attended", "went to", "just got back from", "completed") = happened on/near that date. Undated actions = assume the event happened on the memory's date.
 
 # Misc Rules
+
 - Count class projects too when asked about users' projects. Class projects = projects.
 - Most old (Eg. ancestral, vintage, heritage) items count as antiques too!
 - If you don't have chords for a song (but have notes), output the notes. Song notes count as chord progressions.
-- Starting a *diorama project* (eg. diorama work, working on terrain) EXPLICITLY COUNTS AS working on that model kit; these are equivalent! Always count such items.
+- Starting a _diorama project_ (eg. diorama work, working on terrain) EXPLICITLY COUNTS AS working on that model kit; these are equivalent! Always count such items.
 - Running into someone at a coffee shop and exchanging numbers DOES NOT count as meeting them; lunch meetings do count.
 - Potlucks/feasts/birthday parties count as dinner parties (BBQ doesn't).
 - chandelier counts as jewelry

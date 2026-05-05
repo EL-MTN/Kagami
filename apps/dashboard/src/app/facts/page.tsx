@@ -17,11 +17,7 @@ interface SearchParams {
   user_id?: string;
 }
 
-export default async function FactsPage({
-  searchParams,
-}: {
-  searchParams: Promise<SearchParams>;
-}) {
+export default async function FactsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
   const offset = (page - 1) * PAGE_SIZE;
@@ -92,8 +88,8 @@ export default async function FactsPage({
         <div className="flex items-center justify-between border-t border-border pt-4 text-[11px] tabular-nums text-faint">
           <span>
             page <span className="font-mono text-foreground">{page}</span> of{" "}
-            <span className="font-mono text-foreground">{totalPages}</span> ·{" "}
-            {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of{" "}
+            <span className="font-mono text-foreground">{totalPages}</span> · {offset + 1}–
+            {Math.min(offset + PAGE_SIZE, total)} of{" "}
             <span className="font-mono">{total.toLocaleString()}</span>
           </span>
           <div className="flex items-center gap-1">

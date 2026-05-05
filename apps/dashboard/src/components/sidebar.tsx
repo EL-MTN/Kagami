@@ -18,9 +18,7 @@ export async function Sidebar() {
       <div className="flex h-16 items-center gap-3 px-6">
         <span className="font-display text-3xl leading-none text-foreground select-none">憶</span>
         <div>
-          <h1 className="font-display text-xl leading-none tracking-wide text-foreground">
-            Kioku
-          </h1>
+          <h1 className="font-display text-xl leading-none tracking-wide text-foreground">Kioku</h1>
           <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-faint">Memory</p>
         </div>
       </div>
@@ -29,18 +27,11 @@ export async function Sidebar() {
 
       <nav className="flex flex-1 flex-col gap-0.5 p-4">
         {links.map((link) => (
-          <NavLink
-            key={link.href}
-            href={link.href}
-            label={link.label}
-            iconName={link.iconName}
-          />
+          <NavLink key={link.href} href={link.href} label={link.label} iconName={link.iconName} />
         ))}
       </nav>
 
-      <div className="px-6 pb-5 text-[11px] tabular-nums text-faint">
-        kioku v{version.version}
-      </div>
+      <div className="px-6 pb-5 text-[11px] tabular-nums text-faint">kioku v{version.version}</div>
     </aside>
   );
 }
