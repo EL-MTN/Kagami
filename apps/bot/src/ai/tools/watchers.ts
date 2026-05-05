@@ -283,7 +283,7 @@ export function createManageWatchersTool(chatId: string) {
             reason: `A watcher named "${name ?? "(unknown)"}" already exists`,
           };
         }
-        logger.error({ error, action }, "Tool: manageWatchers failed");
+        logger.error({ err: error, action }, "Tool: manageWatchers failed");
         return {
           success: false,
           reason: error instanceof Error ? error.message : "Watcher operation failed",

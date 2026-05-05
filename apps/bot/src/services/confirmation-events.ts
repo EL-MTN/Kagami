@@ -50,6 +50,6 @@ export async function appendConfirmationResolution(
       timestamp: new Date(),
     });
   } catch (error) {
-    logger.warn({ error, chatId }, "Failed to append confirmation resolution event");
+    logger.warn({ err: error, chatId }, "Failed to append confirmation resolution event");
   }
 }

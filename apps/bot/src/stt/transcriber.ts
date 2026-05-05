@@ -70,7 +70,7 @@ export async function transcribeAudio(req: SttRequest): Promise<SttOutcome> {
         throw new Error(`Unsupported STT provider "${provider}"`);
     }
   } catch (error) {
-    logger.error({ error, provider: config.STT_PROVIDER }, "STT transcription failed");
+    logger.error({ err: error, provider: config.STT_PROVIDER }, "STT transcription failed");
     return { ok: false, reason: "failed" };
   }
 }

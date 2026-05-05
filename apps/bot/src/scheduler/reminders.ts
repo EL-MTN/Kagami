@@ -28,11 +28,11 @@ async function firePendingReminders(registry: AdapterRegistry): Promise<void> {
         await markReminderFired(reminder._id.toString());
         logger.info({ reminderId: reminder._id, chatId: reminder.chatId }, "Reminder fired");
       } catch (error) {
-        logger.error({ error, reminderId: reminder._id }, "Failed to fire reminder");
+        logger.error({ err: error, reminderId: reminder._id }, "Failed to fire reminder");
       }
     }
   } catch (error) {
-    logger.error({ error }, "Failed to poll pending reminders");
+    logger.error({ err: error }, "Failed to poll pending reminders");
   }
 }
 

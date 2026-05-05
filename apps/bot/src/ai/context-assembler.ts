@@ -75,7 +75,7 @@ async function assembleRoutineContext(chatId: string): Promise<string | null> {
     const names = enabled.map((s) => s.name).join(", ");
     return `## Available Routines\n${names}\nUse searchRoutines to look up details or discover routines by keyword.`;
   } catch (error) {
-    logger.warn({ error }, "Failed to load routine context");
+    logger.warn({ err: error }, "Failed to load routine context");
     return null;
   }
 }
@@ -97,7 +97,7 @@ async function assemblePendingConfirmationsContext(chatId: string): Promise<stri
       "\nThese are tap-to-approve requests already sent to Goshujin-sama. Don't re-prompt for the same action; wait for him, or call cancelConfirmation with the id if he wants to abort."
     );
   } catch (error) {
-    logger.warn({ error }, "Failed to load pending confirmations for context");
+    logger.warn({ err: error }, "Failed to load pending confirmations for context");
     return null;
   }
 }
@@ -121,7 +121,7 @@ async function assembleLocationContext(chatId: string): Promise<string | null> {
 
     return `## Location\nLast known: ${name}${category}, ${ago}${live}`;
   } catch (error) {
-    logger.warn({ error }, "Failed to load location context");
+    logger.warn({ err: error }, "Failed to load location context");
     return null;
   }
 }
@@ -165,7 +165,7 @@ async function assembleReminderContext(chatId: string): Promise<string | null> {
 
     return "## Active Reminders\n" + lines.join("\n");
   } catch (error) {
-    logger.warn({ error }, "Failed to load reminder context");
+    logger.warn({ err: error }, "Failed to load reminder context");
     return null;
   }
 }
