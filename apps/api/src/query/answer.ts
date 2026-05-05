@@ -65,7 +65,7 @@ export function formatFactsGroupedByDateNewestFirst(
 export function stripMemThinking(text: string): string {
   return text
     .replace(/<mem_thinking>[\s\S]*?<\/mem_thinking>/gi, '')
-    .replace(/^[\s:.\-]+/, '')
+    .replace(/^[\s:.-]+/, '')
     .trim();
 }
 

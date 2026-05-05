@@ -98,7 +98,7 @@ export async function appendFacts(facts: Fact[], actor?: string): Promise<void> 
   // emit ADD events for hash-deduped rows. Both the success path and
   // the partial-failure (dupes) path expose `insertedIds` keyed by
   // input index — only those indices are present after the call.
-  let insertedIndices: Set<number> = new Set();
+  let insertedIndices: Set<number>;
   try {
     const result = await col.insertMany(facts.map(toDoc), { ordered: false });
     insertedIndices = new Set(Object.keys(result.insertedIds).map(Number));

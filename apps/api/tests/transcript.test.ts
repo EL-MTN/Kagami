@@ -7,13 +7,13 @@ import { readTranscript } from '../src/ingest/transcript.ts';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixture = path.join(__dirname, 'fixtures/transcript-1.md');
 
-test('parses frontmatter', async () => {
+void test('parses frontmatter', async () => {
   const t = await readTranscript(fixture);
   assert.equal(t.frontmatter.id, '2026-04-27-1430');
   assert.equal(t.frontmatter.started_at, '2026-04-27T14:30:00.000Z');
 });
 
-test('parses every turn', async () => {
+void test('parses every turn', async () => {
   const t = await readTranscript(fixture);
   assert.equal(t.turns.length, 5);
   assert.equal(t.turns[0]!.id, 't-0001');
@@ -23,7 +23,7 @@ test('parses every turn', async () => {
   assert.match(t.turns[4]!.text, /skew shorter/);
 });
 
-test('turn text excludes the heading line', async () => {
+void test('turn text excludes the heading line', async () => {
   const t = await readTranscript(fixture);
   for (const turn of t.turns) {
     assert.doesNotMatch(turn.text, /^##\s+t-/m);

@@ -16,7 +16,7 @@ const fact = (overrides: Partial<RankedFact>): RankedFact => ({
   ...overrides,
 });
 
-test('formatFactsGroupedByDateNewestFirst groups by date, newest first', () => {
+void test('formatFactsGroupedByDateNewestFirst groups by date, newest first', () => {
   const facts: RankedFact[] = [
     fact({ id: 'a', text: 'first', eventDate: '2024-03-01' }),
     fact({ id: 'b', text: 'middle', eventDate: '2024-02-01' }),
@@ -29,7 +29,7 @@ test('formatFactsGroupedByDateNewestFirst groups by date, newest first', () => {
   );
 });
 
-test('formatFactsGroupedByDateNewestFirst falls back to createdAt date when eventDate empty', () => {
+void test('formatFactsGroupedByDateNewestFirst falls back to createdAt date when eventDate empty', () => {
   const facts: RankedFact[] = [
     fact({ id: 'a', text: 't1', eventDate: '', createdAt: '2024-05-04T10:00:00Z' }),
   ];
@@ -39,25 +39,25 @@ test('formatFactsGroupedByDateNewestFirst falls back to createdAt date when even
   );
 });
 
-test('formatFactsGroupedByDateNewestFirst on empty input returns empty string', () => {
+void test('formatFactsGroupedByDateNewestFirst on empty input returns empty string', () => {
   assert.equal(formatFactsGroupedByDateNewestFirst([]), '');
 });
 
-test('stripMemThinking removes the thinking block and leading punctuation', () => {
+void test('stripMemThinking removes the thinking block and leading punctuation', () => {
   const raw = '<mem_thinking>scratch work...</mem_thinking>\n: The answer is 42';
   assert.equal(stripMemThinking(raw), 'The answer is 42');
 });
 
-test('stripMemThinking is a no-op when no thinking block', () => {
+void test('stripMemThinking is a no-op when no thinking block', () => {
   assert.equal(stripMemThinking('plain answer'), 'plain answer');
 });
 
-test('stripMemThinking handles multiple thinking blocks', () => {
+void test('stripMemThinking handles multiple thinking blocks', () => {
   const raw = '<mem_thinking>a</mem_thinking>middle<mem_thinking>b</mem_thinking>tail';
   assert.equal(stripMemThinking(raw), 'middletail');
 });
 
-test('deriveQuestionDate returns max eventDate from facts', () => {
+void test('deriveQuestionDate returns max eventDate from facts', () => {
   const facts: RankedFact[] = [
     fact({ eventDate: '2023-01-15' }),
     fact({ eventDate: '2024-06-20' }),
@@ -66,12 +66,12 @@ test('deriveQuestionDate returns max eventDate from facts', () => {
   assert.equal(deriveQuestionDate(facts), '2024-06-20');
 });
 
-test('deriveQuestionDate falls back to wall clock on empty facts', () => {
+void test('deriveQuestionDate falls back to wall clock on empty facts', () => {
   const today = new Date().toISOString().slice(0, 10);
   assert.equal(deriveQuestionDate([]), today);
 });
 
-test('deriveQuestionDate uses createdAt when eventDate is empty', () => {
+void test('deriveQuestionDate uses createdAt when eventDate is empty', () => {
   const facts: RankedFact[] = [
     fact({ eventDate: '', createdAt: '2025-04-01T00:00:00Z' }),
   ];

@@ -41,12 +41,12 @@ function makeFact(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test('readFacts returns empty array when collection is empty', async () => {
+void test('readFacts returns empty array when collection is empty', async () => {
   const { readFacts } = await import('../src/storage/facts.ts');
   assert.deepEqual(await readFacts(), []);
 });
 
-test('appendFacts then readFacts roundtrips', async () => {
+void test('appendFacts then readFacts roundtrips', async () => {
   const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
   const a = makeFact({
     id: newFactId(),
@@ -75,7 +75,7 @@ test('appendFacts then readFacts roundtrips', async () => {
   assert.deepEqual(facts[0]!.embedding, [1, 0, 0]);
 });
 
-test('appendFacts skips duplicates by hash unique index', async () => {
+void test('appendFacts skips duplicates by hash unique index', async () => {
   const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
   const a = makeFact({ id: newFactId(), hash: 'shared', source_session: 'raw/s1' });
   const dup = makeFact({ id: newFactId(), hash: 'shared', source_session: 'raw/s2' });
@@ -85,7 +85,7 @@ test('appendFacts skips duplicates by hash unique index', async () => {
   assert.equal(facts.length, 1);
 });
 
-test('appendFacts inserts non-dupes alongside dupes in the same batch', async () => {
+void test('appendFacts inserts non-dupes alongside dupes in the same batch', async () => {
   const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
   await appendFacts([makeFact({ id: newFactId(), hash: 'h1' })]);
   const dup = makeFact({ id: newFactId(), hash: 'h1' });
@@ -96,7 +96,7 @@ test('appendFacts inserts non-dupes alongside dupes in the same batch', async ()
   assert.ok(facts.some((f) => f.hash === 'h2'));
 });
 
-test('parallel appendFacts converge on the deduped union (no mutex)', async () => {
+void test('parallel appendFacts converge on the deduped union (no mutex)', async () => {
   // Surrogate for the plan's "10 parallel consolidate() calls" stress
   // test. Real consolidate() goes through the LLM and is excluded from
   // the unit-test loop; the dedup contract that consolidate relies on
@@ -117,7 +117,7 @@ test('parallel appendFacts converge on the deduped union (no mutex)', async () =
   );
 });
 
-test('hash unique index is scoped — same hash under different user_id coexists', async () => {
+void test('hash unique index is scoped — same hash under different user_id coexists', async () => {
   const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
   const a = makeFact({
     id: newFactId(),
@@ -141,7 +141,7 @@ test('hash unique index is scoped — same hash under different user_id coexists
   );
 });
 
-test('hash unique index still blocks dupes within the same scope', async () => {
+void test('hash unique index still blocks dupes within the same scope', async () => {
   const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
   const a = makeFact({ id: newFactId(), hash: 'h', user_id: 'alice' });
   const dup = makeFact({ id: newFactId(), hash: 'h', user_id: 'alice' });
@@ -151,7 +151,7 @@ test('hash unique index still blocks dupes within the same scope', async () => {
   assert.equal(facts.length, 1);
 });
 
-test('hash unique scope distinguishes run_id and agent_id too', async () => {
+void test('hash unique scope distinguishes run_id and agent_id too', async () => {
   const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
   const baseScope = { user_id: 'alice', hash: 'h' };
   await appendFacts([makeFact({ id: newFactId(), ...baseScope })]);
@@ -163,7 +163,7 @@ test('hash unique scope distinguishes run_id and agent_id too', async () => {
   assert.equal(facts.length, 3);
 });
 
-test('readFactsInScope filters to the supplied scope', async () => {
+void test('readFactsInScope filters to the supplied scope', async () => {
   const { appendFacts, readFactsInScope, newFactId } = await import(
     '../src/storage/facts.ts'
   );
@@ -179,7 +179,7 @@ test('readFactsInScope filters to the supplied scope', async () => {
   assert.equal(aliceR1[0]!.run_id, 'r1');
 });
 
-test('normalizeCategory accepts the known list, falls back to misc otherwise', async () => {
+void test('normalizeCategory accepts the known list, falls back to misc otherwise', async () => {
   const { normalizeCategory, KIOKU_CATEGORIES } = await import(
     '../src/ingest/consolidate.ts'
   );
@@ -193,7 +193,7 @@ test('normalizeCategory accepts the known list, falls back to misc otherwise', a
   assert.equal(normalizeCategory(''), 'misc');
 });
 
-test('appendFacts persists category', async () => {
+void test('appendFacts persists category', async () => {
   const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
   const f = makeFact({
     id: newFactId(),
@@ -207,7 +207,7 @@ test('appendFacts persists category', async () => {
   assert.equal(facts[0]!.category, 'music');
 });
 
-test('appendFacts persists run_id, agent_id, and metadata', async () => {
+void test('appendFacts persists run_id, agent_id, and metadata', async () => {
   const { appendFacts, readFacts, newFactId } = await import('../src/storage/facts.ts');
   const f = makeFact({
     id: newFactId(),
@@ -225,13 +225,13 @@ test('appendFacts persists run_id, agent_id, and metadata', async () => {
   assert.deepEqual(facts[0]!.metadata, { category: 'food', confidence: 0.9 });
 });
 
-test('appendFactsBulk on empty input returns empty array without LLM contact', async () => {
+void test('appendFactsBulk on empty input returns empty array without LLM contact', async () => {
   const { appendFactsBulk } = await import('../src/ingest/append.ts');
   const out = await appendFactsBulk([]);
   assert.deepEqual(out, []);
 });
 
-test('newFactId returns unique uuid-shaped strings', async () => {
+void test('newFactId returns unique uuid-shaped strings', async () => {
   const { newFactId } = await import('../src/storage/facts.ts');
   const ids = new Set([newFactId(), newFactId(), newFactId()]);
   assert.equal(ids.size, 3);
@@ -240,7 +240,7 @@ test('newFactId returns unique uuid-shaped strings', async () => {
   }
 });
 
-test('buildExtractionUserPrompt assembles all required sections in order', async () => {
+void test('buildExtractionUserPrompt assembles all required sections in order', async () => {
   const { buildExtractionUserPrompt } = await import('../src/ingest/consolidate.ts');
   const prompt = buildExtractionUserPrompt({
     newMessages: [{ role: 'user', content: 'hi' }],
@@ -261,7 +261,7 @@ test('buildExtractionUserPrompt assembles all required sections in order', async
   assert.ok(prompt.endsWith('# Output:'));
 });
 
-test('buildExtractionUserPrompt threads summary into the Summary section', async () => {
+void test('buildExtractionUserPrompt threads summary into the Summary section', async () => {
   const { buildExtractionUserPrompt } = await import('../src/ingest/consolidate.ts');
   const summary =
     'User is Marcus, a senior engineer at Shopify. The conversation covered career milestones and family.';
