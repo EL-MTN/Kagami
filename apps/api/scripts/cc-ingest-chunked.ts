@@ -7,8 +7,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { paths } from '../src/paths.ts';
 import { consolidate } from '../src/ingest/consolidate.ts';
+import { parseTranscript } from '../src/ingest/transcript.ts';
+import { upsertTranscript } from '../src/storage/transcripts.ts';
 
 interface Args {
   in: string;
@@ -105,8 +106,6 @@ const sessionId = path
   .replace(/[^a-zA-Z0-9-]/g, '-')
   .slice(0, 32);
 
-await fs.promises.mkdir(paths.raw, { recursive: true });
-
 const totals = { added: 0, batches: 0 };
 const chunkCount = Math.ceil(all.length / args.chunkSize);
 
@@ -114,15 +113,12 @@ for (let i = 0; i < all.length; i += args.chunkSize) {
   const chunkIdx = Math.floor(i / args.chunkSize) + 1;
   const chunk = all.slice(i, i + args.chunkSize);
   const id = `${sessionId}-c${String(chunkIdx).padStart(2, '0')}`;
-  const file = path.join(paths.raw, `${id}.md`);
   const startedAt = chunk[0]?.timestamp || new Date().toISOString();
-  await fs.promises.writeFile(
-    file,
-    render(chunk, id, startedAt, args.charCap),
-  );
+  const transcript = parseTranscript(render(chunk, id, startedAt, args.charCap));
+  await upsertTranscript({ transcript });
   console.log(`[${chunkIdx}/${chunkCount}] consolidating ${chunk.length} turns...`);
   const t0 = Date.now();
-  const r = await consolidate(file);
+  const r = await consolidate(transcript);
   const ms = ((Date.now() - t0) / 1000).toFixed(1);
   console.log(`  ${ms}s, ${JSON.stringify(r)}`);
   totals.added += r.added;

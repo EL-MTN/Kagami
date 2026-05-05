@@ -6,13 +6,12 @@
 //   --result  path where the JSON result line will be written
 //
 // Inputs (env):
-//   KIOKU_VAULT  must be set to a fresh, empty directory
+//   KIOKU_MONGO_DB  per-item Mongo database (orchestrator sets this)
 //   MODEL           local LM Studio model id
 //
 // Output: writes a JSON file at --result with the prediction + timings.
 
 import fs from 'node:fs/promises';
-import path from 'node:path';
 
 interface LMESession {
   role: 'user' | 'assistant';
@@ -56,28 +55,24 @@ function parseArgs(): { itemPath: string; resultPath: string } {
 
 async function main() {
   const { itemPath, resultPath } = parseArgs();
-  const vault = process.env.KIOKU_VAULT;
-  if (!vault) throw new Error('KIOKU_VAULT must be set');
   if (!process.env.KIOKU_MONGO_DB) {
     throw new Error('KIOKU_MONGO_DB must be set (orchestrator sets it per item)');
   }
 
   const item: LMEItem = JSON.parse(await fs.readFile(itemPath, 'utf8'));
 
-  // Lazy-import after env is set so paths.ts picks up KIOKU_VAULT and
-  // mongo.ts picks up KIOKU_MONGO_DB.
+  // Lazy-import after env is set so mongo.ts picks up KIOKU_MONGO_DB.
   const { ensureIndexes } = await import('../src/storage/indexes.js');
   const { getDb, closeMongo } = await import('../src/storage/mongo.js');
   const { consolidate } = await import('../src/ingest/consolidate.js');
+  const { parseTranscript } = await import('../src/ingest/transcript.js');
+  const { upsertTranscript } = await import('../src/storage/transcripts.js');
   const { query } = await import('../src/query/answer.js');
 
   // Per-item DB starts empty — build the indexes the storage + retrieval
   // layers depend on before any read/write. Idempotent for --keep-vaults
   // reruns (existing indexes are no-ops).
   await ensureIndexes();
-
-  const rawDir = path.join(vault, 'raw');
-  await fs.mkdir(rawDir, { recursive: true });
 
   const sessions = item.haystack_sessions;
   const sessionIds = item.haystack_session_ids;
@@ -97,14 +92,13 @@ async function main() {
   if (!skipIngest) {
     for (let i = 0; i < sessions.length; i++) {
       const sid = sessionIds[i]!;
-      const transcript = formatTranscript(sid, dates[i]!, sessions[i]!);
-      const transcriptPath = path.join(rawDir, `${sid}.md`);
-      await fs.writeFile(transcriptPath, transcript);
+      const transcript = parseTranscript(formatTranscript(sid, dates[i]!, sessions[i]!));
+      await upsertTranscript({ transcript });
       process.stderr.write(`[worker ${item.question_id}] ingesting ${sid} (${sessions[i]!.length} turns)\n`);
-      await consolidate(transcriptPath);
+      await consolidate(transcript);
     }
   } else {
-    process.stderr.write(`[worker ${item.question_id}] ingest skipped (facts.jsonl exists)\n`);
+    process.stderr.write(`[worker ${item.question_id}] ingest skipped (facts already populated)\n`);
   }
   const ingestionMs = Date.now() - ingestStart;
 
