@@ -23,11 +23,11 @@ packages/memory/src/
 
 ## Configuration
 
-| Env var     | Default                 | Purpose                                                |
-| ----------- | ----------------------- | ------------------------------------------------------ |
-| `KIOKU_URL` | `http://localhost:7777` | Kioku service base URL. Validated as a URL at startup. |
+| Env var     | Default                       | Purpose                                                |
+| ----------- | ----------------------------- | ------------------------------------------------------ |
+| `KIOKU_URL` | `https://api.kioku.localhost` | Kioku service base URL. Validated as a URL at startup. |
 
-Run Kioku locally per its README. Under [Portless](https://github.com/vercel-labs/portless) you can point `KIOKU_URL` at a stable HTTPS host like `https://kioku.localhost`.
+Run Kioku locally per its README. The default targets the [Portless](https://github.com/vercel-labs/portless) API host (`api.kioku` in `Kioku/portless.json`). For a standalone Kioku run (no Portless), set `KIOKU_URL=http://localhost:7777` to match Kioku's bind-port fallback.
 
 ## Read paths
 

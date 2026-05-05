@@ -19,7 +19,7 @@ const baseSchema = z.object({
 
   MONGODB_URI: z.string().default("mongodb://localhost:27017/kokoro"),
 
-  KIOKU_URL: z.string().url().default("http://localhost:7777"),
+  KIOKU_URL: z.string().url().default("https://api.kioku.localhost"),
 
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
