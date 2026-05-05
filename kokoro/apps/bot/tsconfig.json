@@ -1,0 +1,4 @@
+{
+  "extends": "@kokoro/typescript-config/bot.json",
+  "include": ["src", "tests"]
+}

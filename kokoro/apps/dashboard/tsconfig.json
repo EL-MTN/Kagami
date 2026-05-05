@@ -1,0 +1,12 @@
+{
+  "extends": "@kokoro/typescript-config/nextjs.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "allowJs": true,
+    "esModuleInterop": true
+  },
+  "include": ["*.ts", "*.tsx", "next-env.d.ts", "src", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}

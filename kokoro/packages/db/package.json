@@ -1,0 +1,24 @@
+{
+  "name": "@kokoro/db",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix"
+  },
+  "dependencies": {
+    "@kokoro/shared": "*",
+    "mongoose": "^8.9.0"
+  },
+  "devDependencies": {
+    "@kokoro/typescript-config": "*",
+    "@kokoro/eslint-config": "*",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.0.1",
+    "typescript": "^5.7.0"
+  }
+}
