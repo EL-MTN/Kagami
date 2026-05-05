@@ -64,8 +64,8 @@ export function newFactId(): string {
 
 export async function readFacts(): Promise<Fact[]> {
   const col = await factsCol();
-  // Ascending created_at preserves the insertion-order semantics callers
-  // had with the JSONL append-only file. _id breaks ties deterministically.
+  // Ascending created_at gives callers insertion-order semantics; _id
+  // breaks ties deterministically.
   const docs = await col.find({}).sort({ created_at: 1, _id: 1 }).toArray();
   return docs.map(fromDoc);
 }

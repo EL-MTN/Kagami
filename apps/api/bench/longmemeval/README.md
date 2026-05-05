@@ -32,7 +32,7 @@ LLM_PROVIDER=openai MODEL=gpt-4o-mini OPENAI_API_KEY=$OPENAI_API_KEY \
   EMBEDDING_PROVIDER=lmstudio EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5 \
   npx tsx scripts/longmemeval.ts --limit 100
 
-# Reuse vaults from a prior run (skips ingest if facts.jsonl exists)
+# Reuse vaults from a prior run (skips ingest if the per-item Mongo DB already has facts)
 ... --limit 100 --keep-vaults
 ```
 
@@ -41,7 +41,7 @@ Flags:
 - `--limit N` — number of items to run (default: 5)
 - `--judge-model <id>` — override the model used for judging (default: same as `MODEL`)
 - `--data <path>` — dataset JSON path (default: `bench/longmemeval/data/longmemeval_oracle.json`)
-- `--keep-vaults` — skip the per-item vault wipe; reuse existing `facts.jsonl` for the query/judge passes (saves ingest cost on prompt iterations)
+- `--keep-vaults` — skip the per-item Mongo DB drop; reuse the existing facts for the query/judge passes (saves ingest cost on prompt iterations)
 - `--clean-vaults` — delete each vault after its item finishes (default: kept on disk)
 - `--resume` — pick up from `partial-predictions.json` if a prior run was interrupted
 

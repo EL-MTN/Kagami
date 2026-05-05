@@ -57,12 +57,3 @@ export async function upsertTranscript(input: UpsertTranscriptInput): Promise<vo
   );
 }
 
-export async function readTranscriptBySessionId(sessionId: string): Promise<Transcript | null> {
-  const col = await transcriptsCol();
-  const doc = await col.findOne({ _id: sessionId });
-  if (!doc) return null;
-  return {
-    frontmatter: { id: doc._id, started_at: doc.started_at },
-    turns: doc.turns,
-  };
-}

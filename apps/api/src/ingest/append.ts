@@ -20,9 +20,7 @@ import { logger } from "../logger.js";
 // read-then-act sequence: two concurrent calls with cosine-similar but
 // byte-distinct text would each see no near-dupe and both insert. The
 // hash unique index can't catch this (different hashes); $vectorSearch
-// can't atomically guard insertion. Phase 5 deleted the vault-wide
-// mutex on the strength of Mongo atomicity — but the cosine path was
-// never atomic, so we re-introduce a narrow lock for this path only.
+// can't atomically guard insertion. Hence the narrow lock here.
 // Bulk ingest via consolidate.ts is unaffected.
 
 const NEAR_DUPE_COSINE = 0.97;
