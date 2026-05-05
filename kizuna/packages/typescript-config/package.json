@@ -1,0 +1,10 @@
+{
+  "name": "@kizuna/typescript-config",
+  "private": true,
+  "exports": {
+    "./base.json": "./base.json",
+    "./library.json": "./library.json",
+    "./server.json": "./server.json",
+    "./nextjs.json": "./nextjs.json"
+  }
+}
