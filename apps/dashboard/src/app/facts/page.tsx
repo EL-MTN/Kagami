@@ -38,7 +38,7 @@ export default async function FactsPage({ searchParams }: { searchParams: Promis
 
   const buildHref = (overrides: Record<string, string | undefined>) => {
     const next = new URLSearchParams();
-    for (const [k, v] of Object.entries(sp)) {
+    for (const [k, v] of Object.entries(sp) as [string, string | undefined][]) {
       if (v !== undefined && v !== "") next.set(k, v);
     }
     for (const [k, v] of Object.entries(overrides)) {

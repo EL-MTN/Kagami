@@ -23,7 +23,7 @@ function aggregateBy<T, K extends string>(items: T[], key: (it: T) => K | undefi
 }
 
 function buildSparkline(facts: Fact[], days = 30): number[] {
-  const buckets = new Array(days).fill(0);
+  const buckets: number[] = Array.from({ length: days }, () => 0);
   const now = Date.now();
   for (const f of facts) {
     const t = new Date(f.created_at).getTime();
