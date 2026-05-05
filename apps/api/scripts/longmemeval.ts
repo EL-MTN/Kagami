@@ -35,6 +35,13 @@ interface CliArgs {
   resume: boolean;
 }
 
+interface DatasetItem {
+  question_id: string;
+  question_type: string;
+  question: string;
+  answer: string;
+}
+
 interface WorkerResult {
   question_id: string;
   question_type: string;
@@ -108,10 +115,11 @@ async function main() {
   console.log('');
 
   const datasetRaw = await fs.readFile(args.data, 'utf8');
-  const dataset = JSON.parse(datasetRaw);
-  if (!Array.isArray(dataset)) {
-    throw new Error(`Dataset at ${args.data} is not a JSON array. Got: ${typeof dataset}`);
+  const parsed = JSON.parse(datasetRaw) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error(`Dataset at ${args.data} is not a JSON array. Got: ${typeof parsed}`);
   }
+  const dataset = parsed as DatasetItem[];
   const items = dataset.slice(0, args.limit);
   console.log(`Loaded ${dataset.length} items, running ${items.length}`);
   console.log('');
@@ -130,7 +138,7 @@ async function main() {
   }
 
   for (let i = 0; i < items.length; i++) {
-    const item = items[i];
+    const item = items[i]!;
     const qid = item.question_id;
     if (alreadyDone.has(qid)) {
       console.log(`[${i + 1}/${items.length}] ${qid} (${item.question_type}) — SKIP (resumed)`);
@@ -150,7 +158,7 @@ async function main() {
 
     try {
       await runWorker(itemFile, resultFile, mongoDbName);
-      const result: WorkerResult = JSON.parse(await fs.readFile(resultFile, 'utf8'));
+      const result = JSON.parse(await fs.readFile(resultFile, 'utf8')) as WorkerResult;
       predictions.push(result);
       const tag = result.error ? 'ERROR' : 'OK';
       console.log(`     ${tag}  ingest=${result.ingestion_ms}ms  query=${result.query_ms}ms`);
@@ -283,7 +291,7 @@ function buildJudge(judgeModelId: string): Judge {
         baseURL: llmEndpoint.baseURL,
         apiKey: llmEndpoint.apiKey,
         supportsStructuredOutputs: true,
-      } as Parameters<typeof createOpenAICompatible>[0])(judgeModelId);
+      })(judgeModelId);
 
   return async (p: WorkerResult) => {
     // LongMemEval encodes abstention via a "_abs" suffix on question_id, not
@@ -362,13 +370,20 @@ function summarize(items: JudgedItem[]): Summary {
 }
 
 function truncate(s: unknown, n: number): string {
-  const str = typeof s === 'string'
-    ? s
-    : Array.isArray(s)
-      ? s.map(String).join('; ')
-      : s == null
-        ? ''
-        : String(s);
+  const stringify = (v: unknown): string => {
+    if (typeof v === 'string') return v;
+    if (v == null) return '';
+    if (
+      typeof v === 'number' ||
+      typeof v === 'boolean' ||
+      typeof v === 'bigint' ||
+      typeof v === 'symbol'
+    ) {
+      return String(v);
+    }
+    return JSON.stringify(v) ?? '';
+  };
+  const str = Array.isArray(s) ? s.map(stringify).join('; ') : stringify(s);
   return str.length <= n ? str : str.slice(0, n - 1) + '…';
 }
 

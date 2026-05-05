@@ -55,7 +55,7 @@ function dbNameFor(qid: string): string {
 async function runWorker(): Promise<void> {
   const itemPath = process.env.KIOKU_PROBE_ITEM!;
   const outPath = process.env.KIOKU_PROBE_OUT!;
-  const item: LMEItem = JSON.parse(await fs.readFile(itemPath, 'utf8'));
+  const item = JSON.parse(await fs.readFile(itemPath, 'utf8')) as LMEItem;
 
   const { ensureIndexes } = await import('../src/storage/indexes.js');
   const { getDb, closeMongo } = await import('../src/storage/mongo.js');
@@ -239,7 +239,7 @@ const OLD_PARAMS: Record<string, [number, number]> = {
 
 async function orchestrate(): Promise<void> {
   const args = parseArgs();
-  const dataset: LMEItem[] = JSON.parse(await fs.readFile(args.data, 'utf8'));
+  const dataset = JSON.parse(await fs.readFile(args.data, 'utf8')) as LMEItem[];
   const items = dataset.slice(0, args.limit);
   console.log(`Probing BM25 score distribution on ${items.length} items.`);
 
@@ -267,7 +267,7 @@ async function orchestrate(): Promise<void> {
     console.log(`[${i + 1}/${items.length}] ${qid}`);
     try {
       await spawnWorker(itemFile, outFile, dbName);
-      const sample: ProbeSample = JSON.parse(await fs.readFile(outFile, 'utf8'));
+      const sample = JSON.parse(await fs.readFile(outFile, 'utf8')) as ProbeSample;
       samples.push(sample);
       console.log(
         `     terms=${sample.query_term_count} facts=${sample.fact_count} ` +

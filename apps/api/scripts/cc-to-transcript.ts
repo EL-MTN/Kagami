@@ -73,7 +73,7 @@ function loadTurns(file: string): Turn[] {
     if (!line) continue;
     let evt: { type?: string; message?: { content?: unknown }; timestamp?: string };
     try {
-      evt = JSON.parse(line);
+      evt = JSON.parse(line) as typeof evt;
     } catch {
       continue;
     }

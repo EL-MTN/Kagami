@@ -59,7 +59,7 @@ async function main() {
     throw new Error('KIOKU_MONGO_DB must be set (orchestrator sets it per item)');
   }
 
-  const item: LMEItem = JSON.parse(await fs.readFile(itemPath, 'utf8'));
+  const item = JSON.parse(await fs.readFile(itemPath, 'utf8')) as LMEItem;
 
   // Lazy-import after env is set so mongo.ts picks up KIOKU_MONGO_DB.
   const { ensureIndexes } = await import('../src/storage/indexes.js');
