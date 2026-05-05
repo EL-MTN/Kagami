@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* ── Color System: Mashiro Daylight (白) ────────────────
+     Warm-paper light theme inherited from Kokoro. Three text levels:
+     foreground / muted-foreground / faint. No opacity ladder.
+     Kioku tilts the secondary accent slightly toward moss to suggest
+     accumulation — memory growing like sediment.
+  */
+  --color-background: oklch(0.985 0.006 85);
+  --color-foreground: oklch(0.22 0.015 60);
+  --color-card: oklch(0.998 0.004 85);
+  --color-card-foreground: oklch(0.22 0.015 60);
+  --color-popover: oklch(0.998 0.004 85);
+  --color-popover-foreground: oklch(0.22 0.015 60);
+
+  --color-muted: oklch(0.955 0.008 85);
+  --color-muted-foreground: oklch(0.45 0.012 60);
+  --color-faint: oklch(0.62 0.010 60);
+
+  --color-accent: oklch(0.94 0.012 85);
+  --color-accent-foreground: oklch(0.22 0.015 60);
+
+  --color-secondary: oklch(0.94 0.012 85);
+  --color-secondary-foreground: oklch(0.22 0.015 60);
+
+  --color-border: oklch(0.91 0.008 75);
+  --color-rule-strong: oklch(0.84 0.010 75);
+  --color-input: oklch(0.91 0.008 75);
+
+  --color-primary: oklch(0.52 0.13 245);
+  --color-primary-foreground: oklch(0.99 0.004 245);
+  --color-ring: oklch(0.52 0.13 245);
+
+  --color-positive: oklch(0.58 0.13 155);
+  --color-positive-foreground: oklch(0.99 0.004 155);
+  --color-caution: oklch(0.68 0.14 75);
+  --color-caution-foreground: oklch(0.22 0.04 75);
+  --color-critical: oklch(0.55 0.18 25);
+  --color-critical-foreground: oklch(0.99 0.004 25);
+
+  --color-destructive: oklch(0.55 0.18 25);
+  --color-destructive-foreground: oklch(0.99 0.004 25);
+
+  /* Channel hues used by the score-fusion bar. Three retrieval signals:
+     dense vector (cosine), sparse lexical (BM25), entity boost.
+     Distinct hues but matched chroma so they read as a family. */
+  --color-channel-semantic: oklch(0.52 0.13 245);   /* indigo */
+  --color-channel-bm25:     oklch(0.58 0.13 155);   /* moss   */
+  --color-channel-entity:   oklch(0.68 0.14 75);    /* amber  */
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  --font-display: var(--font-instrument-serif), Georgia, serif;
+  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "Menlo", monospace;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Vellum grain: warm wash so the page doesn't read clinical. Kioku tilts
+   the second wash toward moss to differ from Kokoro's indigo cool. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 100% 0%, oklch(0.68 0.14 75 / 0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 0% 100%, oklch(0.58 0.13 155 / 0.035) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+::selection {
+  background-color: oklch(0.52 0.13 245 / 0.18);
+  color: var(--color-foreground);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(0.84 0.010 75);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.72 0.012 75);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+@keyframes grow-x {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.animate-in {
+  animation: fade-in 0.4s ease-out both;
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    oklch(0.955 0.008 85) 25%,
+    oklch(0.91 0.008 75) 50%,
+    oklch(0.955 0.008 85) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+  border-radius: var(--radius-lg);
+}
+
+.stagger > * { animation: fade-in 0.4s ease-out both; }
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 60ms; }
+.stagger > *:nth-child(3) { animation-delay: 120ms; }
+.stagger > *:nth-child(4) { animation-delay: 180ms; }
+.stagger > *:nth-child(5) { animation-delay: 240ms; }
+.stagger > *:nth-child(6) { animation-delay: 300ms; }
+.stagger > *:nth-child(7) { animation-delay: 360ms; }
+.stagger > *:nth-child(8) { animation-delay: 420ms; }
+
+.kicker {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-muted-foreground);
+}
+
+/* Score-fusion bar segments grow from the left on mount. */
+.score-segment {
+  transform-origin: left center;
+  animation: grow-x 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

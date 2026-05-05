@@ -1,0 +1,22 @@
+node_modules/
+dist/
+.env
+*.log
+
+# The vault is its own git repo, initialized separately.
+memory/
+
+# Benchmark data and per-run artifacts. Code under bench/ is tracked;
+# downloaded datasets, per-item vaults, and result files are not.
+apps/api/bench/longmemeval/data/
+apps/api/bench/longmemeval/vaults/
+apps/api/bench/longmemeval/vaults-probe/
+apps/api/bench/longmemeval/results/
+apps/api/bench/longmemeval/tmp/
+apps/api/bench/longmemeval/tmp-probe/
+apps/api/bench/longmemeval/partial-predictions.json
+apps/api/bench/longmemeval/bm25-probe-*.json
+
+# Turbo build outputs
+.turbo/
+.claude/

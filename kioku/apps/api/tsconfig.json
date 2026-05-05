@@ -1,0 +1,4 @@
+{
+  "extends": "@kioku/typescript-config/server.json",
+  "include": ["src", "tests", "scripts"]
+}
