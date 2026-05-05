@@ -185,10 +185,10 @@ export function createBot(token: string): Bot {
       // a missed in-character reply. The bracketed event in conversation
       // history still surfaces the resolution on the next user turn.
       generateAcknowledgment(row.chatId, userId, adapter).catch((error) => {
-        logger.warn({ error, confirmationId }, "Acknowledgment turn failed");
+        logger.warn({ err: error, confirmationId }, "Acknowledgment turn failed");
       });
     } catch (error) {
-      logger.error({ error, confirmationId }, "Callback handler error");
+      logger.error({ err: error, confirmationId }, "Callback handler error");
       try {
         await ctx.answerCallbackQuery({ text: "Error" });
       } catch {
@@ -221,7 +221,7 @@ export function createBot(token: string): Bot {
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
     } catch (error) {
-      logger.error({ error }, "Error handling photo message");
+      logger.error({ err: error }, "Error handling photo message");
       await ctx.reply("sorry something went wrong, give me a sec 💭");
     }
   });
@@ -255,7 +255,7 @@ export function createBot(token: string): Bot {
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
     } catch (error) {
-      logger.error({ error }, "Error handling voice message");
+      logger.error({ err: error }, "Error handling voice message");
       await ctx.reply("sorry something went wrong, give me a sec 💭");
     }
   });
@@ -284,7 +284,7 @@ export function createBot(token: string): Bot {
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
     } catch (error) {
-      logger.error({ error }, "Error handling audio message");
+      logger.error({ err: error }, "Error handling audio message");
       await ctx.reply("sorry something went wrong, give me a sec 💭");
     }
   });
@@ -307,7 +307,7 @@ export function createBot(token: string): Bot {
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
     } catch (error) {
-      logger.error({ error }, "Error handling message");
+      logger.error({ err: error }, "Error handling message");
       await ctx.reply("sorry something went wrong, give me a sec 💭");
     }
   });
@@ -353,7 +353,7 @@ export function createBot(token: string): Bot {
           triggerLocationProactive(incoming.chatId, incoming.userId);
         }
       } catch (error) {
-        logger.error({ error }, "Error handling location message");
+        logger.error({ err: error }, "Error handling location message");
       }
     });
 
@@ -386,13 +386,13 @@ export function createBot(token: string): Bot {
           triggerLocationProactive(incoming.chatId, incoming.userId);
         }
       } catch (error) {
-        logger.error({ error }, "Error handling live location update");
+        logger.error({ err: error }, "Error handling live location update");
       }
     });
   }
 
   bot.catch((err) => {
-    logger.error({ error: err.error }, "Bot error");
+    logger.error({ err: err.error }, "Bot error");
   });
 
   return bot;
@@ -401,7 +401,7 @@ export function createBot(token: string): Bot {
 export function startBot(bot: Bot): void {
   logger.info("Starting Telegram bot...");
   bot.start().catch((error) => {
-    logger.fatal({ error }, "Bot polling failed");
+    logger.fatal({ err: error }, "Bot polling failed");
     process.exit(1);
   });
   logger.info("Telegram bot polling initiated");

@@ -194,10 +194,10 @@ export async function executeRoutine(
     return responseText;
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Routine execution failed";
-    logger.error({ error, routineId, name: routine.name }, "Routine execution failed");
+    logger.error({ err: error, routineId, name: routine.name }, "Routine execution failed");
 
     await failRoutineLog(logId, reason).catch((e) => {
-      logger.error({ error: e }, "Failed to update routine log");
+      logger.error({ err: e }, "Failed to update routine log");
     });
 
     // Still advance the cron so we don't retry endlessly
@@ -213,7 +213,7 @@ export async function executeRoutine(
     // Alert user about the failure (only for direct, non-silent triggers)
     if (trigger !== "routine" && !silent) {
       await adapter.sendText(chatId, `Routine "${routine.name}" failed: ${reason}`).catch((e) => {
-        logger.error({ error: e }, "Failed to send routine error notification");
+        logger.error({ err: e }, "Failed to send routine error notification");
       });
     }
 

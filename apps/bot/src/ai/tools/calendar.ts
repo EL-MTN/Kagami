@@ -33,7 +33,7 @@ function createListCalendarTool() {
         const events = await listUpcomingEvents(daysAhead, maxResults);
         return { success: true as const, count: events.length, events };
       } catch (error) {
-        logger.error({ error }, "Tool: listCalendarEvents failed");
+        logger.error({ err: error }, "Tool: listCalendarEvents failed");
         return {
           success: false as const,
           reason: error instanceof Error ? error.message : "Calendar list failed",
@@ -118,7 +118,7 @@ export function createManageCalendarTool(options: ManageCalendarToolOptions = {}
           }
         }
       } catch (error) {
-        logger.error({ error, action }, "Tool: manageCalendar failed");
+        logger.error({ err: error, action }, "Tool: manageCalendar failed");
         return {
           success: false,
           reason: error instanceof Error ? error.message : "Calendar operation failed",
@@ -186,7 +186,7 @@ export function createManageRemindersTool(chatId: string) {
           }
         }
       } catch (error) {
-        logger.error({ error, action }, "Tool: manageReminders failed");
+        logger.error({ err: error, action }, "Tool: manageReminders failed");
         return {
           success: false,
           reason: error instanceof Error ? error.message : "Reminder operation failed",

@@ -126,7 +126,7 @@ async function tryResolveConfirmationReply(
 
   // Fire-and-forget acknowledgment turn — Mashiro speaks in character.
   generateAcknowledgment(chatId, userId, adapter).catch((error) => {
-    logger.warn({ error, confirmationId }, "Acknowledgment turn failed");
+    logger.warn({ err: error, confirmationId }, "Acknowledgment turn failed");
   });
   return true;
 }
@@ -292,7 +292,7 @@ export function startBlueBubblesWebhook(opts: StartWebhookOptions): () => void {
         await handleMessage(message, opts.adapter);
         resetTimer(message.chatId, message.userId);
       } catch (error) {
-        logger.error({ error }, "iMessage webhook handler error");
+        logger.error({ err: error }, "iMessage webhook handler error");
         if (!res.headersSent) {
           res.writeHead(500, { "content-type": "text/plain" });
           res.end("error");
@@ -307,7 +307,7 @@ export function startBlueBubblesWebhook(opts: StartWebhookOptions): () => void {
 
   return () => {
     server.close((err) => {
-      if (err) logger.warn({ error: err }, "Error closing BlueBubbles webhook");
+      if (err) logger.warn({ err }, "Error closing BlueBubbles webhook");
       else logger.info("BlueBubbles webhook stopped");
     });
   };

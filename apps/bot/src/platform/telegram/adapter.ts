@@ -61,7 +61,7 @@ export class TelegramAdapter implements PlatformAdapter {
           : undefined,
       };
     } catch (error) {
-      logger.error({ error, fileId: largest.file_id }, "Error downloading photo");
+      logger.error({ err: error, fileId: largest.file_id }, "Error downloading photo");
       return null;
     }
   }
@@ -134,7 +134,7 @@ export class TelegramAdapter implements PlatformAdapter {
         audioDurationSeconds: durationSeconds,
       };
     } catch (error) {
-      logger.error({ error, fileId }, "Error downloading voice/audio");
+      logger.error({ err: error, fileId }, "Error downloading voice/audio");
       return null;
     }
   }
@@ -277,7 +277,7 @@ export class TelegramAdapter implements PlatformAdapter {
       });
       return String(sent.message_id);
     } catch (error) {
-      logger.warn({ error }, "Confirmation prompt HTML send failed; retrying as plain text");
+      logger.warn({ err: error }, "Confirmation prompt HTML send failed; retrying as plain text");
       const sent = await this.bot.api.sendMessage(Number(chatId), text, {
         reply_markup: keyboard,
       });
@@ -296,7 +296,7 @@ export class TelegramAdapter implements PlatformAdapter {
       });
     } catch (error) {
       // Tolerable: user may have deleted the message, or the body is unchanged.
-      logger.warn({ error, chatId, messageId }, "Failed to edit confirmation prompt");
+      logger.warn({ err: error, chatId, messageId }, "Failed to edit confirmation prompt");
     }
   }
 }

@@ -32,7 +32,7 @@ export function createCheckEmailTool() {
         const emails = await listUnreadEmails(maxResults);
         return { success: true, count: emails.length, emails };
       } catch (error) {
-        logger.error({ error }, "Tool: checkEmail failed");
+        logger.error({ err: error }, "Tool: checkEmail failed");
         return {
           success: false,
           reason: error instanceof Error ? error.message : "Failed to check email",
@@ -65,7 +65,7 @@ export function createSendEmailTool() {
         const result = await sendEmail(to, subject, body, options);
         return { success: true, id: result.id, threadId: result.threadId };
       } catch (error) {
-        logger.error({ error }, "Tool: sendEmail failed");
+        logger.error({ err: error }, "Tool: sendEmail failed");
         return {
           success: false,
           reason: error instanceof Error ? error.message : "Failed to send email",

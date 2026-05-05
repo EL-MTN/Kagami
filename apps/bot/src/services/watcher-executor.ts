@@ -230,10 +230,10 @@ export async function executeWatcher(
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Watcher execution failed";
-    logger.error({ error, watcherId, name: watcher.name }, "Watcher execution failed");
+    logger.error({ err: error, watcherId, name: watcher.name }, "Watcher execution failed");
 
     await failWatcherLog(logId, reason).catch((e) => {
-      logger.error({ error: e }, "Failed to update watcher log");
+      logger.error({ err: e }, "Failed to update watcher log");
     });
 
     await advanceCron(watcher, advanceSchedule);
@@ -241,7 +241,7 @@ export async function executeWatcher(
     if (!silent) {
       await adapter
         .sendText(chatId, `Watcher "${watcher.name}" failed: ${reason}`)
-        .catch((e) => logger.error({ error: e }, "Failed to send watcher error notification"));
+        .catch((e) => logger.error({ err: e }, "Failed to send watcher error notification"));
     }
   }
 }

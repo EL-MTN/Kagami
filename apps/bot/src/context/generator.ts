@@ -212,7 +212,7 @@ Return ONLY the setting name, nothing else.`,
     logger.info({ selected: original, total: settingsMap.size }, "Selected setting for scene");
     return { name: original, description: settingsMap.get(original)! };
   } catch (error) {
-    logger.warn({ error }, "Setting selection failed — skipping");
+    logger.warn({ err: error }, "Setting selection failed — skipping");
     return null;
   }
 }
