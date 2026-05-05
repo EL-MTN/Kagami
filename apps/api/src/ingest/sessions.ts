@@ -3,15 +3,14 @@ import { generateObject } from 'ai';
 import { parseTranscript } from './transcript.js';
 import { consolidate } from './consolidate.js';
 import { appendSingleFact } from './append.js';
+import { upsertTranscript } from '../storage/transcripts.js';
 import { model } from '../llm.js';
-import { paths } from '../paths.js';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { logger } from '../logger.js';
 
 // Session ingest. Accepts a raw transcript string (matter front-matter
-// + `## t-N <role>` headings, same shape as raw/<session>.md), runs the
-// existing transcript-batch fact extraction, and additionally generates
+// + `## t-N <role>` headings), persists the parsed transcript to the
+// `transcripts` collection so it can be replayed without touching disk,
+// runs the transcript-batch fact extraction, and additionally generates
 // a single rolled-up session-summary fact ("On <date>, conversation
 // covered <topics>.") so retrieval surfaces session-level context
 // alongside the atomic facts.
@@ -83,16 +82,17 @@ export async function ingestSessionFromString(
   const sessionId = parsed.frontmatter.id;
   const sessionDate = String(parsed.frontmatter.started_at).slice(0, 10);
 
-  // The existing consolidate() expects a file path; persist the raw
-  // transcript into the vault's raw/ directory (idempotent — reuses
-  // an existing file if it already matches) so the standard ingest
-  // pipeline runs unchanged and `source_session` resolves correctly
-  // for every fact extracted from this session.
-  const rawPath = path.join(paths.raw, `${sessionId}.md`);
-  await fs.mkdir(paths.raw, { recursive: true });
-  await fs.writeFile(rawPath, input.transcript);
+  // Persist the parsed transcript to Mongo before extraction so a
+  // re-ingest of the same session can read it back without the caller
+  // re-supplying the body.
+  await upsertTranscript({
+    transcript: parsed,
+    user_id: input.user_id,
+    run_id: input.run_id,
+    agent_id: input.agent_id,
+  });
 
-  const { added, batches } = await consolidate(rawPath, {
+  const { added, batches } = await consolidate(parsed, {
     user_id: input.user_id,
     run_id: input.run_id,
     agent_id: input.agent_id,

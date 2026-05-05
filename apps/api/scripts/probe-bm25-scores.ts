@@ -54,17 +54,17 @@ function dbNameFor(qid: string): string {
 async function runWorker(): Promise<void> {
   const itemPath = process.env.KIOKU_PROBE_ITEM!;
   const outPath = process.env.KIOKU_PROBE_OUT!;
-  const vault = process.env.KIOKU_VAULT!;
   const item: LMEItem = JSON.parse(await fs.readFile(itemPath, 'utf8'));
 
   const { ensureIndexes } = await import('../src/storage/indexes.js');
   const { getDb, closeMongo } = await import('../src/storage/mongo.js');
   const { consolidate } = await import('../src/ingest/consolidate.js');
+  const { parseTranscript } = await import('../src/ingest/transcript.js');
+  const { upsertTranscript } = await import('../src/storage/transcripts.js');
   const { embedQuestion } = await import('../src/llm.js');
   const { lemmatizeForBm25 } = await import('../src/retrieval/text.js');
 
   await ensureIndexes();
-  await fs.mkdir(path.join(vault, 'raw'), { recursive: true });
 
   const factCountBefore = await (await getDb()).collection('facts').countDocuments({});
   if (factCountBefore === 0) {
@@ -72,13 +72,12 @@ async function runWorker(): Promise<void> {
       const sid = item.haystack_session_ids[i]!;
       const date = item.haystack_dates[i]!;
       const turns = item.haystack_sessions[i]!;
-      const transcript = formatTranscript(sid, date, turns);
-      const transcriptPath = path.join(vault, 'raw', `${sid}.md`);
-      await fs.writeFile(transcriptPath, transcript);
+      const transcript = parseTranscript(formatTranscript(sid, date, turns));
+      await upsertTranscript({ transcript });
       process.stderr.write(
         `[probe ${item.question_id}] ingest ${sid} (${turns.length} turns)\n`,
       );
-      await consolidate(transcriptPath);
+      await consolidate(transcript);
     }
   } else {
     process.stderr.write(`[probe ${item.question_id}] ingest skipped\n`);
@@ -172,7 +171,7 @@ function parseArgs(): CliArgs {
   };
 }
 
-function spawnWorker(itemPath: string, outPath: string, vault: string, dbName: string): Promise<void> {
+function spawnWorker(itemPath: string, outPath: string, dbName: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       'npx',
@@ -184,7 +183,6 @@ function spawnWorker(itemPath: string, outPath: string, vault: string, dbName: s
           KIOKU_PROBE_WORKER: '1',
           KIOKU_PROBE_ITEM: itemPath,
           KIOKU_PROBE_OUT: outPath,
-          KIOKU_VAULT: vault,
           KIOKU_MONGO_DB: dbName,
         },
       },
@@ -245,9 +243,7 @@ async function orchestrate(): Promise<void> {
   console.log(`Probing BM25 score distribution on ${items.length} items.`);
 
   const tmpRoot = path.join(benchRoot, 'tmp-probe');
-  const vaultsRoot = path.join(benchRoot, 'vaults-probe');
   await fs.mkdir(tmpRoot, { recursive: true });
-  await fs.mkdir(vaultsRoot, { recursive: true });
 
   const uri =
     process.env.KIOKU_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?directConnection=true';
@@ -259,12 +255,9 @@ async function orchestrate(): Promise<void> {
     const item = items[i]!;
     const qid = item.question_id;
     const dbName = dbNameFor(qid);
-    const vault = path.join(vaultsRoot, qid);
 
     // Fresh per-item state.
-    await fs.rm(vault, { recursive: true, force: true });
     await dropDb(sharedClient, dbName);
-    await fs.mkdir(vault, { recursive: true });
 
     const itemFile = path.join(tmpRoot, `${qid}.item.json`);
     const outFile = path.join(tmpRoot, `${qid}.out.json`);
@@ -272,7 +265,7 @@ async function orchestrate(): Promise<void> {
 
     console.log(`[${i + 1}/${items.length}] ${qid}`);
     try {
-      await spawnWorker(itemFile, outFile, vault, dbName);
+      await spawnWorker(itemFile, outFile, dbName);
       const sample: ProbeSample = JSON.parse(await fs.readFile(outFile, 'utf8'));
       samples.push(sample);
       console.log(
@@ -285,7 +278,6 @@ async function orchestrate(): Promise<void> {
       await fs.rm(itemFile, { force: true });
       await fs.rm(outFile, { force: true });
       await dropDb(sharedClient, dbName);
-      await fs.rm(vault, { recursive: true, force: true });
     }
   }
 

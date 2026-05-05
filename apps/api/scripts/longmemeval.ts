@@ -1,5 +1,5 @@
 // LongMemEval orchestrator. Iterates dataset items, spawns one worker
-// subprocess per item with an isolated KIOKU_VAULT, then judges all
+// subprocess per item with an isolated KIOKU_MONGO_DB, then judges all
 // predictions and writes a results JSON.
 //
 // See bench/longmemeval/README.md for setup and usage.
@@ -115,9 +115,7 @@ async function main() {
   console.log(`Loaded ${dataset.length} items, running ${items.length}`);
   console.log('');
 
-  const vaultsRoot = path.join(benchRoot, 'vaults');
   const itemsTmpRoot = path.join(benchRoot, 'tmp');
-  await fs.mkdir(vaultsRoot, { recursive: true });
   await fs.mkdir(itemsTmpRoot, { recursive: true });
 
   const predictions: WorkerResult[] = args.resume ? await loadPartialPredictions() : [];
@@ -140,20 +138,17 @@ async function main() {
     }
     console.log(`[${i + 1}/${items.length}] ${qid} (${item.question_type})`);
 
-    const vault = path.join(vaultsRoot, qid);
     const mongoDbName = dbNameFor(qid);
     if (!args.keepVaults) {
-      await fs.rm(vault, { recursive: true, force: true });
       await dropMongoDb(mongoDbName);
     }
-    await fs.mkdir(vault, { recursive: true });
 
     const itemFile = path.join(itemsTmpRoot, `${qid}.item.json`);
     const resultFile = path.join(itemsTmpRoot, `${qid}.result.json`);
     await fs.writeFile(itemFile, JSON.stringify(item));
 
     try {
-      await runWorker(itemFile, resultFile, vault, mongoDbName);
+      await runWorker(itemFile, resultFile, mongoDbName);
       const result: WorkerResult = JSON.parse(await fs.readFile(resultFile, 'utf8'));
       predictions.push(result);
       const tag = result.error ? 'ERROR' : 'OK';
@@ -177,7 +172,6 @@ async function main() {
       await fs.rm(itemFile, { force: true });
       await fs.rm(resultFile, { force: true });
       if (args.cleanVaults) {
-        await fs.rm(vault, { recursive: true, force: true });
         await dropMongoDb(mongoDbName);
       }
       // Checkpoint after every item so killing the bench doesn't lose work.
@@ -242,7 +236,6 @@ async function main() {
 function runWorker(
   itemFile: string,
   resultFile: string,
-  vault: string,
   mongoDbName: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -252,7 +245,7 @@ function runWorker(
       ['tsx', workerPath, '--item', itemFile, '--result', resultFile],
       {
         stdio: ['ignore', 'inherit', 'inherit'],
-        env: { ...process.env, KIOKU_VAULT: vault, KIOKU_MONGO_DB: mongoDbName },
+        env: { ...process.env, KIOKU_MONGO_DB: mongoDbName },
       },
     );
     child.on('error', reject);

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { embed, embedMany, cosineSimilarity, generateObject } from 'ai';
-import { readTranscript } from './transcript.js';
+import type { Transcript } from '../types.js';
 import { getEmbeddingModel, model } from '../llm.js';
 import { paths } from '../paths.js';
 import {
@@ -158,10 +158,9 @@ export interface ConsolidateOptions {
 }
 
 export async function consolidate(
-  transcriptPath: string,
+  transcript: Transcript,
   opts: ConsolidateOptions = {},
 ): Promise<{ added: number; batches: number }> {
-  const transcript = await readTranscript(transcriptPath);
   const sessionId = transcript.frontmatter.id;
   const sessionDate = String(transcript.frontmatter.started_at).slice(0, 10);
   const currentDate = new Date().toISOString().slice(0, 10);

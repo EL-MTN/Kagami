@@ -1,11 +1,7 @@
 import 'dotenv/config';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { z } from 'zod';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { generateObject, wrapLanguageModel } from 'ai';
+import { wrapLanguageModel } from 'ai';
 import type { LanguageModelV3Middleware } from '@ai-sdk/provider';
-import { paths } from './paths.js';
 
 // Provider profiles fill in URL + key defaults for common setups. Explicit
 // {LLM,EMBEDDING}_URL / _API_KEY env vars always win as overrides.
@@ -135,71 +131,3 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
   return embeddings;
 }
 
-export interface ObjectCallOptions<T extends z.ZodTypeAny> {
-  stage: string;
-  schema: T;
-  systemPrompt: string;
-  userPrompt: string;
-  temperature?: number;
-  // Mitigation knob for Gemma 4's repetition-under-grammar tendency.
-  // 0 by default; 0.3–0.5 if loops are observed.
-  frequencyPenalty?: number;
-  // Per-call timeout in ms. Default 120s. Local thinking models can hang
-  // for hours on pathological inputs; this caps the damage. On timeout the
-  // call counts as a failure and the standard retry-then-quarantine path
-  // applies.
-  timeoutMs?: number;
-}
-
-// generateObject sends the Zod schema to the provider as a JSON schema; the
-// provider enforces it via constrained decoding. AI SDK validates the result
-// against the same Zod schema before returning.
-export async function callObject<T extends z.ZodTypeAny>(
-  opts: ObjectCallOptions<T>,
-): Promise<z.infer<T> | null> {
-  const { stage, schema, systemPrompt, userPrompt } = opts;
-  const temperature = opts.temperature ?? 0.2;
-  const frequencyPenalty = opts.frequencyPenalty ?? 0;
-  const timeoutMs = opts.timeoutMs ?? 120_000;
-
-  let lastErr: unknown = null;
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const { object } = await generateObject({
-        model,
-        schema,
-        system: systemPrompt,
-        prompt: userPrompt,
-        temperature,
-        frequencyPenalty,
-        abortSignal: AbortSignal.timeout(timeoutMs),
-      });
-      return object as z.infer<T>;
-    } catch (err) {
-      lastErr = err;
-      if (attempt === 2) {
-        await quarantine(stage, {
-          err: String(err),
-          systemPrompt,
-          userPrompt,
-        });
-        return null;
-      }
-    }
-  }
-  void lastErr;
-  return null;
-}
-
-async function quarantine(stage: string, payload: unknown): Promise<void> {
-  // Debug-only fallback: dump the failed LLM payload to disk for postmortem.
-  // Stays on the filesystem rather than going to Mongo — these are rare
-  // anomalies, not first-class state.
-  const dir = path.join(paths.vault, '.memory', 'llm-failures', stage);
-  await fs.mkdir(dir, { recursive: true });
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  await fs.writeFile(
-    path.join(dir, `${ts}.json`),
-    JSON.stringify(payload, null, 2),
-  );
-}
