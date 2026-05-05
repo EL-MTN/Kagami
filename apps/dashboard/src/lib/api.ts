@@ -1,4 +1,4 @@
-const BASE = process.env.KIOKU_API_URL ?? "http://127.0.0.1:7777";
+const BASE = process.env.KIOKU_API_URL ?? "https://api.kioku.localhost";
 
 export interface Fact {
   id: string;
