@@ -6,7 +6,6 @@ import {
   expect,
   it,
 } from 'vitest';
-import pino from 'pino';
 import { type Config, loadConfig } from '../src/config.js';
 import { Interaction } from '../src/db/models/Interaction.js';
 import { Person } from '../src/db/models/Person.js';
@@ -17,7 +16,6 @@ import { FakeCalendarClient } from './helpers/fake-calendar.js';
 import { startHarness, type TestHarness } from './helpers/harness.js';
 
 let h: TestHarness;
-const silentLogger = pino({ level: 'silent' });
 
 function makeConfig(): Config {
   return loadConfig({
@@ -29,7 +27,6 @@ function makeConfig(): Config {
     GOOGLE_OAUTH_CLIENT_SECRET: 'test-client-secret',
     GOOGLE_OAUTH_REDIRECT_URI:
       'https://api.kizuna.localhost/oauth/google/callback',
-    LOG_LEVEL: 'silent',
   });
 }
 
@@ -83,7 +80,6 @@ describe('runCalendarSync — skip-self on group events', () => {
     await runCalendarSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     const ints = (await Interaction.find().lean()) as unknown as Array<{
       participants: Array<{ personId: { toHexString(): string }; role: string }>;
@@ -120,7 +116,6 @@ describe('runCalendarSync — skip-self on group events', () => {
     await runCalendarSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     const ints = (await Interaction.find().lean()) as unknown as Array<{
       participants: Array<{ role: string }>;
@@ -139,7 +134,6 @@ describe('runCalendarSync — bootstrap', () => {
     const r = await runCalendarSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     expect(r.status).toBe('ok');
     expect(r.fetched).toBe(2);
@@ -172,7 +166,6 @@ describe('runCalendarSync — bootstrap', () => {
     await runCalendarSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     const ints = (await Interaction.find().lean()) as unknown as Array<{
       participants: Array<{ role: string }>;
@@ -200,7 +193,7 @@ describe('runCalendarSync — reconciliation', () => {
     const client = new FakeCalendarClient();
     client.enqueueBootstrap([baseEvent({})], 'sync-1');
     const config = makeConfig();
-    await runCalendarSync({ config, client, logger: silentLogger });
+    await runCalendarSync({ config, client });
 
     // Reset state and re-deliver the same event.
     await SyncState.updateOne(
@@ -211,7 +204,6 @@ describe('runCalendarSync — reconciliation', () => {
     const second = await runCalendarSync({
       config,
       client,
-      logger: silentLogger,
     });
     expect(second.upserted).toBe(1);
     expect(await Interaction.countDocuments()).toBe(1);
@@ -221,7 +213,7 @@ describe('runCalendarSync — reconciliation', () => {
     const client = new FakeCalendarClient();
     client.enqueueBootstrap([baseEvent({})], 'sync-1');
     const config = makeConfig();
-    await runCalendarSync({ config, client, logger: silentLogger });
+    await runCalendarSync({ config, client });
 
     // Incremental: same eventId, new title + time + location.
     client.enqueueIncremental(
@@ -234,7 +226,7 @@ describe('runCalendarSync — reconciliation', () => {
       ],
       'sync-2',
     );
-    await runCalendarSync({ config, client, logger: silentLogger });
+    await runCalendarSync({ config, client });
 
     const docs = (await Interaction.find().lean()) as unknown as Array<{
       title: string;
@@ -251,7 +243,7 @@ describe('runCalendarSync — reconciliation', () => {
     const client = new FakeCalendarClient();
     client.enqueueBootstrap([baseEvent({})], 'sync-1');
     const config = makeConfig();
-    await runCalendarSync({ config, client, logger: silentLogger });
+    await runCalendarSync({ config, client });
 
     // Replace attendees: drop sarah, add bob.
     client.enqueueIncremental(
@@ -265,7 +257,7 @@ describe('runCalendarSync — reconciliation', () => {
       ],
       'sync-2',
     );
-    await runCalendarSync({ config, client, logger: silentLogger });
+    await runCalendarSync({ config, client });
 
     const ints = (await Interaction.find().lean()) as unknown as Array<{
       participants: Array<{ personId: { toHexString(): string } }>;
@@ -291,7 +283,7 @@ describe('runCalendarSync — reconciliation', () => {
     const client = new FakeCalendarClient();
     client.enqueueBootstrap([baseEvent({})], 'sync-1');
     const config = makeConfig();
-    await runCalendarSync({ config, client, logger: silentLogger });
+    await runCalendarSync({ config, client });
 
     client.enqueueIncremental(
       [baseEvent({ status: 'cancelled' })],
@@ -300,7 +292,6 @@ describe('runCalendarSync — reconciliation', () => {
     const r = await runCalendarSync({
       config,
       client,
-      logger: silentLogger,
     });
     expect(r.cancelled).toBe(1);
 
@@ -318,7 +309,7 @@ describe('runCalendarSync — reconciliation', () => {
     // Original event at T1 → updates lastInteractionAt.
     client.enqueueBootstrap([baseEvent({})], 'sync-1');
     const config = makeConfig();
-    await runCalendarSync({ config, client, logger: silentLogger });
+    await runCalendarSync({ config, client });
     const sarahBefore = (await Person.findOne({
       primaryEmail: 'sarah@acme.com',
     }).lean()) as unknown as { lastInteractionAt: Date };
@@ -334,7 +325,7 @@ describe('runCalendarSync — reconciliation', () => {
       ],
       'sync-2',
     );
-    await runCalendarSync({ config, client, logger: silentLogger });
+    await runCalendarSync({ config, client });
 
     const sarahAfter = (await Person.findOne({
       primaryEmail: 'sarah@acme.com',
@@ -358,7 +349,6 @@ describe('runCalendarSync — sync-token expiration', () => {
     const r = await runCalendarSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     expect(r.status).toBe('ok');
     expect(r.resyncedFromBootstrap).toBe(true);
@@ -374,7 +364,6 @@ describe('runCalendarSync — invalid_grant', () => {
     const r = await runCalendarSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     expect(r.status).toBe('paused');
     const state = await SyncState.findOne({ provider: 'gcal' }).lean();
@@ -394,7 +383,6 @@ describe('runCalendarSync — invalid_grant', () => {
     const r = await runCalendarSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     expect(r.status).toBe('paused');
 
@@ -402,7 +390,6 @@ describe('runCalendarSync — invalid_grant', () => {
     const forced = await runCalendarSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
       force: true,
     });
     expect(forced.status).toBe('ok');

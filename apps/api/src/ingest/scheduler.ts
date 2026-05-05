@@ -1,5 +1,5 @@
 import type { Config } from '../config.js';
-import type { Logger } from '../lib/logger.js';
+import { logger } from '../lib/logger.js';
 import { runCalendarSyncOnce } from './calendar.js';
 import { runGmailSyncOnce } from './gmail.js';
 
@@ -15,11 +15,8 @@ export type Scheduler = {
  * Manual triggers via POST /v1/sync/{gmail,gcal}/run remain available
  * regardless of the scheduler.
  */
-export function startIngestScheduler(args: {
-  config: Config;
-  logger: Logger;
-}): Scheduler {
-  const { config, logger } = args;
+export function startIngestScheduler(args: { config: Config }): Scheduler {
+  const { config } = args;
   const intervalSec = config.KIZUNA_INGEST_INTERVAL_SEC;
   if (intervalSec <= 0) {
     logger.info('ingest scheduler disabled (KIZUNA_INGEST_INTERVAL_SEC=0)');
@@ -34,9 +31,9 @@ export function startIngestScheduler(args: {
     }
     running = true;
     try {
-      const gmail = await runGmailSyncOnce(config, logger);
+      const gmail = await runGmailSyncOnce(config);
       logger.info({ provider: 'gmail', ...gmail }, 'ingest tick');
-      const gcal = await runCalendarSyncOnce(config, logger);
+      const gcal = await runCalendarSyncOnce(config);
       logger.info({ provider: 'gcal', ...gcal }, 'ingest tick');
     } catch (err) {
       logger.error({ err }, 'ingest tick failed');

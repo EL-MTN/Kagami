@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { loadConfig } from './config.js';
-import { createLogger } from './lib/logger.js';
+import { logger } from './lib/logger.js';
 import { connectDb } from './db/connect.js';
 import './db/models/index.js';
 import { startIngestScheduler } from './ingest/scheduler.js';
@@ -8,15 +8,14 @@ import { createApp } from './server.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const logger = createLogger(config.LOG_LEVEL);
 
-  const db = await connectDb(config.MONGO_URI, logger);
-  const app = createApp({ db, config, logger });
+  const db = await connectDb(config.MONGO_URI);
+  const app = createApp({ db, config });
 
   const server = app.listen(config.PORT, () => {
     logger.info({ port: config.PORT }, 'kizuna api listening');
   });
-  const scheduler = startIngestScheduler({ config, logger });
+  const scheduler = startIngestScheduler({ config });
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'shutting down');
@@ -35,7 +34,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error('[boot] fatal:', err);
+  logger.fatal({ err }, 'boot failed');
   process.exit(1);
 });

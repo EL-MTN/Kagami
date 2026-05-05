@@ -5,7 +5,6 @@ import { SyncState } from '../db/models/SyncState.js';
 import { runCalendarSyncOnce } from '../ingest/calendar.js';
 import { runGmailSyncOnce } from '../ingest/gmail.js';
 import { errors } from '../lib/errors.js';
-import type { Logger } from '../lib/logger.js';
 import { ISODateString } from '../schemas/common.js';
 import type { EndpointSpec } from '../manifest.js';
 
@@ -45,7 +44,7 @@ export const RunSyncBody = z
   .object({ force: z.boolean().optional() })
   .strict();
 
-export function makeSyncRouter(config: Config, logger: Logger): Router {
+export function makeSyncRouter(config: Config): Router {
   const r = Router();
 
   r.get('/sync/gmail/state', async (_req, res) => {
@@ -80,13 +79,13 @@ export function makeSyncRouter(config: Config, logger: Logger): Router {
         'KIZUNA_OAUTH_ENCRYPTION_KEY is not set; cannot decrypt refresh token',
       );
     }
-    const result = await runGmailSyncOnce(config, logger);
+    const result = await runGmailSyncOnce(config);
     if (body.force && result.status === 'paused') {
       await SyncState.updateOne(
         { provider: 'gmail' },
         { $set: { pausedAt: null } },
       );
-      const second = await runGmailSyncOnce(config, logger);
+      const second = await runGmailSyncOnce(config);
       res.json(second);
       return;
     }
@@ -125,13 +124,13 @@ export function makeSyncRouter(config: Config, logger: Logger): Router {
         'KIZUNA_OAUTH_ENCRYPTION_KEY is not set; cannot decrypt refresh token',
       );
     }
-    const result = await runCalendarSyncOnce(config, logger);
+    const result = await runCalendarSyncOnce(config);
     if (body.force && result.status === 'paused') {
       await SyncState.updateOne(
         { provider: 'gcal' },
         { $set: { pausedAt: null } },
       );
-      const second = await runCalendarSyncOnce(config, logger);
+      const second = await runCalendarSyncOnce(config);
       res.json(second);
       return;
     }

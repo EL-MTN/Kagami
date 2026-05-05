@@ -3,7 +3,7 @@ import type { Config } from '../config.js';
 import { SyncState } from '../db/models/SyncState.js';
 import { upsertInteractionBySourceRef } from '../db/recordInteraction.js';
 import { OAuthError } from '../lib/google-auth.js';
-import type { Logger } from '../lib/logger.js';
+import { logger } from '../lib/logger.js';
 import {
   CalendarHttpError,
   SyncTokenExpired,
@@ -99,7 +99,6 @@ async function listAll(
 async function processEvent(
   ev: CalendarEvent,
   config: Config,
-  logger: Logger,
   result: CalendarSyncResult,
 ): Promise<void> {
   let parsed: ParsedEvent;
@@ -182,7 +181,6 @@ async function processEvent(
 async function bootstrap(
   client: CalendarClient,
   config: Config,
-  logger: Logger,
   result: CalendarSyncResult,
 ): Promise<string | null> {
   const since = new Date();
@@ -192,7 +190,7 @@ async function bootstrap(
   });
   for (const ev of events) {
     result.fetched++;
-    await processEvent(ev, config, logger, result);
+    await processEvent(ev, config, result);
   }
   return nextSyncToken;
 }
@@ -201,13 +199,12 @@ async function incremental(
   syncToken: string,
   client: CalendarClient,
   config: Config,
-  logger: Logger,
   result: CalendarSyncResult,
 ): Promise<string | null> {
   const { events, nextSyncToken } = await listAll(client, { syncToken });
   for (const ev of events) {
     result.fetched++;
-    await processEvent(ev, config, logger, result);
+    await processEvent(ev, config, result);
   }
   return nextSyncToken;
 }
@@ -215,10 +212,9 @@ async function incremental(
 export async function runCalendarSync(args: {
   config: Config;
   client: CalendarClient;
-  logger: Logger;
   force?: boolean;
 }): Promise<CalendarSyncResult> {
-  const { config, client, logger } = args;
+  const { config, client } = args;
   const result: CalendarSyncResult = {
     status: 'ok',
     fetched: 0,
@@ -244,14 +240,14 @@ export async function runCalendarSync(args: {
     let after: string | null;
     try {
       after = startToken
-        ? await incremental(startToken, client, config, logger, result)
-        : await bootstrap(client, config, logger, result);
+        ? await incremental(startToken, client, config, result)
+        : await bootstrap(client, config, result);
     } catch (err) {
       if (err instanceof SyncTokenExpired) {
         logger.warn('gcal: syncToken expired; clearing and re-bootstrapping');
         await clearSyncToken();
         result.resyncedFromBootstrap = true;
-        after = await bootstrap(client, config, logger, result);
+        after = await bootstrap(client, config, result);
       } else {
         throw err;
       }
@@ -300,10 +296,9 @@ export async function runCalendarSync(args: {
 
 export async function runCalendarSyncOnce(
   config: Config,
-  logger: Logger,
 ): Promise<CalendarSyncResult> {
   const { makeCalendarClient } = await import('./calendar-client.js');
   const { getAccessToken } = await import('../lib/google-auth.js');
   const client = makeCalendarClient(() => getAccessToken(config));
-  return runCalendarSync({ config, client, logger });
+  return runCalendarSync({ config, client });
 }

@@ -16,7 +16,6 @@ import { GenericContainer } from 'testcontainers';
 import { loadConfig } from '../src/config.js';
 import { connectDb } from '../src/db/connect.js';
 import '../src/db/models/index.js';
-import { createLogger } from '../src/lib/logger.js';
 import { createApp } from '../src/server.js';
 
 const TEST_API_KEY = 'dashboard-smoke-key-1234567890abcdef';
@@ -72,11 +71,9 @@ async function main(): Promise<void> {
     KIZUNA_API_KEY: TEST_API_KEY,
     MONGO_URI: uri,
     USER_EMAILS: 'me@example.com',
-    LOG_LEVEL: 'silent',
   });
-  const logger = createLogger(config.LOG_LEVEL);
-  const db = await connectDb(config.MONGO_URI, logger);
-  const app = createApp({ db, config, logger });
+  const db = await connectDb(config.MONGO_URI);
+  const app = createApp({ db, config });
 
   const apiServer = app.listen(0);
   await once(apiServer, 'listening');

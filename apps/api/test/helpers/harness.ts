@@ -4,7 +4,6 @@ import { GenericContainer, type StartedTestContainer } from 'testcontainers';
 import { loadConfig } from '../../src/config.js';
 import { connectDb, type DbHandle } from '../../src/db/connect.js';
 import '../../src/db/models/index.js';
-import { createLogger } from '../../src/lib/logger.js';
 import { createApp } from '../../src/server.js';
 
 export type TestHarness = {
@@ -30,16 +29,14 @@ export async function startHarness(): Promise<TestHarness> {
     KIZUNA_API_KEY: TEST_API_KEY,
     MONGO_URI: uri,
     USER_EMAILS: 'test@example.com',
-    LOG_LEVEL: 'silent',
     GOOGLE_OAUTH_CLIENT_ID: 'test-client-id',
     GOOGLE_OAUTH_CLIENT_SECRET: 'test-client-secret',
     GOOGLE_OAUTH_REDIRECT_URI: 'https://api.kizuna.localhost/oauth/google/callback',
     KIZUNA_OAUTH_ENCRYPTION_KEY: encryptionKey,
   });
 
-  const logger = createLogger(config.LOG_LEVEL);
-  const db = await connectDb(config.MONGO_URI, logger);
-  const app = createApp({ db, config, logger });
+  const db = await connectDb(config.MONGO_URI);
+  const app = createApp({ db, config });
 
   return {
     app,

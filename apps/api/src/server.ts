@@ -1,7 +1,6 @@
 import express, { type Express } from 'express';
 import type { Config } from './config.js';
 import type { DbHandle } from './db/connect.js';
-import type { Logger } from './lib/logger.js';
 import { bearerAuth } from './lib/auth.js';
 import { errors, makeErrorHandler } from './lib/errors.js';
 import { healthRouter } from './routes/health.js';
@@ -18,10 +17,9 @@ import { makeSyncRouter } from './routes/sync.js';
 export type ServerDeps = {
   db: DbHandle;
   config: Config;
-  logger: Logger;
 };
 
-export function createApp({ db, config, logger }: ServerDeps): Express {
+export function createApp({ db, config }: ServerDeps): Express {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
@@ -40,12 +38,12 @@ export function createApp({ db, config, logger }: ServerDeps): Express {
   app.use('/v1', followupsRouter);
   app.use('/v1', contextsRouter);
   app.use('/v1', digestRouter);
-  app.use('/v1', makeSyncRouter(config, logger));
+  app.use('/v1', makeSyncRouter(config));
 
   app.use((_req, _res, next) => {
     next(errors.notFound('route not found'));
   });
 
-  app.use(makeErrorHandler(logger));
+  app.use(makeErrorHandler());
   return app;
 }

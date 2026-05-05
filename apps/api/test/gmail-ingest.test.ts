@@ -8,7 +8,6 @@ import {
   it,
 } from 'vitest';
 import request from 'supertest';
-import pino from 'pino';
 import { type Config, loadConfig } from '../src/config.js';
 import { Interaction } from '../src/db/models/Interaction.js';
 import { Person } from '../src/db/models/Person.js';
@@ -18,7 +17,6 @@ import { startHarness, type TestHarness } from './helpers/harness.js';
 import { FakeGmailClient, buildPlainMessage } from './helpers/fake-gmail.js';
 
 let h: TestHarness;
-const silentLogger = pino({ level: 'silent' });
 
 function makeConfig(overrides: Record<string, string> = {}): Config {
   return loadConfig({
@@ -30,7 +28,6 @@ function makeConfig(overrides: Record<string, string> = {}): Config {
     GOOGLE_OAUTH_CLIENT_SECRET: 'test-client-secret',
     GOOGLE_OAUTH_REDIRECT_URI:
       'https://api.kizuna.localhost/oauth/google/callback',
-    LOG_LEVEL: 'silent',
     ...overrides,
   });
 }
@@ -70,7 +67,6 @@ describe('runGmailSync — skip-self on group emails', () => {
     await runGmailSync({
       config: makeConfig({ USER_EMAILS: 'me@example.com' }),
       client,
-      logger: silentLogger,
     });
     const ints = (await Interaction.find().lean()) as unknown as Array<{
       participants: Array<{ personId: { toHexString(): string }; role: string }>;
@@ -106,7 +102,6 @@ describe('runGmailSync — skip-self on group emails', () => {
     await runGmailSync({
       config: makeConfig({ USER_EMAILS: 'me@example.com' }),
       client,
-      logger: silentLogger,
     });
     const ints = (await Interaction.find().lean()) as unknown as Array<{
       participants: Array<{ role: string }>;
@@ -130,7 +125,6 @@ describe('runGmailSync — skip-self on group emails', () => {
     await runGmailSync({
       config: makeConfig({ USER_EMAILS: 'me@example.com' }),
       client,
-      logger: silentLogger,
     });
     const ints = (await Interaction.find().lean()) as unknown as Array<{
       participants: Array<{ personId: { toHexString(): string }; role: string }>;
@@ -172,7 +166,6 @@ describe('runGmailSync — bootstrap', () => {
     const r = await runGmailSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     expect(r.status).toBe('ok');
     expect(r.fetched).toBe(2);
@@ -211,7 +204,6 @@ describe('runGmailSync — bootstrap', () => {
     await runGmailSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     const people = (await Person.find().sort({ primaryEmail: 1 }).lean()) as unknown as Array<{
       primaryEmail: string | null;
@@ -241,7 +233,6 @@ describe('runGmailSync — bootstrap', () => {
     await runGmailSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     const sarah = (await Person.findOne({ primaryEmail: 'sarah@acme.com' }).lean()) as {
       lastInteractionAt: Date | null;
@@ -266,7 +257,7 @@ describe('runGmailSync — idempotency', () => {
       }),
     );
     const config = makeConfig();
-    const first = await runGmailSync({ config, client, logger: silentLogger });
+    const first = await runGmailSync({ config, client });
     expect(first.inserted).toBe(1);
 
     // Reset state to force a re-bootstrap (same path Gmail would replay).
@@ -274,7 +265,7 @@ describe('runGmailSync — idempotency', () => {
       { provider: 'gmail' },
       { $set: { historyId: null } },
     );
-    const second = await runGmailSync({ config, client, logger: silentLogger });
+    const second = await runGmailSync({ config, client });
     expect(second.inserted).toBe(0);
     expect(second.skippedExisting).toBe(1);
     expect(await Interaction.countDocuments()).toBe(1);
@@ -306,7 +297,6 @@ describe('runGmailSync — newsletter filter', () => {
     const r = await runGmailSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     expect(r.skippedNewsletter).toBe(1);
     expect(r.inserted).toBe(1);
@@ -338,7 +328,6 @@ describe('runGmailSync — newsletter filter', () => {
     const r = await runGmailSync({
       config: makeConfig({ NEWSLETTER_DOMAIN_BLOCKLIST: 'spam.com' }),
       client,
-      logger: silentLogger,
     });
     expect(r.skippedNewsletter).toBe(1);
     expect(r.inserted).toBe(1);
@@ -371,7 +360,6 @@ describe('runGmailSync — suppressReingest', () => {
     await runGmailSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
 
     const after = await Person.findById(tomb._id).lean();
@@ -428,7 +416,6 @@ describe('runGmailSync — incremental', () => {
     const r = await runGmailSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     expect(r.inserted).toBe(1);
     const ints = await Interaction.find().lean();
@@ -456,7 +443,6 @@ describe('runGmailSync — invalid_grant', () => {
     const r = await runGmailSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     expect(r.status).toBe('paused');
     expect(r.message).toMatch(/invalid_grant|re-grant/);
@@ -477,7 +463,6 @@ describe('runGmailSync — invalid_grant', () => {
     const r = await runGmailSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
     });
     expect(r.status).toBe('paused');
     expect(r.fetched).toBe(0);
@@ -495,7 +480,6 @@ describe('runGmailSync — invalid_grant', () => {
     const r = await runGmailSync({
       config: makeConfig(),
       client,
-      logger: silentLogger,
       force: true,
     });
     expect(r.status).toBe('ok');

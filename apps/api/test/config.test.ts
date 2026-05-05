@@ -12,7 +12,6 @@ describe('loadConfig', () => {
     const c = loadConfig(validEnv);
     expect(c.USER_EMAILS).toEqual(['me@example.com', 'you@example.com']);
     expect(c.PORT).toBe(3000);
-    expect(c.LOG_LEVEL).toBe('info');
     expect(c.NEWSLETTER_DOMAIN_BLOCKLIST).toEqual([]);
   });
 

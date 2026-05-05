@@ -57,9 +57,6 @@ const envSchema = z.object({
     .max(86_400)
     .default(0),
   PORT: z.coerce.number().int().positive().max(65_535).default(3000),
-  LOG_LEVEL: z
-    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
-    .default('info'),
 });
 
 export type Config = z.infer<typeof envSchema>;

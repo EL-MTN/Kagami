@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import type { Logger } from '../lib/logger.js';
+import { logger } from '../lib/logger.js';
 
 export type DbHandle = {
   conn: typeof mongoose;
@@ -7,7 +7,7 @@ export type DbHandle = {
   close: () => Promise<void>;
 };
 
-export async function connectDb(uri: string, logger: Logger): Promise<DbHandle> {
+export async function connectDb(uri: string): Promise<DbHandle> {
   mongoose.set('strictQuery', true);
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 5_000 });
   logger.info({ uri: redactUri(uri) }, 'mongo connected');

@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import type { Config } from '../config.js';
 import { SyncState } from '../db/models/SyncState.js';
 import { recordInteraction } from '../db/recordInteraction.js';
-import type { Logger } from '../lib/logger.js';
+import { logger } from '../lib/logger.js';
 import { OAuthError } from '../lib/google-auth.js';
 import type { GmailClient } from './gmail-client.js';
 import { GmailHttpError } from './gmail-client.js';
@@ -79,7 +79,6 @@ async function processMessageIds(
   ids: string[],
   client: GmailClient,
   config: Config,
-  logger: Logger,
   result: SyncResult,
 ): Promise<void> {
   const blocklist = config.NEWSLETTER_DOMAIN_BLOCKLIST;
@@ -201,7 +200,6 @@ async function processMessageIds(
 async function bootstrap(
   client: GmailClient,
   config: Config,
-  logger: Logger,
   result: SyncResult,
 ): Promise<string | null> {
   const profile = await client.getProfile();
@@ -222,7 +220,7 @@ async function bootstrap(
     if (!page.nextPageToken) break;
     pageToken = page.nextPageToken;
   }
-  await processMessageIds(all, client, config, logger, result);
+  await processMessageIds(all, client, config, result);
   return profile.historyId ?? null;
 }
 
@@ -230,7 +228,6 @@ async function incremental(
   startHistoryId: string,
   client: GmailClient,
   config: Config,
-  logger: Logger,
   result: SyncResult,
 ): Promise<string | null> {
   let pageToken: string | undefined;
@@ -255,17 +252,16 @@ async function incremental(
     pageToken = page.nextPageToken;
   }
 
-  await processMessageIds([...newIds], client, config, logger, result);
+  await processMessageIds([...newIds], client, config, result);
   return latestHistoryId;
 }
 
 export async function runGmailSync(args: {
   config: Config;
   client: GmailClient;
-  logger: Logger;
   force?: boolean;
 }): Promise<SyncResult> {
-  const { config, client, logger } = args;
+  const { config, client } = args;
   const result: SyncResult = {
     status: 'ok',
     fetched: 0,
@@ -288,8 +284,8 @@ export async function runGmailSync(args: {
   try {
     const startHistoryId = state.get('historyId') as string | null;
     const after = startHistoryId
-      ? await incremental(startHistoryId, client, config, logger, result)
-      : await bootstrap(client, config, logger, result);
+      ? await incremental(startHistoryId, client, config, result)
+      : await bootstrap(client, config, result);
     result.historyIdAfter = after;
     await recordSuccessfulRun(after);
     return result;
@@ -333,12 +329,9 @@ export async function runGmailSync(args: {
 }
 
 // Wire-up: build a real client backed by getAccessToken from step 4.
-export async function runGmailSyncOnce(
-  config: Config,
-  logger: Logger,
-): Promise<SyncResult> {
+export async function runGmailSyncOnce(config: Config): Promise<SyncResult> {
   const { makeGmailClient } = await import('./gmail-client.js');
   const { getAccessToken } = await import('../lib/google-auth.js');
   const client = makeGmailClient(() => getAccessToken(config));
-  return runGmailSync({ config, client, logger });
+  return runGmailSync({ config, client });
 }

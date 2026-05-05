@@ -1,7 +1,7 @@
 import type { ErrorRequestHandler } from 'express';
 import mongoose from 'mongoose';
 import { ZodError } from 'zod';
-import type { Logger } from './logger.js';
+import { logger } from './logger.js';
 
 export class HttpError extends Error {
   readonly status: number;
@@ -38,7 +38,7 @@ function envelope(code: string, message: string, details?: unknown) {
   return body;
 }
 
-export function makeErrorHandler(logger: Logger): ErrorRequestHandler {
+export function makeErrorHandler(): ErrorRequestHandler {
   return (err, _req, res, _next) => {
     if (err instanceof HttpError) {
       res.status(err.status).json(envelope(err.code, err.message, err.details));
