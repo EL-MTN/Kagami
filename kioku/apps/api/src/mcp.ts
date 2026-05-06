@@ -153,21 +153,19 @@ function buildServer(): McpServer {
     "ingest_session",
     {
       description:
-        "Extract atomic facts from a raw transcript string. Returns {sessionId, added, batches, summaryFactId}.",
+        "Extract atomic facts from a raw transcript string. Returns {sessionId, added, batches}.",
       inputSchema: {
         transcript: z.string(),
-        generate_summary: z.boolean().optional(),
         user_id: z.string().optional(),
         run_id: z.string().optional(),
         agent_id: z.string().optional(),
         metadata: z.record(z.string(), z.unknown()).optional(),
       },
     },
-    async ({ transcript, generate_summary, user_id, run_id, agent_id, metadata }) => {
+    async ({ transcript, user_id, run_id, agent_id, metadata }) => {
       try {
         const result = await ingestSessionFromString({
           transcript,
-          generateSummary: generate_summary,
           user_id,
           run_id,
           agent_id,
