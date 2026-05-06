@@ -1,0 +1,67 @@
+{
+  "name": "kagami",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.11.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "kioku/apps/*",
+    "kioku/packages/*",
+    "kokoro/apps/*",
+    "kokoro/packages/*",
+    "kizuna/apps/*",
+    "kizuna/packages/*",
+    "shared/packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "./dev-all.sh",
+    "kioku:dev": "turbo run dev --filter=\"@kioku/*\"",
+    "kokoro:dev": "turbo run dev --filter=\"@kokoro/*\"",
+    "kizuna:dev": "turbo run dev --filter=\"@kizuna/*\"",
+    "kioku:dev:api": "turbo run dev --filter=@kioku/api",
+    "kioku:dev:dashboard": "turbo run dev --filter=@kioku/dashboard",
+    "kokoro:dev:bot": "turbo run dev --filter=@kokoro/bot",
+    "kokoro:dev:dashboard": "turbo run dev --filter=@kokoro/dashboard",
+    "kizuna:dev:api": "turbo run dev --filter=@kizuna/api",
+    "kizuna:dev:dashboard": "turbo run dev --filter=@kizuna/dashboard",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
+    "kokoro:auth:google": "tsx kokoro/scripts/authorize-google.ts",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "**/apps/**/src/**/*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "**/packages/**/*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "**/*.{json,md}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.5",
+    "eslint": "^10.0.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "mongodb-memory-server": "^10.1.4",
+    "msw": "^2.10.4",
+    "portless": "^0.12.0",
+    "prettier": "^3.8.1",
+    "tsx": "^4.19.0",
+    "turbo": "^2.8.15",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.5",
+    "zod": "^3.25.76"
+  }
+}

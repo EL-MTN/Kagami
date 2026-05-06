@@ -6,8 +6,10 @@ Kokoro is a layered conversational AI system organized as a monorepo. Messages f
 
 ### Monorepo Layout
 
+Kokoro lives at `Kagami/kokoro/` as a subtree of the **Kagami nested monorepo**. The top-level `package.json`, `turbo.json`, `package-lock.json`, and Husky hooks live at the Kagami root — not inside `kokoro/`. Shared lint and tsconfig bases come from `@kagami/eslint-config` and `@kagami/tsconfig` in `Kagami/shared/packages/`.
+
 ```
-kokoro/                          # npm workspaces + Turborepo
+kokoro/                          # subtree of Kagami workspace (npm workspaces + Turborepo)
 ├── apps/
 │   ├── bot/                      # Telegram + iMessage bot app
 │   │   ├── src/
@@ -22,21 +24,18 @@ kokoro/                          # npm workspaces + Turborepo
 │   │   └── context/              # soul.md (personality), reference images, settings, image-prefix (data)
 │   └── dashboard/                # Next.js dashboard (routine + watcher management, observability)
 ├── packages/
-│   ├── typescript-config/        # shared tsconfig bases (JSON only)
-│   ├── eslint-config/            # shared ESLint flat config
 │   ├── shared/                   # config, logger, markdown, types
 │   ├── db/                       # MongoDB connection, models, GridFS
-│   └── memory/                   # Kioku HTTP client + transcript glue + sweeper
+│   ├── memory/                   # Kioku HTTP client + transcript glue + sweeper
+│   └── test-utils/               # Vitest harness (withTestDb, fakeAdapter, MSW)
 ├── scripts/                      # auth
+├── vitest.config.ts              # workspace-local vitest config (still here)
 └── docs/
 ```
 
 ### Dependency Graph
 
 ```
-@kokoro/typescript-config  ← leaf (no deps)
-@kokoro/eslint-config      ← leaf
-       ↑
 @kokoro/shared  ← config, logger, markdown, types (dotenv, zod, pino, gray-matter)
        ↑
 @kokoro/db      ← MongoDB connection, models, GridFS (mongoose)
@@ -46,6 +45,8 @@ kokoro/                          # npm workspaces + Turborepo
 @kokoro/bot     ← AI layer, tools, platform, schedulers
 @kokoro/dashboard ← Next.js (routine + watcher management, observability)
 ```
+
+Tooling bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from the Kagami workspace and are consumed via `extends` in each tsconfig and ESLint config. The bot's tsconfig also pins `zod` resolution to its local `node_modules/zod` (zod 4) via a `paths` mapping, so transitive zod types from Stagehand stay aligned with the bot's runtime zod.
 
 ## Architecture Diagram
 

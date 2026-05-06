@@ -3,10 +3,9 @@
   "compilerOptions": {
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "esModuleInterop": true,
+    "noEmit": true,
     "sourceMap": true,
+    "noUncheckedIndexedAccess": true,
     "types": ["node"]
   }
 }

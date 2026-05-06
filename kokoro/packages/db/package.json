@@ -15,8 +15,8 @@
     "mongoose": "^8.9.0"
   },
   "devDependencies": {
-    "@kokoro/typescript-config": "*",
-    "@kokoro/eslint-config": "*",
+    "@kagami/eslint-config": "*",
+    "@kagami/tsconfig": "*",
     "@types/node": "^22.0.0",
     "eslint": "^10.0.1",
     "typescript": "^5.7.0"

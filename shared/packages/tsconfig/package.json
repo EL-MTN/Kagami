@@ -1,10 +1,10 @@
 {
-  "name": "@kokoro/typescript-config",
+  "name": "@kagami/tsconfig",
   "private": true,
   "exports": {
     "./base.json": "./base.json",
     "./library.json": "./library.json",
-    "./bot.json": "./bot.json",
+    "./server.json": "./server.json",
     "./nextjs.json": "./nextjs.json"
   }
 }
