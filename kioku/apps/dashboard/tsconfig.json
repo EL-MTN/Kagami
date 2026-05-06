@@ -1,8 +1,6 @@
 {
   "extends": "@kagami/tsconfig/nextjs.json",
   "compilerOptions": {
-    "esModuleInterop": true,
-    "allowJs": true,
     "paths": {
       "@/*": ["./src/*"]
     }

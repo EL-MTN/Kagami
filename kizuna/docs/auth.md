@@ -11,7 +11,7 @@ Single-user-per-deployment. There is no user table — `KIZUNA_API_KEY` is the b
 | `/oauth/google/callback` | HMAC-SHA-256 signed CSRF state token (10-min TTL, secret = `KIZUNA_API_KEY`); no API key on the wire | `apps/api/src/lib/oauth-state.ts` |
 | `/oauth/google/status`   | Bearer header OR `?key=`                                                                             | `apps/api/src/routes/oauth.ts`    |
 | Refresh token at rest    | AES-256-GCM, key = `KIZUNA_OAUTH_ENCRYPTION_KEY` (base64 32 bytes), random 12-byte IV per write      | `apps/api/src/lib/encryption.ts`  |
-| Dashboard sessions       | HMAC-signed cookie (`kizuna_session`), secret = `KIZUNA_API_KEY`, 30-day TTL                         | `apps/dashboard/lib/session.ts`   |
+| Dashboard sessions       | HMAC-signed cookie (`kizuna_session`), secret = `KIZUNA_API_KEY`, 30-day TTL                         | `apps/dashboard/src/lib/session.ts`   |
 | Ingest "self" detection  | `USER_EMAILS` allowlist (lowercased, comma-separated)                                                | `apps/api/src/config.ts`          |
 
 ## Bearer auth on `/v1/*`
@@ -162,13 +162,13 @@ The cache is process-local. In a multi-instance deploy, each worker would refres
 
 Comma-separated, lowercased, validated as `email` by zod. Used by both ingest workers for **skip-self on group threads** (drop `USER_EMAILS` from `to/cc/attendees` when ≥ 2 other recipients remain). The `from` role is preserved either way so outbound detection still works.
 
-This is also the only piece of identity context the dashboard needs; it's read on the server side via `process.env.USER_EMAILS` in `apps/dashboard/lib/api.ts` to compute the inbound/outbound badge on a person's interaction list.
+This is also the only piece of identity context the dashboard needs; it's read on the server side via `process.env.USER_EMAILS` in `apps/dashboard/src/lib/api.ts` to compute the inbound/outbound badge on a person's interaction list.
 
 There is **no per-request user identification** — the API accepts any caller with the right bearer token, and ingest treats every `USER_EMAILS` address as "the user."
 
 ## Dashboard sessions
 
-`apps/dashboard/lib/session.ts` + `lib/auth-actions.ts`. The dashboard is a server-rendered Next.js app; every authed page is wrapped by `app/(app)/layout.tsx` which checks the cookie and redirects to `/login` on miss.
+`apps/dashboard/src/lib/session.ts` + `src/lib/auth-actions.ts`. The dashboard is a server-rendered Next.js app; every authed page is wrapped by `src/app/(app)/layout.tsx` which checks the cookie and redirects to `/login` on miss.
 
 ### Cookie format
 
@@ -192,7 +192,7 @@ The cookie name is `kizuna_session`. Cookie attributes:
 
 ### Login
 
-`POST /login` (server action `loginAction` in `lib/auth-actions.ts`):
+`POST /login` (server action `loginAction` in `src/lib/auth-actions.ts`):
 
 1. Read `formData.get('key')`.
 2. `checkApiKey(key)` — constant-time compare against `process.env.KIZUNA_API_KEY`.

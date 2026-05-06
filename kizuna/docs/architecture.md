@@ -60,7 +60,7 @@ Shared tooling (`@kagami/eslint-config`, `@kagami/tsconfig`) lives in Kagami's `
 @kizuna/dashboard    ← Next.js inspector — talks to API only over HTTP
 ```
 
-The two apps share **no in-process code**. The dashboard's contract with the API is the REST surface in `apps/api/src/routes/*` plus the OAuth handlers, hit through `fetch` to `KIZUNA_API_URL` (default `https://api.kizuna.localhost`). The dashboard mirrors API response shapes by hand in `apps/dashboard/lib/types.ts` — keep that file in sync with `apps/api/src/lib/serialize.ts` when shapes change.
+The two apps share **no in-process code**. The dashboard's contract with the API is the REST surface in `apps/api/src/routes/*` plus the OAuth handlers, hit through `fetch` to `KIZUNA_API_URL` (default `https://api.kizuna.localhost`). The dashboard mirrors API response shapes by hand in `apps/dashboard/src/lib/types.ts` — keep that file in sync with `apps/api/src/lib/serialize.ts` when shapes change.
 
 ## Architecture Diagram
 
@@ -248,13 +248,13 @@ See [sync.md](sync.md) for the full state machine.
 | `apps/api/src/routes/`                 | One Express router per resource. Each exports both the router and an `EndpointSpec[]` so the manifest stays in sync.                                                                                       |
 | `apps/api/src/lib/`                    | Cross-cutting helpers — auth middleware, error envelope, AES-256-GCM, signed CSRF state, OAuth client + cached access token, base64url cursor, ISO duration parser, mongo→wire serializer, pino singleton. |
 | `apps/api/src/manifest.ts`             | `zodToJsonSchema` factory used by `routes/manifest.ts` to render `GET /v1/_manifest` (OpenAPI-shaped endpoint catalog).                                                                                    |
-| `apps/dashboard/app/`                  | Next.js 15 App Router. `(app)` route group is auth-gated; `(auth)` holds `/login`. See [dashboard.md](dashboard.md).                                                                                       |
-| `apps/dashboard/lib/`                  | Typed API client, hand-mirrored response types, HMAC session cookie, formatters.                                                                                                                           |
+| `apps/dashboard/src/app/`                  | Next.js 15 App Router. `(app)` route group is auth-gated; `(auth)` holds `/login`. See [dashboard.md](dashboard.md).                                                                                       |
+| `apps/dashboard/src/lib/`                  | Typed API client, hand-mirrored response types, HMAC session cookie, formatters.                                                                                                                           |
 
 ## Cross-cutting Concerns
 
 - **Logging.** `apps/api/src/lib/logger.ts` exports a pino logger (`base: { service: 'kizuna-api' }`). Pretty transport when `NODE_ENV=development`. Used directly in workers / boot / errors; there's no request-scoped logger middleware today.
 - **Error handling.** `apps/api/src/lib/errors.ts` defines a `HttpError` class and an `errors.{badRequest,unauthorized,notFound,conflict,rateLimited,internal}` factory. The Express error handler maps `HttpError` → tagged 4xx, `ZodError` → `400 bad_request`, Mongoose `ValidationError` / `CastError` / `StrictModeError` → `400 bad_request`, code-11000 dup-key → `409 conflict`, everything else → `500 internal`.
-- **Time handling.** All dates are stored as `Date` and serialized as ISO 8601. The dashboard formats in `America/New_York` (`apps/dashboard/lib/format.ts`) — hardcoded for now.
+- **Time handling.** All dates are stored as `Date` and serialized as ISO 8601. The dashboard formats in `America/New_York` (`apps/dashboard/src/lib/format.ts`) — hardcoded for now.
 - **Reentrancy on ingest.** The scheduler keeps a `running = true` flag while a tick is in flight; overlapping ticks are skipped with a `logger.warn`. Manual `POST /sync/.../run` calls bypass this — they're synchronous round-trips driven by the caller.
 - **Access-token caching.** `apps/api/src/lib/google-auth.ts` caches the Google access token in module scope, refreshed when `expiresAt < now + 30 s`. `clearAccessTokenCache()` is called from the OAuth callback so a re-grant invalidates immediately. The cache is process-local; in a multi-instance deploy each worker would keep its own copy (no shared cache today).
