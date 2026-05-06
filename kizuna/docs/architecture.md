@@ -221,7 +221,7 @@ See [sync.md](sync.md) for the full state machine.
 2. `loadConfig()` — zod-parse `process.env`. Throws with formatted issues on misconfig.
 3. `connectDb(MONGO_URI)` — `mongoose.connect` (5 s server-selection timeout) + `mongoose.syncIndexes()` for every registered model. Returns a `DbHandle` exposing `ping()` and `close()`.
 4. `createApp({ db, config })` — builds the Express app: disables `x-powered-by`, mounts `express.json({ limit: '1mb' })`, then `health` (unauthed), `/oauth/*` (handler-level auth), `/v1/*` (`bearerAuth` middleware) for the rest of the routers, a 404 handler, and finally `makeErrorHandler()`.
-5. `app.listen(config.PORT, …)` — `PORT` is `3000` by default; Portless overrides this when run as `portless run tsx watch src/main.ts`.
+5. `app.listen(config.PORT, …)` — Portless injects `PORT` under the normal `dev` script and routes `https://api.kizuna.localhost` to it. The API's `3000` default is only a standalone fallback outside Portless.
 6. `startIngestScheduler({ config })` — `setInterval` every `KIZUNA_INGEST_INTERVAL_SEC` seconds (no startup tick — first run is one interval after boot, to avoid surprise sync runs on `tsx watch` reloads). When the env var is `0`, the scheduler is a no-op and ingest runs only via `POST /v1/sync/{gmail,gcal}/run`.
 7. SIGINT / SIGTERM → stop scheduler → `server.close()` → `db.close()` → `process.exit(0)`. There is no app-level `SIGINT` handler for in-flight requests — Express's default is to stop accepting and let the active ones drain.
 
@@ -248,8 +248,8 @@ See [sync.md](sync.md) for the full state machine.
 | `apps/api/src/routes/`                 | One Express router per resource. Each exports both the router and an `EndpointSpec[]` so the manifest stays in sync.                                                                                       |
 | `apps/api/src/lib/`                    | Cross-cutting helpers — auth middleware, error envelope, AES-256-GCM, signed CSRF state, OAuth client + cached access token, base64url cursor, ISO duration parser, mongo→wire serializer, pino singleton. |
 | `apps/api/src/manifest.ts`             | `zodToJsonSchema` factory used by `routes/manifest.ts` to render `GET /v1/_manifest` (OpenAPI-shaped endpoint catalog).                                                                                    |
-| `apps/dashboard/src/app/`                  | Next.js 15 App Router. `(app)` route group is auth-gated; `(auth)` holds `/login`. See [dashboard.md](dashboard.md).                                                                                       |
-| `apps/dashboard/src/lib/`                  | Typed API client, hand-mirrored response types, HMAC session cookie, formatters.                                                                                                                           |
+| `apps/dashboard/src/app/`              | Next.js 15 App Router. `(app)` route group is auth-gated; `(auth)` holds `/login`. See [dashboard.md](dashboard.md).                                                                                       |
+| `apps/dashboard/src/lib/`              | Typed API client, hand-mirrored response types, HMAC session cookie, formatters.                                                                                                                           |
 
 ## Cross-cutting Concerns
 

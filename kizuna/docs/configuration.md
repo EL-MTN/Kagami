@@ -25,7 +25,7 @@ NEWSLETTER_DOMAIN_BLOCKLIST=mailchimp.com,substack.com    # comma-separated; low
 KIZUNA_GMAIL_BACKFILL_DAYS=30                              # default 30; range 1–365
 KIZUNA_GCAL_BACKFILL_DAYS=60                               # default 60; range 1–365
 KIZUNA_INGEST_INTERVAL_SEC=0                               # default 0 (scheduler disabled); 300 ≈ 5 min for typical dev
-PORT=3000                                                  # default 3000; Portless injects this in dev
+# PORT=3000                                                # standalone only; Portless injects this in dev
 LOG_LEVEL=info                                             # pino level (`silent` in tests)
 NODE_ENV=development                                       # enables pino-pretty in dev
 ```
@@ -36,7 +36,7 @@ Notes:
 - `KIZUNA_OAUTH_ENCRYPTION_KEY` is decoded from base64; the resulting buffer must be exactly 32 bytes. The schema rejects anything else with "must be a base64-encoded 32-byte key."
 - `USER_EMAILS` controls the ingest workers' "self" detection — see [sync.md](sync.md) and [auth.md](auth.md). It is _not_ an authentication boundary.
 - `KIZUNA_INGEST_INTERVAL_SEC=0` disables the in-process scheduler entirely. Manual triggers via `POST /v1/sync/{gmail,gcal}/run` work regardless. Set to `300` (5 min) for typical dev use.
-- `PORT` only applies when running standalone. Under `npm run dev`, Portless picks an ephemeral port and routes `https://api.kizuna.localhost` to it.
+- `PORT` only applies when running standalone. Under `npm run dev`, Portless picks an ephemeral port and routes `https://api.kizuna.localhost` to it. Prefer the Portless URL in local config and docs.
 
 ### Generating the encryption key
 
@@ -80,7 +80,7 @@ Portless picks an ephemeral port per app and routes:
 - `https://kizuna.localhost` → dashboard
 - `https://api.kizuna.localhost` → API
 
-First run prompts once for sudo to install a local CA (HTTPS auto-trusted thereafter). The numeric `PORT=3000` in `apps/api/.env.example` only matters when running the API standalone. Both `dev` scripts wrap their framework launcher with `portless run …`:
+First run prompts once for sudo to install a local CA (HTTPS auto-trusted thereafter). A numeric `PORT=3000` override only matters when running the API standalone. Both `dev` scripts wrap their framework launcher with `portless run …`:
 
 ```jsonc
 // apps/api/package.json

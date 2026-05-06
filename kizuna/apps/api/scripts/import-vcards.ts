@@ -117,7 +117,7 @@ async function main(): Promise<void> {
     console.error("KIZUNA_API_KEY not set in env");
     process.exit(1);
   }
-  const baseUrl = process.env.KIZUNA_API_URL ?? "http://127.0.0.1:3000";
+  const baseUrl = process.env.KIZUNA_API_URL ?? "https://api.kizuna.localhost";
 
   const raw = readFileSync(file, "utf8");
   const cards = parseAll(raw);

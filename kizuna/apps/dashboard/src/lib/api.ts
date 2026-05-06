@@ -16,7 +16,7 @@ import type {
   SyncState,
 } from "./types";
 
-const API_URL = process.env.KIZUNA_API_URL ?? "http://localhost:3000";
+const API_URL = process.env.KIZUNA_API_URL ?? "https://api.kizuna.localhost";
 const API_KEY = process.env.KIZUNA_API_KEY ?? "";
 
 export class ApiError extends Error {
@@ -29,7 +29,7 @@ export class ApiError extends Error {
 
 async function kz<T>(path: string, init?: RequestInit): Promise<T> {
   if (!API_KEY) {
-    throw new ApiError(0, "KIZUNA_API_KEY is not set in web/.env.local");
+    throw new ApiError(0, "KIZUNA_API_KEY is not set in apps/dashboard/.env");
   }
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
