@@ -1,7 +1,4 @@
 {
   "extends": "@kagami/tsconfig/library.json",
-  "compilerOptions": {
-    "verbatimModuleSyntax": true
-  },
   "include": ["src", "tests"]
 }
