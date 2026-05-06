@@ -56,7 +56,7 @@ All three projects converge on the same stack. Tooling lives in `shared/packages
 - **Local dev hosting**: [Portless](https://github.com/vercel-labs/portless) (Vercel Labs) for stable HTTPS named `*.localhost` URLs — see below
 - **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku)
 - **Logging**: Pino
-- **Validation**: Zod schemas at boundaries. Note the version split: Kioku/api and Kizuna/api use `zod ^3.x` (hoisted at root); Kokoro/bot uses `zod ^4.x` (installed locally inside `kokoro/apps/bot/node_modules`). Kokoro/bot's `tsconfig.json` includes a `paths` mapping to redirect `zod` resolution to its local copy so TypeScript sees v4 types when compiling bot code.
+- **Validation**: Zod 4 schemas at boundaries (uniform across all three projects).
 
 ### Local hosting via Portless
 

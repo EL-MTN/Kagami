@@ -18,7 +18,7 @@ const filtersShape = {
   run_id: z.string().optional(),
   agent_id: z.string().optional(),
   category: z.string().optional(),
-  metadata: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
 };
 const FiltersInput = z.object(filtersShape).optional();
 
@@ -99,7 +99,7 @@ function buildServer(): McpServer {
         user_id: z.string().optional(),
         run_id: z.string().optional(),
         agent_id: z.string().optional(),
-        metadata: z.record(z.unknown()).optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
         category: z.string().optional(),
       },
     },
@@ -126,7 +126,7 @@ function buildServer(): McpServer {
     user_id: z.string().optional(),
     run_id: z.string().optional(),
     agent_id: z.string().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     category: z.string().optional(),
   };
   server.registerTool(
@@ -160,7 +160,7 @@ function buildServer(): McpServer {
         user_id: z.string().optional(),
         run_id: z.string().optional(),
         agent_id: z.string().optional(),
-        metadata: z.record(z.unknown()).optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
       },
     },
     async ({ transcript, generate_summary, user_id, run_id, agent_id, metadata }) => {
