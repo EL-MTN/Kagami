@@ -235,7 +235,9 @@ Misinterpreting the user's words is worse than not extracting at all.
 - **No Implicit Attribute Inference**: Don't infer gender, age, ethnicity, etc. from names or context. Only record explicitly stated attributes.
 - **Correct Attribution**: Distinguish user-stated facts from assistant-provided information. Frame assistant content appropriately.
 - **No Echo Extraction**: When an assistant message restates, summarizes, or confirms information the user already provided in the same conversation, do NOT extract it again from the assistant's message. Only extract from assistant messages when they contribute genuinely NEW information not already present in the user's messages — specific recommendations, newly created plans or schedules, researched facts, or solutions the assistant provided that the user did not state themselves. If the user says "I want daily check-ins at 7:30 AM" and the assistant responds "I've set up daily check-ins at 7:30 AM", that is already captured from the user's message — do not extract a second memory from the assistant's echo.
-- **No Within-Response Duplication**: Each piece of information must appear exactly ONCE in your output, regardless of how many messages mention it. Before finalizing your output, review your extractions and remove any that are semantically equivalent to another extraction in the same response. Two memories about the same fact phrased differently are redundant — keep the richer one and drop the other.
+- **No Within-Response Duplication**: Each piece of information must appear exactly ONCE in your output, regardless of how many messages mention it. **Before returning, scan every pair of memories. If two share the same primary subject (same person, event, or plan) AND meaningfully overlap in content, they are duplicates — even when worded differently or extracted from different turns.** Keep the most complete version, typically the latest state in the conversation, and drop the others. Two patterns to watch for:
+  - **Evolving-plan snapshots** — when an earlier draft of a plan is revised mid-conversation. Example: "Assistant booked a 7 PM table" alongside "Assistant updated the booking to 8 PM" — emit only the 8 PM final state. Earlier drafts add no information once superseded.
+  - **Request-then-fulfillment pairs** — when the user requests X and the assistant confirms doing X, both describe the same event. Example: "User asked the assistant to recommend a book about ancient Rome" alongside "Assistant recommended SPQR by Mary Beard" — emit only the fulfillment. The user's request is implicit in the assistant's response and adds nothing once the fulfillment is captured.
 - **No Meta-Extraction**: Extract the CONTENT of what was shared, not a description of the user's action. When a user shares a document, data, or reference material, extract the actual facts FROM that material.
   - WRONG: "User asked for the introductory paragraph to be shortened" / "User shared a case summary for optimization"
   - RIGHT: "The Bajimaya v Reward Homes case involved construction starting in 2014, contract signed in 2015, with completion due by October 2015" / "The tribunal found Reward Homes breached its contract through poor workmanship, waterproofing defects, and non-compliance with the Building Code of Australia"
@@ -446,6 +448,25 @@ Output:
 
 Three key lessons: (1) The existing memory "John has a dog named Max" does NOT mean all Max-related information is captured — the camping trip is a new event with specific activities (hiking, swimming) and must be extracted and linked. (2) Maria is a named speaker in the "assistant" role but shares a genuine personal fact (new cat Bailey) — this MUST be extracted with the same rigor as user facts. Her echo ("that sounds amazing", "camping is soul-nourishing") is correctly skipped, but her personal fact is not. (3) Sara's name and the birthday trip are separate factual details that each deserve their own extraction.
 
+## Example 13: Within-Response Duplication — Evolving Plan + Request/Fulfillment
+
+Summary: ""
+Recently Extracted: []
+Existing Memories: []
+New Messages:
+[{"role": "user", "content": "Can you book me a table at Osteria Francescana for Friday?"},
+{"role": "assistant", "content": "Sure — I'll reserve a table for two on Friday at 7 PM."},
+{"role": "user", "content": "Actually make it a party of four, and 8 PM if they have it."},
+{"role": "assistant", "content": "Updated: a table for four at Osteria Francescana on Friday at 8 PM is confirmed."}]
+Observation Date: 2025-09-10
+
+Output:
+{"memory": [
+{"id": "0", "text": "User has a confirmed reservation for four at Osteria Francescana on Friday September 12, 2025 at 8 PM", "category": "food"}
+]}
+
+The conversation contains four moments that could each become a memory: the user's initial request, the assistant's first reservation (two at 7 PM), the user's revision, and the assistant's confirmation of the final state. They are within-response duplicates of one fact. Emit only the final confirmed reservation — earlier drafts were superseded, and the user's request is already encoded in the fulfillment.
+
 # CRITICAL: Exhaustive Extraction Checklist
 
 Before producing output, mentally scan the ENTIRE conversation — every single message — and verify:
@@ -454,6 +475,7 @@ Before producing output, mentally scan the ENTIRE conversation — every single 
 2. Have you extracted facts from messages in the MIDDLE and END of the conversation, not just the beginning?
 3. For conversations with 10+ messages, you should typically extract 5-15 memories. If you have fewer than 3, re-read the conversation — you are almost certainly missing information.
 4. Re-read each user message individually: does EVERY specific fact, preference, experience, or event mentioned in that message have a corresponding extraction? If a single message mentions two distinct facts (e.g., an allergy AND a hobby), both must be captured.
+5. **Within-response dedup pass**: Read your output back as a list. For each pair of memories, ask: do they share the same primary subject AND describe the same fact, event, or plan? If yes, they are duplicates — collapse to the single most complete version. Watch especially for (a) earlier and later snapshots of an evolving plan that was revised during the conversation, and (b) the user's request paired with the assistant's fulfillment of that request — both describe the same event. Each piece of information must appear exactly once.
 
 A common failure mode is "first topic dominance" — the extractor captures the first major topic thoroughly, then treats subsequent topics as filler. This is WRONG. Every topic mentioned deserves extraction if it contains memorable facts. If a chunk has 8 messages covering 4 different topics, you MUST produce memories for all 4 topics — not just the first or most prominent one.
 
