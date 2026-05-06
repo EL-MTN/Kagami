@@ -34,13 +34,13 @@ app.use(makeErrorHandler());          // ZodError / HttpError / mongoose / E1100
 
 ## Auth
 
-| Layer                    | Mechanism                                                                                   | File                              |
-| ------------------------ | ------------------------------------------------------------------------------------------- | --------------------------------- |
-| `/v1/*`                  | `Authorization: Bearer <KIZUNA_API_KEY>`; constant-time compare                             | `apps/api/src/lib/auth.ts`        |
-| `/oauth/google/start`    | Bearer header OR `?key=<KIZUNA_API_KEY>` (so a plain `<a href>` from the dashboard works)   | `apps/api/src/routes/oauth.ts`    |
-| `/oauth/google/callback` | HMAC-signed state token (10-min TTL, secret = `KIZUNA_API_KEY`); no API key in the redirect | `apps/api/src/lib/oauth-state.ts` |
-| `/oauth/google/status`   | Bearer header OR `?key=`                                                                    | `apps/api/src/routes/oauth.ts`    |
-| Dashboard sessions       | HMAC-signed cookie, secret = `KIZUNA_API_KEY`, 30-day TTL                                   | `apps/dashboard/src/lib/session.ts`   |
+| Layer                    | Mechanism                                                                                   | File                                |
+| ------------------------ | ------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `/v1/*`                  | `Authorization: Bearer <KIZUNA_API_KEY>`; constant-time compare                             | `apps/api/src/lib/auth.ts`          |
+| `/oauth/google/start`    | Bearer header OR `?key=<KIZUNA_API_KEY>` (so a plain `<a href>` from the dashboard works)   | `apps/api/src/routes/oauth.ts`      |
+| `/oauth/google/callback` | HMAC-signed state token (10-min TTL, secret = `KIZUNA_API_KEY`); no API key in the redirect | `apps/api/src/lib/oauth-state.ts`   |
+| `/oauth/google/status`   | Bearer header OR `?key=`                                                                    | `apps/api/src/routes/oauth.ts`      |
+| Dashboard sessions       | HMAC-signed cookie, secret = `KIZUNA_API_KEY`, 30-day TTL                                   | `apps/dashboard/src/lib/session.ts` |
 
 See [auth.md](auth.md) for the full model.
 
@@ -275,9 +275,8 @@ https://www.googleapis.com/auth/calendar.readonly
 
 ## Inter-service config
 
-| Caller                   | Env var          | Default                        |
-| ------------------------ | ---------------- | ------------------------------ |
-| Kizuna dashboard         | `KIZUNA_API_URL` | `https://api.kizuna.localhost` |
-| Standalone (no Portless) | —                | `http://localhost:3000`        |
+| Caller           | Env var          | Default                        |
+| ---------------- | ---------------- | ------------------------------ |
+| Kizuna dashboard | `KIZUNA_API_URL` | `https://api.kizuna.localhost` |
 
-The numeric standalone-fallback port (`3000`) only applies when running the API outside Portless; under `npm run dev`, Portless picks an ephemeral port and routes `https://api.kizuna.localhost` to it.
+Use the Portless URL whenever the API is launched by `npm run dev` / `portless run`. The numeric standalone-fallback port (`3000`) only applies when running the API directly outside Portless.

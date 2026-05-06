@@ -24,9 +24,9 @@ export default function ErrorPage({
         <div className="flex-1">
           <h2 className="font-display text-xl text-foreground">Something went sideways.</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            The Kioku API may not be reachable. Confirm the server is running on{" "}
-            <code className="font-mono text-foreground">127.0.0.1:7777</code> and that MongoDB is
-            up.
+            The Kioku API may not be reachable. Confirm the server is running at{" "}
+            <code className="font-mono text-foreground">https://api.kioku.localhost</code> via
+            Portless and that MongoDB is up.
           </p>
           <p className="mt-3 font-mono text-[11px] text-faint">{error.message}</p>
           <Button onClick={reset} variant="outline" size="sm" className="mt-4">

@@ -55,7 +55,7 @@ npx turbo run test     --filter="@kizuna/*"
 npx turbo run lint     --filter="@kizuna/*"
 ```
 
-Both apps run under [Portless](https://github.com/vercel-labs/portless): API at `https://api.kizuna.localhost`, dashboard at `https://kizuna.localhost`. Each `dev` script wraps the framework launcher with `portless run …`. Standalone fallback ports are `3000` (API, from `config.PORT`) and Next.js's default for the dashboard, but normal `dev` never binds to those — Portless picks an ephemeral port and proxies the named URL to it.
+Both apps run under [Portless](https://github.com/vercel-labs/portless): API at `https://api.kizuna.localhost`, dashboard at `https://kizuna.localhost`. Each `dev` script wraps the framework launcher with `portless run …`. Standalone fallback ports only matter when running an app directly outside Portless; normal local development should use the named HTTPS URLs.
 
 App-level scripts still work when run from inside the app directory:
 

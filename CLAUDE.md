@@ -95,16 +95,16 @@ npm run kokoro:auth:google       # tsx kokoro/scripts/authorize-google.ts
 
 All HTTP entry points are served as HTTPS named URLs by [Portless](https://github.com/vercel-labs/portless) (Vercel Labs reverse proxy). First run prompts once for sudo to install a local CA; HTTPS is auto-trusted thereafter. Portless picks an ephemeral port per app and binds 443.
 
-| Project | Component | URL                              |
-| ------- | --------- | -------------------------------- |
-| Kioku   | dashboard | `https://kioku.localhost`        |
-| Kioku   | API       | `https://api.kioku.localhost`    |
-| Kokoro  | dashboard | `https://kokoro.localhost`       |
-| Kokoro  | bot       | (none — Telegram long-poll)      |
-| Kizuna  | dashboard | `https://kizuna.localhost`       |
-| Kizuna  | API       | `https://api.kizuna.localhost`   |
+| Project | Component | URL                            |
+| ------- | --------- | ------------------------------ |
+| Kioku   | dashboard | `https://kioku.localhost`      |
+| Kioku   | API       | `https://api.kioku.localhost`  |
+| Kokoro  | dashboard | `https://kokoro.localhost`     |
+| Kokoro  | bot       | (none — Telegram long-poll)    |
+| Kizuna  | dashboard | `https://kizuna.localhost`     |
+| Kizuna  | API       | `https://api.kizuna.localhost` |
 
-Each project keeps its own `portless.json` next to its code. Numeric `PORT` defaults inside each app (Kioku 7777, Kizuna 3000/3001) only matter when running an app standalone outside Portless.
+Each project keeps its own `portless.json` next to its code. Numeric `PORT` defaults inside apps only matter when running an app standalone outside Portless; normal local development should use the named HTTPS URLs above.
 
 ## Shared conventions
 
@@ -132,11 +132,11 @@ Live at the workspace root. The `prepare` script runs `husky` after install. Lin
 
 When working inside a project, consult that project's `CLAUDE.md` first — it's authoritative for module structure, conventions, and the docs index.
 
-| Project | Role                          | Start here                                   |
-| ------- | ----------------------------- | -------------------------------------------- |
-| Kioku   | Long-term memory service      | [`kioku/CLAUDE.md`](kioku/CLAUDE.md)         |
-| Kokoro  | Telegram + iMessage AI agent  | [`kokoro/CLAUDE.md`](kokoro/CLAUDE.md)       |
-| Kizuna  | Personal CRM                  | [`kizuna/CLAUDE.md`](kizuna/CLAUDE.md)       |
+| Project | Role                         | Start here                             |
+| ------- | ---------------------------- | -------------------------------------- |
+| Kioku   | Long-term memory service     | [`kioku/CLAUDE.md`](kioku/CLAUDE.md)   |
+| Kokoro  | Telegram + iMessage AI agent | [`kokoro/CLAUDE.md`](kokoro/CLAUDE.md) |
+| Kizuna  | Personal CRM                 | [`kizuna/CLAUDE.md`](kizuna/CLAUDE.md) |
 
 For cross-service detail (Kokoro→Kioku coupling, observed gaps, planned Kao identity service), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 

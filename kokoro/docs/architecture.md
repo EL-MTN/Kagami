@@ -98,7 +98,7 @@ Tooling bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from the Kagami
 │Location  │                  │ hybrid retrieval │
 │History   │                  └──────────────────┘
 │Pending   │                  KIOKU_URL (default
-│Confirm   │                  http://localhost:7777)
+│Confirm   │                  https://api.kioku.localhost)
 └──────────┘
 
 ┌──────────────────────────┐
@@ -291,7 +291,7 @@ Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop p
 
 - **Internal packages pattern** — npm workspaces + Turborepo. Library packages (`shared`, `db`, `memory`) export raw TypeScript source via `exports: { ".": "./src/index.ts" }`. No build step for libraries; consumers resolve source directly. Only `bot` and `dashboard` have build scripts (esbuild and Next.js respectively). The bot's esbuild config (`apps/bot/build.ts`) uses an `externalize-non-kokoro` plugin: every bare import is externalized except `@kokoro/*`, which gets inlined into the single ESM bundle.
 - **Session-based conversations** — sessions close after 1 hour of inactivity, replacing daily scoping. Eliminates cross-midnight amnesia.
-- **Long-term memory delegated to Kioku** — `@kokoro/memory` is a typed HTTP client; the actual atomic-fact store + hybrid retrieval lives in a separate Kioku service (`KIOKU_URL`, default `http://localhost:7777`). See [memory.md](memory.md) for the full subsystem map.
+- **Long-term memory delegated to Kioku** — `@kokoro/memory` is a typed HTTP client; the actual atomic-fact store + hybrid retrieval lives in a separate Kioku service (`KIOKU_URL`, default `https://api.kioku.localhost` via Portless). Use `http://localhost:7777` only when running Kioku standalone outside Portless. See [memory.md](memory.md) for the full subsystem map.
 - **On-demand retrieval, not eager loading** — the system prompt carries zero facts. The LLM calls `searchMemory` when it needs context. Better retrieval (cosine + BM25 + entity boost) replaces the old tier-and-merge compression strategy.
 - **Append-only facts** — atomic facts are write-once. Corrections happen by appending newer facts with later `event_date`; the answerer prompt resolves contradictions newest-wins. No UPDATE / DELETE / soft-archival.
 - **Sweeper as correctness layer for ingest** — session-close ingest fires fire-and-forget at four call sites for latency, but a 5-minute sweeper backstops failures: any `closed && ingestStatus: "pending"` conversation gets retried until Kioku confirms.
