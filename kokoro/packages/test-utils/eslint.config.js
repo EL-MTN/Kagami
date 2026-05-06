@@ -1,3 +1,3 @@
-import baseConfig from "@kokoro/eslint-config/base";
+import baseConfig from "@kagami/eslint-config/base";
 
 export default baseConfig;

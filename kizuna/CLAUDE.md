@@ -2,7 +2,7 @@
 
 ## Project
 
-Kizuna — a personal CRM that tracks people, organizations, interactions, and follow-ups. Auto-ingests Gmail and Google Calendar to populate the relationship graph; everything else is concierge-driven via REST. Built as a monorepo with TypeScript, Express 5, Mongoose, and a Next.js 15 dashboard. Standalone within the Kagami workspace — no runtime coupling to Kioku or Kokoro.
+Kizuna — a personal CRM that tracks people, organizations, interactions, and follow-ups. Auto-ingests Gmail and Google Calendar to populate the relationship graph; everything else is concierge-driven via REST. Built with TypeScript, Express 5, Mongoose, and a Next.js 15 dashboard. Lives as a subtree inside the Kagami nested monorepo and consumes shared tooling via `@kagami/eslint-config` and `@kagami/tsconfig` from `shared/packages/`. No runtime coupling to Kioku or Kokoro.
 
 ## Monorepo Structure
 
@@ -28,33 +28,39 @@ kizuna/
 │       │   └── (auth)/     # /login (API-key sign-in)
 │       ├── components/     # sidebar, nav-link, shell/, ui/ (shadcn-shaped)
 │       └── lib/            # api client, types, session (HMAC cookie), format
-├── packages/
-│   ├── typescript-config/  # JSON tsconfig bases (base.json + nextjs.json)
-│   └── eslint-config/      # shared flat ESLint config (base + next)
+├── packages/               # reserved for future Kizuna-only libs (currently empty)
 ├── portless.json           # api.kizuna + kizuna Portless registrations
 └── docs/
 ```
 
-**Stack**: npm workspaces + Turborepo. The two `packages/*` are config-only (JSON / a single flat config file). No shared TypeScript libraries between apps — they communicate only over HTTP.
+**Stack**: Kizuna is a subtree inside the Kagami nested monorepo (npm workspaces + Turborepo, orchestrated from the Kagami root). It has no project-internal TypeScript packages today; the apps consume only the shared config packages `@kagami/eslint-config` and `@kagami/tsconfig` from Kagami's `shared/packages/`. The two apps share **no in-process code** — they communicate only over HTTP.
 
 ## Commands
 
+All commands run from the Kagami workspace root (Kizuna no longer has a top-level `package.json`).
+
 ```bash
-npm run build           # turbo run build (api: tsc -p . → dist/; dashboard: next build)
-npm run dev             # both apps under Portless (https://kizuna.localhost + https://api.kizuna.localhost)
-npm run dev:api         # API only (turbo --filter=@kizuna/api)
-npm run dev:dashboard   # Dashboard only (turbo --filter=@kizuna/dashboard)
-npm run typecheck       # turbo run typecheck (tsc --noEmit on both apps)
-npm run test            # turbo run test (api: vitest; dashboard has no tests)
-npm run lint            # turbo run lint (eslint @kizuna/eslint-config)
+# From the Kagami workspace root:
+npm run kizuna:dev              # both Kizuna apps under Portless (https://kizuna.localhost + https://api.kizuna.localhost)
+npm run kizuna:dev:api          # API only
+npm run kizuna:dev:dashboard    # Dashboard only
+./dev-all.sh                    # Kioku → Kokoro + Kizuna together with prefixed output
+
+npm run typecheck               # all workspaces (tsc --noEmit)
+npm run test                    # all workspaces
+npm run lint                    # all workspaces
+# Filter to Kizuna only:
+npx turbo run typecheck --filter="@kizuna/*"
+npx turbo run test     --filter="@kizuna/*"
+npx turbo run lint     --filter="@kizuna/*"
 ```
 
-Both apps run under [Portless](https://github.com/vercel-labs/portless): API at `https://api.kizuna.localhost`, dashboard at `https://kizuna.localhost`. Each `dev` script wraps the framework launcher with `portless run …`. Standalone fallback ports are `3000` (API, from `config.PORT`) and Next.js's default for the dashboard, but normal `npm run dev` never binds to those — Portless picks an ephemeral port and proxies the named URL to it.
+Both apps run under [Portless](https://github.com/vercel-labs/portless): API at `https://api.kizuna.localhost`, dashboard at `https://kizuna.localhost`. Each `dev` script wraps the framework launcher with `portless run …`. Standalone fallback ports are `3000` (API, from `config.PORT`) and Next.js's default for the dashboard, but normal `dev` never binds to those — Portless picks an ephemeral port and proxies the named URL to it.
 
-The api workspace also exposes:
+App-level scripts still work when run from inside the app directory:
 
 ```bash
-cd apps/api
+cd kizuna/apps/api
 npm run test:watch      # vitest watch
 npm run lint:fix
 npx tsx scripts/import-vcards.ts <path-to.vcf>   # bulk-create people from vCard
@@ -63,8 +69,8 @@ npx tsx scripts/import-vcards.ts <path-to.vcf>   # bulk-create people from vCard
 ## Dependency Graph
 
 ```
-@kizuna/typescript-config  ← leaf
-@kizuna/eslint-config      ← leaf
+@kagami/eslint-config  ← shared (lives in Kagami's shared/packages/)
+@kagami/tsconfig       ← shared (lives in Kagami's shared/packages/)
        ↑
 @kizuna/api          ← Express, Mongoose, Gmail/Calendar ingest
 @kizuna/dashboard    ← Next.js 15 (talks to API over HTTP via KIZUNA_API_URL)
@@ -74,7 +80,7 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 
 ## Conventions
 
-- **TypeScript + ESM** — strict mode, ES2023 target, NodeNext for the API; bundler resolution + `module: ESNext` for the dashboard. Server config sets `noUncheckedIndexedAccess`, `verbatimModuleSyntax`, and `noImplicitOverride`.
+- **TypeScript + ESM** — strict mode, ES2023 target, NodeNext for the API; bundler resolution + `module: ESNext` for the dashboard. The API extends `@kagami/tsconfig/server.json` and adds `verbatimModuleSyntax: true`, `noImplicitOverride: true`, `esModuleInterop: true` as overrides. The dashboard extends `@kagami/tsconfig/nextjs.json` and overrides `verbatimModuleSyntax: false` plus `allowJs: true`.
 - **Async everywhere** — all I/O is async/await, no callbacks.
 - **Zod at boundaries** — every request body / query / params parsed by zod in the route handler; the global error handler maps `ZodError` to `400 { error: { code: "bad_request", message: "invalid input", details } }`. Internal modules trust their inputs.
 - **Pino logging** — singleton in `apps/api/src/lib/logger.ts`, `pino-pretty` in `NODE_ENV=development`. `logger.info({ context }, "message")` pattern. There is no `pino-http` middleware today; route logging is request-scoped only via thrown errors hitting `makeErrorHandler`.
@@ -84,12 +90,12 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 - **Soft delete via `deletedAt`** — DELETE handlers never remove rows; they `findOneAndUpdate` with `{ deletedAt: new Date() }`. List endpoints filter `deletedAt: null` unless `?includeTombstoned=true`. Person tombstones additionally set `suppressReingest: true` so the upsert path won't recreate them.
 - **AES-256-GCM for OAuth tokens** — Google refresh tokens are encrypted at rest with `KIZUNA_OAUTH_ENCRYPTION_KEY` (a base64 32-byte key). See `apps/api/src/lib/encryption.ts`. The IV is random per write, the auth tag is appended, and the envelope is `base64(iv ‖ tag ‖ ciphertext)`.
 - **Bearer auth on `/v1/*`** — every authed route checks `Authorization: Bearer <KIZUNA_API_KEY>` via constant-time compare. OAuth handlers accept the same key as `?key=` for browser-initiated `<a href>` flows; the OAuth callback is gated by HMAC-signed CSRF state instead.
-- **Cross-package imports** — `@kizuna/typescript-config`, `@kizuna/eslint-config` only.
+- **Cross-package imports** — `@kagami/eslint-config`, `@kagami/tsconfig` only (no project-internal packages today). The API's `eslint.config.js` imports from `@kagami/eslint-config/base`; the dashboard's `eslint.config.mjs` imports from `@kagami/eslint-config/next`.
 - **Within-package imports (API)** — relative paths with explicit `.js` extensions (NodeNext requirement).
 - **Within-package imports (dashboard)** — `@/*` path aliases (e.g. `@/lib/api`, `@/components/ui/button`); no extensions.
 - **`.env` location** — `apps/api/.env` and `apps/dashboard/.env`. `apps/api/.env.example` and `apps/dashboard/.env.example` are templates.
 - **Tests as source of truth** — when a test fails because production behaves differently than the test expects, fix the API, not the test. See [docs/testing.md](docs/testing.md).
-- **Internal packages pattern** — both `packages/*` are config-only (JSON exports / flat ESLint configs). No build step.
+- **Internal packages pattern** — Kizuna has no project-internal TypeScript packages today; the apps consume only the shared `@kagami/*` config packages from Kagami's `shared/packages/`. The local `kizuna/packages/` directory is reserved for future Kizuna-only libs.
 
 ## Doc Maintenance
 

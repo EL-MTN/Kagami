@@ -1,11 +1,12 @@
 {
-  "extends": "@kokoro/typescript-config/nextjs.json",
+  "extends": "@kagami/tsconfig/nextjs.json",
   "compilerOptions": {
     "paths": {
       "@/*": ["./src/*"]
     },
     "allowJs": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "verbatimModuleSyntax": true
   },
   "include": ["*.ts", "*.tsx", "next-env.d.ts", "src", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]

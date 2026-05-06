@@ -1,6 +1,8 @@
 {
-  "extends": "@kizuna/typescript-config/nextjs.json",
+  "extends": "@kagami/tsconfig/nextjs.json",
   "compilerOptions": {
+    "verbatimModuleSyntax": false,
+    "allowJs": true,
     "paths": {
       "@/*": ["./*"]
     }

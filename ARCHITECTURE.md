@@ -1,6 +1,6 @@
 # Kagami — Architecture Overview
 
-Kagami ("mirror") is a personal-AI workspace composed of three independent TypeScript projects that can be developed and run together via `dev-all.sh`. The names are Japanese: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind).
+Kagami ("mirror") is a personal-AI workspace housing three TypeScript projects in a single nested monorepo, developed and run together via `dev-all.sh`. The names are Japanese: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind). The workspace is one git repo; project subtrees were imported via `git subtree add` so per-project history is preserved in `git log`.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -46,16 +46,17 @@ All HTTP entry points are served as HTTPS named URLs by [Portless](https://githu
 
 ## Shared conventions
 
-All three projects converge on the same stack and layout, even though no code is shared between them:
+All three projects converge on the same stack. Tooling lives in `shared/packages/`; domain code stays per-project.
 
 - **Language**: TypeScript (strict, ESM), Node ≥ 22
-- **Package layout**: monorepo via npm workspaces + Turborepo
+- **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs cover `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, and `shared/packages/*`. One root `package.json`, one root `turbo.json`, one hoisted `node_modules`.
 - **Apps split**: `apps/api` (or `apps/bot`) + `apps/dashboard`
-- **Internal packages**: each repo has its own `packages/eslint-config` and `packages/typescript-config` (not shared across repos)
+- **Shared tooling packages**: `@kagami/eslint-config` (`./base`, `./next`) and `@kagami/tsconfig` (`./base.json`, `./library.json`, `./server.json`, `./nextjs.json`) at `shared/packages/`. Per-app `tsconfig.json` files extend a variant and add overrides where projects diverge — e.g. Kokoro/Kizuna add `verbatimModuleSyntax: true`, Kioku adds `esModuleInterop` + `allowImportingTsExtensions`, Kizuna/api adds `noImplicitOverride`.
+- **Per-project internal packages**: only Kokoro has them today (`kokoro/packages/{shared,db,memory,test-utils}`). Kioku and Kizuna have empty `packages/` slots reserved for future project-only libs.
 - **Local dev hosting**: [Portless](https://github.com/vercel-labs/portless) (Vercel Labs) for stable HTTPS named `*.localhost` URLs — see below
 - **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku)
 - **Logging**: Pino
-- **Validation**: Zod schemas at boundaries
+- **Validation**: Zod schemas at boundaries. Note the version split: Kioku/api and Kizuna/api use `zod ^3.x` (hoisted at root); Kokoro/bot uses `zod ^4.x` (installed locally inside `kokoro/apps/bot/node_modules`). Kokoro/bot's `tsconfig.json` includes a `paths` mapping to redirect `zod` resolution to its local copy so TypeScript sees v4 types when compiling bot code.
 
 ### Local hosting via Portless
 
@@ -72,7 +73,7 @@ Apps register their name either via a top-level `portless.json` (Kioku, Kizuna) 
 | Kokoro  | dashboard | `https://kokoro.localhost`    | `apps/dashboard/package.json` → `"portless": "kokoro"` |
 | Kokoro  | bot       | (none — Telegram long-poll)   | no HTTP listener                      |
 
-Each app server honors Portless's injected `PORT`, falling back to its own numeric default only when run standalone. For example, in `Kioku/apps/api/src/server.ts`:
+Each app server honors Portless's injected `PORT`, falling back to its own numeric default only when run standalone. For example, in `kioku/apps/api/src/server.ts`:
 
 ```typescript
 // `PORT` is injected by `portless run`; 7777 is the standalone fallback.
@@ -81,7 +82,7 @@ const PORT = Number.parseInt(process.env.PORT ?? "7777", 10);
 
 So under normal `npm run dev`, Kioku doesn't actually bind to 7777 — Portless picks an ephemeral port in 4000–4999 and routes `https://api.kioku.localhost` to it. The numeric defaults in this document (Kioku 7777, Kizuna 3000 / 3001) are only the standalone-fallback values; everything that reaches the apps in normal use goes through the Portless URLs.
 
-The same convention extends to inter-service config: Kizuna's dashboard reaches its API via `KIZUNA_API_URL=https://api.kizuna.localhost`, Kizuna's Google OAuth uses `GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback`, and Kokoro's `KIOKU_URL` defaults to `https://api.kioku.localhost` (Zod default in `packages/shared/src/config.ts`). The numeric-port forms only matter when running a project standalone outside Portless.
+The same convention extends to inter-service config: Kizuna's dashboard reaches its API via `KIZUNA_API_URL=https://api.kizuna.localhost`, Kizuna's Google OAuth uses `GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback`, and Kokoro's `KIOKU_URL` defaults to `https://api.kioku.localhost` (Zod default in `kokoro/packages/shared/src/config.ts`). The numeric-port forms only matter when running a project standalone outside Portless.
 
 ---
 

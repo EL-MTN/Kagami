@@ -1,0 +1,27 @@
+node_modules/
+.turbo/
+.next/
+dist/
+coverage/
+.DS_Store
+
+# env files (per-app)
+**/.env
+**/.env.local
+**/.env*.local
+!**/.env.example
+
+# build artifacts
+*.tsbuildinfo
+
+# logs
+*.log
+npm-debug.log*
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Husky managed dir is committed; ignored hooks are inside it

@@ -2,12 +2,12 @@
 
 ## System Overview
 
-Kizuna is a personal CRM. Two apps: an Express API that owns the database and Google ingest workers, and a Next.js dashboard that reads it. Self-contained within the Kagami workspace — no runtime references to Kioku or Kokoro.
+Kizuna is a personal CRM. Two apps: an Express API that owns the database and Google ingest workers, and a Next.js dashboard that reads it. Lives as a subtree inside the Kagami nested monorepo (npm workspaces + Turborepo, orchestrated from the Kagami root) and consumes shared tooling via `@kagami/eslint-config` and `@kagami/tsconfig` from `shared/packages/`. No runtime references to Kioku or Kokoro.
 
 ### Monorepo Layout
 
 ```
-kizuna/                              # npm workspaces + Turborepo
+kizuna/                              # subtree within the Kagami nested monorepo
 ├── apps/
 │   ├── api/                         # Express HTTP API
 │   │   ├── src/
@@ -43,18 +43,18 @@ kizuna/                              # npm workspaces + Turborepo
 │   │   ├── test/                    # vitest + supertest + testcontainers (real Mongo)
 │   │   └── scripts/import-vcards.ts # vCard → POST /v1/people
 │   └── dashboard/                   # Next.js 15 (App Router)
-├── packages/
-│   ├── typescript-config/           # JSON tsconfig bases (base + nextjs)
-│   └── eslint-config/               # flat ESLint config (base + next)
+├── packages/                        # reserved for future Kizuna-only libs (currently empty)
 ├── portless.json                    # api.kizuna + kizuna registrations
 └── docs/
 ```
 
+Shared tooling (`@kagami/eslint-config`, `@kagami/tsconfig`) lives in Kagami's `shared/packages/` and is consumed by both apps. The API's `tsconfig.json` extends `@kagami/tsconfig/server.json` (with `verbatimModuleSyntax`, `noImplicitOverride`, `esModuleInterop` as overrides); the dashboard's extends `@kagami/tsconfig/nextjs.json` (with `verbatimModuleSyntax: false`, `allowJs: true`).
+
 ### Dependency Graph
 
 ```
-@kizuna/typescript-config  ← leaf (no deps)
-@kizuna/eslint-config      ← leaf
+@kagami/eslint-config  ← shared (Kagami shared/packages/)
+@kagami/tsconfig       ← shared (Kagami shared/packages/)
        ↑
 @kizuna/api          ← Express, Mongoose, ingest workers
 @kizuna/dashboard    ← Next.js inspector — talks to API only over HTTP

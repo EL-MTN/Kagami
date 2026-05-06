@@ -1,8 +1,9 @@
 {
-  "extends": "@kokoro/typescript-config/library.json",
+  "extends": "@kagami/tsconfig/library.json",
   "compilerOptions": {
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    "verbatimModuleSyntax": true
   },
   "include": ["src"]
 }

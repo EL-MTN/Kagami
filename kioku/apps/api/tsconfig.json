@@ -1,4 +1,8 @@
 {
-  "extends": "@kioku/typescript-config/server.json",
+  "extends": "@kagami/tsconfig/server.json",
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": true
+  },
   "include": ["src", "tests", "scripts"]
 }

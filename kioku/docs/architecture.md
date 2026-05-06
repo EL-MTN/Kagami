@@ -7,8 +7,8 @@ Kioku is a long-term memory subsystem for an agentic assistant. It accepts conve
 ### Monorepo Layout
 
 ```
-kioku/                              # npm workspaces + Turborepo
-├── apps/
+kioku/                              # subtree of the Kagami nested monorepo
+├── apps/                           # (npm workspaces + Turborepo are owned by the Kagami root)
 │   ├── api/                        # Express HTTP server + MCP transport
 │   │   ├── src/
 │   │   │   ├── server.ts           # bootstrap: ensureIndexes → app.listen → graceful shutdown
@@ -22,23 +22,25 @@ kioku/                              # npm workspaces + Turborepo
 │   │   │   ├── retrieval/          # hybrid ranker, scoring, lemmatizer + entity extractor
 │   │   │   ├── routes/             # per-resource Express routers + shared filter zod schema
 │   │   │   └── storage/            # mongo singleton, idempotent indexes, facts/entities/transcripts/history
+│   │   ├── tsconfig.json           # extends @kagami/tsconfig/server.json
+│   │   ├── eslint.config.js        # imports from @kagami/eslint-config/base
 │   │   ├── prompts/                # extraction.md (8K) + answer.md (3K)
 │   │   ├── tests/                  # node:test + mongodb-memory-server
 │   │   ├── scripts/                # bench worker, cc-ingest helpers, BM25 probe
 │   │   └── bench/longmemeval/      # benchmark harness + datasets + results
 │   └── dashboard/                  # Next.js 15 inspector (https://kioku.localhost)
-├── packages/
-│   ├── typescript-config/          # JSON tsconfig bases (base/server/library/nextjs)
-│   └── eslint-config/              # flat ESLint config
+│       ├── tsconfig.json           # extends @kagami/tsconfig/nextjs.json
+│       └── eslint.config.js        # imports from @kagami/eslint-config/base
 ├── portless.json                   # Portless app registrations
 └── docs/
 ```
 
+Tooling (`@kagami/eslint-config`, `@kagami/tsconfig`) lives at the Kagami workspace root under `shared/packages/`; Kioku has no project-internal TS packages.
+
 ### Dependency Graph
 
 ```
-@kioku/typescript-config  ← leaf (no deps)
-@kioku/eslint-config      ← leaf
+@kagami/eslint-config, @kagami/tsconfig (workspace-shared, from shared/packages/)
        ↑
 @kioku/api          ← Express, MCP, ingest + retrieval pipelines
 @kioku/dashboard    ← Next.js inspector — talks to API only over HTTP

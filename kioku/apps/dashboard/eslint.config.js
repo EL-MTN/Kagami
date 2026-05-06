@@ -1,4 +1,4 @@
-import baseConfig from "@kioku/eslint-config/base";
+import baseConfig from "@kagami/eslint-config/base";
 import nextPlugin from "@next/eslint-plugin-next";
 
 export default [

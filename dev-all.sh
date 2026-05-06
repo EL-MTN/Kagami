@@ -6,19 +6,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
 
-projects=(Kioku Kokoro Kizuna)
-
-for p in "${projects[@]}"; do
-  if [[ ! -d "$ROOT/$p" ]]; then
-    echo "missing: $ROOT/$p — move the project in first" >&2
-    exit 1
-  fi
-  if [[ ! -f "$ROOT/$p/package.json" ]]; then
-    echo "no package.json in $ROOT/$p" >&2
-    exit 1
-  fi
-done
+if [[ ! -f "$ROOT/package.json" ]]; then
+  echo "missing: $ROOT/package.json — run from Kagami workspace root" >&2
+  exit 1
+fi
 
 pids=()
 
@@ -34,14 +27,15 @@ trap cleanup INT TERM EXIT
 
 start() {
   local name="$1"
-  ( cd "$ROOT/$name" && npm run dev ) 2>&1 \
+  local filter="$2"
+  ( npx turbo run dev --filter="$filter" ) 2>&1 \
     | awk -v p="[$name] " '{print p $0; fflush()}' &
   pids+=($!)
 }
 
-start Kioku
+start kioku  '@kioku/*'
 sleep 2
-start Kokoro
-start Kizuna
+start kokoro '@kokoro/*'
+start kizuna '@kizuna/*'
 
 wait

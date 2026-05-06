@@ -22,8 +22,8 @@
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
-    "@kioku/eslint-config": "*",
-    "@kioku/typescript-config": "*",
+    "@kagami/eslint-config": "*",
+    "@kagami/tsconfig": "*",
     "@next/eslint-plugin-next": "^16.1.6",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.0.0",

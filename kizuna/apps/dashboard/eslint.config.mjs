@@ -1,3 +1,3 @@
-import nextConfig from "@kizuna/eslint-config/next";
+import nextConfig from "@kagami/eslint-config/next";
 
 export default nextConfig;

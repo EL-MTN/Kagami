@@ -2,39 +2,54 @@
 
 ## Project
 
-Kagami ("mirror") is a personal-AI workspace composed of three independent TypeScript projects that can be developed and run together. The names are Japanese: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind).
+Kagami ("mirror") is a personal-AI workspace. It contains three sibling TypeScript projects in one nested monorepo: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), and **Kokoro** (心, heart/mind). They share tooling, a single `package.json` install, and a unified Turborepo pipeline, but each project is bounded — its apps, internal packages, docs, and `CLAUDE.md` live under its own subdirectory.
 
 This file is the workspace-level guide. Each project has its own deeper `CLAUDE.md` and `docs/` — start here for cross-cutting context, then descend.
 
 ## Workspace Structure
 
 ```
-Kagami/
-├── ARCHITECTURE.md     # full cross-service map (auth, endpoints, env vars, coupling notes)
-├── dev-all.sh          # boot Kioku → Kokoro + Kizuna with prefixed output
-├── CLAUDE.md           # this file
+Kagami/                       # one git repo, one workspace
+├── ARCHITECTURE.md           # full cross-service map (auth, endpoints, env vars, coupling notes)
+├── CLAUDE.md                 # this file
+├── package.json              # workspace root: workspace globs + shared devDeps
+├── turbo.json                # unified pipeline (build, dev, typecheck, test, lint)
+├── dev-all.sh                # boot Kioku → Kokoro + Kizuna with prefixed output
 │
-├── Kioku/              # long-term memory store (apps/api + apps/dashboard)
+├── kioku/                    # long-term memory store
+│   ├── apps/                 # api, dashboard
+│   ├── docs/
 │   ├── CLAUDE.md
-│   └── docs/           # architecture, ingest, retrieval, storage, api, dashboard, …
+│   └── portless.json
 │
-├── Kokoro/             # Telegram + iMessage AI agent (apps/bot + apps/dashboard)
+├── kokoro/                   # Telegram + iMessage AI agent
+│   ├── apps/                 # bot, dashboard
+│   ├── packages/             # shared, db, memory, test-utils
+│   ├── scripts/              # auth scripts
+│   ├── docs/
 │   ├── CLAUDE.md
-│   └── docs/           # architecture, ai-layer, memory, telegram, watchers, routines, …
+│   └── vitest.config.ts
 │
-└── Kizuna/             # personal CRM (apps/api + apps/dashboard)
-    ├── CLAUDE.md
-    └── docs/
+├── kizuna/                   # personal CRM
+│   ├── apps/                 # api, dashboard
+│   ├── docs/
+│   ├── CLAUDE.md
+│   └── portless.json
+│
+└── shared/
+    └── packages/
+        ├── eslint-config/    # @kagami/eslint-config (./base, ./next)
+        └── tsconfig/         # @kagami/tsconfig (./base.json, ./library.json, ./server.json, ./nextjs.json)
 ```
 
-The three projects are **separate git repositories** rooted at `Kioku/`, `Kokoro/`, `Kizuna/`. The Kagami root is a workspace folder, not a repo — `dev-all.sh` and `ARCHITECTURE.md` live here for convenience.
+The Kagami root is the single git repo. The three project subtrees were imported via `git subtree add` so each project's prior history is preserved in `git log`. Each project still has its own `CLAUDE.md` and `docs/` next to its code.
 
 ## How they relate
 
 ```
 Kokoro ──HTTP──► Kioku            Kokoro reads/writes facts via REST.
                                   KIOKU_URL defaults to https://api.kioku.localhost.
-Kizuna ────X──── Kioku/Kokoro     No code references in either direction.
+Kizuna ────X──── Kioku/Kokoro     No code references in either direction (yet).
 Kioku  ────X──── anything         Pull-only by design; never initiates outbound to siblings.
 ```
 
@@ -44,20 +59,37 @@ See `ARCHITECTURE.md` for the full edge table, endpoint surface, and per-project
 
 ## Commands
 
-```bash
-./dev-all.sh             # boot all three with prefixed output ([Kioku] / [Kokoro] / [Kizuna])
-                         # Ctrl-C terminates all
-```
-
-Each project has its own scripts; check that project's `CLAUDE.md` for the full set. Rough convention across all three:
+All commands run from the Kagami root.
 
 ```bash
-npm run dev              # Portless dev server(s) for that project
-npm run typecheck        # turbo run typecheck
-npm run test             # turbo run test
-npm run lint             # turbo run lint
-npm run format           # prettier --write
+./dev-all.sh                     # boot all three with prefixed output
+                                 # ([kioku] / [kokoro] / [kizuna]); Ctrl-C stops all
+npm run dev                      # alias for ./dev-all.sh
+npm run typecheck                # turbo run typecheck across every workspace
+npm run test                     # turbo run test
+npm run lint                     # turbo run lint
+npm run lint:fix
+npm run build                    # turbo run build
+npm run format                   # prettier --write all files
+
+# Per-project filters
+npm run kioku:dev                # turbo run dev --filter="@kioku/*"
+npm run kokoro:dev
+npm run kizuna:dev
+
+# Per-component filters
+npm run kioku:dev:api
+npm run kioku:dev:dashboard
+npm run kokoro:dev:bot
+npm run kokoro:dev:dashboard
+npm run kizuna:dev:api
+npm run kizuna:dev:dashboard
+
+# Project-specific scripts
+npm run kokoro:auth:google       # tsx kokoro/scripts/authorize-google.ts
 ```
+
+`npm install` is hoisted at the Kagami root. There is no per-project `package.json` and no per-project `node_modules` install step.
 
 ## Local hosting via Portless
 
@@ -72,21 +104,33 @@ All HTTP entry points are served as HTTPS named URLs by [Portless](https://githu
 | Kizuna  | dashboard | `https://kizuna.localhost`       |
 | Kizuna  | API       | `https://api.kizuna.localhost`   |
 
-Numeric `PORT` defaults inside each app (Kioku 7777, Kizuna 3000/3001) only matter when running standalone outside Portless.
+Each project keeps its own `portless.json` next to its code. Numeric `PORT` defaults inside each app (Kioku 7777, Kizuna 3000/3001) only matter when running an app standalone outside Portless.
 
 ## Shared conventions
 
-All three projects converge on the same stack and layout, even though no code is shared between them:
+All three projects share tooling via `shared/packages/`:
+
+- **`@kagami/eslint-config`** — flat ESLint config; `./base` for general TS, `./next` for Next.js apps.
+- **`@kagami/tsconfig`** — `./base.json`, `./library.json`, `./server.json`, `./nextjs.json`. Per-app `tsconfig.json` files extend one of these and add overrides (e.g. `verbatimModuleSyntax`, `esModuleInterop`, `noImplicitOverride`, `allowImportingTsExtensions`, `allowJs`) where projects diverge.
+
+Other workspace-wide conventions:
 
 - **Language**: TypeScript (strict, ESM), Node ≥ 22
-- **Package layout**: monorepo via npm workspaces + Turborepo
+- **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs are `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, and `shared/packages/*`.
 - **Apps split**: `apps/api` (or `apps/bot` for Kokoro) + `apps/dashboard`
-- **Internal packages**: each repo has its own `packages/eslint-config` and `packages/typescript-config` (not shared across repos)
 - **Local dev hosting**: Portless via stable HTTPS named `*.localhost` URLs
 - **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku)
 - **Logging**: Pino (structured)
 - **Validation**: Zod schemas at boundaries
 - **Formatting**: Prettier; ESLint flat config
+
+### Zod versions
+
+This is the one notable per-project divergence. Kioku/api and Kizuna/api use `zod ^3.x`; Kokoro/bot uses `zod ^4.x`. Both versions install side-by-side: `zod@3.x` is hoisted at the workspace root (declared in the root `devDependencies`), and `zod@4.x` lives inside `kokoro/apps/bot/node_modules/`. The bot's `tsconfig.json` includes a `paths` mapping that redirects `zod` resolution to its local copy so TypeScript sees v4 types when compiling bot code (including transitive types from Stagehand). If you eventually upgrade Kioku and Kizuna to zod v4, this mapping and the root pin can be removed.
+
+### Husky + lint-staged
+
+Live at the workspace root. The `prepare` script runs `husky` after install. Lint-staged globs use `**/apps/**/src/**` and `**/packages/**/*.ts` to scope across all three projects. Each project's prior `.husky/` was removed during migration.
 
 ## Per-project entry points
 
@@ -94,15 +138,15 @@ When working inside a project, consult that project's `CLAUDE.md` first — it's
 
 | Project | Role                          | Start here                                   |
 | ------- | ----------------------------- | -------------------------------------------- |
-| Kioku   | Long-term memory service      | [`Kioku/CLAUDE.md`](Kioku/CLAUDE.md)         |
-| Kokoro  | Telegram + iMessage AI agent  | [`Kokoro/CLAUDE.md`](Kokoro/CLAUDE.md)       |
-| Kizuna  | Personal CRM                  | [`Kizuna/CLAUDE.md`](Kizuna/CLAUDE.md)       |
+| Kioku   | Long-term memory service      | [`kioku/CLAUDE.md`](kioku/CLAUDE.md)         |
+| Kokoro  | Telegram + iMessage AI agent  | [`kokoro/CLAUDE.md`](kokoro/CLAUDE.md)       |
+| Kizuna  | Personal CRM                  | [`kizuna/CLAUDE.md`](kizuna/CLAUDE.md)       |
 
-For cross-service detail (Kokoro→Kioku coupling, Google OAuth duplication between Kioku and Kizuna, observed gaps), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
+For cross-service detail (Kokoro→Kioku coupling, observed gaps, planned Kao identity service), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Working in this workspace
 
-- **Scope changes to one project at a time.** A change in `Kokoro/` is committed in Kokoro's repo; same for the others. The Kagami root has no commit history.
-- **Cross-service edits** (e.g. changing the Kokoro→Kioku contract) need two commits — one per repo. The Kioku side is producer; ship it first so Kokoro doesn't ship against an unreleased shape.
+- **One repo, one PR flow.** Cross-service edits (e.g. changing the Kokoro→Kioku contract) can be a single commit/PR now. Producers should still ship before consumers in the same commit, and tests should cover both sides.
 - **`ARCHITECTURE.md` is the source of truth for cross-service facts.** Update it when an edge is added, removed, or its shape changes (URLs, env vars, auth model, coupling direction).
-- **Per-project docs (`<Project>/docs/`) are the source of truth for that project's internals.** Update them when modules, schemas, endpoints, or conventions change.
+- **Per-project docs (`<project>/docs/`) are the source of truth for that project's internals.** Update them when modules, schemas, endpoints, or conventions change.
+- **Adding a new service** (e.g. Kao for OAuth state): create `kao/` at the top level with its own `apps/`, `packages/`, `docs/`, `CLAUDE.md`, and add `kao/{apps,packages}/*` to the root `package.json` workspaces array.

@@ -15,9 +15,9 @@
     "@kokoro/shared": "*"
   },
   "devDependencies": {
-    "@kokoro/eslint-config": "*",
+    "@kagami/eslint-config": "*",
+    "@kagami/tsconfig": "*",
     "@kokoro/test-utils": "*",
-    "@kokoro/typescript-config": "*",
     "@types/node": "^22.0.0",
     "eslint": "^10.0.1",
     "msw": "^2.10.4",

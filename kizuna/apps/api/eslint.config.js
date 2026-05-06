@@ -1,4 +1,4 @@
-import baseConfig from "@kizuna/eslint-config/base";
+import baseConfig from "@kagami/eslint-config/base";
 
 export default [
   ...baseConfig,

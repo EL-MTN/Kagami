@@ -1,4 +1,7 @@
 {
-  "extends": "@kokoro/typescript-config/library.json",
+  "extends": "@kagami/tsconfig/library.json",
+  "compilerOptions": {
+    "verbatimModuleSyntax": true
+  },
   "include": ["src", "tests"]
 }

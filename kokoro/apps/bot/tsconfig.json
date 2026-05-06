@@ -1,4 +1,12 @@
 {
-  "extends": "@kokoro/typescript-config/bot.json",
+  "extends": "@kagami/tsconfig/library.json",
+  "compilerOptions": {
+    "verbatimModuleSyntax": true,
+    "baseUrl": ".",
+    "paths": {
+      "zod": ["./node_modules/zod"],
+      "zod/*": ["./node_modules/zod/*"]
+    }
+  },
   "include": ["src", "tests"]
 }

@@ -22,8 +22,8 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
-    "@kizuna/eslint-config": "*",
-    "@kizuna/typescript-config": "*",
+    "@kagami/eslint-config": "*",
+    "@kagami/tsconfig": "*",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
