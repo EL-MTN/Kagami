@@ -5,7 +5,7 @@ Read-only inspector for Kizuna's CRM data, plus the OAuth grant and ingest contr
 ## Page map
 
 ```
-apps/dashboard/app/
+apps/dashboard/src/app/
 ├── layout.tsx                       # root html, font CSS variables
 ├── globals.css                      # design tokens (Mashiro Daylight)
 ├── (auth)/
@@ -23,7 +23,7 @@ apps/dashboard/app/
     └── tombstones/page.tsx          # /tombstones   — soft-deleted People / Interactions / Followups
 ```
 
-The sidebar (`components/sidebar.tsx`) is the canonical link list:
+The sidebar (`src/components/sidebar.tsx`) is the canonical link list:
 
 ```
 絆 Kizuna · Personal CRM
@@ -36,22 +36,22 @@ The sidebar (`components/sidebar.tsx`) is the canonical link list:
    Sign out
 ```
 
-`Sign out` is a `<form action={logoutAction}>` so it works without JS (the action lives in `lib/auth-actions.ts`).
+`Sign out` is a `<form action={logoutAction}>` so it works without JS (the action lives in `src/lib/auth-actions.ts`).
 
 ## Data flow
 
 Every page is a **server component** with `export const dynamic = 'force-dynamic'`. There is no client-side data fetching, no SWR, no React Query — every render hits the API fresh. Mutations are server actions:
 
-- `app/(app)/sync/page.tsx` → `runGmailSyncAction`, `runGcalSyncAction` (POST `/v1/sync/.../run` then `revalidatePath('/sync')`).
-- `app/(auth)/login/page.tsx` → `loginAction` (compares the submitted key, sets the session cookie, redirects).
-- `app/(app)/layout.tsx` → `logoutAction` mounted on the sidebar's "Sign out" button.
+- `src/app/(app)/sync/page.tsx` → `runGmailSyncAction`, `runGcalSyncAction` (POST `/v1/sync/.../run` then `revalidatePath('/sync')`).
+- `src/app/(auth)/login/page.tsx` → `loginAction` (compares the submitted key, sets the session cookie, redirects).
+- `src/app/(app)/layout.tsx` → `logoutAction` mounted on the sidebar's "Sign out" button.
 
 There are no POST/PATCH/DELETE for People / Interactions / Followups in the dashboard — the API has them, but the dashboard is intentionally read-only. The roadmap is to keep mutation in the concierge agent and use the dashboard for inspection only.
 
-## Library (`apps/dashboard/lib/`)
+## Library (`apps/dashboard/src/lib/`)
 
 ```
-lib/
+src/lib/
 ├── api.ts             # Typed fetch wrapper around the REST surface
 ├── types.ts           # Hand-mirrored response shapes (keep in sync with apps/api/src/lib/serialize.ts)
 ├── session.ts         # makeSessionToken, verifySessionToken, checkApiKey (HMAC + 30-day TTL)
@@ -86,7 +86,7 @@ The exported `config` object also reads `process.env.USER_EMAILS` at module scop
 
 ### `session.ts`
 
-The dashboard's auth model: HMAC-signed cookies, secret = `KIZUNA_API_KEY`, 30-day TTL. See [auth.md](auth.md). The session cookie name is `kizuna_session`. `verifySessionToken` is called from `app/(app)/layout.tsx` and short-circuits to `redirect('/login')` if absent or invalid.
+The dashboard's auth model: HMAC-signed cookies, secret = `KIZUNA_API_KEY`, 30-day TTL. See [auth.md](auth.md). The session cookie name is `kizuna_session`. `verifySessionToken` is called from `src/app/(app)/layout.tsx` and short-circuits to `redirect('/login')` if absent or invalid.
 
 ### `types.ts`
 
@@ -95,7 +95,7 @@ Hand-mirrored from `apps/api/src/lib/serialize.ts`. The header comment says "Mir
 ## Components
 
 ```
-components/
+src/components/
 ├── sidebar.tsx                      # left rail with kanji wordmark + nav + sign-out
 ├── nav-link.tsx                     # active-state link with lucide icon
 ├── shell/
@@ -110,7 +110,7 @@ components/
     └── table.tsx
 ```
 
-`app/(app)/ui.tsx` re-exports the primitives plus app-specific compositions:
+`src/app/(app)/ui.tsx` re-exports the primitives plus app-specific compositions:
 
 - `Card`, `CardHeader`, `Empty`
 - `Badge`, `ChannelBadge`, `StatusBadge`, `DirectionBadge` — domain-specific tone-mapped wrappers around `<Badge variant=...>`
@@ -119,11 +119,11 @@ components/
 - `ErrorBlock` — terracotta panel with `<pre>` detail block
 - `PageHeader` re-export
 
-shadcn config is in `components.json`: style `new-york`, base color `zinc`, lucide icons, alias `@/components`. Tailwind config lives in `app/globals.css` as `@theme inline` per Tailwind v4. There's no `tailwind.config.js`.
+shadcn config is in `components.json`: style `new-york`, base color `zinc`, lucide icons, alias `@/components`. Tailwind config lives in `src/app/globals.css` as `@theme inline` per Tailwind v4. There's no `tailwind.config.js`.
 
 ## Design system — "Mashiro Daylight (白) — Kizuna edition"
 
-Inherited from Kokoro Daylight, palette tilted to teal-blue. Lives entirely in `apps/dashboard/app/globals.css` under Tailwind v4's `@theme inline` block. The `絆` wordmark in the sidebar is the canonical brand mark.
+Inherited from Kokoro Daylight, palette tilted to teal-blue. Lives entirely in `apps/dashboard/src/app/globals.css` under Tailwind v4's `@theme inline` block. The `絆` wordmark in the sidebar is the canonical brand mark.
 
 ### Typography
 
@@ -131,7 +131,7 @@ Inherited from Kokoro Daylight, palette tilted to teal-blue. Lives entirely in `
 - **Body**: DM Sans — set as `--font-sans`
 - **Monospace**: JetBrains Mono — set as `--font-mono`. Stat values, IDs, timestamps, cursors, and scopes use mono tabular numerals (`tabular-nums`)
 
-All three load via `next/font/google` with CSS variable injection in `app/layout.tsx`.
+All three load via `next/font/google` with CSS variable injection in `src/app/layout.tsx`.
 
 ### Color palette (OKLch)
 
@@ -169,7 +169,7 @@ Avoid `text-muted-foreground/30..70` etc.
 - Shimmer skeletons (`.skeleton`)
 - `.kicker` utility for small-caps section headers (`text-[10px] uppercase tracking-[0.18em] text-muted-foreground`) — preferred over re-stating the classes per-section
 
-### Channel badge mapping (`app/(app)/ui.tsx::ChannelBadge`)
+### Channel badge mapping (`src/app/(app)/ui.tsx::ChannelBadge`)
 
 | Channel     | Tone  |
 | ----------- | ----- |

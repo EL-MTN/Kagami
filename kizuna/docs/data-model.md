@@ -276,4 +276,4 @@ The semantics around `historyId`, `syncToken`, `pausedAt`, and `force` are docum
 2. Replaces `undefined` with `null` for nullable fields so the response shape is stable.
 3. Converts Mongoose `Map`s (notably `Person.handles`) to plain objects.
 
-The dashboard hand-mirrors these shapes in `apps/dashboard/lib/types.ts` — keep that file in sync when shapes change. Future consideration: emit the dashboard types from the manifest's JSON Schema instead.
+The dashboard hand-mirrors these shapes in `apps/dashboard/src/lib/types.ts` — keep that file in sync when shapes change. Future consideration: emit the dashboard types from the manifest's JSON Schema instead.

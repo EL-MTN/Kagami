@@ -3,11 +3,8 @@
   "compilerOptions": {
     "paths": {
       "@/*": ["./src/*"]
-    },
-    "allowJs": true,
-    "esModuleInterop": true,
-    "verbatimModuleSyntax": true
+    }
   },
-  "include": ["*.ts", "*.tsx", "next-env.d.ts", "src", ".next/types/**/*.ts"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]
 }

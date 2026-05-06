@@ -76,7 +76,7 @@ npx tsx scripts/import-vcards.ts <path-to.vcf>   # bulk-create people from vCard
 @kizuna/dashboard    ← Next.js 15 (talks to API over HTTP via KIZUNA_API_URL)
 ```
 
-The two apps share **no in-process code**. The dashboard's contract with the API is the REST surface in `apps/api/src/routes/*` plus the OAuth handlers, hit through `fetch` to `KIZUNA_API_URL` (default `https://api.kizuna.localhost`). The dashboard mirrors the API's serialized shapes by hand in `apps/dashboard/lib/types.ts` — keep that file in sync with `apps/api/src/lib/serialize.ts` when shapes change.
+The two apps share **no in-process code**. The dashboard's contract with the API is the REST surface in `apps/api/src/routes/*` plus the OAuth handlers, hit through `fetch` to `KIZUNA_API_URL` (default `https://api.kizuna.localhost`). The dashboard mirrors the API's serialized shapes by hand in `apps/dashboard/src/lib/types.ts` — keep that file in sync with `apps/api/src/lib/serialize.ts` when shapes change.
 
 ## Conventions
 

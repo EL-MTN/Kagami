@@ -32,7 +32,7 @@ NODE_ENV=development                                       # enables pino-pretty
 
 Notes:
 
-- `KIZUNA_API_KEY` is **also** the HMAC secret for the OAuth CSRF state token (`apps/api/src/lib/oauth-state.ts`) and for the dashboard's session cookie (`apps/dashboard/lib/session.ts`). Rotating it invalidates active dashboard sessions and any in-flight OAuth state — both are recoverable (re-login, re-start the OAuth flow).
+- `KIZUNA_API_KEY` is **also** the HMAC secret for the OAuth CSRF state token (`apps/api/src/lib/oauth-state.ts`) and for the dashboard's session cookie (`apps/dashboard/src/lib/session.ts`). Rotating it invalidates active dashboard sessions and any in-flight OAuth state — both are recoverable (re-login, re-start the OAuth flow).
 - `KIZUNA_OAUTH_ENCRYPTION_KEY` is decoded from base64; the resulting buffer must be exactly 32 bytes. The schema rejects anything else with "must be a base64-encoded 32-byte key."
 - `USER_EMAILS` controls the ingest workers' "self" detection — see [sync.md](sync.md) and [auth.md](auth.md). It is _not_ an authentication boundary.
 - `KIZUNA_INGEST_INTERVAL_SEC=0` disables the in-process scheduler entirely. Manual triggers via `POST /v1/sync/{gmail,gcal}/run` work regardless. Set to `300` (5 min) for typical dev use.
@@ -58,7 +58,7 @@ USER_EMAILS=you@example.com
 # KIZUNA_COOKIE_SECURE=true       # force Secure cookie even when NODE_ENV !== 'production'
 ```
 
-The dashboard reads `process.env.KIZUNA_API_URL` / `KIZUNA_API_KEY` at module scope in `apps/dashboard/lib/api.ts`. Every server-component fetch passes `Authorization: Bearer ${KIZUNA_API_KEY}` and `cache: 'no-store'`. `USER_EMAILS` is read for the inbound/outbound classification on a person's interaction list.
+The dashboard reads `process.env.KIZUNA_API_URL` / `KIZUNA_API_KEY` at module scope in `apps/dashboard/src/lib/api.ts`. Every server-component fetch passes `Authorization: Bearer ${KIZUNA_API_KEY}` and `cache: 'no-store'`. `USER_EMAILS` is read for the inbound/outbound classification on a person's interaction list.
 
 The session-cookie HMAC is signed with `KIZUNA_API_KEY` — both apps must agree on the value, which is why the dashboard `.env.example` says "replace-with-the-same-key-as-the-api."
 

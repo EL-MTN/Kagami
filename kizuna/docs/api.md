@@ -40,7 +40,7 @@ app.use(makeErrorHandler());          // ZodError / HttpError / mongoose / E1100
 | `/oauth/google/start`    | Bearer header OR `?key=<KIZUNA_API_KEY>` (so a plain `<a href>` from the dashboard works)   | `apps/api/src/routes/oauth.ts`    |
 | `/oauth/google/callback` | HMAC-signed state token (10-min TTL, secret = `KIZUNA_API_KEY`); no API key in the redirect | `apps/api/src/lib/oauth-state.ts` |
 | `/oauth/google/status`   | Bearer header OR `?key=`                                                                    | `apps/api/src/routes/oauth.ts`    |
-| Dashboard sessions       | HMAC-signed cookie, secret = `KIZUNA_API_KEY`, 30-day TTL                                   | `apps/dashboard/lib/session.ts`   |
+| Dashboard sessions       | HMAC-signed cookie, secret = `KIZUNA_API_KEY`, 30-day TTL                                   | `apps/dashboard/src/lib/session.ts`   |
 
 See [auth.md](auth.md) for the full model.
 
