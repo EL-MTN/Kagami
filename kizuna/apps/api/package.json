@@ -1,9 +1,7 @@
 {
   "name": "@kizuna/api",
   "private": true,
-  "version": "0.0.0",
   "type": "module",
-  "main": "src/main.ts",
   "portless": "api.kizuna",
   "scripts": {
     "dev": "portless run tsx watch src/main.ts",

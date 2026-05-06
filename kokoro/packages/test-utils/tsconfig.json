@@ -1,7 +1,6 @@
 {
   "extends": "@kagami/tsconfig/library.json",
   "compilerOptions": {
-    "rootDir": "src",
     "types": ["node"],
     "verbatimModuleSyntax": true
   },

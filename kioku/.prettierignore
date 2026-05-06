@@ -1,8 +1,3 @@
-dist
-node_modules
-.turbo
-.next
-package-lock.json
 apps/api/bench/longmemeval/data
 apps/api/bench/longmemeval/tmp
 apps/api/bench/longmemeval/tmp-probe
