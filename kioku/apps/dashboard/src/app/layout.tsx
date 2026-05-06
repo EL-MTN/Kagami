@@ -23,7 +23,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Kioku — Memory",
+  title: "Kioku",
   description: "A personal long-term memory subsystem.",
 };
 

@@ -23,7 +23,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Kokoro Dashboard",
+  title: "Kokoro",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
