@@ -16,26 +16,26 @@
     "lint:fix": "eslint src test scripts --fix"
   },
   "dependencies": {
-    "dotenv": "^16.4.5",
-    "express": "^5.0.1",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "google-auth-library": "^9.15.0",
-    "mongoose": "^8.8.0",
-    "pino": "^9.5.0",
+    "mongoose": "^8.9.0",
+    "pino": "^10.3.1",
     "zod": "^4.0.0",
-    "zod-to-json-schema": "^3.23.5"
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@kagami/eslint-config": "*",
     "@kagami/tsconfig": "*",
-    "@types/express": "^5.0.0",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.10.0",
-    "@types/supertest": "^6.0.2",
-    "eslint": "^10.0.1",
+    "@types/supertest": "^7.2.0",
+    "eslint": "^10.3.0",
     "pino-pretty": "^13.1.3",
-    "supertest": "^7.0.0",
-    "testcontainers": "^10.13.0",
-    "tsx": "^4.19.2",
+    "supertest": "^7.2.2",
+    "testcontainers": "^11.14.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0",
-    "vitest": "^2.1.5"
+    "vitest": "^4.1.5"
   }
 }
