@@ -38,9 +38,13 @@ export function buildTranscript(convo: IConversation): string {
   return lines.join("\n");
 }
 
+// A conversation only earns an ingest if the *user* contributed something.
+// Proactive-only sessions (Mashiro pings, user never replies) would otherwise
+// ship to Kioku and have the extractor invent "the assistant offered..." facts
+// from a one-sided transcript. The assistant talking to itself is not memory.
 export function transcriptHasContent(convo: IConversation): boolean {
   for (const msg of convo.messages) {
-    if (KEEP_ROLES.has(msg.role) && msg.content?.trim()) return true;
+    if (msg.role === "user" && msg.content?.trim()) return true;
   }
   return false;
 }

@@ -64,7 +64,7 @@ describe("buildTranscript", () => {
 });
 
 describe("transcriptHasContent", () => {
-  it("returns true when at least one user/assistant message has trimmed content", () => {
+  it("returns true when at least one user message has trimmed content", () => {
     const convo = makeConvo({
       messages: [
         { role: "system", content: "x", timestamp: new Date() },
@@ -84,9 +84,22 @@ describe("transcriptHasContent", () => {
     expect(transcriptHasContent(convo)).toBe(false);
   });
 
-  it("returns false on whitespace-only user/assistant content", () => {
+  it("returns false on whitespace-only user content", () => {
     const convo = makeConvo({
       messages: [{ role: "user", content: "   ", timestamp: new Date() }],
+    });
+    expect(transcriptHasContent(convo)).toBe(false);
+  });
+
+  it("returns false on assistant-only sessions (proactive ping, no user reply)", () => {
+    const convo = makeConvo({
+      messages: [
+        {
+          role: "assistant",
+          content: "Goshujin-sama, your schedule is clear this afternoon.",
+          timestamp: new Date(),
+        },
+      ],
     });
     expect(transcriptHasContent(convo)).toBe(false);
   });
