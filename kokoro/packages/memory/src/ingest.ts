@@ -81,7 +81,7 @@ export function ingestClosedSession(convo: IConversation): void {
   if (!transcriptHasContent(convo)) {
     logger.debug(
       { sessionId: convo.sessionId },
-      "skipping kioku ingest — closed session has no user/assistant content",
+      "skipping kioku ingest — closed session has no user content",
     );
     void markEmptyAsDone(convo);
     return;

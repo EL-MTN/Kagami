@@ -61,7 +61,7 @@ When `getOrCreateSession` rolls over a stale session (>1h idle) and a new messag
 - `apps/bot/src/scheduler/proactive.ts` — proactive messages
 - `apps/bot/src/services/confirmation-events.ts` — when a tap-to-approve resolves
 
-Each calls `ingestClosedSession(convo)` — fire-and-forget. The new turn doesn't wait. The helper short-circuits when the closed conversation has no user/assistant content (it just flips `ingestStatus` to `done` so the sweeper doesn't pick it up); otherwise it serializes via `buildTranscript` and calls Kioku's `POST /sessions`. On success the conversation's `ingestStatus` flips `pending → done` and `ingestedAt` is recorded; on failure `ingestAttempts` is bumped and the sweeper takes over.
+Each calls `ingestClosedSession(convo)` — fire-and-forget. The new turn doesn't wait. The helper short-circuits when the closed conversation has no **user** content (proactive-only sessions where the user never replied — `transcriptHasContent` requires at least one user turn so the extractor doesn't invent "the assistant offered…" facts from a one-sided transcript). On short-circuit it flips `ingestStatus` to `done` so the sweeper doesn't pick it up; otherwise it serializes via `buildTranscript` and calls Kioku's `POST /sessions`. On success the conversation's `ingestStatus` flips `pending → done` and `ingestedAt` is recorded; on failure `ingestAttempts` is bumped and the sweeper takes over.
 
 The transcript shape (see `packages/memory/src/transcript.ts`) is YAML-frontmatter markdown — `id`, `started_at`, then `## t-N user` / `## t-N assistant` blocks. System and tool messages are dropped; only user/assistant turns with non-empty content are emitted.
 
