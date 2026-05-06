@@ -46,7 +46,7 @@ kokoro/                          # subtree of Kagami workspace (npm workspaces +
 @kokoro/dashboard ← Next.js (routine + watcher management, observability)
 ```
 
-Tooling bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from the Kagami workspace and are consumed via `extends` in each tsconfig and ESLint config. The bot's tsconfig also pins `zod` resolution to its local `node_modules/zod` (zod 4) via a `paths` mapping, so transitive zod types from Stagehand stay aligned with the bot's runtime zod.
+Tooling bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from the Kagami workspace and are consumed via `extends` in each tsconfig and ESLint config.
 
 ## Architecture Diagram
 

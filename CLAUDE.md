@@ -124,10 +124,6 @@ Other workspace-wide conventions:
 - **Validation**: Zod schemas at boundaries
 - **Formatting**: Prettier; ESLint flat config
 
-### Zod versions
-
-This is the one notable per-project divergence. Kioku/api and Kizuna/api use `zod ^3.x`; Kokoro/bot uses `zod ^4.x`. Both versions install side-by-side: `zod@3.x` is hoisted at the workspace root (declared in the root `devDependencies`), and `zod@4.x` lives inside `kokoro/apps/bot/node_modules/`. The bot's `tsconfig.json` includes a `paths` mapping that redirects `zod` resolution to its local copy so TypeScript sees v4 types when compiling bot code (including transitive types from Stagehand). If you eventually upgrade Kioku and Kizuna to zod v4, this mapping and the root pin can be removed.
-
 ### Husky + lint-staged
 
 Live at the workspace root. The `prepare` script runs `husky` after install. Lint-staged globs use `**/apps/**/src/**` and `**/packages/**/*.ts` to scope across all three projects. Each project's prior `.husky/` was removed during migration.

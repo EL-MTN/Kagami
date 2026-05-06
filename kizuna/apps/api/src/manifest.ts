@@ -28,7 +28,9 @@ export function buildManifest(endpoints: EndpointSpec[]): {
   endpoints: ManifestEndpoint[];
 } {
   const toJson = (s: z.ZodTypeAny, name: string) =>
-    zodToJsonSchema(s as Parameters<typeof zodToJsonSchema>[0], {
+    // zod-to-json-schema's types still reference zod v3 even though it runtime-supports
+    // both. Cast through unknown to bridge the structural mismatch.
+    zodToJsonSchema(s as unknown as Parameters<typeof zodToJsonSchema>[0], {
       target: "jsonSchema7",
       name,
     });

@@ -7,5 +7,5 @@ export const FiltersSchema = z.object({
   run_id: z.string().optional(),
   agent_id: z.string().optional(),
   category: z.string().optional(),
-  metadata: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
 });

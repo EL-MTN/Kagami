@@ -77,7 +77,6 @@ Lint and tsconfig bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from 
 - **Cross-package imports** — use `@kokoro/shared`, `@kokoro/db`, `@kokoro/memory` for Kokoro-internal packages, and `@kagami/eslint-config` / `@kagami/tsconfig` for shared workspace tooling. Never use relative paths across package boundaries.
 - **Within-package imports** — use relative paths without file extensions
 - **Internal packages** — libraries export raw `.ts` source (`exports: "./src/index.ts"`); only `bot` and `dashboard` have build steps
-- **Zod resolution in bot tsconfig** — `apps/bot/tsconfig.json` includes a `paths` mapping that forces all `zod` imports (including transitive ones from Stagehand) to resolve to bot's local `node_modules/zod`. The Kagami root pins zod 3 while bot needs zod 4 at runtime; without the override, TS would otherwise pull Stagehand's zod types from the root and produce mismatches against bot's runtime zod 4.
 - **`.env` location** — `apps/bot/.env` (not root)
 - **Tests as source of truth** — when a test fails because production behaves differently than the test expects, fix the bot, not the test. See `docs/testing.md` for the harness and coverage map.
 
