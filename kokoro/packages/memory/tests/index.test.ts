@@ -173,7 +173,6 @@ describe("ingestSession", () => {
             sessionId: "s1",
             added: 3,
             batches: 2,
-            summaryFactId: "summary-id",
           },
           { status: 201 },
         );
@@ -182,14 +181,12 @@ describe("ingestSession", () => {
 
     const out = await ingestSession({
       transcript: "---\nid: s1\n---\n\n## t-1 user\nhi",
-      generate_summary: true,
     });
-    expect(observedBody).toMatchObject({ generate_summary: true });
+    expect(observedBody).toMatchObject({ transcript: expect.any(String) });
     expect(out).toEqual({
       sessionId: "s1",
       added: 3,
       batches: 2,
-      summaryFactId: "summary-id",
     });
   });
 });

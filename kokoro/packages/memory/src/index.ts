@@ -66,14 +66,12 @@ export interface FactDetail {
 
 export interface IngestSessionInput {
   transcript: string;
-  generate_summary?: boolean;
 }
 
 export interface IngestSessionResult {
   sessionId: string;
   added: number;
   batches: number;
-  summaryFactId: string | null;
 }
 
 function baseUrl(): string {
