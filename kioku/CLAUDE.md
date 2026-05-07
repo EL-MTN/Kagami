@@ -58,6 +58,8 @@ npx turbo run typecheck --filter="@kioku/*"
 npx turbo run test     --filter="@kioku/*"
 npx turbo run lint     --filter="@kioku/*"
 npx turbo run build    --filter="@kioku/*"   # dashboard only — api has no build step
+# Watch mode for the API tests (vitest auto-discovers kioku/vitest.config.ts):
+cd kioku/apps/api && npm run test:watch
 ```
 
 Apps run under [Portless](https://github.com/vercel-labs/portless) at `https://kioku.localhost` (dashboard) and `https://api.kioku.localhost` (API). HTTPS is auto-trusted; first run prompts once for sudo to install the local CA. Portless injects `PORT`; `7777` is the standalone fallback for the API.
