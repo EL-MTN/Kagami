@@ -20,7 +20,8 @@ Kagami/                       # one git repo, one workspace
 │   ├── apps/                 # api, dashboard
 │   ├── docs/
 │   ├── CLAUDE.md
-│   └── portless.json
+│   ├── portless.json
+│   └── vitest.config.ts
 │
 ├── kokoro/                   # Telegram + iMessage AI agent
 │   ├── apps/                 # bot, dashboard
@@ -34,7 +35,8 @@ Kagami/                       # one git repo, one workspace
 │   ├── apps/                 # api, dashboard
 │   ├── docs/
 │   ├── CLAUDE.md
-│   └── portless.json
+│   ├── portless.json
+│   └── vitest.config.ts
 │
 └── shared/
     └── packages/
@@ -131,7 +133,7 @@ Live at the workspace root. The `prepare` script runs `husky` after install; the
 Lint-staged globs:
 
 - `**/apps/**/src/**/*.{ts,tsx}` and `**/packages/**/*.ts` — `eslint --fix` + `prettier --write` (per-project ESLint configs cover these paths)
-- `**/apps/**/{test,tests,scripts}/**/*.{ts,tsx}` and `**/scripts/**/*.ts` — `prettier --write` only (ESLint coverage of these paths varies per project, so they're prettier-only to avoid surfacing lint regressions on previously-uncovered code)
+- `**/apps/**/{tests,scripts}/**/*.{ts,tsx}` and `**/scripts/**/*.ts` — `prettier --write` only (ESLint coverage of these paths varies per project, so they're prettier-only to avoid surfacing lint regressions on previously-uncovered code)
 - `**/*.{json,md}` — `prettier --write`
 
 ## Per-project entry points

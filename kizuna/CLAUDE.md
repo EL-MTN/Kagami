@@ -56,7 +56,7 @@ npx turbo run lint     --filter="@kizuna/*"
 
 Both apps run under [Portless](https://github.com/vercel-labs/portless): API at `https://api.kizuna.localhost`, dashboard at `https://kizuna.localhost`. Each `dev` script wraps the framework launcher with `portless run …`. Standalone fallback ports only matter when running an app directly outside Portless; normal local development should use the named HTTPS URLs.
 
-App-level scripts still work when run from inside the app directory:
+App-level scripts still work when run from inside the app directory (vitest auto-discovers the project-root `kizuna/vitest.config.ts` by walking up):
 
 ```bash
 cd kizuna/apps/api
