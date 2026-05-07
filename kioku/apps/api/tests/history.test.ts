@@ -1,12 +1,8 @@
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
-import { MongoMemoryReplSet } from "mongodb-memory-server";
-
-let replSet: MongoMemoryReplSet;
+import { setupTestMongo, teardownTestMongo } from "./helpers/mongo.ts";
 
 beforeAll(async () => {
-  replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
-  process.env.KIOKU_MONGO_URI = replSet.getUri();
-  process.env.KIOKU_MONGO_DB = `kioku_history_test_${Date.now()}`;
+  setupTestMongo("history");
   const { ensureIndexes } = await import("../src/storage/indexes.ts");
   await ensureIndexes({ allowMissingSearch: true });
 });
@@ -20,11 +16,7 @@ beforeEach(async () => {
   ]);
 });
 
-afterAll(async () => {
-  const { closeMongo } = await import("../src/storage/mongo.ts");
-  await closeMongo();
-  await replSet.stop();
-});
+afterAll(teardownTestMongo);
 
 function makeFact(overrides: Record<string, unknown> = {}) {
   return {

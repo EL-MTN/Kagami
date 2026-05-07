@@ -1,13 +1,9 @@
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
-import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { randomUUID } from "node:crypto";
-
-let replSet: MongoMemoryReplSet;
+import { setupTestMongo, teardownTestMongo } from "./helpers/mongo.ts";
 
 beforeAll(async () => {
-  replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
-  process.env.KIOKU_MONGO_URI = replSet.getUri();
-  process.env.KIOKU_MONGO_DB = `kioku_entities_test_${Date.now()}`;
+  setupTestMongo("entities");
   const { ensureIndexes } = await import("../src/storage/indexes.ts");
   await ensureIndexes({ allowMissingSearch: true });
 });
@@ -18,11 +14,7 @@ beforeEach(async () => {
   await db.collection("entities").deleteMany({});
 });
 
-afterAll(async () => {
-  const { closeMongo } = await import("../src/storage/mongo.ts");
-  await closeMongo();
-  await replSet.stop();
-});
+afterAll(teardownTestMongo);
 
 function makeDoc(overrides: Record<string, unknown> = {}) {
   const text = (overrides.text as string) ?? "Mira";

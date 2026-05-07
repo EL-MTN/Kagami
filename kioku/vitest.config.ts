@@ -8,6 +8,7 @@ export default defineConfig({
   test: {
     root: projectRoot,
     include: ["apps/api/tests/**/*.test.ts"],
+    globalSetup: ["./apps/api/tests/global-setup.ts"],
     globals: true,
     environment: "node",
     pool: "forks",

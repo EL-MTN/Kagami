@@ -12,7 +12,7 @@ Kioku has a small but growing automated-test suite. Pure helpers are tested with
 ## Stack
 
 - **Test runner:** Vitest (`vitest run`), driven by `npm run test` which is `turbo run test` → `apps/api`'s test script. Config lives at `kioku/vitest.config.ts`; the `apps/api/tests/**/*.test.ts` glob is anchored to the project root.
-- **Mongo:** `mongodb-memory-server` (`MongoMemoryReplSet` with `count: 1`) per test file. Each file sets a unique `KIOKU_MONGO_DB` (`kioku_<facet>_test_<Date.now()>`) so concurrent files don't collide.
+- **Mongo:** one `mongodb-memory-server` `MongoMemoryReplSet` (`count: 1`) booted by Vitest's `globalSetup` (`apps/api/tests/global-setup.ts`) and shared across the whole run. Each test file calls `setupTestMongo(<facet>)` in `beforeAll` to point Kioku's lazy mongo singleton at a unique database name on that shared instance, and `teardownTestMongo` in `afterAll` to reset the singleton so the next file in the same worker connects fresh.
 - **Index setup:** `ensureIndexes({ allowMissingSearch: true })` — `mongodb-memory-server` is vanilla mongo without mongot. `$listSearchIndexes` throws before any embed call would happen, and `allowMissingSearch` swallows that error. No embedding provider is reached.
 - **LLM-touching code:** not exercised. Tests focus on pure helpers (`scoring.ts`, `text.ts`, `query/answer.ts` formatters) and storage primitives (`appendFacts`, `recordEvents`, `parseTranscript`).
 
@@ -36,17 +36,14 @@ Tests live under `apps/api/tests/`. There is no mirror-the-src convention — fi
 
 ## Patterns
 
-### DB harness (`MongoMemoryReplSet` per file)
+### DB harness (shared replSet, per-file database)
 
 ```ts
 import { afterAll, beforeAll, beforeEach } from "vitest";
-
-let replSet: MongoMemoryReplSet;
+import { setupTestMongo, teardownTestMongo } from "./helpers/mongo.ts";
 
 beforeAll(async () => {
-  replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
-  process.env.KIOKU_MONGO_URI = replSet.getUri();
-  process.env.KIOKU_MONGO_DB = `kioku_<facet>_test_${Date.now()}`;
+  setupTestMongo("<facet>");
   const { ensureIndexes } = await import("../src/storage/indexes.ts");
   await ensureIndexes({ allowMissingSearch: true });
 });
@@ -57,14 +54,12 @@ beforeEach(async () => {
   await db.collection("facts").deleteMany({});
 });
 
-afterAll(async () => {
-  const { closeMongo } = await import("../src/storage/mongo.ts");
-  await closeMongo();
-  await replSet.stop();
-});
+afterAll(teardownTestMongo);
 ```
 
-The dynamic `import()` in `beforeAll`/`afterAll`/`beforeEach` is deliberate — it loads the storage modules **after** the env vars are set, so the lazy Mongo singleton in `mongo.ts` picks up the test URI on first connect.
+`setupTestMongo` reads the suite-wide replSet URI exposed by `global-setup.ts` and points Kioku's lazy mongo singleton at a per-file database (`kioku_<facet>_test_<random>`). `teardownTestMongo` calls `closeMongo()`, which resets the singleton's cached client / dbName so the next file running in the same worker connects fresh.
+
+The dynamic `import()` in `beforeAll`/`beforeEach` is deliberate — it loads the storage modules **after** the env vars are set, so the lazy Mongo singleton in `mongo.ts` picks up the test URI on first connect.
 
 ### Pure-helper tests
 

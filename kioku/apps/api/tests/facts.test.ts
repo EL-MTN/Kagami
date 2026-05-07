@@ -1,12 +1,8 @@
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
-import { MongoMemoryReplSet } from "mongodb-memory-server";
-
-let replSet: MongoMemoryReplSet;
+import { setupTestMongo, teardownTestMongo } from "./helpers/mongo.ts";
 
 beforeAll(async () => {
-  replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
-  process.env.KIOKU_MONGO_URI = replSet.getUri();
-  process.env.KIOKU_MONGO_DB = `kioku_facts_test_${Date.now()}`;
+  setupTestMongo("facts");
   // Build the btree indexes. Search/vector indexes are skipped because
   // mongodb-memory-server is vanilla mongo without mongot. Dedup is
   // enforced upstream of storage at append.ts / consolidate.ts (cosine).
@@ -20,11 +16,7 @@ beforeEach(async () => {
   await db.collection("facts").deleteMany({});
 });
 
-afterAll(async () => {
-  const { closeMongo } = await import("../src/storage/mongo.ts");
-  await closeMongo();
-  await replSet.stop();
-});
+afterAll(teardownTestMongo);
 
 function makeFact(overrides: Record<string, unknown> = {}) {
   return {

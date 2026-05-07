@@ -1,12 +1,8 @@
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
-import { MongoMemoryReplSet } from "mongodb-memory-server";
+import { setupTestMongo, teardownTestMongo } from "./helpers/mongo.ts";
 
-let replSet: MongoMemoryReplSet;
-
-beforeAll(async () => {
-  replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
-  process.env.KIOKU_MONGO_URI = replSet.getUri();
-  process.env.KIOKU_MONGO_DB = `kioku_session_summary_test_${Date.now()}`;
+beforeAll(() => {
+  setupTestMongo("session_summary");
 });
 
 beforeEach(async () => {
@@ -15,11 +11,7 @@ beforeEach(async () => {
   await db.collection("session_summaries").deleteMany({});
 });
 
-afterAll(async () => {
-  const { closeMongo } = await import("../src/storage/mongo.ts");
-  await closeMongo();
-  await replSet.stop();
-});
+afterAll(teardownTestMongo);
 
 interface CachedSummary {
   _id: string;
