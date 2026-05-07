@@ -10,8 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src test scripts",
-    "lint:fix": "eslint src test scripts --fix"
+    "lint": "eslint src tests scripts",
+    "lint:fix": "eslint src tests scripts --fix"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

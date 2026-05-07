@@ -1,25 +1,16 @@
-import { test, before, after } from "node:test";
-import assert from "node:assert/strict";
-import { MongoMemoryReplSet } from "mongodb-memory-server";
+import { afterAll, beforeAll, expect, it } from "vitest";
+import { setupTestMongo, teardownTestMongo } from "./helpers/mongo.ts";
 
-let replSet: MongoMemoryReplSet;
-
-before(async () => {
-  replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
-  process.env.KIOKU_MONGO_URI = replSet.getUri();
-  process.env.KIOKU_MONGO_DB = `kioku_test_${Date.now()}`;
+beforeAll(() => {
+  setupTestMongo("mongo");
   // mongodb-memory-server is vanilla mongo without mongot. $listSearchIndexes
   // throws before we'd ever hit the embedding provider, and allowMissingSearch
   // below swallows that — so no embedding probe runs in this test.
 });
 
-after(async () => {
-  const { closeMongo } = await import("../src/storage/mongo.ts");
-  await closeMongo();
-  await replSet.stop();
-});
+afterAll(teardownTestMongo);
 
-void test("ensureIndexes creates btree indexes on facts/entities/history", async () => {
+it("ensureIndexes creates btree indexes on facts/entities/history", async () => {
   const { ensureIndexes } = await import("../src/storage/indexes.ts");
   const { getDb } = await import("../src/storage/mongo.ts");
 
@@ -33,13 +24,13 @@ void test("ensureIndexes creates btree indexes on facts/entities/history", async
   // facts_hash_unique was removed when storage-layer dedup moved to
   // cosine in append.ts / consolidate.ts. ensureIndexes now drops it
   // if a legacy deployment still has it, but never creates it.
-  assert.ok(!factIdx.find((i) => i.name === "facts_hash_unique"));
-  assert.ok(factIdx.find((i) => i.name === "facts_user_created"));
-  assert.ok(entIdx.find((i) => i.name === "entities_text_lower_unique")?.unique);
-  assert.ok(histIdx.find((i) => i.name === "history_memory_created"));
+  expect(factIdx.find((i) => i.name === "facts_hash_unique")).toBeFalsy();
+  expect(factIdx.find((i) => i.name === "facts_user_created")).toBeTruthy();
+  expect(entIdx.find((i) => i.name === "entities_text_lower_unique")?.unique).toBe(true);
+  expect(histIdx.find((i) => i.name === "history_memory_created")).toBeTruthy();
 });
 
-void test("ensureIndexes is idempotent across calls", async () => {
+it("ensureIndexes is idempotent across calls", async () => {
   const { ensureIndexes } = await import("../src/storage/indexes.ts");
   await ensureIndexes({ allowMissingSearch: true });
   await ensureIndexes({ allowMissingSearch: true });

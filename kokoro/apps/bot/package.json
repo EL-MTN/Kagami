@@ -7,6 +7,8 @@
     "dev": "portless run tsx watch src/index.ts",
     "build": "tsx build.ts",
     "start": "node dist/index.js",
+    "test": "vitest run --project bot",
+    "test:watch": "vitest --project bot",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/ tests/",
     "lint:fix": "eslint src/ tests/ --fix"

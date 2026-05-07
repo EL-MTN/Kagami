@@ -25,7 +25,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 │   │   ├── prompts/
 │   │   │   ├── extraction.md   # ingest prompt (8K-token rulebook)
 │   │   │   └── answer.md       # answerer prompt (3K-token rulebook)
-│   │   ├── tests/           # node:test suite + mongodb-memory-server harness
+│   │   ├── tests/           # vitest suite + mongodb-memory-server harness
 │   │   ├── scripts/         # cc-to-transcript, cc-ingest-chunked, longmemeval, probe-bm25-scores
 │   │   ├── tsconfig.json    # extends @kagami/tsconfig/server.json (+ esModuleInterop, allowImportingTsExtensions)
 │   │   ├── eslint.config.js # imports from @kagami/eslint-config/base
@@ -37,7 +37,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 └── docs/
 ```
 
-**Stack**: Kioku is a *subtree* inside the Kagami nested monorepo. The Kagami workspace root owns `package.json`, `turbo.json`, and `package-lock.json`; npm workspaces and Turborepo span all three sibling projects. Tooling is shared via the workspace-level `@kagami/eslint-config` and `@kagami/tsconfig` packages (which live in `shared/packages/` at the Kagami root). Kioku has no project-internal TypeScript packages today — `kioku/packages/` is empty (or absent). Apps depend on each other only via HTTP (the dashboard calls the API at `KIOKU_API_URL`).
+**Stack**: Kioku is a _subtree_ inside the Kagami nested monorepo. The Kagami workspace root owns `package.json`, `turbo.json`, and `package-lock.json`; npm workspaces and Turborepo span all three sibling projects. Tooling is shared via the workspace-level `@kagami/eslint-config` and `@kagami/tsconfig` packages (which live in `shared/packages/` at the Kagami root). Kioku has no project-internal TypeScript packages today — `kioku/packages/` is empty (or absent). Apps depend on each other only via HTTP (the dashboard calls the API at `KIOKU_API_URL`).
 
 ## Commands
 
@@ -58,6 +58,8 @@ npx turbo run typecheck --filter="@kioku/*"
 npx turbo run test     --filter="@kioku/*"
 npx turbo run lint     --filter="@kioku/*"
 npx turbo run build    --filter="@kioku/*"   # dashboard only — api has no build step
+# Watch mode for the API tests (vitest auto-discovers kioku/vitest.config.ts):
+cd kioku/apps/api && npm run test:watch
 ```
 
 Apps run under [Portless](https://github.com/vercel-labs/portless) at `https://kioku.localhost` (dashboard) and `https://api.kioku.localhost` (API). HTTPS is auto-trusted; first run prompts once for sudo to install the local CA. Portless injects `PORT`; `7777` is the standalone fallback for the API.
@@ -107,5 +109,5 @@ See `/docs` for:
 - [api.md](docs/api.md) — REST surface (`/facts`, `/recall`, `/query`, `/sessions`, `/health`, `/version`) and MCP tools at `/mcp`
 - [dashboard.md](docs/dashboard.md) — Next.js inspector, design system, page map
 - [configuration.md](docs/configuration.md) — env vars, provider profiles, common LLM/embedding combos, MongoDB setup
-- [testing.md](docs/testing.md) — node:test + mongodb-memory-server harness, what's covered, how to add tests
+- [testing.md](docs/testing.md) — vitest + mongodb-memory-server harness, what's covered, how to add tests
 - [bench.md](docs/bench.md) — LongMemEval runner, headline numbers, BM25 calibration tool

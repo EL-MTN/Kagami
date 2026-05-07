@@ -20,7 +20,7 @@ kokoro/
 │   ├── memory/       # Kioku HTTP client + transcript glue + sweeper
 │   └── test-utils/   # Vitest harness (withTestDb, fakeAdapter, MSW)
 ├── scripts/          # Auth scripts
-├── vitest.config.ts  # workspace-local vitest config (still here)
+├── vitest.config.ts  # multi-project vitest config (one per package)
 └── docs/
 ```
 
@@ -43,9 +43,13 @@ For tests, lint, typecheck — run from the Kagami root and target Kokoro via Tu
 ```bash
 npx turbo run typecheck --filter="@kokoro/*"
 npx turbo run lint     --filter="@kokoro/*"
-npx turbo run test     --filter="@kokoro/*"   # if any package has a `test` script
-cd kokoro && npx vitest run                    # workspace vitest config still lives here
+npx turbo run test     --filter="@kokoro/*"   # runs each package's `test` script
+cd kokoro && npx vitest run                    # all projects via the shared vitest.config.ts
 cd kokoro && npx vitest                         # watch mode
+# Or scope to one package — each package has its own `test` / `test:watch`
+# script that delegates to the shared config via `--project <name>`:
+cd kokoro/packages/db && npm test               # just the @kokoro/db project
+cd kokoro/apps/bot   && npm run test:watch      # bot in watch mode
 ```
 
 The dashboard dev server runs under [Portless](https://github.com/vercel-labs/portless) at `https://kokoro.localhost` (HTTPS auto-trusted, port assigned dynamically). First run prompts once for sudo to install the local CA.
@@ -78,7 +82,7 @@ Lint and tsconfig bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from 
 - **Within-package imports** — use relative paths without file extensions
 - **Internal packages** — libraries export raw `.ts` source (`exports: "./src/index.ts"`); only `bot` and `dashboard` have build steps
 - **`.env` location** — `apps/bot/.env` (not root)
-- **Tests as source of truth** — when a test fails because production behaves differently than the test expects, fix the bot, not the test. See `docs/testing.md` for the harness and coverage map.
+- **Tests as source of truth** — when a test fails because production behaves differently than the test expects, fix the bot, not the test. See `docs/testing.md` for the harness and per-module coverage map.
 
 ## Doc Maintenance
 

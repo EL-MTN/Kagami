@@ -6,6 +6,6 @@
     "noImplicitOverride": true,
     "esModuleInterop": true
   },
-  "include": ["src/**/*", "test/**/*", "scripts/**/*", "vitest.config.ts"],
+  "include": ["src/**/*", "tests/**/*", "scripts/**/*"],
   "exclude": ["dist", "node_modules"]
 }
