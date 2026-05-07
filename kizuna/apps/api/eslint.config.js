@@ -3,7 +3,7 @@ import baseConfig from "@kagami/eslint-config/base";
 export default [
   ...baseConfig,
   {
-    files: ["test/**/*.ts", "scripts/**/*.ts"],
+    files: ["tests/**/*.ts", "scripts/**/*.ts"],
     rules: {
       "@typescript-eslint/no-unsafe-argument": "off",
       "@typescript-eslint/no-unsafe-assignment": "off",

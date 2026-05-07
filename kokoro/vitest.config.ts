@@ -1,4 +1,8 @@
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+
+const projectRoot = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   test: {
@@ -13,33 +17,12 @@ export default defineConfig({
     // ~8 s wall-clock is dominated by GridFS I/O in gridfs.test.ts and
     // heavy module imports per worker — both architectural rather than
     // tunable.
-    globalSetup: ["./packages/test-utils/src/global-setup.ts"],
-    coverage: {
-      provider: "v8",
-      // `all: true` walks the include glob and reports 0%-covered files even
-      // if the suite never imported them — needed for an accurate coverage
-      // map. Without it, untested files silently disappear from the report.
-      all: true,
-      include: ["apps/bot/src/**/*.ts", "packages/{shared,db,memory}/src/**/*.ts"],
-      exclude: [
-        "**/*.test.ts",
-        "**/tests/**",
-        "**/dist/**",
-        "**/node_modules/**",
-        // index.ts files are pure re-exports — measuring them is noise.
-        "**/src/index.ts",
-        // type-only files
-        "apps/bot/src/stt/types.ts",
-        "packages/shared/src/types.ts",
-      ],
-      reporter: ["text", "html", "json-summary"],
-      reportsDirectory: "./coverage",
-    },
+    globalSetup: [resolve(projectRoot, "packages/test-utils/src/global-setup.ts")],
     projects: [
       {
         test: {
           name: "bot",
-          root: "./apps/bot",
+          root: resolve(projectRoot, "apps/bot"),
           include: ["tests/**/*.test.ts"],
           globals: true,
           environment: "node",
@@ -48,7 +31,7 @@ export default defineConfig({
       {
         test: {
           name: "shared",
-          root: "./packages/shared",
+          root: resolve(projectRoot, "packages/shared"),
           include: ["tests/**/*.test.ts"],
           globals: true,
           environment: "node",
@@ -57,7 +40,7 @@ export default defineConfig({
       {
         test: {
           name: "db",
-          root: "./packages/db",
+          root: resolve(projectRoot, "packages/db"),
           include: ["tests/**/*.test.ts"],
           globals: true,
           environment: "node",
@@ -66,7 +49,7 @@ export default defineConfig({
       {
         test: {
           name: "memory",
-          root: "./packages/memory",
+          root: resolve(projectRoot, "packages/memory"),
           include: ["tests/**/*.test.ts"],
           globals: true,
           environment: "node",

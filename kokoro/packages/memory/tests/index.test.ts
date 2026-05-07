@@ -182,7 +182,8 @@ describe("ingestSession", () => {
     const out = await ingestSession({
       transcript: "---\nid: s1\n---\n\n## t-1 user\nhi",
     });
-    expect(observedBody).toMatchObject({ transcript: expect.any(String) });
+    const transcript = (observedBody as { transcript: unknown }).transcript;
+    expect(typeof transcript).toBe("string");
     expect(out).toEqual({
       sessionId: "s1",
       added: 3,

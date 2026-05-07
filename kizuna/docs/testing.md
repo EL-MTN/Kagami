@@ -11,23 +11,23 @@ Kizuna's test suite covers the API workspace. Pure helpers run with no infrastru
 
 ## Stack
 
-- **Test runner:** Vitest 4 with the default node pool. Configured at `apps/api/vitest.config.ts`:
+- **Test runner:** Vitest 4 with the default node pool. Configured at `kizuna/vitest.config.ts` (project root, not the API workspace):
   - `pool: 'forks'`, `fileParallelism: false`, `isolate: false` — every test file shares one worker, which lets a single MongoDB instance be reused across files in a run.
-  - `globalSetup: ['./test/global-setup.ts']` — boots one `MongoMemoryServer` in the parent process before workers spawn and exposes its URI via `__VITEST_SHARED_MONGO_URI__`. The server is stopped on suite teardown.
-  - `setupFiles: ['./test/setup.ts']` — defaults `LOG_LEVEL` to `silent` so pino doesn't spam test output. Override with `LOG_LEVEL=debug npm test` when triaging a flaky run.
+  - `globalSetup: ['./apps/api/tests/global-setup.ts']` — boots one `MongoMemoryServer` in the parent process before workers spawn and exposes its URI via `__VITEST_SHARED_MONGO_URI__`. The server is stopped on suite teardown.
+  - `setupFiles: ['./apps/api/tests/setup.ts']` — defaults `LOG_LEVEL` to `silent` so pino doesn't spam test output. Override with `LOG_LEVEL=debug npm test` when triaging a flaky run.
   - `testTimeout: 60_000`, `hookTimeout: 60_000`.
-  - `include: ['test/**/*.test.ts']`.
+  - `include: ['apps/api/tests/**/*.test.ts']`.
 - **MongoDB:** real `mongod` started in-process by `mongodb-memory-server`. One instance is shared across the whole run via vitest `globalSetup`; each `startHarness()` call connects to a unique database name (`kizuna_test_<random>`) on that instance. `connectDb` runs `syncIndexes` so partial-unique indexes (notably `interactions_sourceRef_unique`) fire correctly. On `stop()` the harness drops its database before disconnecting.
 - **HTTP:** `supertest` against a live `createApp({ db, config })`. No port binding — `supertest` invokes the request handler directly.
 - **Google APIs:** never actually called.
   - `OAuth2Client.prototype.getToken` is `vi.spyOn`'d in OAuth tests.
-  - Gmail / Calendar clients are interfaces: tests inject `FakeGmailClient` / `FakeCalendarClient` (`apps/api/test/helpers/fake-{gmail,calendar}.ts`). The real clients (`makeGmailClient` / `makeCalendarClient`) are dynamically imported only by `runGmailSyncOnce` / `runCalendarSyncOnce`, which are bypassed in tests in favor of `runGmailSync({ client })` / `runCalendarSync({ client })`.
+  - Gmail / Calendar clients are interfaces: tests inject `FakeGmailClient` / `FakeCalendarClient` (`apps/api/tests/helpers/fake-{gmail,calendar}.ts`). The real clients (`makeGmailClient` / `makeCalendarClient`) are dynamically imported only by `runGmailSyncOnce` / `runCalendarSyncOnce`, which are bypassed in tests in favor of `runGmailSync({ client })` / `runCalendarSync({ client })`.
 - **Encryption:** real `aes-256-gcm` with a per-test key (`randomBytes(32).toString('base64')`).
 
 ## Layout
 
 ```
-apps/api/test/
+apps/api/tests/
 ├── global-setup.ts           # boots one MongoMemoryServer for the run
 ├── helpers/
 │   ├── harness.ts            # startHarness() — connects to shared mongo + createApp
@@ -55,7 +55,7 @@ apps/api/test/
 
 ## Harness
 
-`apps/api/test/helpers/harness.ts`:
+`apps/api/tests/helpers/harness.ts`:
 
 ```ts
 export async function startHarness(): Promise<TestHarness> {
