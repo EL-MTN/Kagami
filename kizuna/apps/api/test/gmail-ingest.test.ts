@@ -12,7 +12,6 @@ let h: TestHarness;
 
 function makeConfig(overrides: Record<string, string> = {}): Config {
   return loadConfig({
-    KIZUNA_API_KEY: h.apiKey,
     MONGO_URI: h.uri,
     USER_EMAILS: "me@example.com",
     KIZUNA_OAUTH_ENCRYPTION_KEY: h.encryptionKey,
@@ -470,7 +469,7 @@ describe("GET /v1/sync/gmail/state", () => {
   it("returns a default state when no doc exists", async () => {
     const res = await request(h.app)
       .get("/v1/sync/gmail/state")
-      .set("authorization", `Bearer ${h.apiKey}`);
+;
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       provider: "gmail",
@@ -492,7 +491,7 @@ describe("GET /v1/sync/gmail/state", () => {
     });
     const res = await request(h.app)
       .get("/v1/sync/gmail/state")
-      .set("authorization", `Bearer ${h.apiKey}`);
+;
     expect(res.status).toBe(200);
     expect(res.body.historyId).toBe("7777");
     expect(res.body.errorCount).toBe(2);

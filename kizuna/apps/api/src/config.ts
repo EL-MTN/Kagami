@@ -8,7 +8,6 @@ const csv = (s: string): string[] =>
     .filter(Boolean);
 
 const envSchema = z.object({
-  KIZUNA_API_KEY: z.string().min(16, "KIZUNA_API_KEY must be at least 16 characters"),
   MONGO_URI: z.string().regex(/^mongodb(\+srv)?:\/\//, "MONGO_URI must be a mongodb:// URI"),
   USER_EMAILS: z
     .string()

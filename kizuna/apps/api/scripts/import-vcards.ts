@@ -112,11 +112,6 @@ async function main(): Promise<void> {
     console.error("usage: tsx scripts/import-vcards.ts <path-to.vcf>");
     process.exit(1);
   }
-  const apiKey = process.env.KIZUNA_API_KEY;
-  if (!apiKey) {
-    console.error("KIZUNA_API_KEY not set in env");
-    process.exit(1);
-  }
   const baseUrl = process.env.KIZUNA_API_URL ?? "https://api.kizuna.localhost";
 
   const raw = readFileSync(file, "utf8");
@@ -132,10 +127,7 @@ async function main(): Promise<void> {
     const payload = buildPayload(card);
     const res = await fetch(`${baseUrl}/v1/people`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`,
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     });
     if (res.ok) {

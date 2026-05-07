@@ -5,7 +5,6 @@ import { Person } from "../src/db/models/Person.js";
 import { startHarness, type TestHarness } from "./helpers/harness.js";
 
 let h: TestHarness;
-const auth = () => `Bearer ${h.apiKey}`;
 
 beforeAll(async () => {
   h = await startHarness();
@@ -80,20 +79,15 @@ async function seed() {
 }
 
 describe("GET /v1/contexts", () => {
-  it("rejects without auth", async () => {
-    const res = await request(h.app).get("/v1/contexts");
-    expect(res.status).toBe(401);
-  });
-
   it("returns empty when no interactions exist", async () => {
-    const res = await request(h.app).get("/v1/contexts").set("authorization", auth());
+    const res = await request(h.app).get("/v1/contexts");
     expect(res.status).toBe(200);
     expect(res.body.items).toEqual([]);
   });
 
   it("aggregates distinct context tags + counts, sorted desc", async () => {
     await seed();
-    const res = await request(h.app).get("/v1/contexts").set("authorization", auth());
+    const res = await request(h.app).get("/v1/contexts");
     expect(res.status).toBe(200);
     expect(res.body.items).toEqual([
       { tag: "project:acme-redesign", count: 4 },
@@ -106,7 +100,7 @@ describe("GET /v1/contexts", () => {
     const { bobId } = await seed();
     const res = await request(h.app)
       .get(`/v1/contexts?personId=${bobId}`)
-      .set("authorization", auth());
+      ;
     expect(res.body.items).toEqual([
       // bob has trip:tokyo + acme-redesign (1 each) + strangeloop (1)
       { tag: "conf:strangeloop-2025", count: 1 },
@@ -119,7 +113,7 @@ describe("GET /v1/contexts", () => {
     await seed();
     await Interaction.updateOne({ title: "Tokyo" }, { $set: { deletedAt: new Date() } });
     await Interaction.updateOne({ title: "Strangeloop" }, { $set: { status: "cancelled" } });
-    const res = await request(h.app).get("/v1/contexts").set("authorization", auth());
+    const res = await request(h.app).get("/v1/contexts");
     const tags = res.body.items.map((r: { tag: string }) => r.tag);
     expect(tags).not.toContain("trip:tokyo-jan26");
     expect(tags).not.toContain("conf:strangeloop-2025");
@@ -127,7 +121,7 @@ describe("GET /v1/contexts", () => {
   });
 
   it("appears in the manifest", async () => {
-    const res = await request(h.app).get("/v1/_manifest").set("authorization", auth());
+    const res = await request(h.app).get("/v1/_manifest");
     const names = (res.body.endpoints as Array<{ name: string }>).map((e) => e.name);
     expect(names).toContain("list_contexts");
   });

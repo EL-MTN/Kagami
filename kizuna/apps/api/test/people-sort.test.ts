@@ -4,7 +4,6 @@ import { Person } from "../src/db/models/Person.js";
 import { startHarness, type TestHarness } from "./helpers/harness.js";
 
 let h: TestHarness;
-const auth = () => `Bearer ${h.apiKey}`;
 
 beforeAll(async () => {
   h = await startHarness();
@@ -35,7 +34,7 @@ describe("GET /v1/people?sort=lastInteractionAt:-1", () => {
     await makePerson("Newest", new Date("2026-04-01T00:00:00Z"));
     const res = await request(h.app)
       .get("/v1/people?sort=lastInteractionAt:-1")
-      .set("authorization", auth());
+      ;
     expect(res.status).toBe(200);
     expect((res.body.items as Array<{ displayName: string }>).map((p) => p.displayName)).toEqual([
       "Newest",
@@ -50,7 +49,7 @@ describe("GET /v1/people?sort=lastInteractionAt:-1", () => {
     await makePerson("NeverB", null);
     const res = await request(h.app)
       .get("/v1/people?sort=lastInteractionAt:-1")
-      .set("authorization", auth());
+      ;
     const names = (res.body.items as Array<{ displayName: string }>).map((p) => p.displayName);
     expect(names[0]).toBe("Touched");
     expect(names.slice(1).sort()).toEqual(["NeverA", "NeverB"]);
@@ -68,7 +67,7 @@ describe("GET /v1/people?sort=lastInteractionAt:-1", () => {
       const path = `/v1/people?sort=lastInteractionAt:-1&limit=1${
         cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""
       }`;
-      const res = await request(h.app).get(path).set("authorization", auth());
+      const res = await request(h.app).get(path);
       if (res.body.items.length === 0) break;
       seen.push(res.body.items[0].displayName);
       cursor = res.body.nextCursor;
@@ -81,7 +80,7 @@ describe("GET /v1/people?sort=lastInteractionAt:-1", () => {
   it("falls back to _id:-1 sort by default (back-compat)", async () => {
     await makePerson("X", new Date("2025-01-01T00:00:00Z"));
     await makePerson("Y", new Date("2026-04-01T00:00:00Z"));
-    const res = await request(h.app).get("/v1/people").set("authorization", auth());
+    const res = await request(h.app).get("/v1/people");
     // Default _id:-1 sort: most recently created first.
     expect((res.body.items as Array<{ displayName: string }>).map((p) => p.displayName)).toEqual([
       "Y",

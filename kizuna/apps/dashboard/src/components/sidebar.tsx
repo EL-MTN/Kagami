@@ -1,4 +1,3 @@
-import { logoutAction } from "@/lib/auth-actions";
 import { NavLink, type IconName } from "./nav-link";
 
 const links: { href: string; label: string; iconName: IconName }[] = [
@@ -30,15 +29,6 @@ export function Sidebar() {
           <NavLink key={link.href} href={link.href} label={link.label} iconName={link.iconName} />
         ))}
       </nav>
-
-      <form action={logoutAction} className="px-4 pb-3">
-        <button
-          type="submit"
-          className="w-full rounded-md px-3 py-2 text-left text-xs text-faint transition-colors hover:bg-accent hover:text-muted-foreground"
-        >
-          Sign out
-        </button>
-      </form>
 
       <div className="px-6 pb-5 text-[11px] tabular-nums text-faint">Kizuna · read-only</div>
     </aside>

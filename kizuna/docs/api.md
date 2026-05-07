@@ -1,6 +1,6 @@
 # API
 
-One surface: REST at `https://api.kizuna.localhost` (Portless). All `/v1/*` routes are bearer-gated; `/oauth/*` does its own per-handler auth (header OR `?key=`, callback uses HMAC-signed CSRF state); `/health` is open.
+One surface: REST at `https://api.kizuna.localhost` (Portless). The API is open at single-user localhost — no bearer auth on `/v1/*`, no auth on `/oauth/google/{start,status}`. The OAuth callback is still CSRF-protected by a process-local HMAC state token.
 
 ## Mount order
 
@@ -8,9 +8,8 @@ One surface: REST at `https://api.kizuna.localhost` (Portless). All `/v1/*` rout
 
 ```ts
 app.use(express.json({ limit: '1mb' }));
-app.use(healthRouter(db));            // GET /health        (no auth)
+app.use(healthRouter(db));            // GET /health
 app.use('/oauth', makeOauthRouter(config));  // /oauth/google/{start,callback,status}
-app.use('/v1', bearerAuth(config.KIZUNA_API_KEY));  // gates everything below
 app.use('/v1', manifestRouter);
 app.use('/v1', peopleRouter);
 app.use('/v1', organizationsRouter);
@@ -29,18 +28,18 @@ app.use(makeErrorHandler());          // ZodError / HttpError / mongoose / E1100
 - All Mongoose schemas use `strict: 'throw'`, so unknown fields that survive zod still fail at insert time and become `400 bad_request`.
 - Soft-delete by default. List endpoints filter `deletedAt: null` unless `?includeTombstoned=true`. DELETE handlers never `deleteOne`; they `findOneAndUpdate({ deletedAt: new Date() })`.
 - Cursor pagination is base64url-encoded JSON. Cursor shapes are endpoint-specific (`{ id }` for the simple case, `{ lia, id }` for the people list under `lastInteractionAt:-1`).
-- Auth: `Authorization: Bearer <KIZUNA_API_KEY>` for all `/v1/*`. Constant-time compare (`crypto.timingSafeEqual`).
+- No API auth. The OS user boundary is the trust boundary; the API binds to `127.0.0.1` via Portless. See [auth.md](auth.md) for threat-model details.
 - Error envelope: `{ error: { code, message, details? } }` with codes `bad_request | unauthorized | not_found | conflict | rate_limited | internal`.
 
 ## Auth
 
 | Layer                    | Mechanism                                                                                   | File                                |
 | ------------------------ | ------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `/v1/*`                  | `Authorization: Bearer <KIZUNA_API_KEY>`; constant-time compare                             | `apps/api/src/lib/auth.ts`          |
-| `/oauth/google/start`    | Bearer header OR `?key=<KIZUNA_API_KEY>` (so a plain `<a href>` from the dashboard works)   | `apps/api/src/routes/oauth.ts`      |
-| `/oauth/google/callback` | HMAC-signed state token (10-min TTL, secret = `KIZUNA_API_KEY`); no API key in the redirect | `apps/api/src/lib/oauth-state.ts`   |
-| `/oauth/google/status`   | Bearer header OR `?key=`                                                                    | `apps/api/src/routes/oauth.ts`      |
-| Dashboard sessions       | HMAC-signed cookie, secret = `KIZUNA_API_KEY`, 30-day TTL                                   | `apps/dashboard/src/lib/session.ts` |
+| `/v1/*`                  | none — open at localhost                                                                    | —                                   |
+| `/oauth/google/start`    | none — open at localhost                                                                    | `apps/api/src/routes/oauth.ts`      |
+| `/oauth/google/callback` | HMAC-signed state token (10-min TTL, process-local secret); no credential on the wire       | `apps/api/src/lib/oauth-state.ts`   |
+| `/oauth/google/status`   | none — open at localhost                                                                    | `apps/api/src/routes/oauth.ts`      |
+| Dashboard sessions       | none — dashboard is open at localhost                                                       | —                                   |
 
 See [auth.md](auth.md) for the full model.
 
@@ -229,11 +228,11 @@ The duration parser (`apps/api/src/lib/duration.ts`) supports a subset of ISO 86
 
 ### OAuth (`apps/api/src/routes/oauth.ts`)
 
-| Method | Path                     | Auth                     | Behavior                                                                                                                                                                                             |
-| ------ | ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/oauth/google/start`    | Bearer header OR `?key=` | 302 to Google with `access_type=offline`, `prompt=consent`, `scope=gmail.readonly+calendar.readonly`, `state` = signed CSRF token                                                                    |
-| GET    | `/oauth/google/callback` | Signed state token       | Exchanges code, encrypts refresh token with `KIZUNA_OAUTH_ENCRYPTION_KEY`, upserts `OAuthToken{ provider:'google' }`, unpauses workers, clears access-token cache, returns 200 text/html "Granted ✓" |
-| GET    | `/oauth/google/status`   | Bearer header OR `?key=` | `{ granted: false }` or `{ granted: true, scopes: string[], grantedAt: ISODateString }`                                                                                                              |
+| Method | Path                     | Auth               | Behavior                                                                                                                                                                                             |
+| ------ | ------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/oauth/google/start`    | none               | 302 to Google with `access_type=offline`, `prompt=consent`, `scope=gmail.readonly+calendar.readonly`, `state` = signed CSRF token                                                                    |
+| GET    | `/oauth/google/callback` | Signed state token | Exchanges code, encrypts refresh token with `KIZUNA_OAUTH_ENCRYPTION_KEY`, upserts `OAuthToken{ provider:'google' }`, unpauses workers, clears access-token cache, returns 200 text/html "Granted ✓" |
+| GET    | `/oauth/google/status`   | none               | `{ granted: false }` or `{ granted: true, scopes: string[], grantedAt: ISODateString }`                                                                                                              |
 
 Scopes (constant in `apps/api/src/lib/google-auth.ts`):
 
@@ -267,7 +266,7 @@ https://www.googleapis.com/auth/calendar.readonly
 | Code           | When                                                                                             |
 | -------------- | ------------------------------------------------------------------------------------------------ |
 | `bad_request`  | Zod parse failure, mongoose `ValidationError` / `CastError` / `StrictModeError`, custom 400s     |
-| `unauthorized` | Missing or invalid bearer; OAuth state mismatch                                                  |
+| `unauthorized` | OAuth state mismatch                                                                             |
 | `not_found`    | 404s from `errors.notFound(...)` and the catch-all 404 middleware                                |
 | `conflict`     | E11000 duplicate-key (e.g. `Organization.domain` unique, `Interaction.sourceRef` unique partial) |
 | `rate_limited` | Reserved; not currently raised from any code path                                                |

@@ -17,7 +17,6 @@ import type {
 } from "./types";
 
 const API_URL = process.env.KIZUNA_API_URL ?? "https://api.kizuna.localhost";
-const API_KEY = process.env.KIZUNA_API_KEY ?? "";
 
 export class ApiError extends Error {
   status: number;
@@ -28,13 +27,9 @@ export class ApiError extends Error {
 }
 
 async function kz<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!API_KEY) {
-    throw new ApiError(0, "KIZUNA_API_KEY is not set in apps/dashboard/.env");
-  }
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
-      authorization: `Bearer ${API_KEY}`,
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
@@ -95,12 +90,11 @@ export const api = {
 };
 
 export function oauthStartUrl(): string {
-  return `${API_URL}/oauth/google/start?key=${encodeURIComponent(API_KEY)}`;
+  return `${API_URL}/oauth/google/start`;
 }
 
 export const config = {
   apiUrl: API_URL,
-  apiKeyPresent: Boolean(API_KEY),
   userEmails: (process.env.USER_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
