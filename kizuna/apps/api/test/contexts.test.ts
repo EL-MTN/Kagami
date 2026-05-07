@@ -98,9 +98,7 @@ describe("GET /v1/contexts", () => {
 
   it("filters by personId via participants.personId", async () => {
     const { bobId } = await seed();
-    const res = await request(h.app)
-      .get(`/v1/contexts?personId=${bobId}`)
-      ;
+    const res = await request(h.app).get(`/v1/contexts?personId=${bobId}`);
     expect(res.body.items).toEqual([
       // bob has trip:tokyo + acme-redesign (1 each) + strangeloop (1)
       { tag: "conf:strangeloop-2025", count: 1 },
