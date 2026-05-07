@@ -146,4 +146,4 @@ brew services start mongodb-community
 
 `mongoose.syncIndexes()` is called at boot for every registered model — partial-unique indexes (notably `interactions_sourceRef_unique`) need to be in place before the ingest scheduler can rely on them. If you're upgrading and an index shape changed, you may see a sync error logged at boot; fix is to drop the conflicting index in `mongosh` and let the next boot recreate it.
 
-The test harness (`apps/api/test/helpers/harness.ts`) uses `testcontainers` to spin up a fresh `mongo:7` container per test run. See [testing.md](testing.md).
+The test harness (`apps/api/test/helpers/harness.ts`) uses `mongodb-memory-server` — one in-process `mongod` is booted by Vitest's `globalSetup` and shared across files, with each `startHarness()` call getting its own database name on that instance. No Docker required. See [testing.md](testing.md).

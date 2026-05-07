@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
 import type { Express } from "express";
-import { GenericContainer, type StartedTestContainer } from "testcontainers";
 import { loadConfig } from "../../src/config.js";
 import { connectDb, type DbHandle } from "../../src/db/connect.js";
 import "../../src/db/models/index.js";
 import { createApp } from "../../src/server.js";
+import { SHARED_MONGO_URI_ENV } from "../global-setup.js";
 
 export type TestHarness = {
   app: Express;
@@ -15,11 +15,15 @@ export type TestHarness = {
 };
 
 export async function startHarness(): Promise<TestHarness> {
-  const container: StartedTestContainer = await new GenericContainer("mongo:7")
-    .withExposedPorts(27017)
-    .start();
+  const baseUri = process.env[SHARED_MONGO_URI_ENV];
+  if (!baseUri) {
+    throw new Error(
+      `${SHARED_MONGO_URI_ENV} not set — vitest globalSetup must run before startHarness()`,
+    );
+  }
 
-  const uri = `mongodb://${container.getHost()}:${container.getMappedPort(27017)}/kizuna_test`;
+  const dbName = `kizuna_test_${randomBytes(6).toString("hex")}`;
+  const uri = baseUri.replace(/\/?$/, `/${dbName}`);
   const encryptionKey = randomBytes(32).toString("base64");
 
   const config = loadConfig({
@@ -40,8 +44,8 @@ export async function startHarness(): Promise<TestHarness> {
     uri,
     encryptionKey,
     stop: async () => {
+      await db.conn.connection.dropDatabase();
       await db.close();
-      await container.stop();
     },
   };
 }
