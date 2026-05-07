@@ -1,11 +1,10 @@
-import { test, before, after, beforeEach } from "node:test";
-import assert from "node:assert/strict";
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { randomUUID } from "node:crypto";
 
 let replSet: MongoMemoryReplSet;
 
-before(async () => {
+beforeAll(async () => {
   replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   process.env.KIOKU_MONGO_URI = replSet.getUri();
   process.env.KIOKU_MONGO_DB = `kioku_entities_test_${Date.now()}`;
@@ -19,7 +18,7 @@ beforeEach(async () => {
   await db.collection("entities").deleteMany({});
 });
 
-after(async () => {
+afterAll(async () => {
   const { closeMongo } = await import("../src/storage/mongo.ts");
   await closeMongo();
   await replSet.stop();
@@ -38,17 +37,16 @@ function makeDoc(overrides: Record<string, unknown> = {}) {
   };
 }
 
-void test("text_lower unique index rejects duplicate keys", async () => {
+it("text_lower unique index rejects duplicate keys", async () => {
   const { getDb } = await import("../src/storage/mongo.ts");
   const db = await getDb();
   await db.collection("entities").insertOne(makeDoc({ text: "Mira" }) as never);
-  await assert.rejects(
-    () => db.collection("entities").insertOne(makeDoc({ text: "Mira" }) as never),
-    /E11000|duplicate key/,
-  );
+  await expect(
+    db.collection("entities").insertOne(makeDoc({ text: "Mira" }) as never),
+  ).rejects.toThrow(/E11000|duplicate key/);
 });
 
-void test("parallel upsert-style updateOnes converge on union of linked_memory_ids", async () => {
+it("parallel upsert-style updateOnes converge on union of linked_memory_ids", async () => {
   // Mirrors the atomic-upsert pattern upsertEntitiesFromFacts uses,
   // without going through embedTexts (which needs a live provider).
   // Demonstrates that two writers racing on the same text_lower end up
@@ -75,7 +73,7 @@ void test("parallel upsert-style updateOnes converge on union of linked_memory_i
 
   await Promise.all([upsert("fact-A"), upsert("fact-B"), upsert("fact-C")]);
   const docs = await col.find({}).toArray();
-  assert.equal(docs.length, 1);
+  expect(docs.length).toBe(1);
   const linked = (docs[0] as unknown as { linked_memory_ids: string[] }).linked_memory_ids;
-  assert.deepEqual([...linked].sort(), ["fact-A", "fact-B", "fact-C"]);
+  expect([...linked].sort()).toEqual(["fact-A", "fact-B", "fact-C"]);
 });

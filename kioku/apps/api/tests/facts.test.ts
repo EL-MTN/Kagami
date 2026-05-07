@@ -1,10 +1,9 @@
-import { test, before, after, beforeEach } from "node:test";
-import assert from "node:assert/strict";
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 
 let replSet: MongoMemoryReplSet;
 
-before(async () => {
+beforeAll(async () => {
   replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   process.env.KIOKU_MONGO_URI = replSet.getUri();
   process.env.KIOKU_MONGO_DB = `kioku_facts_test_${Date.now()}`;
@@ -21,7 +20,7 @@ beforeEach(async () => {
   await db.collection("facts").deleteMany({});
 });
 
-after(async () => {
+afterAll(async () => {
   const { closeMongo } = await import("../src/storage/mongo.ts");
   await closeMongo();
   await replSet.stop();
@@ -40,12 +39,12 @@ function makeFact(overrides: Record<string, unknown> = {}) {
   };
 }
 
-void test("readFacts returns empty array when collection is empty", async () => {
+it("readFacts returns empty array when collection is empty", async () => {
   const { readFacts } = await import("../src/storage/facts.ts");
-  assert.deepEqual(await readFacts(), []);
+  expect(await readFacts()).toEqual([]);
 });
 
-void test("appendFacts then readFacts roundtrips", async () => {
+it("appendFacts then readFacts roundtrips", async () => {
   const { appendFacts, readFacts, newFactId } = await import("../src/storage/facts.ts");
   const a = makeFact({
     id: newFactId(),
@@ -66,13 +65,13 @@ void test("appendFacts then readFacts roundtrips", async () => {
   await appendFacts([a]);
   await appendFacts([b]);
   const facts = await readFacts();
-  assert.equal(facts.length, 2);
-  assert.equal(facts[0]!.text, "User likes coffee");
-  assert.equal(facts[1]!.text, "User has a cat named Mira");
-  assert.deepEqual(facts[0]!.embedding, [1, 0, 0]);
+  expect(facts.length).toBe(2);
+  expect(facts[0]!.text).toBe("User likes coffee");
+  expect(facts[1]!.text).toBe("User has a cat named Mira");
+  expect(facts[0]!.embedding).toEqual([1, 0, 0]);
 });
 
-void test("readFactsInScope filters to the supplied scope", async () => {
+it("readFactsInScope filters to the supplied scope", async () => {
   const { appendFacts, readFactsInScope, newFactId } = await import("../src/storage/facts.ts");
   await appendFacts([
     makeFact({ id: newFactId(), user_id: "alice" }),
@@ -80,25 +79,25 @@ void test("readFactsInScope filters to the supplied scope", async () => {
     makeFact({ id: newFactId(), user_id: "alice", run_id: "r1" }),
   ]);
   const aliceAll = await readFactsInScope({ user_id: "alice" });
-  assert.equal(aliceAll.length, 2);
+  expect(aliceAll.length).toBe(2);
   const aliceR1 = await readFactsInScope({ user_id: "alice", run_id: "r1" });
-  assert.equal(aliceR1.length, 1);
-  assert.equal(aliceR1[0]!.run_id, "r1");
+  expect(aliceR1.length).toBe(1);
+  expect(aliceR1[0]!.run_id).toBe("r1");
 });
 
-void test("normalizeCategory accepts the known list, falls back to misc otherwise", async () => {
+it("normalizeCategory accepts the known list, falls back to misc otherwise", async () => {
   const { normalizeCategory, KIOKU_CATEGORIES } = await import("../src/ingest/consolidate.ts");
   for (const c of KIOKU_CATEGORIES) {
-    assert.equal(normalizeCategory(c), c);
+    expect(normalizeCategory(c)).toBe(c);
   }
-  assert.equal(normalizeCategory("PROFESSIONAL_DETAILS"), "professional_details");
-  assert.equal(normalizeCategory("  food  "), "food");
-  assert.equal(normalizeCategory("not_a_real_category"), "misc");
-  assert.equal(normalizeCategory(undefined), "misc");
-  assert.equal(normalizeCategory(""), "misc");
+  expect(normalizeCategory("PROFESSIONAL_DETAILS")).toBe("professional_details");
+  expect(normalizeCategory("  food  ")).toBe("food");
+  expect(normalizeCategory("not_a_real_category")).toBe("misc");
+  expect(normalizeCategory(undefined)).toBe("misc");
+  expect(normalizeCategory("")).toBe("misc");
 });
 
-void test("appendFacts persists category", async () => {
+it("appendFacts persists category", async () => {
   const { appendFacts, readFacts, newFactId } = await import("../src/storage/facts.ts");
   const f = makeFact({
     id: newFactId(),
@@ -107,11 +106,11 @@ void test("appendFacts persists category", async () => {
   });
   await appendFacts([f]);
   const facts = await readFacts();
-  assert.equal(facts.length, 1);
-  assert.equal(facts[0]!.category, "music");
+  expect(facts.length).toBe(1);
+  expect(facts[0]!.category).toBe("music");
 });
 
-void test("appendFacts persists run_id, agent_id, and metadata", async () => {
+it("appendFacts persists run_id, agent_id, and metadata", async () => {
   const { appendFacts, readFacts, newFactId } = await import("../src/storage/facts.ts");
   const f = makeFact({
     id: newFactId(),
@@ -122,28 +121,28 @@ void test("appendFacts persists run_id, agent_id, and metadata", async () => {
   });
   await appendFacts([f]);
   const facts = await readFacts();
-  assert.equal(facts.length, 1);
-  assert.equal(facts[0]!.run_id, "session-1");
-  assert.equal(facts[0]!.agent_id, "kioku");
-  assert.deepEqual(facts[0]!.metadata, { category: "food", confidence: 0.9 });
+  expect(facts.length).toBe(1);
+  expect(facts[0]!.run_id).toBe("session-1");
+  expect(facts[0]!.agent_id).toBe("kioku");
+  expect(facts[0]!.metadata).toEqual({ category: "food", confidence: 0.9 });
 });
 
-void test("appendFactsBulk on empty input returns empty array without LLM contact", async () => {
+it("appendFactsBulk on empty input returns empty array without LLM contact", async () => {
   const { appendFactsBulk } = await import("../src/ingest/append.ts");
   const out = await appendFactsBulk([]);
-  assert.deepEqual(out, []);
+  expect(out).toEqual([]);
 });
 
-void test("newFactId returns unique uuid-shaped strings", async () => {
+it("newFactId returns unique uuid-shaped strings", async () => {
   const { newFactId } = await import("../src/storage/facts.ts");
   const ids = new Set([newFactId(), newFactId(), newFactId()]);
-  assert.equal(ids.size, 3);
+  expect(ids.size).toBe(3);
   for (const id of ids) {
-    assert.match(id, /^[0-9a-f-]{36}$/);
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
   }
 });
 
-void test("buildExtractionUserPrompt assembles all required sections in order", async () => {
+it("buildExtractionUserPrompt assembles all required sections in order", async () => {
   const { buildExtractionUserPrompt } = await import("../src/ingest/consolidate.ts");
   const prompt = buildExtractionUserPrompt({
     newMessages: [{ role: "user", content: "hi" }],
@@ -151,20 +150,20 @@ void test("buildExtractionUserPrompt assembles all required sections in order", 
     currentDate: "2026-05-02",
     existingMemories: [{ id: "uuid-1", text: "User likes pizza" }],
   });
-  assert.ok(prompt.includes("## Summary"));
-  assert.ok(prompt.includes("## Last k Messages"));
-  assert.ok(prompt.includes("## Recently Extracted Memories"));
-  assert.ok(prompt.includes("## Existing Memories"));
-  assert.ok(prompt.includes("uuid-1"));
-  assert.ok(prompt.includes("User likes pizza"));
-  assert.ok(prompt.includes("## New Messages"));
-  assert.ok(prompt.includes('"role":"user"'));
-  assert.ok(prompt.includes("## Observation Date\n2023-05-04"));
-  assert.ok(prompt.includes("## Current Date\n2026-05-02"));
-  assert.ok(prompt.endsWith("# Output:"));
+  expect(prompt).toContain("## Summary");
+  expect(prompt).toContain("## Last k Messages");
+  expect(prompt).toContain("## Recently Extracted Memories");
+  expect(prompt).toContain("## Existing Memories");
+  expect(prompt).toContain("uuid-1");
+  expect(prompt).toContain("User likes pizza");
+  expect(prompt).toContain("## New Messages");
+  expect(prompt).toContain('"role":"user"');
+  expect(prompt).toContain("## Observation Date\n2023-05-04");
+  expect(prompt).toContain("## Current Date\n2026-05-02");
+  expect(prompt.endsWith("# Output:")).toBe(true);
 });
 
-void test("buildExtractionUserPrompt threads summary into the Summary section", async () => {
+it("buildExtractionUserPrompt threads summary into the Summary section", async () => {
   const { buildExtractionUserPrompt } = await import("../src/ingest/consolidate.ts");
   const summary =
     "User is Marcus, a senior engineer at Shopify. The conversation covered career milestones and family.";
@@ -174,5 +173,5 @@ void test("buildExtractionUserPrompt threads summary into the Summary section", 
     currentDate: "2026-05-04",
     summary,
   });
-  assert.ok(prompt.includes(`## Summary\n${summary}`));
+  expect(prompt).toContain(`## Summary\n${summary}`);
 });

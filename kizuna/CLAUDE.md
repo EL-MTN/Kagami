@@ -20,7 +20,7 @@ kizuna/
 │   │   │   ├── routes/         # per-resource Express routers
 │   │   │   ├── lib/            # errors, encryption, oauth-state, google-auth, cursor, duration, serialize, logger
 │   │   │   └── schemas/        # shared zod (Pagination, IdParam, ISODateString, …)
-│   │   ├── test/           # vitest + supertest + mongodb-memory-server (real Mongo, no Docker)
+│   │   ├── tests/          # vitest + supertest + mongodb-memory-server (real Mongo, no Docker)
 │   │   └── scripts/        # import-vcards.ts (vCard → POST /v1/people)
 │   └── dashboard/          # Next.js 15 App Router (https://kizuna.localhost)
 │       ├── app/

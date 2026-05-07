@@ -1,10 +1,9 @@
-import { test, before, after, beforeEach } from "node:test";
-import assert from "node:assert/strict";
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 
 let replSet: MongoMemoryReplSet;
 
-before(async () => {
+beforeAll(async () => {
   replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   process.env.KIOKU_MONGO_URI = replSet.getUri();
   process.env.KIOKU_MONGO_DB = `kioku_session_summary_test_${Date.now()}`;
@@ -16,7 +15,7 @@ beforeEach(async () => {
   await db.collection("session_summaries").deleteMany({});
 });
 
-after(async () => {
+afterAll(async () => {
   const { closeMongo } = await import("../src/storage/mongo.ts");
   await closeMongo();
   await replSet.stop();
@@ -29,7 +28,7 @@ interface CachedSummary {
   created_at: string;
 }
 
-void test("getOrComputeSessionSummary returns the cached summary without recomputing", async () => {
+it("getOrComputeSessionSummary returns the cached summary without recomputing", async () => {
   const { getDb } = await import("../src/storage/mongo.ts");
   const db = await getDb();
   await db.collection<CachedSummary>("session_summaries").insertOne({
@@ -53,19 +52,19 @@ void test("getOrComputeSessionSummary returns the cached summary without recompu
     sourceSession: "raw/cached-session",
     turns,
   });
-  assert.equal(out, "pre-cached narrative summary");
+  expect(out).toBe("pre-cached narrative summary");
 });
 
-void test("getOrComputeSessionSummary on empty turns short-circuits to empty", async () => {
+it("getOrComputeSessionSummary on empty turns short-circuits to empty", async () => {
   const { getOrComputeSessionSummary } = await import("../src/ingest/session-summary.ts");
   const out = await getOrComputeSessionSummary({
     sourceSession: "raw/empty",
     turns: [],
   });
-  assert.equal(out, "");
+  expect(out).toBe("");
 
   const { getDb } = await import("../src/storage/mongo.ts");
   const db = await getDb();
   const doc = await db.collection<CachedSummary>("session_summaries").findOne({ _id: "raw/empty" });
-  assert.equal(doc, null);
+  expect(doc).toBeNull();
 });

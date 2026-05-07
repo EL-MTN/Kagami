@@ -42,8 +42,9 @@ covered, and how to add tests.
 ```bash
 npm run test              # run everything (~10 s)
 npm run test:watch        # vitest watch mode
-npm run test:coverage     # V8 coverage; HTML report at coverage/index.html
 ```
+
+Per-package `test` / `test:watch` scripts also exist (e.g. `cd packages/db && npm test`); each delegates to the workspace `vitest.config.ts` with `--project <name>`.
 
 ## Layout
 
@@ -69,7 +70,7 @@ kokoro/
 │           ├── http.ts             # MSW server with default handlers
 │           ├── time.ts             # advanceTimersByAsync helper
 │           └── fixtures/
-├── vitest.config.ts                # `projects` config + coverage settings
+├── vitest.config.ts                # `projects` config (one per package)
 └── tests/
     └── e2e/                        # cross-package pipeline tests (planned)
 ```
@@ -114,11 +115,11 @@ Real bugs fixed this way so far:
 This is the **current** view — which modules have tests, which don't.
 Update the tables here when a test file lands or moves.
 
-Deliberately not tracking line/branch percentages in this doc — they drift
-on every commit and create maintenance noise without meaningfully changing
-the answer to "is this module tested?". For ad-hoc drilldowns, run
-`npm run test:coverage`; the V8 HTML report at `coverage/index.html` has
-the line-level detail.
+Deliberately not tracking line/branch percentages — they drift on every
+commit and create maintenance noise without meaningfully changing the
+answer to "is this module tested?". V8 coverage reporting was removed when
+the workspace standardized on Vitest; reintroduce it locally with
+`npx vitest run --coverage` if you need a one-off drilldown.
 
 Legend: ✅ has tests, 🟡 partial — happy path only or one branch missing,
 ❌ no tests, ⏭ deferred — covered in a later phase or intentionally
@@ -133,7 +134,7 @@ untested (thin wrapper, init code).
 | `markdown.ts`           | ✅     | `tests/markdown.test.ts`           | `parseMarkdown` — no writer exists.                                                                   |
 | `routine-validation.ts` | ✅     | `tests/routine-validation.test.ts` | `computeNextRunAt` + every `validateCronAndDefaults` branch.                                          |
 | `logger.ts`             | ⏭     | —                                  | Pino wrapper. Exercised transitively wherever it's imported.                                          |
-| `types.ts`              | n/a    | —                                  | Type-only; excluded from coverage.                                                                    |
+| `types.ts`              | n/a    | —                                  | Type-only.                                                                                            |
 
 ### `packages/db/src/`
 
@@ -243,10 +244,7 @@ client, and tool contracts (~32 test files, ~10 s). Two phases remain:
 
 ## Open decisions
 
-1. **Coverage gating.** No floor today. Could be introduced as a
-   touched-files check rather than a global percentage so the bar tracks
-   what changed instead of the whole repo.
-2. **CI / pre-commit.** No CI workflow is wired up today (`.github/`
+1. **CI / pre-commit.** No CI workflow is wired up today (`.github/`
    doesn't exist in this repo). The workspace `.husky/pre-commit` runs
    `npx lint-staged` only — Prettier on every matched staged file,
    plus `eslint --fix` on `apps/**/src/**` and `packages/**`. Run
@@ -254,5 +252,5 @@ client, and tool contracts (~32 test files, ~10 s). Two phases remain:
    from the workspace root. If we add CI or want to gate commits on
    the test suite, the hook (and a `pre-push` variant for slower
    checks) is the place.
-3. **Dashboard tests.** The Next.js dashboard is out of scope until the bot
+2. **Dashboard tests.** The Next.js dashboard is out of scope until the bot
    side is fully covered.

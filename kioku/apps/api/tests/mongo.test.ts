@@ -1,10 +1,9 @@
-import { test, before, after } from "node:test";
-import assert from "node:assert/strict";
+import { afterAll, beforeAll, expect, it } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 
 let replSet: MongoMemoryReplSet;
 
-before(async () => {
+beforeAll(async () => {
   replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   process.env.KIOKU_MONGO_URI = replSet.getUri();
   process.env.KIOKU_MONGO_DB = `kioku_test_${Date.now()}`;
@@ -13,13 +12,13 @@ before(async () => {
   // below swallows that — so no embedding probe runs in this test.
 });
 
-after(async () => {
+afterAll(async () => {
   const { closeMongo } = await import("../src/storage/mongo.ts");
   await closeMongo();
   await replSet.stop();
 });
 
-void test("ensureIndexes creates btree indexes on facts/entities/history", async () => {
+it("ensureIndexes creates btree indexes on facts/entities/history", async () => {
   const { ensureIndexes } = await import("../src/storage/indexes.ts");
   const { getDb } = await import("../src/storage/mongo.ts");
 
@@ -33,13 +32,13 @@ void test("ensureIndexes creates btree indexes on facts/entities/history", async
   // facts_hash_unique was removed when storage-layer dedup moved to
   // cosine in append.ts / consolidate.ts. ensureIndexes now drops it
   // if a legacy deployment still has it, but never creates it.
-  assert.ok(!factIdx.find((i) => i.name === "facts_hash_unique"));
-  assert.ok(factIdx.find((i) => i.name === "facts_user_created"));
-  assert.ok(entIdx.find((i) => i.name === "entities_text_lower_unique")?.unique);
-  assert.ok(histIdx.find((i) => i.name === "history_memory_created"));
+  expect(factIdx.find((i) => i.name === "facts_hash_unique")).toBeFalsy();
+  expect(factIdx.find((i) => i.name === "facts_user_created")).toBeTruthy();
+  expect(entIdx.find((i) => i.name === "entities_text_lower_unique")?.unique).toBe(true);
+  expect(histIdx.find((i) => i.name === "history_memory_created")).toBeTruthy();
 });
 
-void test("ensureIndexes is idempotent across calls", async () => {
+it("ensureIndexes is idempotent across calls", async () => {
   const { ensureIndexes } = await import("../src/storage/indexes.ts");
   await ensureIndexes({ allowMissingSearch: true });
   await ensureIndexes({ allowMissingSearch: true });
