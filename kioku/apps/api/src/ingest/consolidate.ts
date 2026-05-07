@@ -27,12 +27,14 @@ const BATCH_SIZE = 2;
 const TOP_K_EXISTING = 10;
 const RECENTLY_EXTRACTED_LIMIT = 20;
 const LAST_K_MESSAGES = 20;
-// Cosine threshold for dedup at the consolidate layer. Lower than
-// append.ts's 0.97 because LLM batch extraction is sloppier than
-// caller-curated single facts — paraphrased near-duplicates of the same
-// fact often land at 0.92–0.96 rather than ≥0.97. Catches both
-// within-batch and against-existing duplicates.
-const NEAR_DUPE_COSINE = 0.92;
+// Cosine threshold for dedup at the consolidate layer. Matches
+// append.ts's 0.97. The original 0.92 (chosen on the assumption that
+// LLM batch extraction would produce sloppier near-duplicates) over-
+// merged on LongMemEval — multi-session recall dropped 7.5pp and
+// temporal-reasoning 5pp — because legitimately distinct facts about
+// the same entity often land at 0.92–0.96 cosine even when their
+// content is materially different.
+const NEAR_DUPE_COSINE = 0.97;
 
 // The extraction prompt describes a richer per-memory shape
 // (`attributed_to`, optional `linked_memory_ids`). We only persist text +

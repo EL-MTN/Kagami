@@ -4,8 +4,9 @@ Kioku ships with a [LongMemEval](https://github.com/xiaowu0162/LongMemEval) (Wu 
 
 ## Headline numbers
 
-- **78%** on a 100-item LongMemEval-Oracle subset (gpt-4o-mini answerer + judge, lmstudio nomic embeddings, atlas-local). Up from the JSONL-era baseline of **76%**.
-- The +2pp gain comes from whole-corpus BM25 closing the recall ceiling on multi-session questions (72.5% vs. 67.5%); temporal-reasoning is unchanged at 81.7%.
+- **74%** on a 100-item LongMemEval-Oracle subset (gpt-4o-mini answerer + judge, OpenAI text-embedding-3-small, atlas-local). Down from the prior **78%** baseline. Temporal-reasoning recovered to baseline (80.0%); the 4pp net loss is concentrated in multi-session counting questions (65.0% vs. 72.5%).
+- The multi-session regression is attributed to dropping the per-session "On YYYY-MM-DD, conversation covered: …" summary fact in commit `6803aae`. Those keyword-bag clauses were retrieval noise for most queries but acted as implicit session-presence markers for cross-session counting questions ("how many weddings did I attend?"). Confirmed by ablation: bumping the consolidate cosine threshold (0.92 → 0.97) and reverting the within-response prompt edit each move temporal-reasoning but leave multi-session pinned at 26/40 across three runs.
+- **Earlier baselines (pre-changes):** 78% on a 100-item Oracle subset (gpt-4o-mini, lmstudio nomic embeddings); +2pp gain over a JSONL-era 76% from whole-corpus BM25 closing the recall ceiling on multi-session questions.
 - **Head-to-head vs. mem0 OSS** (JSONL-era numbers, pre-Mongo): 76% / 76% on the same 100 question_ids, same models, mem0's v3 pipeline running its native top_k=200 vs. Kioku's top_k=50. mem0's widely-cited "91% OSS" headline uses gpt-5 + the full 500 questions; that operating point hasn't been run here.
 
 ## Layout
