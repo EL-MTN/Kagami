@@ -248,11 +248,11 @@ client, and tool contracts (~32 test files, ~10 s). Two phases remain:
    what changed instead of the whole repo.
 2. **CI / pre-commit.** No CI workflow is wired up today (`.github/`
    doesn't exist in this repo). The workspace `.husky/pre-commit` runs
-   `npx lint-staged` only — Prettier on every matched staged file, plus
-   `eslint --fix` on `apps/**/src/**` and `packages/**`. Tests are run
-   on demand via `cd kokoro && npx vitest run` or `npx turbo run test
---filter="@kokoro/*"` from the workspace root. If we add CI or want
-   to gate commits on the test suite, the hook (and a `pre-push`
-   variant for slower checks) is the place.
+   `npx lint-staged` only — Prettier on every matched staged file,
+   plus `eslint --fix` on `apps/**/src/**` and `packages/**`. Run
+   tests on demand with `cd kokoro && npx vitest run`, or via turbo
+   from the workspace root. If we add CI or want to gate commits on
+   the test suite, the hook (and a `pre-push` variant for slower
+   checks) is the place.
 3. **Dashboard tests.** The Next.js dashboard is out of scope until the bot
    side is fully covered.
