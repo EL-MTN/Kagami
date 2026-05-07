@@ -12,7 +12,6 @@ let h: TestHarness;
 
 function makeConfig(): Config {
   return loadConfig({
-    KIZUNA_API_KEY: h.apiKey,
     MONGO_URI: h.uri,
     USER_EMAILS: "me@example.com",
     KIZUNA_OAUTH_ENCRYPTION_KEY: h.encryptionKey,

@@ -6,7 +6,6 @@ import { decrypt } from "../src/lib/encryption.js";
 import { startHarness, type TestHarness } from "./helpers/harness.js";
 
 let h: TestHarness;
-const auth = () => `Bearer ${h.apiKey}`;
 
 beforeAll(async () => {
   h = await startHarness();
@@ -22,19 +21,8 @@ afterEach(async () => {
 });
 
 describe("GET /oauth/google/start", () => {
-  it("rejects without an api key (401)", async () => {
+  it("redirects to Google with the right params", async () => {
     const res = await request(h.app).get("/oauth/google/start");
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe("unauthorized");
-  });
-
-  it("rejects with the wrong api key (401)", async () => {
-    const res = await request(h.app).get("/oauth/google/start?key=wrong");
-    expect(res.status).toBe(401);
-  });
-
-  it("redirects to Google with the right params on bearer auth", async () => {
-    const res = await request(h.app).get("/oauth/google/start").set("authorization", auth());
     expect(res.status).toBe(302);
     const loc = res.headers.location as string;
     expect(loc).toMatch(/^https:\/\/accounts\.google\.com\/o\/oauth2/);
@@ -49,16 +37,11 @@ describe("GET /oauth/google/start", () => {
     expect(url.searchParams.get("scope")).toContain("calendar.readonly");
     expect(url.searchParams.get("state")).toBeTruthy();
   });
-
-  it("also accepts ?key= for browser-initiated flows", async () => {
-    const res = await request(h.app).get(`/oauth/google/start?key=${h.apiKey}`);
-    expect(res.status).toBe(302);
-  });
 });
 
 describe("GET /oauth/google/callback", () => {
   async function getValidState(): Promise<string> {
-    const r = await request(h.app).get("/oauth/google/start").set("authorization", auth());
+    const r = await request(h.app).get("/oauth/google/start");
     const loc = new URL(r.headers.location as string);
     return loc.searchParams.get("state")!;
   }
@@ -137,19 +120,13 @@ describe("GET /oauth/google/callback", () => {
 });
 
 describe("GET /oauth/google/status", () => {
-  it("rejects without auth", async () => {
-    const res = await request(h.app).get("/oauth/google/status");
-    expect(res.status).toBe(401);
-  });
-
   it("reports granted=false when no token is on file", async () => {
-    const res = await request(h.app).get("/oauth/google/status").set("authorization", auth());
+    const res = await request(h.app).get("/oauth/google/status");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ granted: false });
   });
 
   it("reports granted=true after a successful callback", async () => {
-    // Seed a fake token directly.
     await OAuthToken.create({
       provider: "google",
       refreshToken: "encrypted-blob-doesnt-matter-here",
@@ -157,7 +134,7 @@ describe("GET /oauth/google/status", () => {
       grantedAt: new Date("2026-04-01T00:00:00Z"),
       source: "concierge",
     });
-    const res = await request(h.app).get("/oauth/google/status").set("authorization", auth());
+    const res = await request(h.app).get("/oauth/google/status");
     expect(res.status).toBe(200);
     expect(res.body.granted).toBe(true);
     expect(res.body.scopes).toEqual(["gmail.readonly"]);

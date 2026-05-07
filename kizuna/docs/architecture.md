@@ -29,7 +29,6 @@ kizuna/                              # subtree within the Kagami nested monorepo
 │   │   │   │   ├── parse-event.ts   # Calendar event → ParsedEvent (pure)
 │   │   │   │   └── upsert-person.ts # find-or-create by lowercased email
 │   │   │   ├── lib/
-│   │   │   │   ├── auth.ts          # bearer-auth middleware (timingSafeEqual)
 │   │   │   │   ├── encryption.ts    # AES-256-GCM envelope helpers
 │   │   │   │   ├── google-auth.ts   # OAuth2Client + persistRefreshToken + cached access token
 │   │   │   │   ├── oauth-state.ts   # HMAC-signed CSRF state
@@ -67,17 +66,17 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                         External clients                          │
-│   Concierge agent (Bearer token) · Dashboard (server fetch) ·    │
-│   import-vcards.ts script · Browser (OAuth flow)                 │
+│   Concierge agent · Dashboard (server fetch) ·                    │
+│   import-vcards.ts script · Browser (OAuth flow)                  │
 └────────────────┬───────────────────────────────────┬──────────────┘
                  │ REST                              │ OAuth redirects
                  ▼                                   ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                    @kizuna/api (Express 5)                        │
 │                                                                   │
-│  health      (no auth)                                            │
-│  /oauth/*    (key in header OR ?key= ; callback uses HMAC state)  │
-│  /v1/*       (bearerAuth middleware)                              │
+│  health      (open)                                               │
+│  /oauth/*    (start/status open; callback uses HMAC state)        │
+│  /v1/*       (open at single-user localhost)                      │
 │      │                                                            │
 │      ├── routes/people · interactions · followups ·               │
 │      │   organizations · contexts · digest · sync · manifest      │
@@ -115,21 +114,19 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 
 ## Request Flow
 
-### Authed `/v1/*` (people, interactions, etc.)
+### `/v1/*` (people, interactions, etc.)
 
 ```
 1. express.json({ limit: "1mb" }) parses the body.
        │
-2. bearerAuth(KIZUNA_API_KEY) — timingSafeEqual; 401 on miss.
+2. Route handler parses req.body / req.query / req.params via zod.
        │
-3. Route handler parses req.body / req.query / req.params via zod.
-       │
-4. Mongoose model call (find / findOneAndUpdate / aggregate). Soft-delete
+3. Mongoose model call (find / findOneAndUpdate / aggregate). Soft-delete
    filter (deletedAt: null) applied unless ?includeTombstoned=true.
        │
-5. Hit (200/201/404) → serializer in lib/serialize.ts → res.json.
+4. Hit (200/201/404) → serializer in lib/serialize.ts → res.json.
        │
-6. ZodError / mongoose ValidationError / dup-key (E11000) flow up to
+5. ZodError / mongoose ValidationError / dup-key (E11000) flow up to
    makeErrorHandler() and become a tagged JSON envelope with the
    right status (400 / 409 / 500).
 ```
@@ -137,14 +134,14 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 ### OAuth grant (`/oauth/google/start` → callback)
 
 ```
-1. /oauth/google/start: read API key from header OR ?key=; constant-time
-   compare; require KIZUNA_OAUTH_ENCRYPTION_KEY; mint signed CSRF state;
-   302 to client.generateAuthUrl({ access_type: "offline", prompt:
-   "consent", scope: gmail.readonly + calendar.readonly }).
+1. /oauth/google/start: require KIZUNA_OAUTH_ENCRYPTION_KEY; mint signed
+   CSRF state via makeState(); 302 to client.generateAuthUrl({
+   access_type: "offline", prompt: "consent", scope: gmail.readonly +
+   calendar.readonly }).
        │
 2. Browser → Google → /oauth/google/callback?code=…&state=….
        │
-3. verifyState(KIZUNA_API_KEY, state) — HMAC + 10-min TTL; reject 401.
+3. verifyState(state) — HMAC (process-local secret) + 10-min TTL; reject 401.
        │
 4. client.getToken(code) → { refresh_token, scope, expiry_date, … }.
        │
@@ -220,7 +217,7 @@ See [sync.md](sync.md) for the full state machine.
 1. `import 'dotenv/config'` — pick up `apps/api/.env`.
 2. `loadConfig()` — zod-parse `process.env`. Throws with formatted issues on misconfig.
 3. `connectDb(MONGO_URI)` — `mongoose.connect` (5 s server-selection timeout) + `mongoose.syncIndexes()` for every registered model. Returns a `DbHandle` exposing `ping()` and `close()`.
-4. `createApp({ db, config })` — builds the Express app: disables `x-powered-by`, mounts `express.json({ limit: '1mb' })`, then `health` (unauthed), `/oauth/*` (handler-level auth), `/v1/*` (`bearerAuth` middleware) for the rest of the routers, a 404 handler, and finally `makeErrorHandler()`.
+4. `createApp({ db, config })` — builds the Express app: disables `x-powered-by`, mounts `express.json({ limit: '1mb' })`, then `health` (open), `/oauth/*` (start/status open; callback uses signed CSRF state), `/v1/*` (open at single-user localhost) for the rest of the routers, a 404 handler, and finally `makeErrorHandler()`.
 5. `app.listen(config.PORT, …)` — Portless injects `PORT` under the normal `dev` script and routes `https://api.kizuna.localhost` to it. The API's `3000` default is only a standalone fallback outside Portless.
 6. `startIngestScheduler({ config })` — `setInterval` every `KIZUNA_INGEST_INTERVAL_SEC` seconds (no startup tick — first run is one interval after boot, to avoid surprise sync runs on `tsx watch` reloads). When the env var is `0`, the scheduler is a no-op and ingest runs only via `POST /v1/sync/{gmail,gcal}/run`.
 7. SIGINT / SIGTERM → stop scheduler → `server.close()` → `db.close()` → `process.exit(0)`. There is no app-level `SIGINT` handler for in-flight requests — Express's default is to stop accepting and let the active ones drain.
@@ -232,7 +229,7 @@ See [sync.md](sync.md) for the full state machine.
 - **Soft delete + tombstone semantics.** DELETE handlers `findOneAndUpdate` with `{ deletedAt: new Date() }`. Person tombstones additionally set `suppressReingest: true` so a future Gmail/Calendar sync won't recreate the row through `upsertPerson`. The `?includeTombstoned=true` flag on list endpoints surfaces them — the dashboard's `/tombstones` page is built on this.
 - **Dedup by `sourceRef`.** `Interaction.sourceRef = { provider, id }` carries Gmail's message ID or Calendar's event ID. A unique partial index `(sourceRef.provider, sourceRef.id)` enforces "one interaction per Gmail message" and "one per Calendar event"; ingest workers replay safely. Concierge-created interactions have `sourceRef: null` and are exempt.
 - **Skip-self on group threads.** When ≥ 2 non-user recipients remain, USER_EMAILS addresses are dropped from `to/cc` so the dashboard's relationship graph doesn't bloat with self-edges. The `from` role is preserved either way, which is what makes the dashboard's "outbound" badge work.
-- **AES-256-GCM at rest, signed CSRF in flight.** Refresh tokens are encrypted with `KIZUNA_OAUTH_ENCRYPTION_KEY` (a base64 32-byte key, generated via `node -e "console.log(crypto.randomBytes(32).toString('base64'))"`); IV is random per write, auth tag concatenated, base64 envelope. The OAuth callback can't carry the API key as a query param without leaking it through Google's redirect log, so it's protected instead by an HMAC-signed state token (`apps/api/src/lib/oauth-state.ts`, 10-min TTL, secret = `KIZUNA_API_KEY`).
+- **AES-256-GCM at rest, signed CSRF in flight.** Refresh tokens are encrypted with `KIZUNA_OAUTH_ENCRYPTION_KEY` (a base64 32-byte key, generated via `node -e "console.log(crypto.randomBytes(32).toString('base64'))"`); IV is random per write, auth tag concatenated, base64 envelope. The OAuth callback is protected by an HMAC-signed state token (`apps/api/src/lib/oauth-state.ts`, 10-min TTL, secret is a process-local `randomBytes(32)` generated at module load — restarting the API invalidates in-flight consent flows but no on-disk credential is needed).
 - **In-process scheduler, no queue.** Ingest is a setInterval loop with a re-entrancy guard. Tradeoff: simpler ops, no external broker, no horizontal scale; for a single-user CRM this is fine. The manual triggers (`POST /v1/sync/{gmail,gcal}/run`) work regardless of the scheduler.
 - **Two layers of contract enforcement.** Zod-strict request bodies (`.strict()`) reject unknown fields at the route boundary; Mongoose `strict: 'throw'` rejects them at the model boundary. Both surface as `400 bad_request`. Belt and suspenders, on the theory that a CRM's data quality is the product.
 - **Cursor pagination, base64url JSON.** `apps/api/src/lib/cursor.ts`. Most cursors are `{ id }` (descending `_id`); the people list under `sort=lastInteractionAt:-1` uses a compound `{ lia, id }` cursor with a trailing-null bucket so people who've never had an interaction sort last but stay paginable.
@@ -246,10 +243,10 @@ See [sync.md](sync.md) for the full state machine.
 | `apps/api/src/db/recordInteraction.ts` | The only insert path for `interactions`; maintains `Person.lastInteractionAt`.                                                                                                                             |
 | `apps/api/src/ingest/`                 | Gmail + Calendar workers (state machines, paging, error mapping), pure parsers, `upsertPerson`, in-process scheduler. See [sync.md](sync.md).                                                              |
 | `apps/api/src/routes/`                 | One Express router per resource. Each exports both the router and an `EndpointSpec[]` so the manifest stays in sync.                                                                                       |
-| `apps/api/src/lib/`                    | Cross-cutting helpers — auth middleware, error envelope, AES-256-GCM, signed CSRF state, OAuth client + cached access token, base64url cursor, ISO duration parser, mongo→wire serializer, pino singleton. |
+| `apps/api/src/lib/`                    | Cross-cutting helpers — error envelope, AES-256-GCM, signed CSRF state, OAuth client + cached access token, base64url cursor, ISO duration parser, mongo→wire serializer, pino singleton.                  |
 | `apps/api/src/manifest.ts`             | `zodToJsonSchema` factory used by `routes/manifest.ts` to render `GET /v1/_manifest` (OpenAPI-shaped endpoint catalog).                                                                                    |
-| `apps/dashboard/src/app/`              | Next.js 15 App Router. `(app)` route group is auth-gated; `(auth)` holds `/login`. See [dashboard.md](dashboard.md).                                                                                       |
-| `apps/dashboard/src/lib/`              | Typed API client, hand-mirrored response types, HMAC session cookie, formatters.                                                                                                                           |
+| `apps/dashboard/src/app/`              | Next.js 15 App Router. Single `(app)` route group; no login. See [dashboard.md](dashboard.md).                                                                                                              |
+| `apps/dashboard/src/lib/`              | Typed API client, hand-mirrored response types, formatters.                                                                                                                                                 |
 
 ## Cross-cutting Concerns
 

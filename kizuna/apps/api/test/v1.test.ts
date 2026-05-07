@@ -7,13 +7,10 @@ import { Person } from "../src/db/models/Person.js";
 import { startHarness, type TestHarness } from "./helpers/harness.js";
 
 let h: TestHarness;
-const auth = () => `Bearer ${h.apiKey}`;
-const get = (p: string) => request(h.app).get(p).set("authorization", auth());
-const post = (p: string, body?: object) =>
-  request(h.app).post(p).set("authorization", auth()).send(body);
-const patch = (p: string, body?: object) =>
-  request(h.app).patch(p).set("authorization", auth()).send(body);
-const del = (p: string) => request(h.app).delete(p).set("authorization", auth());
+const get = (p: string) => request(h.app).get(p);
+const post = (p: string, body?: object) => request(h.app).post(p).send(body);
+const patch = (p: string, body?: object) => request(h.app).patch(p).send(body);
+const del = (p: string) => request(h.app).delete(p);
 
 beforeAll(async () => {
   h = await startHarness();
@@ -493,10 +490,5 @@ describe("manifest", () => {
     expect(addPerson?.method).toBe("POST");
     expect(addPerson?.path).toBe("/v1/people");
     expect(addPerson?.body).toBeTruthy();
-  });
-
-  it("manifest is auth-gated", async () => {
-    const r = await request(h.app).get("/v1/_manifest");
-    expect(r.status).toBe(401);
   });
 });

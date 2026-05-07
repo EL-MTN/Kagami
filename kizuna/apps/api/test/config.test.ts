@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 
 const validEnv = {
-  KIZUNA_API_KEY: "a-very-long-test-api-key-1234567890",
   MONGO_URI: "mongodb://127.0.0.1:27017/kizuna",
   USER_EMAILS: "me@example.com,you@example.com",
 };
@@ -31,16 +30,6 @@ describe("loadConfig", () => {
   it("coerces PORT", () => {
     const c = loadConfig({ ...validEnv, PORT: "4000" });
     expect(c.PORT).toBe(4000);
-  });
-
-  it("rejects a missing KIZUNA_API_KEY", () => {
-    const env = { ...validEnv } as Record<string, string | undefined>;
-    delete env.KIZUNA_API_KEY;
-    expect(() => loadConfig(env as NodeJS.ProcessEnv)).toThrow(/KIZUNA_API_KEY/);
-  });
-
-  it("rejects a too-short KIZUNA_API_KEY", () => {
-    expect(() => loadConfig({ ...validEnv, KIZUNA_API_KEY: "short" })).toThrow();
   });
 
   it("rejects a non-mongodb URI", () => {

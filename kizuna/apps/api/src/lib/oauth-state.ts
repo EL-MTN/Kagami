@@ -1,26 +1,28 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
-// Stateless CSRF state token.
+// Stateless CSRF state token for the Google OAuth callback.
 // Format: <base64url(nonce||":"||tsSeconds)>.<base64url(hmac_sha256(secret, payload))>
-// Verified by recomputing the HMAC + checking the timestamp is within TTL.
+// The HMAC secret is generated once per process at module load. Restarting the
+// API invalidates any in-flight consent flows; the user re-clicks "Authorize".
 
 const NONCE_BYTES = 16;
 const DEFAULT_TTL_SEC = 600;
 
-function hmac(secret: string, payload: Buffer): Buffer {
-  return createHmac("sha256", secret).update(payload).digest();
+const SECRET = randomBytes(32);
+
+function hmac(payload: Buffer): Buffer {
+  return createHmac("sha256", SECRET).update(payload).digest();
 }
 
-export function makeState(secret: string, nowMs: number = Date.now()): string {
+export function makeState(nowMs: number = Date.now()): string {
   const nonce = randomBytes(NONCE_BYTES);
   const ts = Math.floor(nowMs / 1000);
   const payload = Buffer.concat([nonce, Buffer.from(`:${ts}`)]);
-  const sig = hmac(secret, payload);
+  const sig = hmac(payload);
   return `${payload.toString("base64url")}.${sig.toString("base64url")}`;
 }
 
 export function verifyState(
-  secret: string,
   state: string,
   opts: { ttlSec?: number; nowMs?: number } = {},
 ): boolean {
@@ -42,7 +44,7 @@ export function verifyState(
   }
   if (payload.length <= NONCE_BYTES) return false;
 
-  const expected = hmac(secret, payload);
+  const expected = hmac(payload);
   if (sig.length !== expected.length) return false;
   if (!timingSafeEqual(sig, expected)) return false;
 

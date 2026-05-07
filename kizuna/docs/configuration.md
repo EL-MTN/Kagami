@@ -8,7 +8,6 @@ Validated by zod at boot via `loadConfig()` (`apps/api/src/config.ts`). On parse
 
 ```sh
 # Required
-KIZUNA_API_KEY=<≥ 16 chars; bearer token for /v1/* and seed for the dashboard cookie / OAuth state HMACs>
 MONGO_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com               # comma-separated; lowercased; validated as email[]
 
@@ -32,7 +31,7 @@ NODE_ENV=development                                       # enables pino-pretty
 
 Notes:
 
-- `KIZUNA_API_KEY` is **also** the HMAC secret for the OAuth CSRF state token (`apps/api/src/lib/oauth-state.ts`) and for the dashboard's session cookie (`apps/dashboard/src/lib/session.ts`). Rotating it invalidates active dashboard sessions and any in-flight OAuth state — both are recoverable (re-login, re-start the OAuth flow).
+- The API has no bearer/auth env var. The OAuth CSRF state token (`apps/api/src/lib/oauth-state.ts`) uses a process-local `randomBytes(32)` secret regenerated on every API restart; an API restart invalidates any in-flight consent flow (the user re-clicks "Authorize"). See [auth.md](auth.md) for the threat model.
 - `KIZUNA_OAUTH_ENCRYPTION_KEY` is decoded from base64; the resulting buffer must be exactly 32 bytes. The schema rejects anything else with "must be a base64-encoded 32-byte key."
 - `USER_EMAILS` controls the ingest workers' "self" detection — see [sync.md](sync.md) and [auth.md](auth.md). It is _not_ an authentication boundary.
 - `KIZUNA_INGEST_INTERVAL_SEC=0` disables the in-process scheduler entirely. Manual triggers via `POST /v1/sync/{gmail,gcal}/run` work regardless. Set to `300` (5 min) for typical dev use.
@@ -44,7 +43,7 @@ Notes:
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
-Paste the result into `KIZUNA_OAUTH_ENCRYPTION_KEY`. Don't reuse the API key for this — the encryption key is rotated independently if it ever leaks, and confusing the two would force rolling both at once.
+Paste the result into `KIZUNA_OAUTH_ENCRYPTION_KEY`.
 
 If you rotate the encryption key, all rows in `oauthtokens` become undecryptable. The fix is `OAuthToken.deleteMany({})` followed by re-running the OAuth flow.
 
@@ -52,15 +51,10 @@ If you rotate the encryption key, all rows in `oauthtokens` become undecryptable
 
 ```sh
 KIZUNA_API_URL=https://api.kizuna.localhost
-KIZUNA_API_KEY=<same key as the API>
 USER_EMAILS=you@example.com
-# Optional:
-# KIZUNA_COOKIE_SECURE=true       # force Secure cookie even when NODE_ENV !== 'production'
 ```
 
-The dashboard reads `process.env.KIZUNA_API_URL` / `KIZUNA_API_KEY` at module scope in `apps/dashboard/src/lib/api.ts`. Every server-component fetch passes `Authorization: Bearer ${KIZUNA_API_KEY}` and `cache: 'no-store'`. `USER_EMAILS` is read for the inbound/outbound classification on a person's interaction list.
-
-The session-cookie HMAC is signed with `KIZUNA_API_KEY` — both apps must agree on the value, which is why the dashboard `.env.example` says "replace-with-the-same-key-as-the-api."
+The dashboard reads `process.env.KIZUNA_API_URL` at module scope in `apps/dashboard/src/lib/api.ts`. Every server-component fetch sends no auth header (the API is open at single-user localhost) and uses `cache: 'no-store'`. `USER_EMAILS` is read for the inbound/outbound classification on a person's interaction list.
 
 ## Portless
 
@@ -95,7 +89,6 @@ First run prompts once for sudo to install a local CA (HTTPS auto-trusted therea
 ### Single-machine dev with no Google ingest
 
 ```sh
-KIZUNA_API_KEY=$(openssl rand -hex 24)
 MONGO_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com
 KIZUNA_INGEST_INTERVAL_SEC=0
@@ -107,7 +100,6 @@ You'll be able to use the concierge endpoints (`POST /v1/people`, etc.) and the 
 ### Single-machine dev with Google ingest
 
 ```sh
-KIZUNA_API_KEY=$(openssl rand -hex 24)
 MONGO_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com
 KIZUNA_OAUTH_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
@@ -131,8 +123,8 @@ These only apply on the first run of each worker (the bootstrap path); increment
 
 ```bash
 mongosh kizuna --eval "db.syncstates.deleteOne({ provider: 'gmail' })"
-curl -XPOST -H "Authorization: Bearer $KIZUNA_API_KEY" \
-     https://api.kizuna.localhost/v1/sync/gmail/run -H 'content-type: application/json' -d '{}'
+curl -XPOST https://api.kizuna.localhost/v1/sync/gmail/run \
+     -H 'content-type: application/json' -d '{}'
 ```
 
 Range is enforced by the schema: `1–365` days for both.
