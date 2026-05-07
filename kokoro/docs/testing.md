@@ -246,11 +246,13 @@ client, and tool contracts (~32 test files, ~10 s). Two phases remain:
 1. **Coverage gating.** No floor today. Could be introduced as a
    touched-files check rather than a global percentage so the bar tracks
    what changed instead of the whole repo.
-2. **CI.** `.github/workflows/test.yml` runs typecheck + lint + test on
-   every PR and on pushes to master. The husky pre-commit hook also runs
-   the full suite (after lint-staged); use `git commit --no-verify` to
-   bypass when iterating quickly. If the suite ever gets slow enough that
-   pre-commit feels sluggish (~10 s today), move it to a pre-push hook
-   instead.
+2. **CI / pre-commit.** No CI workflow is wired up today (`.github/`
+   doesn't exist in this repo). The workspace `.husky/pre-commit` runs
+   `npx lint-staged` only — Prettier on every matched staged file,
+   plus `eslint --fix` on `apps/**/src/**` and `packages/**`. Run
+   tests on demand with `cd kokoro && npx vitest run`, or via turbo
+   from the workspace root. If we add CI or want to gate commits on
+   the test suite, the hook (and a `pre-push` variant for slower
+   checks) is the place.
 3. **Dashboard tests.** The Next.js dashboard is out of scope until the bot
    side is fully covered.

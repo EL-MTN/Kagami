@@ -45,6 +45,12 @@
       "eslint --fix",
       "prettier --write"
     ],
+    "**/apps/**/{test,tests,scripts}/**/*.{ts,tsx}": [
+      "prettier --write"
+    ],
+    "**/scripts/**/*.ts": [
+      "prettier --write"
+    ],
     "**/*.{json,md}": [
       "prettier --write"
     ]
