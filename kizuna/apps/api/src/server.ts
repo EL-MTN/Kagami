@@ -1,7 +1,6 @@
 import express, { type Express } from "express";
 import type { Config } from "./config.js";
 import type { DbHandle } from "./db/connect.js";
-import { bearerAuth } from "./lib/auth.js";
 import { errors, makeErrorHandler } from "./lib/errors.js";
 import { healthRouter } from "./routes/health.js";
 import { peopleRouter } from "./routes/people.js";
@@ -26,11 +25,10 @@ export function createApp({ db, config }: ServerDeps): Express {
 
   app.use(healthRouter(db));
 
-  // /oauth/* — handlers do their own key check (header OR ?key=) so the
-  // browser can land here from a plain <a href>. Callback uses signed-state CSRF.
+  // /oauth/* — open at localhost. The OS user is the trust boundary;
+  // the callback is still CSRF-protected by signed state.
   app.use("/oauth", makeOauthRouter(config));
 
-  app.use("/v1", bearerAuth(config.KIZUNA_API_KEY));
   app.use("/v1", manifestRouter);
   app.use("/v1", peopleRouter);
   app.use("/v1", organizationsRouter);

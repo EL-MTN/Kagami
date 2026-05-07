@@ -1,6 +1,6 @@
 # Dashboard
 
-Read-only inspector for Kizuna's CRM data, plus the OAuth grant and ingest control surfaces. Built with Next.js 15 (App Router) + Tailwind CSS v4 + shadcn-shaped primitives. Lives at `apps/dashboard/`, served at `https://kizuna.localhost` via Portless. Every page is a server component that fetches the API at `KIZUNA_API_URL` (default `https://api.kizuna.localhost`) using `Authorization: Bearer ${KIZUNA_API_KEY}`.
+Read-only inspector for Kizuna's CRM data, plus the OAuth grant and ingest control surfaces. Built with Next.js 15 (App Router) + Tailwind CSS v4 + shadcn-shaped primitives. Lives at `apps/dashboard/`, served at `https://kizuna.localhost` via Portless. Every page is a server component that fetches the API at `KIZUNA_API_URL` (default `https://api.kizuna.localhost`) with no auth header — the API is open at single-user localhost.
 
 ## Page map
 
@@ -8,10 +8,8 @@ Read-only inspector for Kizuna's CRM data, plus the OAuth grant and ingest contr
 apps/dashboard/src/app/
 ├── layout.tsx                       # root html, font CSS variables
 ├── globals.css                      # design tokens (Mashiro Daylight)
-├── (auth)/
-│   └── login/page.tsx               # API-key sign-in form
-└── (app)/                           # auth-gated route group; layout.tsx checks the cookie
-    ├── layout.tsx                   # sidebar + main content; redirects to /login on miss
+└── (app)/                           # all routes (no login)
+    ├── layout.tsx                   # sidebar + main content
     ├── page.tsx                     # /             — Today
     ├── ui.tsx                       # Card, Badge, ChannelBadge, ErrorBlock, PersonLink, Mono, …
     ├── people/
@@ -33,18 +31,13 @@ The sidebar (`src/components/sidebar.tsx`) is the canonical link list:
    Sync
    Errors
    Tombstones
-   Sign out
 ```
-
-`Sign out` is a `<form action={logoutAction}>` so it works without JS (the action lives in `src/lib/auth-actions.ts`).
 
 ## Data flow
 
 Every page is a **server component** with `export const dynamic = 'force-dynamic'`. There is no client-side data fetching, no SWR, no React Query — every render hits the API fresh. Mutations are server actions:
 
 - `src/app/(app)/sync/page.tsx` → `runGmailSyncAction`, `runGcalSyncAction` (POST `/v1/sync/.../run` then `revalidatePath('/sync')`).
-- `src/app/(auth)/login/page.tsx` → `loginAction` (compares the submitted key, sets the session cookie, redirects).
-- `src/app/(app)/layout.tsx` → `logoutAction` mounted on the sidebar's "Sign out" button.
 
 There are no POST/PATCH/DELETE for People / Interactions / Followups in the dashboard — the API has them, but the dashboard is intentionally read-only. The roadmap is to keep mutation in the concierge agent and use the dashboard for inspection only.
 
@@ -54,8 +47,6 @@ There are no POST/PATCH/DELETE for People / Interactions / Followups in the dash
 src/lib/
 ├── api.ts             # Typed fetch wrapper around the REST surface
 ├── types.ts           # Hand-mirrored response shapes (keep in sync with apps/api/src/lib/serialize.ts)
-├── session.ts         # makeSessionToken, verifySessionToken, checkApiKey (HMAC + 30-day TTL)
-├── auth-actions.ts    # loginAction, logoutAction (server actions)
 ├── format.ts          # fmtDateTime, fmtDate, fmtRelative, fmtBytes  (America/New_York)
 └── utils.ts           # cn(...) — clsx + tailwind-merge
 ```
@@ -80,13 +71,9 @@ api.gcalSyncState()
 api.runGcalSync(force?)
 ```
 
-`oauthStartUrl()` returns `${KIZUNA_API_URL}/oauth/google/start?key=${KIZUNA_API_KEY}` so the "Connect Google" button is a plain `<a href>`.
+`oauthStartUrl()` returns `${KIZUNA_API_URL}/oauth/google/start` so the "Connect Google" button is a plain `<a href>`.
 
 The exported `config` object also reads `process.env.USER_EMAILS` at module scope so per-person pages can mark interactions as "outbound" (sender's primaryEmail ∈ USER_EMAILS) vs "inbound."
-
-### `session.ts`
-
-The dashboard's auth model: HMAC-signed cookies, secret = `KIZUNA_API_KEY`, 30-day TTL. See [auth.md](auth.md). The session cookie name is `kizuna_session`. `verifySessionToken` is called from `src/app/(app)/layout.tsx` and short-circuits to `redirect('/login')` if absent or invalid.
 
 ### `types.ts`
 
@@ -96,7 +83,7 @@ Hand-mirrored from `apps/api/src/lib/serialize.ts`. The header comment says "Mir
 
 ```
 src/components/
-├── sidebar.tsx                      # left rail with kanji wordmark + nav + sign-out
+├── sidebar.tsx                      # left rail with kanji wordmark + nav
 ├── nav-link.tsx                     # active-state link with lucide icon
 ├── shell/
 │   ├── page-header.tsx              # h2 title + optional description + meta slot
@@ -205,10 +192,7 @@ The dashboard does not write CRM data — there's no `POST /v1/people` UI today.
 
 ```
 KIZUNA_API_URL=https://api.kizuna.localhost
-KIZUNA_API_KEY=<same key as the API>
 USER_EMAILS=you@example.com
 ```
-
-`KIZUNA_COOKIE_SECURE=true` forces the session cookie to `Secure` even in non-production (Portless serves HTTPS in dev, so this is the default behavior under `NODE_ENV !== 'production'` only when explicitly enabled).
 
 The dashboard binds to whatever port Portless injects (`PORT`) when run via `portless run next dev`. Standalone fallback is the Next default. See [configuration.md](configuration.md).

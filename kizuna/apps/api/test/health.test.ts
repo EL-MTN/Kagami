@@ -19,30 +19,11 @@ describe("GET /health", () => {
     expect(res.body).toMatchObject({ ok: true, db: "up", service: "kizuna-api" });
     expect(typeof res.body.time).toBe("string");
   });
-
-  it("does not require auth", async () => {
-    const res = await request(h.app).get("/health").set("authorization", "");
-    expect(res.status).toBe(200);
-  });
 });
 
-describe("/v1/* auth", () => {
-  it("rejects requests without a bearer token (401)", async () => {
+describe("/v1/* (no auth at single-user localhost)", () => {
+  it("404s an unknown /v1 route", async () => {
     const res = await request(h.app).get("/v1/anything");
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe("unauthorized");
-  });
-
-  it("rejects requests with the wrong bearer token (401)", async () => {
-    const res = await request(h.app)
-      .get("/v1/anything")
-      .set("authorization", "Bearer not-the-right-key");
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe("unauthorized");
-  });
-
-  it("passes auth then 404 (no /v1 routes mounted yet)", async () => {
-    const res = await request(h.app).get("/v1/anything").set("authorization", `Bearer ${h.apiKey}`);
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("not_found");
   });

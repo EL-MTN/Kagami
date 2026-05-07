@@ -9,13 +9,10 @@ import { createApp } from "../../src/server.js";
 export type TestHarness = {
   app: Express;
   db: DbHandle;
-  apiKey: string;
   uri: string;
   encryptionKey: string;
   stop: () => Promise<void>;
 };
-
-export const TEST_API_KEY = "test-api-key-1234567890abcdef";
 
 export async function startHarness(): Promise<TestHarness> {
   const container: StartedTestContainer = await new GenericContainer("mongo:7")
@@ -26,7 +23,6 @@ export async function startHarness(): Promise<TestHarness> {
   const encryptionKey = randomBytes(32).toString("base64");
 
   const config = loadConfig({
-    KIZUNA_API_KEY: TEST_API_KEY,
     MONGO_URI: uri,
     USER_EMAILS: "test@example.com",
     GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
@@ -41,7 +37,6 @@ export async function startHarness(): Promise<TestHarness> {
   return {
     app,
     db,
-    apiKey: TEST_API_KEY,
     uri,
     encryptionKey,
     stop: async () => {

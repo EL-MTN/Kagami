@@ -177,14 +177,14 @@ Failure mode is **fail-open** via `KiokuClientError`: chat continues degraded, a
 
 ```
 apps/api          Express API (entry: src/main.ts)
-apps/dashboard    Next.js 15 app (App Router, with /(app) and /(auth) groups)
+apps/dashboard    Next.js 15 app (App Router, single (app) route group)
 packages/eslint-config
 packages/typescript-config
 ```
 
 **Endpoints.** Both apps run under Portless: API at `https://api.kizuna.localhost`, dashboard at `https://kizuna.localhost`. Portless injects each process's `PORT` and proxies the named HTTPS URLs to those ephemeral ports; the API's `3000` fallback only matters when running it standalone outside Portless. The Google OAuth redirect URI defaults to `https://api.kizuna.localhost/oauth/google/callback`, so the redirect lands on the Portless HTTPS origin.
 
-**HTTP API surface.** All `/v1/*` endpoints require Bearer auth via `KIZUNA_API_KEY`; OAuth handlers use a key-query fallback or signed CSRF.
+**HTTP API surface.** Open at single-user localhost — no bearer auth on `/v1/*`, no auth on `/oauth/google/{start,status}`. The OAuth callback is still CSRF-protected by a signed state token (process-local HMAC secret).
 
 | Group         | Endpoints                                                          |
 | ------------- | ------------------------------------------------------------------ |
@@ -202,7 +202,7 @@ packages/typescript-config
 
 **External services.** Google Gmail API (`gmail.readonly`) and Calendar API (`calendar.readonly`) via google-auth-library. No LLM, no queue, no webhooks.
 
-**Auth model.** Allowlist via `USER_EMAILS`. Dashboard sessions are HMAC-signed cookies derived from `KIZUNA_API_KEY` (30-day TTL). API consumers use the same key as a Bearer token.
+**Auth model.** Single-user localhost; the OS user is the trust boundary. No API auth, no dashboard login. `USER_EMAILS` is used by the ingest workers to identify which inbox addresses count as "self" (not for auth). Refresh tokens are AES-256-GCM-encrypted at rest under `KIZUNA_OAUTH_ENCRYPTION_KEY`. See `kizuna/docs/auth.md` for the threat model.
 
 **Coupling notes.** Zero references to Kioku or Kokoro (verified by grep). Built and run independently of the other two; included in `dev-all.sh` only for convenience.
 
@@ -225,7 +225,7 @@ The 2-second pause is the script's only acknowledgement of the Kokoro→Kioku de
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Kioku   | `KIOKU_MONGO_URI`, `LLM_*`, `EMBEDDING_*`, `KIOKU_API_URL` (dashboard → API; default `https://api.kioku.localhost`); port handled by Portless (`PORT`/`KIOKU_HOST` only for standalone runs)                             |
 | Kokoro  | `TELEGRAM_BOT_TOKEN`, `MONGODB_URI`, `KIOKU_URL` (→ `https://api.kioku.localhost`), `LLM_PROVIDER`/`LLM_MODEL`, provider API keys, `GOOGLE_OAUTH_*`                                                                      |
-| Kizuna  | `KIZUNA_API_KEY`, `MONGO_URI`, `USER_EMAILS`, `KIZUNA_API_URL` (→ `https://api.kizuna.localhost`), `GOOGLE_OAUTH_*` (redirect URI → `https://api.kizuna.localhost/oauth/google/callback`), `KIZUNA_OAUTH_ENCRYPTION_KEY` |
+| Kizuna  | `MONGO_URI`, `USER_EMAILS`, `KIZUNA_API_URL` (→ `https://api.kizuna.localhost`), `GOOGLE_OAUTH_*` (redirect URI → `https://api.kizuna.localhost/oauth/google/callback`), `KIZUNA_OAUTH_ENCRYPTION_KEY`                  |
 
 ## Observed gaps and likely future edges
 

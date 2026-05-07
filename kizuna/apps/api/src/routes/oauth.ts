@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import { Router } from "express";
 import type { Config } from "../config.js";
 import { OAuthToken } from "../db/models/OAuthToken.js";
@@ -14,45 +13,23 @@ import {
 import { errors } from "../lib/errors.js";
 import { makeState, verifyState } from "../lib/oauth-state.js";
 
-function constantTimeMatch(a: string, b: string): boolean {
-  const ab = Buffer.from(a, "utf8");
-  const bb = Buffer.from(b, "utf8");
-  if (ab.length !== bb.length) return false;
-  return timingSafeEqual(ab, bb);
-}
-
-function readKey(req: import("express").Request): string | undefined {
-  const auth = req.header("authorization");
-  if (auth?.toLowerCase().startsWith("bearer ")) {
-    return auth.slice(7).trim();
-  }
-  const q = req.query.key;
-  if (typeof q === "string") return q;
-  return undefined;
-}
-
 export function makeOauthRouter(config: Config): Router {
   const r = Router();
 
-  // Initiate the consent flow. Accepts the API key via Authorization header
-  // or `?key=` query param so the dashboard can render a plain <a href>.
-  r.get("/google/start", (req, res) => {
-    const key = readKey(req);
-    if (!key || !constantTimeMatch(key, config.KIZUNA_API_KEY)) {
-      throw errors.unauthorized("invalid api key");
-    }
+  // Initiate the consent flow. Open at localhost — the trust boundary is the
+  // OS user, not a bearer token. The callback is still CSRF-protected.
+  r.get("/google/start", (_req, res) => {
     if (!config.KIZUNA_OAUTH_ENCRYPTION_KEY) {
       throw errors.badRequest(
         "KIZUNA_OAUTH_ENCRYPTION_KEY is not set; refresh token storage requires it",
       );
     }
     const client = makeClient(config);
-    const state = makeState(config.KIZUNA_API_KEY);
+    const state = makeState();
     res.redirect(302, buildAuthUrl(client, state));
   });
 
-  // Google redirects here after consent. No bearer auth — protected by
-  // CSRF state signed with the API key.
+  // Google redirects here after consent. Protected by the signed CSRF state.
   r.get("/google/callback", async (req, res) => {
     const code = typeof req.query.code === "string" ? req.query.code : undefined;
     const state = typeof req.query.state === "string" ? req.query.state : undefined;
@@ -64,7 +41,7 @@ export function makeOauthRouter(config: Config): Router {
     if (!code || !state) {
       throw errors.badRequest("missing code or state");
     }
-    if (!verifyState(config.KIZUNA_API_KEY, state)) {
+    if (!verifyState(state)) {
       throw errors.unauthorized("invalid or expired state");
     }
     if (!config.KIZUNA_OAUTH_ENCRYPTION_KEY) {
@@ -101,12 +78,8 @@ export function makeOauthRouter(config: Config): Router {
       );
   });
 
-  // Status — bearer-gated. Returns whether a token is on file.
-  r.get("/google/status", async (req, res) => {
-    const key = readKey(req);
-    if (!key || !constantTimeMatch(key, config.KIZUNA_API_KEY)) {
-      throw errors.unauthorized("invalid api key");
-    }
+  // Status — returns whether a token is on file.
+  r.get("/google/status", async (_req, res) => {
     const doc = await OAuthToken.findOne({
       provider: "google",
       deletedAt: null,

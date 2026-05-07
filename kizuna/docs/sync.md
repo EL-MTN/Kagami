@@ -211,4 +211,4 @@ That's the whole point of `sourceRef` carrying the provider's stable ID instead 
 
 ## Ad-hoc imports
 
-`apps/api/scripts/import-vcards.ts` is a one-shot script that parses an Apple Contacts vCard export and POSTs each card to `/v1/people` with `Bearer` auth. It uses the regular concierge API and is not part of the scheduler. Conflicts (`409` from the unique-domain index, etc.) are counted but not rethrown.
+`apps/api/scripts/import-vcards.ts` is a one-shot script that parses an Apple Contacts vCard export and POSTs each card to `/v1/people`. It uses the regular concierge API (no auth at single-user localhost) and is not part of the scheduler. Conflicts (`409` from the unique-domain index, etc.) are counted but not rethrown.
