@@ -44,7 +44,7 @@ apps/api/test/
 ├── people-sort.test.ts       # lastInteractionAt:-1 cursor (null bucket)
 ├── digest.test.ts            # /v1/digest overdue/upcoming + duration parsing
 ├── contexts.test.ts          # /v1/contexts aggregation + personId scoping
-├── health.test.ts            # /health + /v1/* bearer-auth contract
+├── health.test.ts            # /health + /v1/* no-auth contract
 ├── oauth.test.ts             # /oauth/google/{start,callback,status}
 ├── v1.test.ts                # CRUD endpoints across people, organizations, interactions, followups
 ├── gmail-ingest.test.ts      # bootstrap + incremental + skip-self + newsletter + pause
@@ -56,15 +56,12 @@ apps/api/test/
 `apps/api/test/helpers/harness.ts`:
 
 ```ts
-export const TEST_API_KEY = "test-api-key-1234567890abcdef";
-
 export async function startHarness(): Promise<TestHarness> {
   const container = await new GenericContainer("mongo:7").withExposedPorts(27017).start();
   const uri = `mongodb://${container.getHost()}:${container.getMappedPort(27017)}/kizuna_test`;
   const encryptionKey = randomBytes(32).toString("base64");
 
   const config = loadConfig({
-    KIZUNA_API_KEY: TEST_API_KEY,
     MONGO_URI: uri,
     USER_EMAILS: "test@example.com",
     GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
@@ -78,7 +75,6 @@ export async function startHarness(): Promise<TestHarness> {
   return {
     app,
     db,
-    apiKey: TEST_API_KEY,
     uri,
     encryptionKey,
     stop: async () => {
@@ -116,9 +112,7 @@ The `singleFork` config means files in the same run reuse the same Vitest worker
 ### CRUD assertions over `supertest`
 
 ```ts
-const auth = () => `Bearer ${h.apiKey}`;
-const post = (p: string, body?: object) =>
-  request(h.app).post(p).set("authorization", auth()).send(body);
+const post = (p: string, body?: object) => request(h.app).post(p).send(body);
 
 it("creates a person with source=concierge and firstSeen set", async () => {
   const r = await post("/v1/people", {
@@ -205,7 +199,7 @@ The first run pulls `mongo:7` (~600 MB). Subsequent runs reuse the cached image.
 | `/v1/people` cursor + sort                     | `people-sort.test.ts` — `lastInteractionAt:-1` compound cursor + null bucket                                          |
 | `/v1/digest`                                   | `digest.test.ts`                                                                                                      |
 | `/v1/contexts`                                 | `contexts.test.ts`                                                                                                    |
-| `/health` + `/v1/*` bearer-auth                | `health.test.ts`                                                                                                      |
+| `/health` + `/v1/*` no-auth contract           | `health.test.ts`                                                                                                      |
 | OAuth start/callback/status                    | `oauth.test.ts` — including refresh-token encryption-at-rest verification                                             |
 | CRUD across people/orgs/interactions/followups | `v1.test.ts`                                                                                                          |
 | Gmail ingest end-to-end                        | `gmail-ingest.test.ts` — bootstrap, incremental, skip-self, newsletter blocklist, dedup via `sourceRef`, pause/resume |

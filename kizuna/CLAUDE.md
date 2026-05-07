@@ -18,16 +18,15 @@ kizuna/
 │   │   │   ├── db/             # Mongoose connect + models + recordInteraction writer
 │   │   │   ├── ingest/         # Gmail + Calendar workers, parsers, scheduler
 │   │   │   ├── routes/         # per-resource Express routers
-│   │   │   ├── lib/            # auth, errors, encryption, oauth-state, google-auth, cursor, duration, serialize, logger
+│   │   │   ├── lib/            # errors, encryption, oauth-state, google-auth, cursor, duration, serialize, logger
 │   │   │   └── schemas/        # shared zod (Pagination, IdParam, ISODateString, …)
 │   │   ├── test/           # vitest + supertest + testcontainers (real Mongo)
 │   │   └── scripts/        # import-vcards.ts (vCard → POST /v1/people)
 │   └── dashboard/          # Next.js 15 App Router (https://kizuna.localhost)
 │       ├── app/
-│       │   ├── (app)/      # authed routes — Today, People, Contexts, Sync, Errors, Tombstones
-│       │   └── (auth)/     # /login (API-key sign-in)
+│       │   └── (app)/      # all routes — Today, People, Contexts, Sync, Errors, Tombstones (no login)
 │       ├── components/     # sidebar, nav-link, shell/, ui/ (shadcn-shaped)
-│       └── lib/            # api client, types, session (HMAC cookie), format
+│       └── lib/            # api client, types, format
 ├── packages/               # reserved for future Kizuna-only libs (currently empty)
 ├── portless.json           # api.kizuna + kizuna Portless registrations
 └── docs/
@@ -89,7 +88,7 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 - **Provenance fields on every doc** — every model spreads `provenanceFields = { source, sourceVersion?, deletedAt: null }` from `db/models/base.ts`. `source` is one of `'concierge' | 'gmail-sync' | 'gcal-sync' | 'manual' | 'import'`.
 - **Soft delete via `deletedAt`** — DELETE handlers never remove rows; they `findOneAndUpdate` with `{ deletedAt: new Date() }`. List endpoints filter `deletedAt: null` unless `?includeTombstoned=true`. Person tombstones additionally set `suppressReingest: true` so the upsert path won't recreate them.
 - **AES-256-GCM for OAuth tokens** — Google refresh tokens are encrypted at rest with `KIZUNA_OAUTH_ENCRYPTION_KEY` (a base64 32-byte key). See `apps/api/src/lib/encryption.ts`. The IV is random per write, the auth tag is appended, and the envelope is `base64(iv ‖ tag ‖ ciphertext)`.
-- **Bearer auth on `/v1/*`** — every authed route checks `Authorization: Bearer <KIZUNA_API_KEY>` via constant-time compare. OAuth handlers accept the same key as `?key=` for browser-initiated `<a href>` flows; the OAuth callback is gated by HMAC-signed CSRF state instead.
+- **No API auth at single-user localhost** — `/v1/*` is open; the OS user is the trust boundary. The OAuth callback is still CSRF-protected by an HMAC-signed state token whose secret is process-local (`randomBytes(32)` at module load in `apps/api/src/lib/oauth-state.ts`). See [docs/auth.md](docs/auth.md) for the threat model.
 - **Cross-package imports** — `@kagami/eslint-config`, `@kagami/tsconfig` only (no project-internal packages today). The API's `eslint.config.js` imports from `@kagami/eslint-config/base`; the dashboard's `eslint.config.mjs` imports from `@kagami/eslint-config/next`.
 - **Within-package imports (API)** — relative paths with explicit `.js` extensions (NodeNext requirement).
 - **Within-package imports (dashboard)** — `@/*` path aliases (e.g. `@/lib/api`, `@/components/ui/button`); no extensions.
@@ -107,7 +106,7 @@ See `/docs` for:
 - [api.md](docs/api.md) — REST surface (`/v1/*`, OAuth, `_manifest`), auth model, error envelope, request/response shapes
 - [data-model.md](docs/data-model.md) — Mongoose models (Person, Interaction, Followup, Organization, OAuthToken, SyncState), indexes, the `recordInteraction` writer
 - [sync.md](docs/sync.md) — Gmail + Calendar ingest pipeline (state machines, cursors, dedup via `sourceRef`, scheduler)
-- [auth.md](docs/auth.md) — Bearer token model, USER_EMAILS allowlist, AES-256-GCM token encryption, signed CSRF state, dashboard cookie sessions
+- [auth.md](docs/auth.md) — single-user-localhost trust model, USER_EMAILS allowlist, AES-256-GCM refresh-token encryption, signed CSRF state on the OAuth callback, threat model
 - [dashboard.md](docs/dashboard.md) — Next.js inspector pages, design system ("Mashiro Daylight"), data flow
 - [configuration.md](docs/configuration.md) — env vars, encryption-key generation, common setups, Portless
 - [testing.md](docs/testing.md) — vitest + supertest + testcontainers harness, what's covered, patterns
