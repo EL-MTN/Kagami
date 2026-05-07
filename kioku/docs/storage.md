@@ -36,7 +36,7 @@ Two concurrent first-callers join the same in-flight `connect()` Promise instead
 
 ```
 db: kioku  (atlas-local on 127.0.0.1:27017 by default)
-├── facts               atomic facts: text + embedding + dates + md5 hash + scope
+├── facts               atomic facts: text + embedding + dates + scope
 ├── entities            entities: text + embedding + linked_memory_ids
 ├── transcripts         parsed session transcripts (source-of-truth for ingest)
 ├── session_summaries   cached narrative summaries, keyed by source_session
@@ -58,7 +58,6 @@ State lives entirely in Mongo — no filesystem-backed vault.
   created_at:        ISO timestamp            // ingestion time
   event_date:        YYYY-MM-DD               // session timestamp the fact was extracted from
   source_session:    string                   // e.g. "raw/answer_4be1b6b4_1" or caller-supplied
-  hash:              md5(text)                // unique per scope
   embedding:         number[]                 // EMBEDDING_MODEL output dim
   metadata?:         Record<string, unknown>  // free-form; flat scalars are filterable, nested is stored but not indexed
   category?:         string                   // mem0-OSS category enum or 'misc'
@@ -69,10 +68,9 @@ State lives entirely in Mongo — no filesystem-backed vault.
 
 | Name                  | Key                                                  | Purpose                                                                                              |
 | --------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `facts_hash_unique`   | `{ user_id: 1, run_id: 1, agent_id: 1, hash: 1 }` (unique) | md5 dedup, scoped by tenant tuple. Mongo treats absent fields as `null`, so legacy rows without `run_id`/`agent_id` still satisfy uniqueness within their `(default, null, null)` scope. |
 | `facts_user_created`  | `{ user_id: 1, run_id: 1, agent_id: 1, created_at: -1 }`   | Read-side compound for scope-bound listings.                                                          |
 
-`ensureIndexes()` drops legacy `{hash:1}` and `{user_id:1, created_at:-1}` shapes on first startup after the scope upgrade and recreates with the scoped versions.
+`ensureIndexes()` drops the legacy `facts_hash_unique` index if a deployment still has it from before dedup moved to the cosine layer (`append.ts` / `consolidate.ts`).
 
 #### Indexes (Atlas Search / vector)
 
@@ -171,7 +169,7 @@ Race-safe under concurrent ingest: two writers touching the same entity converge
 }
 ```
 
-Source-of-truth for the messages a session was extracted from. Re-ingest is filesystem-free: `consolidate()` reads from this collection and the existing facts pass; hash dedup short-circuits writes when nothing has changed.
+Source-of-truth for the messages a session was extracted from. Re-ingest is filesystem-free: `consolidate()` reads from this collection and runs extraction; cosine dedup against existing in-scope facts short-circuits writes for material the LLM extracts identically (or close enough at threshold 0.92).
 
 `upsertTranscript(input)` uses `$set` for the body fields and `$setOnInsert: { created_at }` so subsequent re-ingests just refresh `updated_at`.
 
@@ -237,7 +235,7 @@ Idempotent. Safe to call on every startup — Mongo's `createIndex` and `createS
 Steps:
 
 1. Build btree indexes (`ensureBtreeIndexes`):
-   - Drop legacy `{hash:1}` if present, recreate scoped `facts_hash_unique`.
+   - Drop legacy `facts_hash_unique` if present (storage-layer hash dedup was retired in favor of cosine at the ingest layer).
    - Drop legacy `{user_id:1, created_at:-1}` if present, recreate scoped `facts_user_created`.
    - Create `entities_text_lower_unique` and `history_memory_created` if missing.
    - The first `facts.indexes()` call may throw `NamespaceNotFound` (code 26) on fresh deployments — tolerated.

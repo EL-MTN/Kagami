@@ -108,18 +108,15 @@ The two apps share **no in-process code**. The dashboard's contract with the API
        │   ├─ getOrComputeSessionSummary  (cached narrative summary)
        │   ├─ for each 2-message batch:
        │   │     - embed batch text
-       │   │     - top-10 cosine candidates from existing facts (in-scope)
+       │   │     - top-10 cosine candidates from existing facts (in-scope) → fed into prompt
        │   │     - generateObject(extraction prompt, schema={memory:[{id,text,category}]})
-       │   │     - md5-dedup (existing + within-batch hashes)
-       │   │     - embedMany(survivors)
-       │   │     - appendFacts (insertMany, ordered:false; unique-hash index handles last-line dedup)
+       │   │     - embedMany(extracted texts)
+       │   │     - cosine dedup vs (existing in-scope + prior-batches' extractions + this-batch accepted) at NEAR_DUPE_COSINE = 0.92
+       │   │     - appendFacts (insertMany, ordered:false)
        │   │     - upsertEntitiesFromFacts (per-entity $setOnInsert + $addToSet)
        │   └─ returns { added, batches }
        │
-5. (optional) generateSummaryClause → "On <date>, conversation covered: <topics>."
-       │   Persisted via appendSingleFact (md5 + cosine dedup short-circuits re-ingest).
-       │
-6. Response: { sessionId, added, batches, summaryFactId }
+5. Response: { sessionId, added, batches }
 ```
 
 ### Recall (`POST /recall` and the MCP `recall` tool)
@@ -182,12 +179,12 @@ If `ensureIndexes()` throws (atlas-local container not running, embedding provid
 ## Key Design Decisions
 
 - **One Mongo, all collections.** `facts`, `entities`, `transcripts`, `session_summaries`, `history` — a single `mongodb-atlas-local` container handles dense vector search, BM25, the audit log, and the source-of-truth for ingest. Replaces what mem0 OSS splits across Qdrant + SQLite.
-- **State lives entirely in Mongo — no filesystem-backed vault.** Transcripts are persisted in the `transcripts` collection on first ingest; re-ingest of the same `sessionId` is effectively a no-op (hash dedup short-circuits the writes).
+- **State lives entirely in Mongo — no filesystem-backed vault.** Transcripts are persisted in the `transcripts` collection on first ingest; re-ingest of the same `sessionId` does not duplicate facts because cosine dedup against existing in-scope facts catches re-extracted material (threshold 0.92 in consolidate).
 - **Embeddings persisted at write time.** Query is one embed call. The dense pre-pass uses `$vectorSearch` (HNSW); cosine is recomputed in app over the candidate union to preserve the existing `SEMANTIC_THRESHOLD = 0.1` contract (Atlas's `vectorSearchScore` uses `(1 + cos) / 2` which would shift the threshold meaning).
 - **Whole-corpus BM25.** `$search` runs against the whole corpus, not a cosine-prefiltered window. A fact strong on keywords but weak on cosine can still enter the top-K. The sigmoid that normalizes raw BM25 into the additive fusion is calibrated against Lucene's score range; refit via `scripts/probe-bm25-scores.ts`.
 - **Atomic facts are write-once.** No UPDATE / DELETE / soft-archival on `facts`. Corrections happen by appending newer facts with later `event_date`; the answerer prompt resolves contradictions newest-wins (`prompts/answer.md`). Every mutation leaves a row in `history` for postmortem.
-- **Race-safe writes by Mongo primitives.** Unique indexes (`facts_hash_unique`, `entities_text_lower_unique`) plus `$setOnInsert` / `$addToSet` upserts. The single-fact append path additionally serializes on a process-wide async lock because the cosine near-dupe check is a read-then-act sequence (the unique-hash index can't catch byte-distinct but cosine-similar text).
-- **mem0-OSS-shaped multi-tenancy.** Facts are scoped by `(user_id, run_id, agent_id)`. `user_id` defaults to `'default'`. The hash unique index is scoped by the full tuple. There is no auth layer; multi-tenancy is filter-based.
+- **Race-safe writes by Mongo primitives where it matters.** `entities_text_lower_unique` plus `$setOnInsert` / `$addToSet` upserts on the entity store. Fact dedup is cosine-based at the ingest layer (`append.ts` and `consolidate.ts`); the single-fact append path serializes on a process-wide async lock because cosine is a read-then-act sequence.
+- **mem0-OSS-shaped multi-tenancy.** Facts are scoped by `(user_id, run_id, agent_id)`. `user_id` defaults to `'default'`. Cosine dedup reads only in-scope facts, so identical text under different scopes does not collide. There is no auth layer; multi-tenancy is filter-based.
 - **Provider-agnostic LLM + embeddings.** `@ai-sdk/openai-compatible` against any OpenAI-shaped endpoint (LM Studio, OpenAI, vLLM, Ollama). Chat and embedding providers are independent — typical setup is one line per role.
 - **Reasoning-content middleware.** Thinking-mode models (GLM-4.7-flash, Qwen3.6) sometimes emit their final structured output into `reasoning_content` while leaving the assistant `content` empty. `llm.ts` wraps the model with a middleware that promotes the reasoning text to a text part when no real content is present. Without this, `generateObject` raises `AI_NoObjectGeneratedError`.
 - **Stateless MCP.** A fresh transport + server connection per `/mcp` POST. The MCP-over-HTTP semantics don't need session state for our tool set — every call is a one-shot tool invocation.

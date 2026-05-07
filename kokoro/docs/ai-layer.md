@@ -124,8 +124,8 @@ Two distinct tool sets are assembled depending on the calling context:
 
 - **Purpose**: Append one atomic fact to the long-term memory vault.
 - **Parameters**: `{ text: string (≤800 chars), eventDate?: "YYYY-MM-DD" }`
-- **Returns**: `{ success: true, id, status: "added" | "duplicate", reason?: "hash" | "cosine" }` or `{ success: false, reason }` on Kioku error
-- **Behavior**: Forwards to `@kokoro/memory.appendFact()` → `POST /facts`. Kioku does md5 + cosine ≥0.97 dedup, embeds, lemmatizes for BM25, and upserts entity links. Idempotent — calling twice with the same text returns the existing id. `eventDate` defaults to today; pass an explicit date when remembering something from the past.
+- **Returns**: `{ success: true, id, status: "added" | "duplicate", similarity? }` or `{ success: false, reason }` on Kioku error
+- **Behavior**: Forwards to `@kokoro/memory.appendFact()` → `POST /facts`. Kioku does cosine ≥0.97 dedup against existing in-scope facts, embeds, lemmatizes for BM25, and upserts entity links. Idempotent — near-paraphrases of an existing fact return the existing id with `status: "duplicate"`. `eventDate` defaults to today; pass an explicit date when remembering something from the past.
 
 See [memory.md](memory.md) for the full memory subsystem (session ingest, sweeper, transcript pipeline).
 

@@ -15,16 +15,15 @@ export interface Fact {
   // tolerate absence and recompute via lemmatizeForBm25(text) on the fly.
   text_lemmatized?: string;
   // Scopes — mem0-OSS-shaped multi-tenancy. user_id is required (defaults
-  // to 'default' at the writer); run_id and agent_id are optional. The
-  // hash unique index is scoped by (user_id, run_id, agent_id, hash) so
-  // identical text under different scopes does not collide.
+  // to 'default' at the writer); run_id and agent_id are optional. Dedup
+  // is cosine-based at the ingest layer (append.ts / consolidate.ts);
+  // there is no storage-layer dedup index.
   user_id: string;
   run_id?: string;
   agent_id?: string;
   created_at: string; // ISO timestamp of ingestion
   event_date: string; // session timestamp the fact was extracted from
   source_session: string; // e.g. "raw/answer_4be1b6b4_1"
-  hash: string; // md5 of text for dedup checks (unique-indexed)
   embedding: number[];
   // Free-form metadata. Stored as-is; flat string/number/boolean keys are
   // filterable at query time via post-vector-search $match. Nested objects
@@ -70,10 +69,10 @@ export async function readFacts(): Promise<Fact[]> {
   return docs.map(fromDoc);
 }
 
-// Scope-bound read. Used by ingest paths so dedup context (md5 hashes,
-// top-K cosine candidates) doesn't bleed across user/run/agent
-// boundaries. Mongo treats absent fields as null, matching the semantics
-// the writer uses when scope fields are unset.
+// Scope-bound read. Used by ingest paths so dedup context (cosine
+// candidates) doesn't bleed across user/run/agent boundaries. Mongo
+// treats absent fields as null, matching the semantics the writer uses
+// when scope fields are unset.
 export interface ScopeFilter {
   user_id?: string;
   run_id?: string;
@@ -94,38 +93,17 @@ export async function appendFacts(facts: Fact[], actor?: string): Promise<void> 
   if (facts.length === 0) return;
   const col = await factsCol();
 
-  // Track which inserts actually landed so the audit log doesn't
-  // emit ADD events for hash-deduped rows. Both the success path and
-  // the partial-failure (dupes) path expose `insertedIds` keyed by
-  // input index — only those indices are present after the call.
-  let insertedIndices: Set<number>;
-  try {
-    const result = await col.insertMany(facts.map(toDoc), { ordered: false });
-    insertedIndices = new Set(Object.keys(result.insertedIds).map(Number));
-  } catch (err) {
-    const e = err as {
-      code?: number;
-      writeErrors?: Array<{ code?: number }>;
-      insertedIds?: Record<number, unknown>;
-      result?: { insertedIds?: Record<number, unknown> };
-    };
-    const errs = Array.isArray(e.writeErrors) ? e.writeErrors : [];
-    const allDupes = e.code === 11000 || (errs.length > 0 && errs.every((w) => w.code === 11000));
-    if (!allDupes) throw err;
-    const ids = e.insertedIds ?? e.result?.insertedIds ?? {};
-    insertedIndices = new Set(Object.keys(ids).map(Number));
-  }
+  // No storage-layer dedup index. Dedup is enforced upstream by cosine
+  // checks in append.ts (lock-serialized) and consolidate.ts. Any 11000
+  // here would be an _id collision, which is a programming error worth
+  // surfacing rather than swallowing.
+  await col.insertMany(facts.map(toDoc), { ordered: false });
 
-  if (insertedIndices.size === 0) return;
-  const events: RecordEventInput[] = [];
-  for (let i = 0; i < facts.length; i++) {
-    if (!insertedIndices.has(i)) continue;
-    events.push({
-      memory_id: facts[i]!.id,
-      event: "ADD",
-      new_text: facts[i]!.text,
-      actor,
-    });
-  }
+  const events: RecordEventInput[] = facts.map((f) => ({
+    memory_id: f.id,
+    event: "ADD",
+    new_text: f.text,
+    actor,
+  }));
   await recordEvents(events);
 }

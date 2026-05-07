@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import { embed, embedMany, cosineSimilarity, generateObject } from "ai";
 import type { Transcript } from "../types.js";
@@ -17,8 +16,10 @@ import { logger } from "../logger.js";
 //     - chunk into 2-message batches (one user + one assistant turn)
 //     - look up the top-K most-similar existing facts as dedup context
 //     - call the extraction prompt (prompts/extraction.md) for that batch
-//     - md5-dedup each new fact against existing + within-batch hashes
-//     - embed + persist surviving facts to the facts collection
+//     - embed each new fact and cosine-dedup it against existing in-scope
+//       facts, prior batches' extractions, and earlier-accepted facts in
+//       this batch (NEAR_DUPE_COSINE = 0.92)
+//     - persist surviving facts to the facts collection
 //     - upsert mentioned entities into the entities collection with
 //       linked fact ids for the entity-boost retrieval channel
 
@@ -26,6 +27,12 @@ const BATCH_SIZE = 2;
 const TOP_K_EXISTING = 10;
 const RECENTLY_EXTRACTED_LIMIT = 20;
 const LAST_K_MESSAGES = 20;
+// Cosine threshold for dedup at the consolidate layer. Lower than
+// append.ts's 0.97 because LLM batch extraction is sloppier than
+// caller-curated single facts — paraphrased near-duplicates of the same
+// fact often land at 0.92–0.96 rather than ≥0.97. Catches both
+// within-batch and against-existing duplicates.
+const NEAR_DUPE_COSINE = 0.92;
 
 // The extraction prompt describes a richer per-memory shape
 // (`attributed_to`, optional `linked_memory_ids`). We only persist text +
@@ -181,9 +188,9 @@ export async function consolidate(
     turns: messages.map((m) => ({ role: m.role, text: m.content })),
     scope: { user_id: userId, run_id: runId, agent_id: agentId },
   });
-  // md5 hash dedup. Skip facts whose text
-  // is byte-identical to one already on disk or seen earlier in this run.
-  const seenHashes = new Set<string>(existingFacts.map((f) => f.hash));
+  // Cosine dedup against existing in-scope facts and prior batches'
+  // extractions in this run. Within-batch dedup happens inline below
+  // against `facts` as it grows.
   const recentlyExtracted: RecentFact[] = [];
   const systemPrompt = await getSystemPrompt();
 
@@ -272,9 +279,20 @@ export async function consolidate(
     const facts: Fact[] = [];
     for (let j = 0; j < extraction.memory.length; j++) {
       const m = extraction.memory[j]!;
-      const hash = createHash("md5").update(m.text).digest("hex");
-      if (seenHashes.has(hash)) continue;
-      seenHashes.add(hash);
+      const newEmb = embeddings[j]!;
+
+      // Skip if this fact is cosine-near-dup of (a) any existing in-scope
+      // fact, (b) any fact extracted in an earlier batch of this run, or
+      // (c) any fact already accepted earlier in this batch. The third
+      // case is the LLM emitting paraphrased duplicates within a single
+      // extraction call — a real failure mode the prompt edit mitigates
+      // but does not eliminate.
+      const isDupe =
+        existingFacts.some((f) => cosineSimilarity(newEmb, f.embedding) >= NEAR_DUPE_COSINE) ||
+        recentlyExtracted.some((f) => cosineSimilarity(newEmb, f.embedding) >= NEAR_DUPE_COSINE) ||
+        facts.some((f) => cosineSimilarity(newEmb, f.embedding) >= NEAR_DUPE_COSINE);
+      if (isDupe) continue;
+
       facts.push({
         id: newFactId(),
         text: m.text,
@@ -285,8 +303,7 @@ export async function consolidate(
         created_at: new Date().toISOString(),
         event_date: sessionDate,
         source_session: `raw/${sessionId}`,
-        hash,
-        embedding: embeddings[j]!,
+        embedding: newEmb,
         ...(metadata ? { metadata } : {}),
         category: normalizeCategory(m.category),
       });

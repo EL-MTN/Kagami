@@ -30,7 +30,10 @@ void test("ensureIndexes creates btree indexes on facts/entities/history", async
   const entIdx = await db.collection("entities").indexes();
   const histIdx = await db.collection("history").indexes();
 
-  assert.ok(factIdx.find((i) => i.name === "facts_hash_unique")?.unique);
+  // facts_hash_unique was removed when storage-layer dedup moved to
+  // cosine in append.ts / consolidate.ts. ensureIndexes now drops it
+  // if a legacy deployment still has it, but never creates it.
+  assert.ok(!factIdx.find((i) => i.name === "facts_hash_unique"));
   assert.ok(factIdx.find((i) => i.name === "facts_user_created"));
   assert.ok(entIdx.find((i) => i.name === "entities_text_lower_unique")?.unique);
   assert.ok(histIdx.find((i) => i.name === "history_memory_created"));

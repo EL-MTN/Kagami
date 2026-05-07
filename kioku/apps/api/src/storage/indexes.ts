@@ -55,17 +55,14 @@ async function ensureBtreeIndexes(db: Db): Promise<void> {
   } catch (err) {
     if ((err as { code?: number }).code !== 26) throw err;
   }
-  const legacyHash = existingIndexes.find(
-    (i) =>
-      i.name === "facts_hash_unique" && i.key && Object.keys(i.key).length === 1 && "hash" in i.key,
-  );
-  if (legacyHash) {
+  // Drop the legacy hash unique index if present. Dedup moved from
+  // storage-layer (md5 unique constraint) to ingest-layer (cosine in
+  // append.ts and consolidate.ts). The hash field is no longer written
+  // to new facts.
+  const hashIdx = existingIndexes.find((i) => i.name === "facts_hash_unique");
+  if (hashIdx) {
     await facts.dropIndex("facts_hash_unique");
   }
-  await facts.createIndex(
-    { user_id: 1, run_id: 1, agent_id: 1, hash: 1 },
-    { name: "facts_hash_unique", unique: true },
-  );
 
   // Same scope-prefix story for the read-side compound index. Pre-scope
   // shape was {user_id:1, created_at:-1}; the new shape covers scope

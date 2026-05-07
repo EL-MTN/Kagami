@@ -24,7 +24,7 @@ Kioku has a small but growing automated-test suite. Pure helpers are tested with
 
 ```
 apps/api/tests/
-├── facts.test.ts             # appendFacts roundtrip, hash dedup, scope
+├── facts.test.ts             # appendFacts roundtrip, scope reads, category/metadata persistence
 ├── entities.test.ts          # upsertEntitiesFromFacts race semantics
 ├── history.test.ts           # ADD events + readHistoryFor newest-first
 ├── mongo.test.ts             # ensureIndexes idempotency + index shapes

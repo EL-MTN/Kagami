@@ -35,7 +35,6 @@ function makeFact(overrides: Record<string, unknown> = {}) {
     created_at: "2024-01-01T00:00:00Z",
     event_date: "2024-01-01",
     source_session: "raw/s",
-    hash: "h",
     embedding: [1, 0, 0],
     ...overrides,
   };
@@ -44,8 +43,8 @@ function makeFact(overrides: Record<string, unknown> = {}) {
 void test("appendFacts emits one ADD event per inserted fact", async () => {
   const { appendFacts, newFactId } = await import("../src/storage/facts.ts");
   const { readHistoryFor } = await import("../src/storage/history.ts");
-  const a = makeFact({ id: newFactId(), hash: "h-a", text: "A" });
-  const b = makeFact({ id: newFactId(), hash: "h-b", text: "B" });
+  const a = makeFact({ id: newFactId(), text: "A" });
+  const b = makeFact({ id: newFactId(), text: "B" });
   await appendFacts([a, b], "append");
   const histA = await readHistoryFor(a.id);
   const histB = await readHistoryFor(b.id);
@@ -55,22 +54,6 @@ void test("appendFacts emits one ADD event per inserted fact", async () => {
   assert.equal(histA[0]!.actor, "append");
   assert.equal(histB.length, 1);
   assert.equal(histB[0]!.event, "ADD");
-});
-
-void test("appendFacts does not emit ADD events for hash dupes", async () => {
-  const { appendFacts, newFactId } = await import("../src/storage/facts.ts");
-  const { readHistoryFor } = await import("../src/storage/history.ts");
-  const original = makeFact({ id: newFactId(), hash: "h1", text: "orig" });
-  await appendFacts([original]);
-  const dupId = newFactId();
-  const dup = makeFact({ id: dupId, hash: "h1", text: "dup" });
-  await appendFacts([dup]);
-  // The dup never landed, so no event for its synthetic id.
-  const dupHistory = await readHistoryFor(dupId);
-  assert.equal(dupHistory.length, 0);
-  // The original got exactly one ADD.
-  const origHistory = await readHistoryFor(original.id);
-  assert.equal(origHistory.length, 1);
 });
 
 void test("readHistoryFor returns events newest first", async () => {

@@ -102,7 +102,7 @@ async function learnPlace(
       );
     } else {
       logger.debug(
-        { chatId, placeName, factId: result.id, reason: result.reason },
+        { chatId, placeName, factId: result.id, similarity: result.similarity },
         "Place-learning fact already known",
       );
     }
