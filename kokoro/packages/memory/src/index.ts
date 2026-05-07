@@ -49,7 +49,6 @@ export interface AppendFactInput {
 export interface AppendFactResult {
   id: string;
   status: "added" | "duplicate";
-  reason?: "hash" | "cosine";
   similarity?: number;
 }
 

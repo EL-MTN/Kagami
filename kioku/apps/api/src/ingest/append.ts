@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { cosineSimilarity } from "ai";
 import { embedQuestion } from "../llm.js";
 import { lemmatizeForBm25 } from "../retrieval/text.js";
@@ -8,20 +7,16 @@ import { logger } from "../logger.js";
 
 // Single-fact append path. Bypasses the transcript-batch extraction
 // pipeline in consolidate.ts — the caller has already decided this is a
-// fact worth keeping. We still:
-//   - md5-dedup against existing fact text (hard skip, exact dup)
+// fact worth keeping. We:
 //   - cosine-dedup against the top existing fact (skip if >= NEAR_DUPE)
 //   - embed and lemmatize for BM25
 //   - upsert entities so the entity-boost ranker picks it up
 //
-// Concurrent callers serialize on a process-wide async lock. The hash and
-// entity paths are race-safe via Mongo primitives (unique index +
-// $setOnInsert/$addToSet upserts), but the cosine near-dupe check is a
-// read-then-act sequence: two concurrent calls with cosine-similar but
-// byte-distinct text would each see no near-dupe and both insert. The
-// hash unique index can't catch this (different hashes); $vectorSearch
-// can't atomically guard insertion. Hence the narrow lock here.
-// Bulk ingest via consolidate.ts is unaffected.
+// Concurrent callers serialize on a process-wide async lock. The cosine
+// near-dupe check is a read-then-act sequence — two concurrent calls
+// with cosine-similar text would each see no near-dupe and both insert
+// without serialization. Bulk ingest via consolidate.ts is unaffected
+// by this lock.
 
 const NEAR_DUPE_COSINE = 0.97;
 
@@ -50,7 +45,6 @@ export type AppendStatus = "added" | "duplicate";
 export interface AppendFactResult {
   id: string;
   status: AppendStatus;
-  reason?: "hash" | "cosine";
   similarity?: number;
 }
 
@@ -87,7 +81,6 @@ async function appendSingleFactImpl(input: AppendFactInput): Promise<AppendFactR
   const runId = input.run_id;
   const agentId = input.agent_id;
 
-  const hash = createHash("md5").update(text).digest("hex");
   // Scope-bound dedup: an identical fact under (alice, none, none) does
   // not block writing the same text under (bob, none, none).
   const existing = await readFactsInScope({
@@ -95,10 +88,6 @@ async function appendSingleFactImpl(input: AppendFactInput): Promise<AppendFactR
     run_id: runId,
     agent_id: agentId,
   });
-  const hashHit = existing.find((f) => f.hash === hash);
-  if (hashHit) {
-    return { id: hashHit.id, status: "duplicate", reason: "hash" };
-  }
 
   const embedding = await embedQuestion(text);
 
@@ -115,7 +104,6 @@ async function appendSingleFactImpl(input: AppendFactInput): Promise<AppendFactR
     return {
       id: bestId,
       status: "duplicate",
-      reason: "cosine",
       similarity: bestSim,
     };
   }
@@ -131,7 +119,6 @@ async function appendSingleFactImpl(input: AppendFactInput): Promise<AppendFactR
     created_at: new Date().toISOString(),
     event_date: input.event_date ?? today,
     source_session: input.source_session ?? "",
-    hash,
     embedding,
     ...(input.metadata ? { metadata: input.metadata } : {}),
     ...(input.category ? { category: input.category } : {}),

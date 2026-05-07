@@ -54,24 +54,23 @@ The core ingest. Constants:
 
 Per `consolidate(transcript, opts)`:
 
-1. **Read scope-bound dedup context.** `readFactsInScope({ user_id, run_id, agent_id })`. Hash collisions and cosine-near-neighbors outside this tuple do not constrain extraction.
+1. **Read scope-bound dedup context.** `readFactsInScope({ user_id, run_id, agent_id })`. Cosine-near-neighbors outside this tuple do not constrain extraction.
 2. **Compute or read the rolling session summary.** `getOrComputeSessionSummary(...)` returns a 4–8 sentence narrative grounding entities and references for every batch. Cached in `session_summaries` keyed by `source_session` so a re-run on the same transcript reuses it.
-3. **Track seen md5 hashes.** Seeded with `existing.map(hash)` so duplicates from a re-ingest never reach the writer.
-4. **For each 2-message batch:**
+3. **For each 2-message batch:**
    - Embed the concatenated batch text (`embed`, 15 s timeout).
    - Pick top-10 cosine-nearest from `existingFacts ∪ recentlyExtracted` as `existingMemories`.
    - Build the user prompt sections: Summary, Last k Messages, Recently Extracted, Existing Memories, New Messages, Observation Date, Current Date.
    - `generateObject(model, ExtractionResult)` against `prompts/extraction.md` — schema is `{ memory: [{ id, text, category }] }`. `temperature: 0`, 120 s timeout. The reasoning-to-content middleware in `llm.ts` salvages output for thinking-mode models that emit into `reasoning_content`.
-   - For each extracted memory:
-     - md5 hash of `text`. Skip if already in `seenHashes` (existing or earlier-in-run).
-     - `normalizeCategory(raw)` clamps unknown values to `"misc"`.
-   - `embedMany(survivors)` (30 s timeout) → embeddings.
+   - `embedMany(extracted texts)` (30 s timeout) → one embedding per extracted memory.
+   - **Cosine dedup** (`NEAR_DUPE_COSINE = 0.92`): for each extracted memory's embedding, skip if cosine ≥ threshold against any (a) existing in-scope fact, (b) earlier-batch extraction in this run (`recentlyExtracted`), or (c) earlier-accepted fact in *this* batch. Survivors get `normalizeCategory(raw)` applied (unknown → `"misc"`).
    - Build `Fact` rows with `id = randomUUID()`, `created_at = now`, `event_date = sessionDate`, `source_session = "raw/<sessionId>"`.
-   - `appendFacts(rows)` → `insertMany({ ordered: false })`. The `facts_hash_unique` index handles last-line dedup atomically. Audit events are recorded only for indices Mongo confirmed inserted.
+   - `appendFacts(rows)` → `insertMany({ ordered: false })`. No storage-layer dedup index — dedup already happened above.
    - `upsertEntitiesFromFacts(rows)` to keep the entity-boost ranker fed.
-   - Append rows to `recentlyExtracted` so the next batch's cosine top-10 includes them.
+   - Append rows to `recentlyExtracted` so the next batch's cosine top-10 and dedup pass include them.
 
 Returns `{ added, batches }`.
+
+The 0.92 threshold is intentionally lower than `append.ts`'s 0.97 because batch-extraction LLMs produce sloppier near-duplicates than caller-curated single facts; paraphrased restatements of the same fact often land at 0.92–0.96.
 
 ### Categories
 
@@ -90,7 +89,7 @@ user_preferences · misc
 - Embed call fails: log + `continue` (skip this batch). The next batch is independent.
 - Extraction call fails: log + `continue`.
 - Entity upsert fails: log + proceed. Facts are durable; entity boost is best-effort.
-- Mongo `insertMany` errors with code `11000` (duplicate key) are tolerated — only confirmed-inserted indices generate audit events. Other write errors propagate.
+- Mongo `insertMany` errors propagate. There is no longer a storage-layer hash dedup index, so any `code 11000` would be an `_id` collision (a programming bug) rather than expected dedup behavior — surfacing it is intentional.
 
 ## Single-fact append (`append.ts`)
 
@@ -103,9 +102,9 @@ NEAR_DUPE_COSINE = 0.97
 Pipeline (`appendSingleFactImpl`):
 
 1. Trim text; reject empty.
-2. md5 hash. Read scope-bound facts. If a hash hit exists → return `{ status: "duplicate", reason: "hash" }` with the existing fact's id.
+2. Read scope-bound facts.
 3. `embedQuestion(text)` (5 s timeout via `embed`).
-4. Compute cosine against every in-scope existing fact. If `bestSim ≥ 0.97` → return `{ status: "duplicate", reason: "cosine", similarity }` with the near-dupe's id.
+4. Compute cosine against every in-scope existing fact. If `bestSim ≥ 0.97` → return `{ status: "duplicate", similarity }` with the near-dupe's id.
 5. Build `Fact` with `event_date` defaulting to today, `source_session` defaulting to `""`.
 6. `appendFacts([fact])` (audits ADD via `recordEvents`).
 7. `upsertEntitiesFromFacts([fact])` (logged + tolerated on failure).
@@ -115,7 +114,7 @@ Bulk path runs the same impl in series under the lock and returns one result per
 
 ### Why the lock?
 
-The hash check is race-safe via the unique index. The cosine check is not — two concurrent calls with byte-distinct but cosine-similar text would each see no near-dupe and both insert. `$vectorSearch` can't atomically guard insertion. The lock is narrow (single + bulk paths only); transcript ingest is unaffected.
+The cosine check is a read-then-act sequence — two concurrent calls with cosine-similar text would each see no near-dupe and both insert without serialization. `$vectorSearch` can't atomically guard insertion. The lock is narrow (single + bulk paths only); transcript ingest is unaffected (its dedup pass is single-threaded within one `consolidate()` invocation, and concurrent invocations on the same session are uncommon enough to be acceptable).
 
 ## Session ingest (`sessions.ts`)
 

@@ -80,11 +80,11 @@ The trigger is the latency optimization; the sweeper is the correctness layer. I
 
 ### LLM-driven — `rememberFact` tool
 
-When Mashiro decides a fact is worth keeping across sessions, she calls `rememberFact(text, eventDate?)` (defined in `apps/bot/src/ai/tools/memory.ts`). Forwards to `@kokoro/memory.appendFact()` → `POST /facts` with `source_session: "rememberFact"`. Kioku does md5 + cosine dedup, embeds, lemmatizes, and upserts entities. Idempotent — calling twice with the same text returns `{status: "duplicate", reason: "hash"}` with the existing id. Available in conversational paths; **excluded from watcher contexts** (watchers are read-only). The exact cosine threshold lives in Kioku, not Kokoro.
+When Mashiro decides a fact is worth keeping across sessions, she calls `rememberFact(text, eventDate?)` (defined in `apps/bot/src/ai/tools/memory.ts`). Forwards to `@kokoro/memory.appendFact()` → `POST /facts` with `source_session: "rememberFact"`. Kioku does cosine dedup against existing in-scope facts, embeds, lemmatizes, and upserts entities. Idempotent — near-paraphrases of an existing fact return `{status: "duplicate", similarity}` with the existing id. Available in conversational paths; **excluded from watcher contexts** (watchers are read-only). The exact cosine threshold lives in Kioku, not Kokoro.
 
 ### Place-learning (passive)
 
-`apps/bot/src/services/location.ts:learnPlace` watches for frequent visits: 3+ stored locations within 200m / 30 days. When the threshold trips, it calls `appendFact` (with `source_session: "location-learning"`) with `"User frequently visits {placeName} ({placeCategory})."` Format is stable so md5 dedup catches re-saves.
+`apps/bot/src/services/location.ts:learnPlace` watches for frequent visits: 3+ stored locations within 200m / 30 days. When the threshold trips, it calls `appendFact` (with `source_session: "location-learning"`) with `"User frequently visits {placeName} ({placeCategory})."` Format is stable so cosine dedup at the append path catches re-saves (identical text gets cosine 1.0; well above the 0.97 threshold).
 
 ## Conversation schema
 
