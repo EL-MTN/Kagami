@@ -1,6 +1,6 @@
 # Testing
 
-Kizuna's test suite covers the API workspace. Pure helpers run with no infrastructure; everything that touches Mongo or Express runs against a real MongoDB container started by `testcontainers` plus an in-process Express app via `supertest`. The dashboard has no automated tests today.
+Kizuna's test suite covers the API workspace. Pure helpers run with no infrastructure; everything that touches Mongo or Express runs against a real MongoDB instance started by `mongodb-memory-server` (no Docker required) plus an in-process Express app via `supertest`. The dashboard has no automated tests today.
 
 ## Goals
 
@@ -11,12 +11,13 @@ Kizuna's test suite covers the API workspace. Pure helpers run with no infrastru
 
 ## Stack
 
-- **Test runner:** Vitest 2.1 with the default node pool. Configured at `apps/api/vitest.config.ts`:
-  - `pool: 'forks'`, `poolOptions: { forks: { singleFork: true } }`, `isolate: false` — every test file shares one worker, which lets a single MongoDB container be reused across files in a run.
+- **Test runner:** Vitest 4 with the default node pool. Configured at `apps/api/vitest.config.ts`:
+  - `pool: 'forks'`, `fileParallelism: false`, `isolate: false` — every test file shares one worker, which lets a single MongoDB instance be reused across files in a run.
+  - `globalSetup: ['./test/global-setup.ts']` — boots one `MongoMemoryServer` in the parent process before workers spawn and exposes its URI via `__VITEST_SHARED_MONGO_URI__`. The server is stopped on suite teardown.
   - `setupFiles: ['./test/setup.ts']` — defaults `LOG_LEVEL` to `silent` so pino doesn't spam test output. Override with `LOG_LEVEL=debug npm test` when triaging a flaky run.
-  - `testTimeout: 60_000`, `hookTimeout: 180_000` — Mongo container start can take ~30 s on a cold pull.
+  - `testTimeout: 60_000`, `hookTimeout: 60_000`.
   - `include: ['test/**/*.test.ts']`.
-- **MongoDB:** real `mongo:7` container per `startHarness()` call, via `testcontainers`. Each harness gets a fresh URI (`mongodb://host:port/kizuna_test`) and `connectDb` runs `syncIndexes` so partial-unique indexes (notably `interactions_sourceRef_unique`) fire correctly.
+- **MongoDB:** real `mongod` started in-process by `mongodb-memory-server`. One instance is shared across the whole run via vitest `globalSetup`; each `startHarness()` call connects to a unique database name (`kizuna_test_<random>`) on that instance. `connectDb` runs `syncIndexes` so partial-unique indexes (notably `interactions_sourceRef_unique`) fire correctly. On `stop()` the harness drops its database before disconnecting.
 - **HTTP:** `supertest` against a live `createApp({ db, config })`. No port binding — `supertest` invokes the request handler directly.
 - **Google APIs:** never actually called.
   - `OAuth2Client.prototype.getToken` is `vi.spyOn`'d in OAuth tests.
@@ -27,8 +28,9 @@ Kizuna's test suite covers the API workspace. Pure helpers run with no infrastru
 
 ```
 apps/api/test/
+├── global-setup.ts           # boots one MongoMemoryServer for the run
 ├── helpers/
-│   ├── harness.ts            # startHarness() — testcontainers-backed Mongo + createApp
+│   ├── harness.ts            # startHarness() — connects to shared mongo + createApp
 │   ├── fake-gmail.ts         # FakeGmailClient + buildPlainMessage helper
 │   └── fake-calendar.ts      # FakeCalendarClient
 ├── fixtures/
@@ -57,8 +59,11 @@ apps/api/test/
 
 ```ts
 export async function startHarness(): Promise<TestHarness> {
-  const container = await new GenericContainer("mongo:7").withExposedPorts(27017).start();
-  const uri = `mongodb://${container.getHost()}:${container.getMappedPort(27017)}/kizuna_test`;
+  const baseUri = process.env[SHARED_MONGO_URI_ENV];
+  if (!baseUri) throw new Error(`${SHARED_MONGO_URI_ENV} not set — globalSetup must run first`);
+
+  const dbName = `kizuna_test_${randomBytes(6).toString("hex")}`;
+  const uri = baseUri.replace(/\/?$/, `/${dbName}`);
   const encryptionKey = randomBytes(32).toString("base64");
 
   const config = loadConfig({
@@ -78,8 +83,8 @@ export async function startHarness(): Promise<TestHarness> {
     uri,
     encryptionKey,
     stop: async () => {
+      await db.conn.connection.dropDatabase();
       await db.close();
-      await container.stop();
     },
   };
 }
@@ -105,7 +110,7 @@ beforeEach(async () => {
 });
 ```
 
-The `singleFork` config means files in the same run reuse the same Vitest worker, but each file still calls `startHarness()` and stops its own container. (A future refactor could move container start to a global setup; the current 30 s overhead per file is tolerable for the suite size.)
+`fileParallelism: false` means files in the same run reuse the same Vitest worker, and `globalSetup` boots one `mongod` in the parent for the whole run. Each `startHarness()` call only opens a fresh database on that shared instance — startup is ~10 ms instead of the ~30 s container cold-boot it replaced.
 
 ## Patterns
 
@@ -183,7 +188,7 @@ cd apps/api && npm run test:watch     # vitest watch
 LOG_LEVEL=debug cd apps/api && npm test   # surface pino logs while triaging
 ```
 
-The first run pulls `mongo:7` (~600 MB). Subsequent runs reuse the cached image. Container startup adds ~30 s to the first `beforeAll` of each test file; pure-helper tests (`config`, `duration`, `encryption`, `oauth-state`, `parse-message`, `parse-event`) skip the harness entirely and finish in milliseconds.
+The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (~150 MB, one time). Subsequent runs reuse it. The full suite runs in ~4 s on a warm cache; pure-helper tests (`config`, `duration`, `encryption`, `oauth-state`, `parse-message`, `parse-event`) skip the harness entirely and finish in milliseconds.
 
 ## What's covered
 

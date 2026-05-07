@@ -20,7 +20,7 @@ kizuna/
 │   │   │   ├── routes/         # per-resource Express routers
 │   │   │   ├── lib/            # errors, encryption, oauth-state, google-auth, cursor, duration, serialize, logger
 │   │   │   └── schemas/        # shared zod (Pagination, IdParam, ISODateString, …)
-│   │   ├── test/           # vitest + supertest + testcontainers (real Mongo)
+│   │   ├── test/           # vitest + supertest + mongodb-memory-server (real Mongo, no Docker)
 │   │   └── scripts/        # import-vcards.ts (vCard → POST /v1/people)
 │   └── dashboard/          # Next.js 15 App Router (https://kizuna.localhost)
 │       ├── app/
@@ -109,4 +109,4 @@ See `/docs` for:
 - [auth.md](docs/auth.md) — single-user-localhost trust model, USER_EMAILS allowlist, AES-256-GCM refresh-token encryption, signed CSRF state on the OAuth callback, threat model
 - [dashboard.md](docs/dashboard.md) — Next.js inspector pages, design system ("Mashiro Daylight"), data flow
 - [configuration.md](docs/configuration.md) — env vars, encryption-key generation, common setups, Portless
-- [testing.md](docs/testing.md) — vitest + supertest + testcontainers harness, what's covered, patterns
+- [testing.md](docs/testing.md) — vitest + supertest + mongodb-memory-server harness, what's covered, patterns
