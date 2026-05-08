@@ -1,8 +1,44 @@
 import pino from "pino";
 import { config } from "./config";
 
+const redactPaths = [
+  "authorization",
+  "cookie",
+  "password",
+  "token",
+  "apiKey",
+  "api_key",
+  "secret",
+  "accessToken",
+  "refreshToken",
+  "imageData",
+  "headers.authorization",
+  "headers.cookie",
+  "req.headers.authorization",
+  "req.headers.cookie",
+  "*.authorization",
+  "*.cookie",
+  "*.password",
+  "*.token",
+  "*.apiKey",
+  "*.api_key",
+  "*.secret",
+  "*.accessToken",
+  "*.refreshToken",
+  "*.imageData",
+];
+
 export const logger = pino({
   level: config.LOG_LEVEL,
+  base: {
+    service: "kokoro-bot",
+    component: "bot",
+    env: config.NODE_ENV,
+  },
+  redact: {
+    paths: redactPaths,
+    censor: "[redacted]",
+  },
   formatters: {
     log(bindings) {
       // Strip base64 image data from logs

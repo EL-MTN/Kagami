@@ -208,7 +208,7 @@ If `ensureIndexes()` throws, the process exits and logs `kioku startup failed` w
 
 ## Cross-cutting Concerns
 
-- **Logging.** `apps/api/src/logger.ts` exports a pino logger. `pino-http` is mounted as middleware so every request gets a `req.log`. Pretty transport in non-production.
+- **Logging.** `apps/api/src/logger.ts` exports a pino logger with stable `service`, `component`, and `env` bindings plus common secret redaction. `pino-http` is mounted as middleware so every request gets a `req.log`. Pretty transport in non-production.
 - **Error handling.** A single Express error handler maps `ZodError` → `400 { error: "validation_error", issues }` and everything else → `500 { error: "internal_error" }` with a logged `req.log.error`.
 - **Timeouts.** Embed calls use `AbortSignal.timeout(5_000)` (single) / `15_000` / `30_000` (batched). Extraction `generateObject` is `120_000`. Summary `generateObject` is `60_000`. Answerer `generateText` is `120_000`.
 - **Caching.** The two prompts (`extraction.md`, `answer.md`) are read once and cached in module scope. The narrative session summary is persisted in the `session_summaries` collection so re-ingest is free.

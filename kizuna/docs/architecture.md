@@ -250,7 +250,7 @@ See [sync.md](sync.md) for the full state machine.
 
 ## Cross-cutting Concerns
 
-- **Logging.** `apps/api/src/lib/logger.ts` exports a pino logger (`base: { service: 'kizuna-api' }`). Pretty transport when `NODE_ENV=development`. Used directly in workers / boot / errors; there's no request-scoped logger middleware today.
+- **Logging.** `apps/api/src/lib/logger.ts` exports a pino logger with stable `service`, `component`, and `env` bindings plus common secret redaction. Pretty transport when `NODE_ENV=development`. Used directly in workers / boot / errors; there's no request-scoped logger middleware today.
 - **Error handling.** `apps/api/src/lib/errors.ts` defines a `HttpError` class and an `errors.{badRequest,unauthorized,notFound,conflict,rateLimited,internal}` factory. The Express error handler maps `HttpError` → tagged 4xx, `ZodError` → `400 bad_request`, Mongoose `ValidationError` / `CastError` / `StrictModeError` → `400 bad_request`, code-11000 dup-key → `409 conflict`, everything else → `500 internal`.
 - **Time handling.** All dates are stored as `Date` and serialized as ISO 8601. The dashboard formats in `America/New_York` (`apps/dashboard/src/lib/format.ts`) — hardcoded for now.
 - **Reentrancy on ingest.** The scheduler keeps a `running = true` flag while a tick is in flight; overlapping ticks are skipped with a `logger.warn`. Manual `POST /sync/.../run` calls bypass this — they're synchronous round-trips driven by the caller.
