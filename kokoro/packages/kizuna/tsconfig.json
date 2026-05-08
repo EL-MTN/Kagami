@@ -1,0 +1,4 @@
+{
+  "extends": "@kagami/tsconfig/library.json",
+  "include": ["src", "tests"]
+}

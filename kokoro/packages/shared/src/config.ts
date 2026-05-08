@@ -1,6 +1,19 @@
 import "dotenv/config";
 import { z } from "zod";
 
+const optionalEnabledFlag = z.preprocess(
+  (value) => {
+    if (value === undefined) return undefined;
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed === "" ? undefined : trimmed;
+  },
+  z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((s) => s === "true"),
+);
+
 const baseSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   ALLOWED_USER_IDS: z
@@ -20,6 +33,8 @@ const baseSchema = z.object({
   MONGODB_URI: z.string().default("mongodb://localhost:27017/kokoro"),
 
   KIOKU_URL: z.string().url().default("https://api.kioku.localhost"),
+  KIZUNA_URL: z.string().url().default("https://api.kizuna.localhost"),
+  KIZUNA_ENABLED: optionalEnabledFlag,
 
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),

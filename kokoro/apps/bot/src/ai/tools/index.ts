@@ -11,6 +11,7 @@ import {
 import { createManageWatchersTool, reportWatcherResult } from "./watchers";
 import { createRequestConfirmationTool, createCancelConfirmationTool } from "./confirmations";
 import { createSearchMemoryTool, createRememberFactTool } from "./memory";
+import { createCrmTools } from "./crm";
 import { MAX_ROUTINE_DEPTH } from "../../services/routine-executor";
 import { config } from "@kokoro/shared";
 import type { ToolSet } from "ai";
@@ -91,6 +92,10 @@ export function allTools(ctx: ToolContext) {
   tools.searchMemory = createSearchMemoryTool();
   tools.rememberFact = createRememberFactTool();
 
+  if (config.KIZUNA_ENABLED) {
+    Object.assign(tools, createCrmTools());
+  }
+
   // Only provide useRoutine when below max depth (prevents infinite recursion)
   if (depth < MAX_ROUTINE_DEPTH) {
     tools.useRoutine = createUseRoutineTool(ctx.chatId, ctx.adapter, depth, callingContext);
@@ -139,6 +144,10 @@ function readOnlyToolSubset(ctx: ToolContext): ToolSet {
   // Memory reads are pure — watchers observe what's already in the vault.
   // rememberFact is omitted because it mutates.
   tools.searchMemory = createSearchMemoryTool();
+
+  if (config.KIZUNA_ENABLED) {
+    Object.assign(tools, createCrmTools());
+  }
 
   return tools;
 }
