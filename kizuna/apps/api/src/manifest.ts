@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 
 export type EndpointSpec = {
   name: string;
@@ -28,11 +27,16 @@ export function buildManifest(endpoints: EndpointSpec[]): {
   endpoints: ManifestEndpoint[];
 } {
   const toJson = (s: z.ZodTypeAny, name: string) =>
-    // zod-to-json-schema's types still reference zod v3 even though it runtime-supports
-    // both. Cast through unknown to bridge the structural mismatch.
-    zodToJsonSchema(s as unknown as Parameters<typeof zodToJsonSchema>[0], {
-      target: "jsonSchema7",
-      name,
+    z.toJSONSchema(s, {
+      target: "draft-07",
+      io: "input",
+      reused: "ref",
+      unrepresentable: "any",
+      override: ({ jsonSchema }) => {
+        if (typeof jsonSchema === "object" && jsonSchema !== null) {
+          jsonSchema.title = name;
+        }
+      },
     });
 
   return {

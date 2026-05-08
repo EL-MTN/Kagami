@@ -31,6 +31,9 @@ const PersonSchema = new Schema(
 );
 
 PersonSchema.index({ primaryEmail: 1 }, { sparse: true });
+PersonSchema.index({ displayName: 1 });
+PersonSchema.index({ emails: 1 });
+PersonSchema.index({ "handles.$**": 1 }, { name: "people_handles_identity_wildcard" });
 PersonSchema.index({ lastInteractionAt: -1 });
 PersonSchema.index({ displayName: "text", notes: "text", tags: "text" }, { name: "people_text" });
 PersonSchema.index({ deletedAt: 1 }, { sparse: true });

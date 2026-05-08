@@ -71,6 +71,7 @@ export const PersonUpdateBody = PersonCreateBody.partial().strict();
 
 export const ListPeopleQuery = Pagination.extend({
   query: z.string().optional(),
+  identityQuery: z.string().trim().min(1).max(200).optional(),
   orgId: ObjectIdString.optional(),
   tag: z
     .union([z.string(), z.array(z.string())])
@@ -86,11 +87,148 @@ export const ListPeopleQuery = Pagination.extend({
 
 type LiaCursor = { lia: string | null; id: string };
 type IdCursor = { id: string };
+type IdentityCursor = { ib: number; lia: string | null; id: string };
+
+type LeanPerson = {
+  _id: Types.ObjectId;
+  displayName?: string | null;
+  primaryEmail?: string | null;
+  emails?: string[];
+  handles?: Map<string, string> | Record<string, string> | null;
+  lastInteractionAt?: Date | string | null;
+};
+
+type RankedPerson = {
+  doc: LeanPerson;
+  bucket: number;
+};
+
+function normalizeIdentityText(value: string): string {
+  return value.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+function handleValues(handles: LeanPerson["handles"]): string[] {
+  if (!handles) return [];
+  if (handles instanceof Map) return [...handles.values()];
+  return Object.values(handles);
+}
+
+function identityValues(person: LeanPerson): string[] {
+  return [
+    person.displayName,
+    person.primaryEmail,
+    ...(person.emails ?? []),
+    ...handleValues(person.handles),
+  ].flatMap((value) => {
+    if (typeof value !== "string") return [];
+    const normalized = normalizeIdentityText(value);
+    return normalized ? [normalized] : [];
+  });
+}
+
+function identityBucket(identityQuery: string, person: LeanPerson): number | null {
+  const query = normalizeIdentityText(identityQuery);
+  const values = identityValues(person);
+  if (values.some((value) => value === query)) return 0;
+  if (values.some((value) => value.startsWith(query))) return 1;
+  if (values.some((value) => value.split(" ").some((token) => token.startsWith(query)))) return 2;
+  if (values.some((value) => value.includes(query))) return 3;
+  return null;
+}
+
+function lastInteractionMillis(value: LeanPerson["lastInteractionAt"]): number {
+  if (!value) return Number.NEGATIVE_INFINITY;
+  if (value instanceof Date) return value.getTime();
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
+function lastInteractionIso(value: LeanPerson["lastInteractionAt"]): string | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function compareRankedPeople(a: RankedPerson, b: RankedPerson): number {
+  if (a.bucket !== b.bucket) return a.bucket - b.bucket;
+
+  const at = lastInteractionMillis(a.doc.lastInteractionAt);
+  const bt = lastInteractionMillis(b.doc.lastInteractionAt);
+  if (at !== bt) return bt - at;
+
+  return b.doc._id.toHexString().localeCompare(a.doc._id.toHexString());
+}
+
+function validateIdentityCursor(cursor: string): IdentityCursor {
+  const c = decodeCursor<IdentityCursor>(cursor);
+  if (
+    typeof c.ib !== "number" ||
+    !Number.isInteger(c.ib) ||
+    c.ib < 0 ||
+    c.ib > 3 ||
+    !(c.lia === null || typeof c.lia === "string") ||
+    typeof c.id !== "string" ||
+    !Types.ObjectId.isValid(c.id)
+  ) {
+    throw errors.badRequest("invalid cursor");
+  }
+  if (typeof c.lia === "string" && Number.isNaN(new Date(c.lia).getTime())) {
+    throw errors.badRequest("invalid cursor");
+  }
+  return c;
+}
+
+function identityCursorRank(cursor: IdentityCursor): RankedPerson {
+  return {
+    bucket: cursor.ib,
+    doc: {
+      _id: new Types.ObjectId(cursor.id),
+      lastInteractionAt: cursor.lia,
+    },
+  };
+}
+
+async function listPeopleByIdentity(
+  identityQuery: string,
+  filter: Record<string, unknown>,
+  limit: number,
+  cursor?: string,
+) {
+  const cursorRank = cursor ? identityCursorRank(validateIdentityCursor(cursor)) : null;
+  const docs = (await Person.find(filter).lean()) as unknown as LeanPerson[];
+  const ranked = docs
+    .flatMap((doc): RankedPerson[] => {
+      const bucket = identityBucket(identityQuery, doc);
+      return bucket === null ? [] : [{ doc, bucket }];
+    })
+    .sort(compareRankedPeople)
+    .filter((rank) => (cursorRank ? compareRankedPeople(rank, cursorRank) > 0 : true));
+
+  const page = ranked.slice(0, limit);
+  const body: { items: unknown[]; nextCursor?: string } = {
+    items: page.map(({ doc }) => serializePerson(doc)),
+  };
+  if (ranked.length > limit) {
+    const last = page[page.length - 1];
+    if (last) {
+      body.nextCursor = encodeCursor({
+        ib: last.bucket,
+        lia: lastInteractionIso(last.doc.lastInteractionAt),
+        id: last.doc._id.toHexString(),
+      });
+    }
+  }
+  return body;
+}
 
 export const peopleRouter = Router();
 
 peopleRouter.get("/people", async (req, res) => {
   const q = ListPeopleQuery.parse(req.query);
+  if (q.identityQuery && q.query) {
+    throw errors.badRequest("identityQuery cannot be combined with query");
+  }
+
   const filter: Record<string, unknown> = {};
   if (!q.includeTombstoned) filter.deletedAt = null;
   if (q.orgId) filter.primaryOrgId = new Types.ObjectId(q.orgId);
@@ -110,6 +248,11 @@ peopleRouter.get("/people", async (req, res) => {
       deletedAt: null,
     });
     filter._id = q.hasOpenFollowup ? { $in: openIds } : { $nin: openIds };
+  }
+
+  if (q.identityQuery) {
+    res.json(await listPeopleByIdentity(q.identityQuery, filter, q.limit, q.cursor));
+    return;
   }
 
   // Sort + cursor. Two modes:
