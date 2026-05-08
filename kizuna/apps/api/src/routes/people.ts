@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { Types } from "mongoose";
+import { Types, type PipelineStage } from "mongoose";
 import { z } from "zod";
 import { Followup } from "../db/models/Followup.js";
 import { Person } from "../db/models/Person.js";
@@ -89,74 +89,24 @@ type LiaCursor = { lia: string | null; id: string };
 type IdCursor = { id: string };
 type IdentityCursor = { ib: number; lia: string | null; id: string };
 
-type LeanPerson = {
+type IdentityPersonDoc = Record<string, unknown> & {
   _id: Types.ObjectId;
-  displayName?: string | null;
-  primaryEmail?: string | null;
-  emails?: string[];
-  handles?: Map<string, string> | Record<string, string> | null;
   lastInteractionAt?: Date | string | null;
-};
-
-type RankedPerson = {
-  doc: LeanPerson;
-  bucket: number;
+  _identityBucket: 0 | 1 | 2 | 3;
 };
 
 function normalizeIdentityText(value: string): string {
   return value.toLowerCase().trim().replace(/\s+/g, " ");
 }
 
-function handleValues(handles: LeanPerson["handles"]): string[] {
-  if (!handles) return [];
-  if (handles instanceof Map) return [...handles.values()];
-  return Object.values(handles);
-}
-
-function identityValues(person: LeanPerson): string[] {
-  return [
-    person.displayName,
-    person.primaryEmail,
-    ...(person.emails ?? []),
-    ...handleValues(person.handles),
-  ].flatMap((value) => {
-    if (typeof value !== "string") return [];
-    const normalized = normalizeIdentityText(value);
-    return normalized ? [normalized] : [];
-  });
-}
-
-function identityBucket(identityQuery: string, person: LeanPerson): number | null {
-  const query = normalizeIdentityText(identityQuery);
-  const values = identityValues(person);
-  if (values.some((value) => value === query)) return 0;
-  if (values.some((value) => value.startsWith(query))) return 1;
-  if (values.some((value) => value.split(" ").some((token) => token.startsWith(query)))) return 2;
-  if (values.some((value) => value.includes(query))) return 3;
-  return null;
-}
-
-function lastInteractionMillis(value: LeanPerson["lastInteractionAt"]): number {
-  if (!value) return Number.NEGATIVE_INFINITY;
-  if (value instanceof Date) return value.getTime();
-  const parsed = new Date(value).getTime();
-  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
-}
-
-function lastInteractionIso(value: LeanPerson["lastInteractionAt"]): string | null {
+function lastInteractionIso(value: IdentityPersonDoc["lastInteractionAt"]): string | null {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function compareRankedPeople(a: RankedPerson, b: RankedPerson): number {
-  if (a.bucket !== b.bucket) return a.bucket - b.bucket;
-
-  const at = lastInteractionMillis(a.doc.lastInteractionAt);
-  const bt = lastInteractionMillis(b.doc.lastInteractionAt);
-  if (at !== bt) return bt - at;
-
-  return b.doc._id.toHexString().localeCompare(a.doc._id.toHexString());
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function validateIdentityCursor(cursor: string): IdentityCursor {
@@ -178,14 +128,112 @@ function validateIdentityCursor(cursor: string): IdentityCursor {
   return c;
 }
 
-function identityCursorRank(cursor: IdentityCursor): RankedPerson {
-  return {
-    bucket: cursor.ib,
-    doc: {
-      _id: new Types.ObjectId(cursor.id),
-      lastInteractionAt: cursor.lia,
-    },
+function identityCursorMatch(cursor: IdentityCursor): Record<string, unknown> {
+  const cId = new Types.ObjectId(cursor.id);
+  const sameBucketNull = {
+    _identityBucket: cursor.ib,
+    $or: [{ lastInteractionAt: null }, { lastInteractionAt: { $exists: false } }],
   };
+  if (cursor.lia === null) {
+    return {
+      $or: [{ _identityBucket: { $gt: cursor.ib } }, { ...sameBucketNull, _id: { $lt: cId } }],
+    };
+  }
+
+  const cDate = new Date(cursor.lia);
+  return {
+    $or: [
+      { _identityBucket: { $gt: cursor.ib } },
+      { _identityBucket: cursor.ib, lastInteractionAt: { $lt: cDate } },
+      { _identityBucket: cursor.ib, lastInteractionAt: cDate, _id: { $lt: cId } },
+      sameBucketNull,
+    ],
+  };
+}
+
+function identitySearchPipeline(
+  identityQuery: string,
+  filter: Record<string, unknown>,
+  limit: number,
+  cursor?: string,
+): PipelineStage[] {
+  const query = normalizeIdentityText(identityQuery);
+  const escaped = escapeRegex(query);
+  const cursorMatch = cursor ? identityCursorMatch(validateIdentityCursor(cursor)) : null;
+  const hasIdentityValueStartingWith = (regex: string) => ({
+    $anyElementTrue: {
+      $map: {
+        input: "$_identityValues",
+        as: "value",
+        in: { $regexMatch: { input: "$$value", regex } },
+      },
+    },
+  });
+
+  return [
+    { $match: filter },
+    {
+      $set: {
+        _identityRawValues: {
+          $concatArrays: [
+            { $cond: [{ $ne: ["$displayName", null] }, ["$displayName"], []] },
+            { $cond: [{ $ne: ["$primaryEmail", null] }, ["$primaryEmail"], []] },
+            { $ifNull: ["$emails", []] },
+            {
+              $map: {
+                input: { $objectToArray: { $ifNull: ["$handles", {}] } },
+                as: "handle",
+                in: "$$handle.v",
+              },
+            },
+          ],
+        },
+      },
+    },
+    {
+      $set: {
+        _identityValues: {
+          $filter: {
+            input: {
+              $map: {
+                input: "$_identityRawValues",
+                as: "value",
+                in: {
+                  $trim: {
+                    input: {
+                      $toLower: { $ifNull: ["$$value", ""] },
+                    },
+                  },
+                },
+              },
+            },
+            as: "value",
+            cond: { $ne: ["$$value", ""] },
+          },
+        },
+      },
+    },
+    {
+      $set: {
+        _identityBucket: {
+          $switch: {
+            branches: [
+              { case: { $in: [query, "$_identityValues"] }, then: 0 },
+              { case: hasIdentityValueStartingWith(`^${escaped}`), then: 1 },
+              { case: hasIdentityValueStartingWith(`(^|\\s)${escaped}`), then: 2 },
+              { case: hasIdentityValueStartingWith(escaped), then: 3 },
+            ],
+            default: null,
+          },
+        },
+      },
+    },
+    { $match: { _identityBucket: { $ne: null } } },
+    ...(cursorMatch ? [{ $match: cursorMatch }] : []),
+    { $sort: { _identityBucket: 1, lastInteractionAt: -1, _id: -1 } },
+    { $limit: limit + 1 },
+    { $unset: ["_identityRawValues", "_identityValues"] },
+  ];
 }
 
 async function listPeopleByIdentity(
@@ -194,27 +242,21 @@ async function listPeopleByIdentity(
   limit: number,
   cursor?: string,
 ) {
-  const cursorRank = cursor ? identityCursorRank(validateIdentityCursor(cursor)) : null;
-  const docs = (await Person.find(filter).lean()) as unknown as LeanPerson[];
-  const ranked = docs
-    .flatMap((doc): RankedPerson[] => {
-      const bucket = identityBucket(identityQuery, doc);
-      return bucket === null ? [] : [{ doc, bucket }];
-    })
-    .sort(compareRankedPeople)
-    .filter((rank) => (cursorRank ? compareRankedPeople(rank, cursorRank) > 0 : true));
-
-  const page = ranked.slice(0, limit);
+  const docs = await Person.aggregate<IdentityPersonDoc>(
+    identitySearchPipeline(identityQuery, filter, limit, cursor),
+  );
+  const hasMore = docs.length > limit;
+  const page = hasMore ? docs.slice(0, -1) : docs;
   const body: { items: unknown[]; nextCursor?: string } = {
-    items: page.map(({ doc }) => serializePerson(doc)),
+    items: page.map((doc) => serializePerson(doc)),
   };
-  if (ranked.length > limit) {
+  if (hasMore) {
     const last = page[page.length - 1];
     if (last) {
       body.nextCursor = encodeCursor({
-        ib: last.bucket,
-        lia: lastInteractionIso(last.doc.lastInteractionAt),
-        id: last.doc._id.toHexString(),
+        ib: last._identityBucket,
+        lia: lastInteractionIso(last.lastInteractionAt),
+        id: last._id.toHexString(),
       });
     }
   }

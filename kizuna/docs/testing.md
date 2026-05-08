@@ -211,11 +211,11 @@ The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (
 | CRUD across people/orgs/interactions/followups | `v1.test.ts`                                                                                                          |
 | Gmail ingest end-to-end                        | `gmail-ingest.test.ts` — bootstrap, incremental, skip-self, newsletter blocklist, dedup via `sourceRef`, pause/resume |
 | Calendar ingest end-to-end                     | `gcal-ingest.test.ts` — bootstrap, incremental, 410 → re-bootstrap, cancellation, edit reconciliation                 |
+| Kokoro read-only API contract                  | `kokoro-contract.test.ts` — identity search, sorted interactions/followups, and `/v1/_manifest` fixture parity        |
 
 ## What's not covered
 
 - **Dashboard.** No tests on `apps/dashboard/`. Server actions, server-component rendering, and the API client are all exercised manually for now. Revisit after the API surface stabilizes.
-- **Manifest.** `GET /v1/_manifest` shape is not asserted; the manifest is built once at module load from per-route `EndpointSpec[]` exports and is currently treated as developer documentation.
 - **Scheduler timing.** `startIngestScheduler` is a thin `setInterval` wrapper and is not exercised. The wrapped `runGmailSync` / `runCalendarSync` are covered.
 - **Concurrent-write races.** The unique partial index on `interactions.sourceRef` makes most ingest races safe at the DB level; tests don't currently assert "two parallel calls dedup correctly," but the index does the work. `upsertPerson`'s find-then-update window is also not stress-tested under concurrency.
 

@@ -8,6 +8,7 @@ import { SOURCE_VALUES } from "../db/models/base.js";
 import { recordInteraction } from "../db/recordInteraction.js";
 import { encodeCursor, decodeCursor } from "../lib/cursor.js";
 import { errors } from "../lib/errors.js";
+import { appendAnd } from "../lib/query.js";
 import { serializeInteraction } from "../lib/serialize.js";
 import {
   BoolFlag,
@@ -106,10 +107,6 @@ type LeanInteraction = {
   _id: Types.ObjectId;
   occurredAt?: Date | string;
 };
-
-function appendAnd(filter: Record<string, unknown>, condition: Record<string, unknown>) {
-  filter.$and = [...((filter.$and as Array<Record<string, unknown>> | undefined) ?? []), condition];
-}
 
 function validateOccurredAtCursor(cursor: string): OccurredAtCursor {
   const c = decodeCursor<OccurredAtCursor>(cursor);

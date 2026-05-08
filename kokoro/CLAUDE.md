@@ -50,6 +50,7 @@ cd kokoro && npx vitest                         # watch mode
 # Or scope to one package — each package has its own `test` / `test:watch`
 # script that delegates to the shared config via `--project <name>`:
 cd kokoro/packages/db && npm test               # just the @kokoro/db project
+cd kokoro/packages/kizuna && npm test           # just the @kokoro/kizuna project
 cd kokoro/apps/bot   && npm run test:watch      # bot in watch mode
 ```
 
@@ -97,6 +98,7 @@ See `/docs` for:
 - [telegram.md](docs/telegram.md) — platform adapter, bot handlers, rate limiting
 - [ai-layer.md](docs/ai-layer.md) — LLM integration, tools, image generation, context assembly
 - [memory.md](docs/memory.md) — Kioku integration: read/write paths, session-close ingest, sweeper, conversation lifecycle
+- [kizuna.md](docs/kizuna.md) — Kizuna CRM client, compact projections, read-only tool wiring
 - [watchers.md](docs/watchers.md) — scheduled detection jobs (read-only, stateful, trigger-only notifications)
 - [confirmations.md](docs/confirmations.md) — approval primitive for gated tool calls (tap-to-approve actions)
 - [imessage.md](docs/imessage.md) — iMessage adapter via BlueBubbles (multi-platform setup, webhook, YES/NO confirmation UX)

@@ -6,6 +6,7 @@ import { FOLLOWUP_DIRECTIONS, FOLLOWUP_STATUSES } from "../db/models/Followup.js
 import { SOURCE_VALUES } from "../db/models/base.js";
 import { encodeCursor, decodeCursor } from "../lib/cursor.js";
 import { errors } from "../lib/errors.js";
+import { appendAnd } from "../lib/query.js";
 import { serializeFollowup } from "../lib/serialize.js";
 import {
   BoolFlag,
@@ -67,10 +68,6 @@ type LeanFollowup = {
   dueAt?: Date | string | null;
   duePriorityBucket?: number | null;
 };
-
-function appendAnd(filter: Record<string, unknown>, condition: Record<string, unknown>) {
-  filter.$and = [...((filter.$and as Array<Record<string, unknown>> | undefined) ?? []), condition];
-}
 
 function validateDuePriorityCursor(cursor: string): DuePriorityCursor {
   const c = decodeCursor<DuePriorityCursor>(cursor);
