@@ -12,7 +12,7 @@ Kokoro is now a subtree inside the **Kagami nested monorepo** (`/Kagami/kokoro/`
 kokoro/
 ├── apps/
 │   ├── bot/          # Telegram bot (Grammy, AI tools, schedulers)
-│   │   └── context/  # soul.md (personality), reference images, settings
+│   │   └── context/  # soul.md (personality), instructions/*.md (operational), reference images, settings
 │   └── dashboard/    # Next.js dashboard (routine management, observability, auth)
 ├── packages/
 │   ├── shared/       # config, logger, markdown, types

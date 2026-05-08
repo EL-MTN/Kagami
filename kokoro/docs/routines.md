@@ -363,6 +363,6 @@ RoutineLog (Routine A, trigger: "cron")
 | `packages/shared/src/routine-validation.ts` | Shared cron validation (`isValidCron`, `computeNextRunAt`, `validateCronAndDefaults`) used by both the bot tool and dashboard API routes                 |
 | `apps/bot/src/ai/tools/index.ts`            | Tool registration with depth gating; `routineToolsUnderWatcher()` produces the read-only subset for routines invoked under a watcher                     |
 | `apps/bot/src/ai/context-assembler.ts`      | Routine context injection into system prompt (compact name listing)                                                                                      |
-| `apps/bot/src/ai/prompts.ts`                | `ROUTINE_BEHAVIOR_INSTRUCTIONS` constant                                                                                                                 |
+| `apps/bot/context/instructions/routines.md` | Routine-behavior instructions surfaced into the system prompt                                                                                            |
 | `apps/dashboard/src/app/routines/`          | Dashboard pages — list view and per-routine editor (added in 3183af2)                                                                                    |
 | `apps/dashboard/src/app/api/routines/`      | Dashboard API — list/create, per-id read/update/delete, `/[id]/run` (Run-Now, sets `manualRunRequestedAt`), `/[id]/logs`, `/export`                      |

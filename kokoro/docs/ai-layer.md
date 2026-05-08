@@ -45,31 +45,32 @@ Implemented in `apps/bot/src/ai/context-assembler.ts`. The system prompt carries
 assembleSystemPrompt(chatId)
     │
     ├─ 1. Soul                       ← apps/bot/context/soul.md (file)
-    ├─ 2. Datetime context           ← current time + time-of-day label
-    ├─ 3. Tool behavior guidelines   ← prompts.ts (compact behavioral rules)
-    ├─ 4. Maid service instructions  ← prompts.ts (conditional on GOOGLE_OAUTH_CLIENT_ID)
-    ├─ 5. Web search instructions    ← prompts.ts (conditional on BRAVE_SEARCH_API_KEY)
-    ├─ 6. Browser instructions       ← prompts.ts (conditional on BROWSER_ENABLED)
-    ├─ 7. Routine behavior            ← prompts.ts (always)
-    ├─ 8. Routine context            ← listRoutinesForChat → enabled routine names (Mongo)
-    ├─ 9. Pending approvals          ← listPendingConfirmations (Mongo)
-    ├─ 10. Location context          ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (Mongo, conditional on LOCATION_ENABLED)
-    └─ 11. Response format           ← prompts.ts (message style rules)
+    ├─ 2. Current Mood               ← prompts.ts moodForTimeOfDay() — derived from time-of-day bucket
+    ├─ 3. Datetime context           ← current time + time-of-day label
+    ├─ 4. Tool behavior              ← apps/bot/context/instructions/tool-behavior.md
+    ├─ 5. Maid service               ← apps/bot/context/instructions/maid-service.md (conditional on GOOGLE_OAUTH_CLIENT_ID)
+    ├─ 6. Web search                 ← apps/bot/context/instructions/web-search.md (conditional on BRAVE_SEARCH_API_KEY)
+    ├─ 7. Browser                    ← apps/bot/context/instructions/browser.md (conditional on BROWSER_ENABLED)
+    ├─ 8. Routine behavior           ← apps/bot/context/instructions/routines.md (always)
+    ├─ 9. Routine context            ← listRoutinesForChat → enabled routine names (Mongo)
+    ├─ 10. Pending approvals         ← listPendingConfirmations (Mongo)
+    ├─ 11. Location context          ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (Mongo, conditional on LOCATION_ENABLED)
+    └─ 12. Response format           ← apps/bot/context/instructions/response-format.md
 
     All parts joined with "\n\n---\n\n"
 
 assembleProactiveSystemPrompt(chatId)
     │
-    ├─ shell (1–7 above)
+    ├─ shell (1–8 above)
     ├─ Active reminders              ← pending + recently fired (Mongo)
     ├─ Pending approvals             ← (Mongo)
     ├─ Location context              ← (Mongo, conditional)
-    └─ PROACTIVE_MESSAGE_INSTRUCTIONS← prompts.ts
+    └─ Proactive message             ← apps/bot/context/instructions/proactive-message.md
 ```
 
 Long-term memory (facts, prior conversations, milestones) is **not** pre-loaded into the prompt. The LLM calls `searchMemory(query)` when it needs context — the tool forwards to Kioku's hybrid retrieval (`@kokoro/memory.recall()` → `POST /recall`). See [memory.md](memory.md) for the full read/write paths.
 
-Only the soul file (`apps/bot/context/soul.md`) is file-based; everything else in the shell is either inline strings (`prompts.ts`) or pulled from Mongo at assembly time.
+The persona (`soul.md`) and operational instructions (`instructions/*.md`) are all file-based under `apps/bot/context/`. They are read on-demand and cached in-process by `(absolute path, mtime)` — edits to any of those files are picked up on the next turn without a restart. Only `prompts.ts` itself remains in code, holding `DATETIME_CONTEXT` (templated against `config.TIMEZONE`) and `moodForTimeOfDay()` (5-bucket lookup mirroring the time-of-day buckets). Everything else is either Markdown or pulled from Mongo at assembly time.
 
 ### Datetime Context
 
