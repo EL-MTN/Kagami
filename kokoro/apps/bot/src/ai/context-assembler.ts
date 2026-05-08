@@ -15,6 +15,7 @@ import { config, logger, parseMarkdown } from "@kokoro/shared";
 import type { ModelMessage, UserContent, ToolContent } from "ai";
 
 const contextFileCache = new Map<string, { mtimeMs: number; content: string }>();
+const missingContextFileWarned = new Set<string>();
 
 async function readContextFile(relativePath: string): Promise<string | null> {
   const absPath = path.join(config.CONTEXT_PATH, relativePath);
@@ -25,9 +26,19 @@ async function readContextFile(relativePath: string): Promise<string | null> {
     const raw = await fs.readFile(absPath, "utf-8");
     const content = parseMarkdown(raw).content;
     contextFileCache.set(absPath, { mtimeMs: stat.mtimeMs, content });
+    missingContextFileWarned.delete(absPath);
     return content;
   } catch (error: unknown) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      if (!missingContextFileWarned.has(absPath)) {
+        missingContextFileWarned.add(absPath);
+        logger.warn(
+          { path: absPath },
+          "Context file missing — section will be omitted from prompt",
+        );
+      }
+      return null;
+    }
     throw error;
   }
 }
@@ -41,12 +52,7 @@ export async function assemblePromptShell(): Promise<string[]> {
   const now = new Date();
 
   const soul = await readContextFile("soul.md");
-  if (soul) {
-    parts.push(soul);
-  } else {
-    logger.warn("Soul not found at context/soul.md");
-    parts.push("You are Shiina Mashiro, a quiet and eccentric artist girlfriend.");
-  }
+  parts.push(soul ?? "You are Shiina Mashiro, a quiet and eccentric artist girlfriend.");
 
   parts.push(`## Current Mood\n${moodForTimeOfDay(timeOfDayFor(now))}`);
 
