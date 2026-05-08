@@ -2,7 +2,7 @@
 
 ## System Overview
 
-Kizuna is a personal CRM. Two apps: an Express API that owns the database and Google ingest workers, and a Next.js dashboard that reads it. Lives as a subtree inside the Kagami nested monorepo (npm workspaces + Turborepo, orchestrated from the Kagami root) and consumes shared tooling via `@kagami/eslint-config` and `@kagami/tsconfig` from `shared/packages/`. No runtime references to Kioku or Kokoro.
+Kizuna is a personal CRM. Two apps: an Express API that owns the database and Google ingest workers, and a Next.js dashboard that reads it. Lives as a subtree inside the Kagami nested monorepo (npm workspaces + Turborepo, orchestrated from the Kagami root) and consumes shared tooling via `@kagami/eslint-config` and `@kagami/tsconfig` from `shared/packages/`. The API is also consumed by Kokoro's read-only CRM tools; Kizuna itself has no outbound runtime references to Kioku or Kokoro.
 
 ### Monorepo Layout
 
@@ -14,7 +14,7 @@ kizuna/                              # subtree within the Kagami nested monorepo
 │   │   │   ├── main.ts              # boot: loadConfig → connectDb → createApp → ingestScheduler
 │   │   │   ├── server.ts            # Express app builder + middleware mount order
 │   │   │   ├── config.ts            # zod env schema; throws on misconfig
-│   │   │   ├── manifest.ts          # zod-to-json-schema → /v1/_manifest
+│   │   │   ├── manifest.ts          # z.toJSONSchema → /v1/_manifest
 │   │   │   ├── db/
 │   │   │   │   ├── connect.ts       # mongoose.connect + syncIndexes + ping/close handle
 │   │   │   │   ├── models/          # Person, Organization, Interaction, Followup, OAuthToken, SyncState, base
@@ -39,7 +39,7 @@ kizuna/                              # subtree within the Kagami nested monorepo
 │   │   │   │   └── logger.ts        # pino singleton
 │   │   │   ├── routes/              # one router per resource (people, organizations, interactions, followups, contexts, digest, oauth, sync, manifest, health)
 │   │   │   └── schemas/common.ts    # Pagination, IdParam, ISODateString, BoolFlag, ListResponse
-│   │   ├── test/                    # vitest + supertest + testcontainers (real Mongo)
+│   │   ├── tests/                   # vitest + supertest + mongodb-memory-server
 │   │   └── scripts/import-vcards.ts # vCard → POST /v1/people
 │   └── dashboard/                   # Next.js 15 (App Router)
 ├── packages/                        # reserved for future Kizuna-only libs (currently empty)
@@ -66,7 +66,7 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                         External clients                          │
-│   Concierge agent · Dashboard (server fetch) ·                    │
+│   Kokoro CRM client · Dashboard (server fetch) ·                   │
 │   import-vcards.ts script · Browser (OAuth flow)                  │
 └────────────────┬───────────────────────────────────┬──────────────┘
                  │ REST                              │ OAuth redirects
@@ -233,20 +233,20 @@ See [sync.md](sync.md) for the full state machine.
 - **In-process scheduler, no queue.** Ingest is a setInterval loop with a re-entrancy guard. Tradeoff: simpler ops, no external broker, no horizontal scale; for a single-user CRM this is fine. The manual triggers (`POST /v1/sync/{gmail,gcal}/run`) work regardless of the scheduler.
 - **Two layers of contract enforcement.** Zod-strict request bodies (`.strict()`) reject unknown fields at the route boundary; Mongoose `strict: 'throw'` rejects them at the model boundary. Both surface as `400 bad_request`. Belt and suspenders, on the theory that a CRM's data quality is the product.
 - **Cursor pagination, base64url JSON.** `apps/api/src/lib/cursor.ts`. Most cursors are `{ id }` (descending `_id`); the people list under `sort=lastInteractionAt:-1` uses a compound `{ lia, id }` cursor with a trailing-null bucket so people who've never had an interaction sort last but stay paginable.
-- **Pull-only by design (system level).** Kizuna exposes an API; it never initiates outbound calls to sibling services in the Kagami workspace. Its only outbound network calls are to Google.
+- **Pull-only by design (system level).** Kizuna exposes an API consumed by the dashboard and Kokoro, but it never initiates outbound calls to sibling services in the Kagami workspace. Its only outbound network calls are to Google.
 
 ## Module Map
 
-| Directory                              | Purpose                                                                                                                                                                                                    |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/api/src/db/models/`              | Mongoose schemas (Person, Organization, Interaction, Followup, OAuthToken, SyncState) + `base.ts` provenance fields. See [data-model.md](data-model.md).                                                   |
-| `apps/api/src/db/recordInteraction.ts` | The only insert path for `interactions`; maintains `Person.lastInteractionAt`.                                                                                                                             |
-| `apps/api/src/ingest/`                 | Gmail + Calendar workers (state machines, paging, error mapping), pure parsers, `upsertPerson`, in-process scheduler. See [sync.md](sync.md).                                                              |
-| `apps/api/src/routes/`                 | One Express router per resource. Each exports both the router and an `EndpointSpec[]` so the manifest stays in sync.                                                                                       |
-| `apps/api/src/lib/`                    | Cross-cutting helpers — error envelope, AES-256-GCM, signed CSRF state, OAuth client + cached access token, base64url cursor, ISO duration parser, mongo→wire serializer, pino singleton.                  |
-| `apps/api/src/manifest.ts`             | `zodToJsonSchema` factory used by `routes/manifest.ts` to render `GET /v1/_manifest` (OpenAPI-shaped endpoint catalog).                                                                                    |
-| `apps/dashboard/src/app/`              | Next.js 15 App Router. Single `(app)` route group; no login. See [dashboard.md](dashboard.md).                                                                                                              |
-| `apps/dashboard/src/lib/`              | Typed API client, hand-mirrored response types, formatters.                                                                                                                                                 |
+| Directory                              | Purpose                                                                                                                                                                                   |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/src/db/models/`              | Mongoose schemas (Person, Organization, Interaction, Followup, OAuthToken, SyncState) + `base.ts` provenance fields. See [data-model.md](data-model.md).                                  |
+| `apps/api/src/db/recordInteraction.ts` | The only insert path for `interactions`; maintains `Person.lastInteractionAt`.                                                                                                            |
+| `apps/api/src/ingest/`                 | Gmail + Calendar workers (state machines, paging, error mapping), pure parsers, `upsertPerson`, in-process scheduler. See [sync.md](sync.md).                                             |
+| `apps/api/src/routes/`                 | One Express router per resource. Each exports both the router and an `EndpointSpec[]` so the manifest stays in sync.                                                                      |
+| `apps/api/src/lib/`                    | Cross-cutting helpers — error envelope, AES-256-GCM, signed CSRF state, OAuth client + cached access token, base64url cursor, ISO duration parser, mongo→wire serializer, pino singleton. |
+| `apps/api/src/manifest.ts`             | Zod 4 `z.toJSONSchema` factory used by `routes/manifest.ts` to render `GET /v1/_manifest` (OpenAPI-shaped endpoint catalog).                                                              |
+| `apps/dashboard/src/app/`              | Next.js 15 App Router. Single `(app)` route group; no login. See [dashboard.md](dashboard.md).                                                                                            |
+| `apps/dashboard/src/lib/`              | Typed API client, hand-mirrored response types, formatters.                                                                                                                               |
 
 ## Cross-cutting Concerns
 

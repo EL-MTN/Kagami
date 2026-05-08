@@ -77,12 +77,15 @@ The Person tombstone additionally sets `suppressReingest: true`, so a future Gma
 
 Indexes:
 
-| Name                   | Key                                                    | Purpose                                                                        |
-| ---------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `primaryEmail_1`       | `{ primaryEmail: 1 }` (sparse)                         | `upsertPerson` find-or-create lookup; sparse so `null` doesn't bloat the index |
-| `lastInteractionAt_-1` | `{ lastInteractionAt: -1 }`                            | People list under `?sort=lastInteractionAt:-1`                                 |
-| `people_text`          | `{ displayName: 'text', notes: 'text', tags: 'text' }` | `?query=…` search                                                              |
-| `deletedAt_1`          | `{ deletedAt: 1 }` (sparse)                            | Tombstone scan                                                                 |
+| Name                               | Key                                                    | Purpose                                                                        |
+| ---------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `primaryEmail_1`                   | `{ primaryEmail: 1 }` (sparse)                         | `upsertPerson` find-or-create lookup; sparse so `null` doesn't bloat the index |
+| `displayName_1`                    | `{ displayName: 1 }`                                   | Identity search prefix/exact matching                                          |
+| `emails_1`                         | `{ emails: 1 }`                                        | Identity search over alternate email addresses                                 |
+| `people_handles_identity_wildcard` | `{ 'handles.$**': 1 }`                                 | Identity search over handle values                                             |
+| `lastInteractionAt_-1`             | `{ lastInteractionAt: -1 }`                            | People list under `?sort=lastInteractionAt:-1`                                 |
+| `people_text`                      | `{ displayName: 'text', notes: 'text', tags: 'text' }` | `?query=…` search                                                              |
+| `deletedAt_1`                      | `{ deletedAt: 1 }` (sparse)                            | Tombstone scan                                                                 |
 
 `primaryEmail` is **not unique** on purpose — multiple Person rows with the same email can briefly coexist (e.g. mid-merge), and the ingest path's `upsertPerson` is the keeper of "one row per email" in practice.
 
@@ -189,6 +192,7 @@ FOLLOWUP_STATUSES   = ['open', 'done', 'snoozed', 'dismissed']
   personId:            ObjectId             // ref: 'Person'; required
   direction:           enum                  // required
   dueAt:               Date?                 // optional ("no due date" is a real state)
+  duePriorityBucket:   0 | 1                 // maintained before validate: dated first, undated last
   status:              enum (default 'open')
   reason:              string                // required, min length 1
   sourceInteractionId: ObjectId | null       // ref: 'Interaction'
@@ -198,11 +202,15 @@ FOLLOWUP_STATUSES   = ['open', 'done', 'snoozed', 'dismissed']
 
 Indexes:
 
-| Name                              | Key                                        | Purpose                                                                            |
-| --------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `status_1_dueAt_1`                | `{ status: 1, dueAt: 1 }`                  | Digest queries (`overdue` = open + dueAt<now; `upcoming` = open + now<=dueAt<=end) |
-| `personId_1_direction_1_status_1` | `{ personId: 1, direction: 1, status: 1 }` | Per-person followup lists                                                          |
-| `deletedAt_1`                     | `{ deletedAt: 1 }` (sparse)                | Tombstone scan                                                                     |
+| Name                                 | Key                                                                                 | Purpose                                                                            |
+| ------------------------------------ | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `status_1_dueAt_1`                   | `{ status: 1, dueAt: 1 }`                                                           | Digest queries (`overdue` = open + dueAt<now; `upcoming` = open + now<=dueAt<=end) |
+| `personId_1_direction_1_status_1`    | `{ personId: 1, direction: 1, status: 1 }`                                          | Per-person followup lists                                                          |
+| `followups_due_priority_page`        | `{ status: 1, duePriorityBucket: 1, dueAt: 1, _id: -1 }`                            | `/v1/followups?sort=duePriority:1` pagination                                      |
+| `followups_due_priority_scoped_page` | `{ status: 1, personId: 1, direction: 1, duePriorityBucket: 1, dueAt: 1, _id: -1 }` | Scoped due-priority pagination                                                     |
+| `deletedAt_1`                        | `{ deletedAt: 1 }` (sparse)                                                         | Tombstone scan                                                                     |
+
+`duePriorityBucket` is derived, not caller-controlled: `0` when `dueAt` is present and `1` when it is absent. This lets the API sort dated followups first while keeping undated reminders paginable.
 
 ### `oauthtokens`
 

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { Types } from "mongoose";
+import { Types, type PipelineStage } from "mongoose";
 import { z } from "zod";
 import { Followup } from "../db/models/Followup.js";
 import { Person } from "../db/models/Person.js";
@@ -71,6 +71,7 @@ export const PersonUpdateBody = PersonCreateBody.partial().strict();
 
 export const ListPeopleQuery = Pagination.extend({
   query: z.string().optional(),
+  identityQuery: z.string().trim().min(1).max(200).optional(),
   orgId: ObjectIdString.optional(),
   tag: z
     .union([z.string(), z.array(z.string())])
@@ -86,11 +87,201 @@ export const ListPeopleQuery = Pagination.extend({
 
 type LiaCursor = { lia: string | null; id: string };
 type IdCursor = { id: string };
+type IdentityCursor = { ib: number; lia: string | null; id: string };
+
+type IdentityPersonDoc = Record<string, unknown> & {
+  _id: Types.ObjectId;
+  lastInteractionAt?: Date | string | null;
+  _identityBucket: 0 | 1 | 2 | 3;
+};
+
+function normalizeIdentityText(value: string): string {
+  return value.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+function lastInteractionIso(value: IdentityPersonDoc["lastInteractionAt"]): string | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function validateIdentityCursor(cursor: string): IdentityCursor {
+  const c = decodeCursor<IdentityCursor>(cursor);
+  if (
+    typeof c.ib !== "number" ||
+    !Number.isInteger(c.ib) ||
+    c.ib < 0 ||
+    c.ib > 3 ||
+    !(c.lia === null || typeof c.lia === "string") ||
+    typeof c.id !== "string" ||
+    !Types.ObjectId.isValid(c.id)
+  ) {
+    throw errors.badRequest("invalid cursor");
+  }
+  if (typeof c.lia === "string" && Number.isNaN(new Date(c.lia).getTime())) {
+    throw errors.badRequest("invalid cursor");
+  }
+  return c;
+}
+
+function identityCursorMatch(cursor: IdentityCursor): Record<string, unknown> {
+  const cId = new Types.ObjectId(cursor.id);
+  const sameBucketNull = {
+    _identityBucket: cursor.ib,
+    $or: [{ lastInteractionAt: null }, { lastInteractionAt: { $exists: false } }],
+  };
+  if (cursor.lia === null) {
+    return {
+      $or: [{ _identityBucket: { $gt: cursor.ib } }, { ...sameBucketNull, _id: { $lt: cId } }],
+    };
+  }
+
+  const cDate = new Date(cursor.lia);
+  return {
+    $or: [
+      { _identityBucket: { $gt: cursor.ib } },
+      { _identityBucket: cursor.ib, lastInteractionAt: { $lt: cDate } },
+      { _identityBucket: cursor.ib, lastInteractionAt: cDate, _id: { $lt: cId } },
+      sameBucketNull,
+    ],
+  };
+}
+
+function identitySearchPipeline(
+  identityQuery: string,
+  filter: Record<string, unknown>,
+  limit: number,
+  cursor?: string,
+): PipelineStage[] {
+  const query = normalizeIdentityText(identityQuery);
+  const escaped = escapeRegex(query);
+  const cursorMatch = cursor ? identityCursorMatch(validateIdentityCursor(cursor)) : null;
+  const hasIdentityValueStartingWith = (regex: string) => ({
+    $anyElementTrue: {
+      $map: {
+        input: "$_identityValues",
+        as: "value",
+        in: { $regexMatch: { input: "$$value", regex } },
+      },
+    },
+  });
+
+  return [
+    { $match: filter },
+    {
+      $set: {
+        _identityRawValues: {
+          $concatArrays: [
+            { $cond: [{ $ne: ["$displayName", null] }, ["$displayName"], []] },
+            { $cond: [{ $ne: ["$primaryEmail", null] }, ["$primaryEmail"], []] },
+            { $ifNull: ["$emails", []] },
+            {
+              $map: {
+                input: { $objectToArray: { $ifNull: ["$handles", {}] } },
+                as: "handle",
+                in: "$$handle.v",
+              },
+            },
+          ],
+        },
+      },
+    },
+    {
+      $set: {
+        _identityValues: {
+          $filter: {
+            input: {
+              $map: {
+                input: "$_identityRawValues",
+                as: "raw",
+                in: {
+                  $reduce: {
+                    input: {
+                      $regexFindAll: {
+                        input: { $toLower: { $ifNull: ["$$raw", ""] } },
+                        regex: "\\S+",
+                      },
+                    },
+                    initialValue: "",
+                    in: {
+                      $cond: [
+                        { $eq: ["$$value", ""] },
+                        "$$this.match",
+                        { $concat: ["$$value", " ", "$$this.match"] },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+            as: "value",
+            cond: { $ne: ["$$value", ""] },
+          },
+        },
+      },
+    },
+    {
+      $set: {
+        _identityBucket: {
+          $switch: {
+            branches: [
+              { case: { $in: [query, "$_identityValues"] }, then: 0 },
+              { case: hasIdentityValueStartingWith(`^${escaped}`), then: 1 },
+              { case: hasIdentityValueStartingWith(`(^|\\s)${escaped}`), then: 2 },
+              { case: hasIdentityValueStartingWith(escaped), then: 3 },
+            ],
+            default: null,
+          },
+        },
+      },
+    },
+    { $match: { _identityBucket: { $ne: null } } },
+    ...(cursorMatch ? [{ $match: cursorMatch }] : []),
+    { $sort: { _identityBucket: 1, lastInteractionAt: -1, _id: -1 } },
+    { $limit: limit + 1 },
+    { $unset: ["_identityRawValues", "_identityValues"] },
+  ];
+}
+
+async function listPeopleByIdentity(
+  identityQuery: string,
+  filter: Record<string, unknown>,
+  limit: number,
+  cursor?: string,
+) {
+  const docs = await Person.aggregate<IdentityPersonDoc>(
+    identitySearchPipeline(identityQuery, filter, limit, cursor),
+  );
+  const hasMore = docs.length > limit;
+  const page = hasMore ? docs.slice(0, -1) : docs;
+  const body: { items: unknown[]; nextCursor?: string } = {
+    items: page.map((doc) => serializePerson(doc)),
+  };
+  if (hasMore) {
+    const last = page[page.length - 1];
+    if (last) {
+      body.nextCursor = encodeCursor({
+        ib: last._identityBucket,
+        lia: lastInteractionIso(last.lastInteractionAt),
+        id: last._id.toHexString(),
+      });
+    }
+  }
+  return body;
+}
 
 export const peopleRouter = Router();
 
 peopleRouter.get("/people", async (req, res) => {
   const q = ListPeopleQuery.parse(req.query);
+  if (q.identityQuery && q.query) {
+    throw errors.badRequest("identityQuery cannot be combined with query");
+  }
+
   const filter: Record<string, unknown> = {};
   if (!q.includeTombstoned) filter.deletedAt = null;
   if (q.orgId) filter.primaryOrgId = new Types.ObjectId(q.orgId);
@@ -110,6 +301,11 @@ peopleRouter.get("/people", async (req, res) => {
       deletedAt: null,
     });
     filter._id = q.hasOpenFollowup ? { $in: openIds } : { $nin: openIds };
+  }
+
+  if (q.identityQuery) {
+    res.json(await listPeopleByIdentity(q.identityQuery, filter, q.limit, q.cursor));
+    return;
   }
 
   // Sort + cursor. Two modes:

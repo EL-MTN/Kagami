@@ -40,6 +40,8 @@ const RELEVANT_ENV_KEYS = [
   "BLUEBUBBLES_HOST",
   "BLUEBUBBLES_PASSWORD",
   "ALLOWED_IMESSAGE_HANDLES",
+  "KIZUNA_URL",
+  "KIZUNA_ENABLED",
 ] as const;
 
 class ProcessExitSentinel extends Error {
@@ -93,6 +95,57 @@ describe("validateConfig — happy path", () => {
     const { validateConfig } = await loadConfig();
     expect(() => validateConfig()).not.toThrow();
     expect(exitCalled).toBe(false);
+  });
+});
+
+describe("config — Kizuna", () => {
+  it("defaults KIZUNA_URL to the Portless API URL and KIZUNA_ENABLED to true", async () => {
+    const { config } = await loadConfig();
+
+    expect(config.KIZUNA_URL).toBe("https://api.kizuna.localhost");
+    expect(config.KIZUNA_ENABLED).toBe(true);
+  });
+
+  it("validates and exposes a configured KIZUNA_URL", async () => {
+    vi.stubEnv("KIZUNA_URL", "http://localhost:3000");
+    vi.resetModules();
+
+    const { config } = await loadConfig();
+
+    expect(config.KIZUNA_URL).toBe("http://localhost:3000");
+  });
+
+  it.each([
+    [undefined, true],
+    ["", true],
+    ["   ", true],
+    ["true", true],
+    [" true ", true],
+    ["false", false],
+    [" false ", false],
+  ] as const)("parses KIZUNA_ENABLED=%s as %s", async (raw, expected) => {
+    vi.stubEnv("KIZUNA_ENABLED", raw);
+    vi.resetModules();
+
+    const { config } = await loadConfig();
+
+    expect(config.KIZUNA_ENABLED).toBe(expected);
+  });
+
+  it("fails module-load validation for invalid KIZUNA_URL", async () => {
+    vi.stubEnv("KIZUNA_URL", "not-a-url");
+    vi.resetModules();
+
+    await expect(loadConfig()).rejects.toThrow(ProcessExitSentinel);
+    expect(loggedMessages()).toMatch(/KIZUNA_URL/);
+  });
+
+  it("fails module-load validation for invalid KIZUNA_ENABLED", async () => {
+    vi.stubEnv("KIZUNA_ENABLED", "yes");
+    vi.resetModules();
+
+    await expect(loadConfig()).rejects.toThrow(ProcessExitSentinel);
+    expect(loggedMessages()).toMatch(/KIZUNA_ENABLED/);
   });
 });
 

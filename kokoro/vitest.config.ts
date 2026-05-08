@@ -55,6 +55,15 @@ export default defineConfig({
           environment: "node",
         },
       },
+      {
+        test: {
+          name: "kizuna",
+          root: resolve(projectRoot, "packages/kizuna"),
+          include: ["tests/**/*.test.ts"],
+          globals: true,
+          environment: "node",
+        },
+      },
       // Cross-package pipeline tests will land at `tests/e2e/` as their own
       // project entry once the pipeline phase ships. Not declared here yet —
       // an empty project root makes vitest silently skip it, which obscures

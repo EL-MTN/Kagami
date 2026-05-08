@@ -21,6 +21,7 @@
     "@ai-sdk/xai": "^3.0.67",
     "@browserbasehq/stagehand": "^3.0.0",
     "@kokoro/db": "*",
+    "@kokoro/kizuna": "*",
     "@kokoro/memory": "*",
     "@kokoro/shared": "*",
     "ai": "^6.0.175",

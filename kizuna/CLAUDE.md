@@ -2,7 +2,7 @@
 
 ## Project
 
-Kizuna — a personal CRM that tracks people, organizations, interactions, and follow-ups. Auto-ingests Gmail and Google Calendar to populate the relationship graph; everything else is concierge-driven via REST. Built with TypeScript, Express 5, Mongoose, and a Next.js 15 dashboard. Lives as a subtree inside the Kagami nested monorepo and consumes shared tooling via `@kagami/eslint-config` and `@kagami/tsconfig` from `shared/packages/`. No runtime coupling to Kioku or Kokoro.
+Kizuna — a personal CRM that tracks people, organizations, interactions, and follow-ups. Auto-ingests Gmail and Google Calendar to populate the relationship graph; everything else is concierge-driven via REST. Built with TypeScript, Express 5, Mongoose, and a Next.js 15 dashboard. Lives as a subtree inside the Kagami nested monorepo and consumes shared tooling via `@kagami/eslint-config` and `@kagami/tsconfig` from `shared/packages/`. Kokoro consumes the API for read-only CRM tools; Kizuna itself has no outbound runtime coupling to Kioku or Kokoro.
 
 ## Monorepo Structure
 
@@ -14,7 +14,7 @@ kizuna/
 │   │   │   ├── main.ts         # boot: loadConfig → connectDb → createApp → ingestScheduler
 │   │   │   ├── server.ts       # Express app builder + middleware mount order
 │   │   │   ├── config.ts       # zod env schema; thrown errors on misconfig
-│   │   │   ├── manifest.ts     # zod-to-json-schema → /v1/_manifest
+│   │   │   ├── manifest.ts     # z.toJSONSchema → /v1/_manifest
 │   │   │   ├── db/             # Mongoose connect + models + recordInteraction writer
 │   │   │   ├── ingest/         # Gmail + Calendar workers, parsers, scheduler
 │   │   │   ├── routes/         # per-resource Express routers

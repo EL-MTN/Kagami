@@ -14,7 +14,7 @@ kokoro/                          # subtree of Kagami workspace (npm workspaces +
 │   ├── bot/                      # Telegram + iMessage bot app
 │   │   ├── src/
 │   │   │   ├── ai/               # provider, prompts, response, context-assembler, generate, acknowledge, token-tracker
-│   │   │   │   └── tools/        # tool files grouped by domain (memory, media, email, calendar, browse, web-search, routines, watchers, confirmations)
+│   │   │   │   └── tools/        # tool files grouped by domain (memory, CRM, media, email, calendar, browse, web-search, routines, watchers, confirmations)
 │   │   │   ├── context/          # image generation (generator.ts, types.ts)
 │   │   │   ├── platform/         # registry.ts + telegram/ + imessage/ (multi-adapter)
 │   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, web-search, routine-executor, watcher-executor, location, geocoding, gated-actions, confirmation-events
@@ -27,6 +27,7 @@ kokoro/                          # subtree of Kagami workspace (npm workspaces +
 │   ├── shared/                   # config, logger, markdown, types
 │   ├── db/                       # MongoDB connection, models, GridFS
 │   ├── memory/                   # Kioku HTTP client + transcript glue + sweeper
+│   ├── kizuna/                   # Kizuna read-only CRM client + compact projections
 │   └── test-utils/               # Vitest harness (withTestDb, fakeAdapter, MSW)
 ├── scripts/                      # auth
 ├── vitest.config.ts              # workspace-local vitest config (still here)
@@ -37,11 +38,10 @@ kokoro/                          # subtree of Kagami workspace (npm workspaces +
 
 ```
 @kokoro/shared  ← config, logger, markdown, types (dotenv, zod, pino, gray-matter)
-       ↑
-@kokoro/db      ← MongoDB connection, models, GridFS (mongoose)
-       ↑
-@kokoro/memory  ← Kioku HTTP client + conversation→transcript glue + session-close ingest
-       ↑
+       ↑              ↑              ↑
+@kokoro/db      @kokoro/memory  @kokoro/kizuna
+Mongo/GridFS    Kioku client    Kizuna CRM client
+       ↑              ↑              ↑
 @kokoro/bot     ← AI layer, tools, platform, schedulers
 @kokoro/dashboard ← Next.js (routine + watcher management, observability)
 ```
@@ -71,7 +71,8 @@ Tooling bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from the Kagami
 │  │    tools/     │  │   prompts    │                 │
 │  │ searchMemory  │  │  (system +   │                 │
 │  │ rememberFact  │  │   format)    │                 │
-│  │ sendPhoto     │  └──────────────┘                 │
+│  │ CRM tools     │  └──────────────┘                 │
+│  │ sendPhoto     │                                    │
 │  │ sendVoice     │                                    │
 │  │ email/cal/    │                                    │
 │  │   reminders   │                                    │
@@ -100,6 +101,15 @@ Tooling bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from the Kagami
 │Pending   │                  KIOKU_URL (default
 │Confirm   │                  https://api.kioku.localhost)
 └──────────┘
+
+┌────────────┐     ┌──────────────────┐
+│@kokoro/    │     │  Kizuna service  │
+│kizuna HTTP │────►│ /v1/people       │
+│client      │     │ /v1/interactions │
+└────────────┘     │ /v1/followups    │
+KIZUNA_URL         │ /v1/_manifest    │
+(default           └──────────────────┘
+https://api.kizuna.localhost)
 
 ┌──────────────────────────┐
 │   Proactive Scheduler    │    ← apps/bot/src/scheduler/proactive.ts
@@ -215,6 +225,7 @@ Tooling bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from the Kagami
        │   └─ LLM may call tools (searchMemory, rememberFact, sendPhoto, sendEmail, etc.)
        │       searchMemory → @kokoro/memory.recall() → POST Kioku /recall
        │       rememberFact → @kokoro/memory.appendFact() → POST Kioku /facts
+       │       CRM tools → @kokoro/kizuna → GET Kizuna /v1/* read-only endpoints
        │
 11. extractResponseText(steps) + collectToolCalls(steps)
        │
@@ -253,6 +264,7 @@ Daily cleanup and the Kioku ingest sweeper used to live here, but have been extr
 | `@kokoro/shared`    | Config, logging, markdown, platform types            | `config`, `validateConfig`, `logger`, `parseMarkdown`, `haversineMeters`, `IncomingMessage`, `PlatformAdapter`, `computeNextRunAt`, `validateCronAndDefaults`                                                                                                     |
 | `@kokoro/db`        | MongoDB connection, all models, GridFS               | `connectDB`, `disconnectDB`, `Conversation`, `Reminder`, `SchedulerState`, `TokenUsage`, `Routine`, `RoutineLog`, `Watcher`, `WatcherLog`, `LocationHistory`, `PendingConfirmation`, `readImage`/`writeImage`, `readAudio`/`writeAudio`, all model CRUD functions |
 | `@kokoro/memory`    | Kioku HTTP client + conversation→transcript glue     | `recall`, `appendFact`, `getFactById`, `getFactCount`, `hasFactsForSession`, `ingestSession`, `buildTranscript`, `ingestClosedSession`, `sweepPendingIngests`, `sweepStaleActiveSessions`, `KiokuClientError`                                                     |
+| `@kokoro/kizuna`    | Kizuna read-only CRM client + compact projections    | `findPeople`, `getPerson`, `getPersonContext`, `recentInteractions`, `listMyFollowups`, `KizunaClientError`, `PersonSummary`, `InteractionSummary`, `FollowupSummary`                                                                                             |
 | `@kokoro/bot`       | Telegram + iMessage bot, AI layer, tools, schedulers | App entry point — not imported by other packages                                                                                                                                                                                                                  |
 | `@kokoro/dashboard` | Next.js dashboard (read + write CRUD)                | Overview, conversations, reminders, routines, watchers, confirmations, usage pages                                                                                                                                                                                |
 
@@ -289,9 +301,10 @@ Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop p
 
 ## Key Design Decisions
 
-- **Internal packages pattern** — npm workspaces + Turborepo. Library packages (`shared`, `db`, `memory`) export raw TypeScript source via `exports: { ".": "./src/index.ts" }`. No build step for libraries; consumers resolve source directly. Only `bot` and `dashboard` have build scripts (esbuild and Next.js respectively). The bot's esbuild config (`apps/bot/build.ts`) uses an `externalize-non-kokoro` plugin: every bare import is externalized except `@kokoro/*`, which gets inlined into the single ESM bundle.
+- **Internal packages pattern** — npm workspaces + Turborepo. Library packages (`shared`, `db`, `memory`, `kizuna`) export raw TypeScript source via `exports: { ".": "./src/index.ts" }`. No build step for libraries; consumers resolve source directly. Only `bot` and `dashboard` have build scripts (esbuild and Next.js respectively). The bot's esbuild config (`apps/bot/build.ts`) uses an `externalize-non-kokoro` plugin: every bare import is externalized except `@kokoro/*`, which gets inlined into the single ESM bundle.
 - **Session-based conversations** — sessions close after 1 hour of inactivity, replacing daily scoping. Eliminates cross-midnight amnesia.
 - **Long-term memory delegated to Kioku** — `@kokoro/memory` is a typed HTTP client; the actual atomic-fact store + hybrid retrieval lives in a separate Kioku service (`KIOKU_URL`, default `https://api.kioku.localhost` via Portless). Use `http://localhost:7777` only when running Kioku standalone outside Portless. See [memory.md](memory.md) for the full subsystem map.
+- **Relationship context delegated to Kizuna** — `@kokoro/kizuna` is a GET-only HTTP client for compact CRM projections. It uses `KIZUNA_URL` (default `https://api.kizuna.localhost`) and is gated by `KIZUNA_ENABLED` (default `true`). The bot tools fail open with sanitized degraded results if Kizuna is disabled or unreachable.
 - **On-demand retrieval, not eager loading** — the system prompt carries zero facts. The LLM calls `searchMemory` when it needs context. Better retrieval (cosine + BM25 + entity boost) replaces the old tier-and-merge compression strategy.
 - **Append-only facts** — atomic facts are write-once. Corrections happen by appending newer facts with later `event_date`; the answerer prompt resolves contradictions newest-wins. No UPDATE / DELETE / soft-archival.
 - **Sweeper as correctness layer for ingest** — session-close ingest fires fire-and-forget at four call sites for latency, but a 5-minute sweeper backstops failures: any `closed && ingestStatus: "pending"` conversation gets retried until Kioku confirms.
