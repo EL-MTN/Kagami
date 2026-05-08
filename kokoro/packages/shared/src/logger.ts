@@ -1,3 +1,4 @@
+import { hostname } from "node:os";
 import pino from "pino";
 import { config } from "./config";
 
@@ -28,13 +29,17 @@ const redactPaths = [
   "*.imageData",
 ];
 
+export const loggerBase = {
+  pid: process.pid,
+  hostname: hostname(),
+  service: "kokoro-bot",
+  component: "bot",
+  env: config.NODE_ENV,
+};
+
 export const logger = pino({
   level: config.LOG_LEVEL,
-  base: {
-    service: "kokoro-bot",
-    component: "bot",
-    env: config.NODE_ENV,
-  },
+  base: loggerBase,
   redact: {
     paths: redactPaths,
     censor: "[redacted]",

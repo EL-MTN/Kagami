@@ -1,3 +1,4 @@
+import { hostname } from "node:os";
 import { pino } from "pino";
 
 const redactPaths = [
@@ -25,13 +26,17 @@ const redactPaths = [
   "*.refreshToken",
 ];
 
+export const loggerBase = {
+  pid: process.pid,
+  hostname: hostname(),
+  service: "kioku-api",
+  component: "api",
+  env: process.env.NODE_ENV ?? "development",
+};
+
 export const logger = pino({
   level: process.env.LOG_LEVEL ?? "info",
-  base: {
-    service: "kioku-api",
-    component: "api",
-    env: process.env.NODE_ENV ?? "development",
-  },
+  base: loggerBase,
   redact: {
     paths: redactPaths,
     censor: "[redacted]",
