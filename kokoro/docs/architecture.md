@@ -21,7 +21,7 @@ kokoro/                          # subtree of Kagami workspace (npm workspaces +
 │   │   │   ├── scheduler/        # proactive, reminders, routines, watchers, maintenance (cleanup + Kioku ingest sweeper)
 │   │   │   ├── stt/              # speech-to-text (cloud Whisper / local whisper.cpp)
 │   │   │   └── tts/              # text-to-speech generation
-│   │   └── context/              # soul.md (personality), reference images, settings, image-prefix (data)
+│   │   └── context/              # soul.md (personality), instructions/*.md (operational), reference images, settings, image-prefix (data)
 │   └── dashboard/                # Next.js dashboard (routine + watcher management, observability)
 ├── packages/
 │   ├── shared/                   # config, logger, markdown, types
@@ -216,7 +216,7 @@ https://api.kizuna.localhost)
 8. appendMessage(conversation, userMsg with imageRef)
        │
 9. Parallel: assembleSystemPrompt(chatId) + assembleMessages(chatId)
-       │   ├─ System: soul.md + datetime + tool guidance + reminders + location
+       │   ├─ System: soul.md + current mood + datetime + instructions/*.md + reminders + location
        │   │         (no facts pre-loaded — Mashiro calls searchMemory on demand)
        │   └─ Messages: last 40 msgs from active session, images from GridFS,
        │                tool-call pairs (recent 10 only)

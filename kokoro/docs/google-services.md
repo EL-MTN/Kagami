@@ -131,7 +131,7 @@ Reminders are stored in MongoDB and polled by a scheduler.
 When Google OAuth credentials are configured:
 
 - Four new tools are added to `allTools()` (`apps/bot/src/ai/tools/index.ts`)
-- `MAID_SERVICE_INSTRUCTIONS` are injected into the system prompt (`apps/bot/src/ai/context-assembler.ts`)
+- The maid-service instructions in `apps/bot/context/instructions/maid-service.md` are loaded by `assemblePromptShell()` (`apps/bot/src/ai/context-assembler.ts`) and injected into the system prompt
 - The curator formats tool calls for the new tools (`apps/bot/src/memory/curator.ts`)
 
 When credentials are NOT configured, none of the above happens — the bot operates normally without maid capabilities.

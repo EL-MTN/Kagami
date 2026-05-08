@@ -10,58 +10,74 @@ import {
   listRoutinesForChat,
   listPendingConfirmations,
 } from "@kokoro/db";
-import {
-  TOOL_BEHAVIOR_GUIDELINES,
-  MAID_SERVICE_INSTRUCTIONS,
-  WEB_SEARCH_INSTRUCTIONS,
-  BROWSER_INSTRUCTIONS,
-  ROUTINE_BEHAVIOR_INSTRUCTIONS,
-  DATETIME_CONTEXT,
-  RESPONSE_FORMAT_INSTRUCTIONS,
-  PROACTIVE_MESSAGE_INSTRUCTIONS,
-} from "./prompts";
+import { DATETIME_CONTEXT, moodForTimeOfDay, timeOfDayFor } from "./prompts";
 import { config, logger, parseMarkdown } from "@kokoro/shared";
 import type { ModelMessage, UserContent, ToolContent } from "ai";
 
-async function readSoul(): Promise<string | null> {
-  const soulPath = path.join(config.CONTEXT_PATH, "soul.md");
+const contextFileCache = new Map<string, { mtimeMs: number; content: string }>();
+const missingContextFileWarned = new Set<string>();
+
+async function readContextFile(relativePath: string): Promise<string | null> {
+  const absPath = path.join(config.CONTEXT_PATH, relativePath);
   try {
-    const raw = await fs.readFile(soulPath, "utf-8");
-    return parseMarkdown(raw).content;
+    const stat = await fs.stat(absPath);
+    const cached = contextFileCache.get(absPath);
+    if (cached && cached.mtimeMs === stat.mtimeMs) return cached.content;
+    const raw = await fs.readFile(absPath, "utf-8");
+    const content = parseMarkdown(raw).content;
+    contextFileCache.set(absPath, { mtimeMs: stat.mtimeMs, content });
+    missingContextFileWarned.delete(absPath);
+    return content;
   } catch (error: unknown) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      if (!missingContextFileWarned.has(absPath)) {
+        missingContextFileWarned.add(absPath);
+        logger.warn(
+          { path: absPath },
+          "Context file missing — section will be omitted from prompt",
+        );
+      }
+      return null;
+    }
     throw error;
   }
 }
 
+export async function readInstruction(name: string): Promise<string | null> {
+  return readContextFile(`instructions/${name}.md`);
+}
+
 export async function assemblePromptShell(): Promise<string[]> {
   const parts: string[] = [];
+  const now = new Date();
 
-  const soul = await readSoul();
-  if (soul) {
-    parts.push(soul);
-  } else {
-    logger.warn("Soul not found at context/soul.md");
-    parts.push("You are Shiina Mashiro, a quiet and eccentric artist girlfriend.");
-  }
+  const soul = await readContextFile("soul.md");
+  parts.push(soul ?? "You are Shiina Mashiro, a quiet and eccentric artist girlfriend.");
 
-  parts.push(DATETIME_CONTEXT(new Date()));
+  parts.push(`## Current Mood\n${moodForTimeOfDay(timeOfDayFor(now))}`);
 
-  parts.push(TOOL_BEHAVIOR_GUIDELINES);
+  parts.push(DATETIME_CONTEXT(now));
+
+  const toolBehavior = await readInstruction("tool-behavior");
+  if (toolBehavior) parts.push(toolBehavior);
 
   if (config.GOOGLE_OAUTH_CLIENT_ID) {
-    parts.push(MAID_SERVICE_INSTRUCTIONS);
+    const maid = await readInstruction("maid-service");
+    if (maid) parts.push(maid);
   }
 
   if (config.BRAVE_SEARCH_API_KEY) {
-    parts.push(WEB_SEARCH_INSTRUCTIONS);
+    const webSearch = await readInstruction("web-search");
+    if (webSearch) parts.push(webSearch);
   }
 
   if (config.BROWSER_ENABLED) {
-    parts.push(BROWSER_INSTRUCTIONS);
+    const browser = await readInstruction("browser");
+    if (browser) parts.push(browser);
   }
 
-  parts.push(ROUTINE_BEHAVIOR_INSTRUCTIONS);
+  const routines = await readInstruction("routines");
+  if (routines) parts.push(routines);
 
   return parts;
 }
@@ -138,7 +154,9 @@ export async function assembleSystemPrompt(chatId: string): Promise<string> {
   const locationContext = await assembleLocationContext(chatId);
   if (locationContext) parts.push(locationContext);
 
-  parts.push(RESPONSE_FORMAT_INSTRUCTIONS);
+  const responseFormat = await readInstruction("response-format");
+  if (responseFormat) parts.push(responseFormat);
+
   return parts.join("\n\n---\n\n");
 }
 
@@ -184,7 +202,9 @@ export async function assembleProactiveSystemPrompt(chatId: string): Promise<str
   const locationContext = await assembleLocationContext(chatId);
   if (locationContext) parts.push(locationContext);
 
-  parts.push(PROACTIVE_MESSAGE_INSTRUCTIONS);
+  const proactive = await readInstruction("proactive-message");
+  if (proactive) parts.push(proactive);
+
   return parts.join("\n\n---\n\n");
 }
 
