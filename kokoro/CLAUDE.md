@@ -18,6 +18,7 @@ kokoro/
 │   ├── shared/       # config, logger, markdown, types
 │   ├── db/           # MongoDB connection, models, GridFS
 │   ├── memory/       # Kioku HTTP client + transcript glue + sweeper
+│   ├── kizuna/       # Kizuna read-only CRM client + compact projections
 │   └── test-utils/   # Vitest harness (withTestDb, fakeAdapter, MSW)
 ├── scripts/          # Auth scripts
 ├── vitest.config.ts  # multi-project vitest config (one per package)
@@ -63,6 +64,8 @@ The dashboard dev server runs under [Portless](https://github.com/vercel-labs/po
        ↑
 @kokoro/memory  ← Kioku client + conversation→transcript glue + session-close ingest
        ↑
+@kokoro/kizuna  ← Kizuna read-only CRM client + compact LLM-facing projections
+       ↑
 @kokoro/bot     ← AI layer, tools, platform adapter, schedulers
 @kokoro/dashboard ← Next.js (routine management, observability)
 ```
@@ -78,7 +81,7 @@ Lint and tsconfig bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from 
 - **Vercel AI SDK** — `generateText()` from `ai` package for all LLM calls
 - **No classes for services** — prefer standalone exported functions
 - **Platform-agnostic types** — `IncomingMessage`/`PlatformAdapter` in `@kokoro/shared`
-- **Cross-package imports** — use `@kokoro/shared`, `@kokoro/db`, `@kokoro/memory` for Kokoro-internal packages, and `@kagami/eslint-config` / `@kagami/tsconfig` for shared workspace tooling. Never use relative paths across package boundaries.
+- **Cross-package imports** — use `@kokoro/shared`, `@kokoro/db`, `@kokoro/memory`, `@kokoro/kizuna` for Kokoro-internal packages, and `@kagami/eslint-config` / `@kagami/tsconfig` for shared workspace tooling. Never use relative paths across package boundaries.
 - **Within-package imports** — use relative paths without file extensions
 - **Internal packages** — libraries export raw `.ts` source (`exports: "./src/index.ts"`); only `bot` and `dashboard` have build steps
 - **`.env` location** — `apps/bot/.env` (not root)

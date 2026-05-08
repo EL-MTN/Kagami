@@ -24,8 +24,8 @@ Kagami ("mirror") is a personal-AI workspace housing three TypeScript projects i
                                   └──────────────────────────────┘
 
       ┌──────────────────────────────┐
-      │            Kizuna            │  personal CRM (standalone)
-      │  api.kizuna.localhost (API)  │  no link to Kioku or Kokoro
+      │            Kizuna            │  personal CRM
+      │  api.kizuna.localhost (API)  │  read-only CRM API for Kokoro
       │  kizuna.localhost (Next.js)  │
       │  MongoDB                     │
       └──────────────────────────────┘
@@ -35,14 +35,14 @@ All HTTP entry points are served as HTTPS named URLs by [Portless](https://githu
 
 ## How they relate
 
-| Edge                  | Direction               | Mechanism                                                                                   |
-| --------------------- | ----------------------- | ------------------------------------------------------------------------------------------- |
-| Kokoro → Kioku        | runtime HTTP dependency | REST to `KIOKU_URL`, which defaults to the Portless API host `https://api.kioku.localhost`. |
-| Kokoro → Kizuna       | none                    | no references in code                                                                       |
-| Kizuna → Kioku/Kokoro | none                    | no references in code                                                                       |
-| Kioku → anything      | none (pull-only)        | exposes API; never initiates outbound to siblings                                           |
+| Edge                  | Direction               | Mechanism                                                                                        |
+| --------------------- | ----------------------- | ------------------------------------------------------------------------------------------------ |
+| Kokoro → Kioku        | runtime HTTP dependency | REST to `KIOKU_URL`, which defaults to the Portless API host `https://api.kioku.localhost`.      |
+| Kokoro → Kizuna       | runtime HTTP dependency | REST to `KIZUNA_URL`, which defaults to `https://api.kizuna.localhost`, for read-only CRM tools. |
+| Kizuna → Kioku/Kokoro | none                    | exposes API; never initiates outbound calls to siblings                                          |
+| Kioku → anything      | none (pull-only)        | exposes API; never initiates outbound to siblings                                                |
 
-There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open at the client (`KiokuClientError` is caught by the AI tool layer; chat continues degraded) and any pending writes are retried by Kokoro's 5-min sweeper. `dev-all.sh` boots all three in parallel.
+There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open at the client (`KiokuClientError` is caught by the AI tool layer; chat continues degraded) and any pending writes are retried by Kokoro's 5-min sweeper. The Kokoro → Kizuna edge is also fail-open at the CRM tool layer, but read-only and without retries. `dev-all.sh` boots all three in parallel.
 
 ## Shared conventions
 
@@ -52,7 +52,7 @@ All three projects converge on the same stack. Tooling lives in `shared/packages
 - **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs cover `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, and `shared/packages/*`. One root `package.json`, one root `turbo.json`, one hoisted `node_modules`.
 - **Apps split**: `apps/api` (or `apps/bot`) + `apps/dashboard`
 - **Shared tooling packages**: `@kagami/eslint-config` (`./base`, `./next`) and `@kagami/tsconfig` (`./base.json`, `./library.json`, `./server.json`, `./nextjs.json`) at `shared/packages/`. Per-app `tsconfig.json` files extend a variant and add overrides where projects diverge — e.g. Kokoro/Kizuna add `verbatimModuleSyntax: true`, Kioku adds `esModuleInterop` + `allowImportingTsExtensions`, Kizuna/api adds `noImplicitOverride`.
-- **Per-project internal packages**: only Kokoro has them today (`kokoro/packages/{shared,db,memory,test-utils}`). Kioku and Kizuna have empty `packages/` slots reserved for future project-only libs.
+- **Per-project internal packages**: Kokoro has `kokoro/packages/{shared,db,memory,kizuna,test-utils}`. Kioku and Kizuna have empty `packages/` slots reserved for future project-only libs.
 - **Local dev hosting**: [Portless](https://github.com/vercel-labs/portless) (Vercel Labs) for stable HTTPS named `*.localhost` URLs — see below
 - **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku)
 - **Logging**: Pino
@@ -82,7 +82,7 @@ const PORT = Number.parseInt(process.env.PORT ?? "7777", 10);
 
 So under normal `npm run dev`, Kioku doesn't actually bind to 7777 — Portless picks an ephemeral port in 4000–4999 and routes `https://api.kioku.localhost` to it. Numeric ports in this document are standalone-only fallbacks; everything that reaches the apps in normal use should go through the Portless URLs.
 
-The same convention extends to inter-service config: Kizuna's dashboard reaches its API via `KIZUNA_API_URL=https://api.kizuna.localhost`, Kizuna's Google OAuth uses `GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback`, and Kokoro's `KIOKU_URL` defaults to `https://api.kioku.localhost` (Zod default in `kokoro/packages/shared/src/config.ts`). The numeric-port forms only matter when running a project standalone outside Portless.
+The same convention extends to inter-service config: Kizuna's dashboard reaches its API via `KIZUNA_API_URL=https://api.kizuna.localhost`, Kizuna's Google OAuth uses `GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback`, Kokoro's `KIOKU_URL` defaults to `https://api.kioku.localhost`, and Kokoro's `KIZUNA_URL` defaults to `https://api.kizuna.localhost` (Zod defaults in `kokoro/packages/shared/src/config.ts`). The numeric-port forms only matter when running a project standalone outside Portless.
 
 ---
 
@@ -126,7 +126,7 @@ An MCP transport at `/mcp` exposes the same operations as 7 tools (`recall`, `qu
 
 ## Kokoro — Telegram AI agent
 
-**Role.** A personal conversational AI agent fronted by Telegram (with optional iMessage via BlueBubbles). Maintains personality from a `soul.md` file and supports tool-calling, scheduled routines, and stateful watchers. Persistent memory is delegated to Kioku.
+**Role.** A personal conversational AI agent fronted by Telegram (with optional iMessage via BlueBubbles). Maintains personality from a `soul.md` file and supports tool-calling, scheduled routines, and stateful watchers. Persistent memory is delegated to Kioku; read-only relationship context is delegated to Kizuna.
 
 **Layout.**
 
@@ -136,6 +136,7 @@ apps/dashboard    Next.js 15 dashboard (https://kokoro.localhost)
 packages/shared   Zod config, logger, platform types
 packages/db       Mongoose models, GridFS for images
 packages/memory   Kioku HTTP client + transcript glue
+packages/kizuna   Kizuna read-only CRM client + compact projections
 packages/test-utils
 ```
 
@@ -159,27 +160,37 @@ packages/test-utils
 
 Failure mode is **fail-open** via `KiokuClientError`: chat continues degraded, and `apps/bot/src/scheduler/maintenance.ts` runs a 5-minute sweeper (`sweepPendingIngests`, `sweepStaleActiveSessions`) to retry.
 
+**Kizuna client.** Read-only CRM calls live in `packages/kizuna/src/` and are exposed to the LLM through `apps/bot/src/ai/tools/crm.ts`. Base URL comes from `KIZUNA_URL` (default `https://api.kizuna.localhost`) and the tool palette is gated by `KIZUNA_ENABLED` (default `true`):
+
+| Method | Path                                             | Used for                                   | Timeout                   |
+| ------ | ------------------------------------------------ | ------------------------------------------ | ------------------------- |
+| GET    | `/v1/people?identityQuery=...`                   | bot tool: identity-focused people search   | shared 10 s call deadline |
+| GET    | `/v1/people/:id`                                 | bot tool: person profile context           | shared 10 s call deadline |
+| GET    | `/v1/people/:id/interactions?sort=occurredAt:-1` | bot tool: recent interactions              | shared 10 s call deadline |
+| GET    | `/v1/followups?sort=duePriority:1`               | bot tool: followups, with person hydration | shared 10 s call deadline |
+
+Failure mode is **fail-open** via `KizunaClientError`: CRM tools return sanitized degraded results and chat continues. There is no auth header; Kizuna is treated as a single-user localhost service.
+
 **Storage.** MongoDB models: `Conversation`, `Routine`, `Watcher`, `Reminder`, `PendingConfirmation`, `SchedulerState`, `TokenUsage`, `LocationHistory`. GridFS for images.
 
 **External services.** Anthropic / xAI / OpenAI / Google (LLMs and embeddings) via Vercel AI SDK; ElevenLabs TTS; Whisper STT (local or OpenAI); Stagehand / Browserbase for browser automation; Google OAuth (Gmail, Calendar, Maps); Brave Search.
 
 **Auth model.** Single-user-per-deployment; Telegram user IDs gated via `ALLOWED_USER_IDS`. Google access uses a long-lived refresh token from env (not DB).
 
-**Coupling notes.** Heavily coupled to Kioku (file references in `packages/memory/`, `apps/bot/src/ai/tools/memory.ts`, `apps/bot/src/services/location.ts`, `apps/bot/src/scheduler/maintenance.ts`). **No references to Kizuna** anywhere.
+**Coupling notes.** Heavily coupled to Kioku (file references in `packages/memory/`, `apps/bot/src/ai/tools/memory.ts`, `apps/bot/src/services/location.ts`, `apps/bot/src/scheduler/maintenance.ts`). Read-only coupled to Kizuna through `packages/kizuna/` and `apps/bot/src/ai/tools/crm.ts`.
 
 ---
 
 ## Kizuna — personal CRM
 
-**Role.** Tracks people, organizations, interactions, and follow-ups. Auto-ingests from Google Gmail and Calendar to populate the relationship graph. Self-contained; not currently wired into the rest of Kagami.
+**Role.** Tracks people, organizations, interactions, and follow-ups. Auto-ingests from Google Gmail and Calendar to populate the relationship graph. The API is consumed by the dashboard and by Kokoro's read-only CRM tools.
 
 **Layout.**
 
 ```
 apps/api          Express API (entry: src/main.ts)
 apps/dashboard    Next.js 15 app (App Router, single (app) route group)
-packages/eslint-config
-packages/typescript-config
+packages/         reserved for future Kizuna-only libs
 ```
 
 **Endpoints.** Both apps run under Portless: API at `https://api.kizuna.localhost`, dashboard at `https://kizuna.localhost`. Portless injects each process's `PORT` and proxies the named HTTPS URLs to those ephemeral ports; the API's `3000` fallback only matters when running it standalone outside Portless. The Google OAuth redirect URI defaults to `https://api.kizuna.localhost/oauth/google/callback`, so the redirect lands on the Portless HTTPS origin.
@@ -204,7 +215,7 @@ packages/typescript-config
 
 **Auth model.** Single-user localhost; the OS user is the trust boundary. No API auth, no dashboard login. `USER_EMAILS` is used by the ingest workers to identify which inbox addresses count as "self" (not for auth). Refresh tokens are AES-256-GCM-encrypted at rest under `KIZUNA_OAUTH_ENCRYPTION_KEY`. See `kizuna/docs/auth.md` for the threat model.
 
-**Coupling notes.** Zero references to Kioku or Kokoro (verified by grep). Built and run independently of the other two; included in `dev-all.sh` only for convenience.
+**Coupling notes.** Kizuna has zero outbound references to Kioku or Kokoro. It is built and run independently of the other two; Kokoro consumes its API over HTTP when `KIZUNA_ENABLED` is true.
 
 ---
 
@@ -220,14 +231,14 @@ There is no ordering between the three projects — see "How they relate" above.
 
 ## Configuration cheat sheet
 
-| Project | Critical env vars                                                                                                                                                                                      |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Kioku   | `KIOKU_MONGO_URI`, `LLM_*`, `EMBEDDING_*`, `KIOKU_API_URL` (dashboard → API; default `https://api.kioku.localhost`); port handled by Portless (`PORT`/`KIOKU_HOST` only for standalone runs)           |
-| Kokoro  | `TELEGRAM_BOT_TOKEN`, `MONGODB_URI`, `KIOKU_URL` (→ `https://api.kioku.localhost`), `LLM_PROVIDER`/`LLM_MODEL`, provider API keys, `GOOGLE_OAUTH_*`                                                    |
-| Kizuna  | `MONGO_URI`, `USER_EMAILS`, `KIZUNA_API_URL` (→ `https://api.kizuna.localhost`), `GOOGLE_OAUTH_*` (redirect URI → `https://api.kizuna.localhost/oauth/google/callback`), `KIZUNA_OAUTH_ENCRYPTION_KEY` |
+| Project | Critical env vars                                                                                                                                                                                                      |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kioku   | `KIOKU_MONGO_URI`, `LLM_*`, `EMBEDDING_*`, `KIOKU_API_URL` (dashboard → API; default `https://api.kioku.localhost`); port handled by Portless (`PORT`/`KIOKU_HOST` only for standalone runs)                           |
+| Kokoro  | `TELEGRAM_BOT_TOKEN`, `MONGODB_URI`, `KIOKU_URL` (→ `https://api.kioku.localhost`), `KIZUNA_URL` (→ `https://api.kizuna.localhost`), `KIZUNA_ENABLED`, `LLM_PROVIDER`/`LLM_MODEL`, provider API keys, `GOOGLE_OAUTH_*` |
+| Kizuna  | `MONGO_URI`, `USER_EMAILS`, `KIZUNA_API_URL` (→ `https://api.kizuna.localhost`), `GOOGLE_OAUTH_*` (redirect URI → `https://api.kizuna.localhost/oauth/google/callback`), `KIZUNA_OAUTH_ENCRYPTION_KEY`                 |
 
 ## Observed gaps and likely future edges
 
-- **Kizuna ↔ Kokoro** would be a natural next edge: Kizuna already structures person/interaction data that Kokoro could surface during conversations, and Kokoro could log Telegram/iMessage interactions back into Kizuna. No such wiring exists yet.
+- **Kokoro → Kizuna writes** are still a likely future edge. Read-only CRM lookup exists today; logging Telegram/iMessage interactions or creating followups from Kokoro would require a separate write-path design.
 - **Kizuna ↔ Kioku** would let Kizuna's interaction timeline feed Kioku's fact store, but again no code path exists today.
 - Kioku and Kizuna both implement Google OAuth independently; a shared token store is a candidate for consolidation but is not implemented.
