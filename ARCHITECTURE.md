@@ -6,7 +6,7 @@ Kagami ("mirror") is a personal-AI workspace housing three TypeScript projects i
 ┌────────────────────────────────────────────────────────────────┐
 │                          Kagami (root)                         │
 │                                                                │
-│   dev-all.sh  →  Kioku → (sleep 2) → Kokoro + Kizuna           │
+│   dev-all.sh  →  Kioku, Kokoro, Kizuna (all parallel)          │
 └────────────────────────────────────────────────────────────────┘
 
       ┌──────────────────────────────┐
@@ -42,7 +42,7 @@ All HTTP entry points are served as HTTPS named URLs by [Portless](https://githu
 | Kizuna → Kioku/Kokoro | none                    | no references in code                                                                       |
 | Kioku → anything      | none (pull-only)        | exposes API; never initiates outbound to siblings                                           |
 
-`dev-all.sh` enforces the only real ordering constraint: Kioku must be up before Kokoro starts, otherwise Kokoro's first memory calls fail open and lose data until retried by the sweeper.
+There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open at the client (`KiokuClientError` is caught by the AI tool layer; chat continues degraded) and any pending writes are retried by Kokoro's 5-min sweeper. `dev-all.sh` boots all three in parallel.
 
 ## Shared conventions
 
@@ -212,20 +212,19 @@ packages/typescript-config
 
 `dev-all.sh` at the repo root:
 
-1. Verifies each project directory has a `package.json`.
-2. Starts Kioku, sleeps 2 s, then starts Kokoro and Kizuna in parallel.
-3. Prefixes each project's stdout/stderr with `[Kioku]`, `[Kokoro]`, `[Kizuna]`.
-4. Forwards SIGINT/SIGTERM to all three.
+1. Prints the Portless URL banner for the active components.
+2. Hands off via `exec` to `turbo run dev` with one `--filter` per active app.
+3. Uses Turbo's TUI when stdout is a TTY (per-task panes, scrollback, single Ctrl-C); falls back to streamed `[prefix]` output when piped or redirected.
 
-The 2-second pause is the script's only acknowledgement of the Kokoro→Kioku dependency. In practice Kokoro tolerates Kioku starting later (fail-open + sweeper), but the sequence keeps the first memory operations clean.
+There is no ordering between the three projects — see "How they relate" above. Selective flags: `--only <target>...` and `--no <target>...`, where `<target>` is a project (`kioku`, `kokoro`, `kizuna`) or a single component (`kokoro:bot`, `kioku:dashboard`, ...). `--stream` forces streamed output even on a TTY.
 
 ## Configuration cheat sheet
 
-| Project | Critical env vars                                                                                                                                                                                                        |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Kioku   | `KIOKU_MONGO_URI`, `LLM_*`, `EMBEDDING_*`, `KIOKU_API_URL` (dashboard → API; default `https://api.kioku.localhost`); port handled by Portless (`PORT`/`KIOKU_HOST` only for standalone runs)                             |
-| Kokoro  | `TELEGRAM_BOT_TOKEN`, `MONGODB_URI`, `KIOKU_URL` (→ `https://api.kioku.localhost`), `LLM_PROVIDER`/`LLM_MODEL`, provider API keys, `GOOGLE_OAUTH_*`                                                                      |
-| Kizuna  | `MONGO_URI`, `USER_EMAILS`, `KIZUNA_API_URL` (→ `https://api.kizuna.localhost`), `GOOGLE_OAUTH_*` (redirect URI → `https://api.kizuna.localhost/oauth/google/callback`), `KIZUNA_OAUTH_ENCRYPTION_KEY`                  |
+| Project | Critical env vars                                                                                                                                                                                      |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Kioku   | `KIOKU_MONGO_URI`, `LLM_*`, `EMBEDDING_*`, `KIOKU_API_URL` (dashboard → API; default `https://api.kioku.localhost`); port handled by Portless (`PORT`/`KIOKU_HOST` only for standalone runs)           |
+| Kokoro  | `TELEGRAM_BOT_TOKEN`, `MONGODB_URI`, `KIOKU_URL` (→ `https://api.kioku.localhost`), `LLM_PROVIDER`/`LLM_MODEL`, provider API keys, `GOOGLE_OAUTH_*`                                                    |
+| Kizuna  | `MONGO_URI`, `USER_EMAILS`, `KIZUNA_API_URL` (→ `https://api.kizuna.localhost`), `GOOGLE_OAUTH_*` (redirect URI → `https://api.kizuna.localhost/oauth/google/callback`), `KIZUNA_OAUTH_ENCRYPTION_KEY` |
 
 ## Observed gaps and likely future edges
 

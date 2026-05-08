@@ -14,7 +14,7 @@ Kagami/                       # one git repo, one workspace
 ├── CLAUDE.md                 # this file
 ├── package.json              # workspace root: workspace globs + shared devDeps
 ├── turbo.json                # unified pipeline (build, dev, typecheck, test, lint)
-├── dev-all.sh                # boot Kioku → Kokoro + Kizuna with prefixed output
+├── dev-all.sh                # boot all three in parallel under Turbo's TUI (or streamed)
 │
 ├── kioku/                    # long-term memory store
 │   ├── apps/                 # api, dashboard
@@ -55,7 +55,7 @@ Kizuna ────X──── Kioku/Kokoro     No code references in either d
 Kioku  ────X──── anything         Pull-only by design; never initiates outbound to siblings.
 ```
 
-`dev-all.sh` enforces the only real ordering constraint: **Kioku starts first** (2 s sleep), then Kokoro and Kizuna in parallel. Kokoro tolerates Kioku starting late (its memory client is fail-open with a 5-min sweeper retry), but the sequence keeps the first memory operations clean.
+`dev-all.sh` boots all three in parallel — there is no startup ordering between them. Kokoro's Kioku client is fail-open (`KiokuClientError` is caught at the AI tool layer; chat continues degraded), and any pending writes are retried by Kokoro's 5-min sweeper.
 
 See `ARCHITECTURE.md` for the full edge table, endpoint surface, and per-project env-var cheat sheet.
 
@@ -64,8 +64,11 @@ See `ARCHITECTURE.md` for the full edge table, endpoint surface, and per-project
 All commands run from the Kagami root.
 
 ```bash
-./dev-all.sh                     # boot all three with prefixed output
-                                 # ([kioku] / [kokoro] / [kizuna]); Ctrl-C stops all
+./dev-all.sh                     # boot all three in parallel under Turbo's TUI
+                                 # (per-task panes, single Ctrl-C stops all)
+./dev-all.sh --no kokoro:bot     # selective: --only / --no take projects or
+./dev-all.sh --only kioku        # components (e.g. kokoro:bot, kioku:dashboard)
+./dev-all.sh --stream            # force streamed [prefix] output instead of TUI
 npm run dev                      # alias for ./dev-all.sh
 npm run typecheck                # turbo run typecheck across every workspace
 npm run test                     # turbo run test
