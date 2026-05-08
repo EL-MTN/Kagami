@@ -30,6 +30,15 @@ async function probeEmbeddingDim(): Promise<number> {
   return v.length;
 }
 
+function describeEmbeddingEndpoint(): string {
+  const provider = (process.env.EMBEDDING_PROVIDER ?? "lmstudio").toLowerCase();
+  const defaultURL =
+    provider === "openai" ? "https://api.openai.com/v1" : "http://localhost:1234/v1";
+  const url = process.env.EMBEDDING_URL ?? defaultURL;
+  const model = process.env.EMBEDDING_MODEL ?? "<default>";
+  return `EMBEDDING_PROVIDER=${provider}, EMBEDDING_URL=${url}, EMBEDDING_MODEL=${model}`;
+}
+
 interface SearchIndexSpec {
   name: string;
   type?: "search" | "vectorSearch";
@@ -246,7 +255,17 @@ async function ensureSearchAndVectorIndexes(db: Db): Promise<void> {
   const existingFacts = await listSearchIndexes(facts);
   const existingEntities = await listSearchIndexes(entities);
 
-  const dim = await probeEmbeddingDim();
+  let dim: number;
+  try {
+    dim = await probeEmbeddingDim();
+  } catch (err) {
+    throw new Error(
+      `embedding provider probe failed (${describeEmbeddingEndpoint()}). ` +
+        `Is the embedding endpoint running and serving the configured model? — ` +
+        (err as Error).message,
+      { cause: err },
+    );
+  }
 
   // facts_vec: cosine vector search over fact embeddings. Filter fields
   // (user_id, run_id, agent_id, category) are declared so $vectorSearch's
@@ -356,7 +375,18 @@ export interface EnsureIndexesOptions {
 }
 
 export async function ensureIndexes(opts: EnsureIndexesOptions = {}): Promise<void> {
-  const db = await getDb();
+  let db: Db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    throw new Error(
+      `MongoDB connection failed (KIOKU_MONGO_URI=${process.env.KIOKU_MONGO_URI ?? "<default>"}). ` +
+        `Is the atlas-local container running? — ` +
+        (err as Error).message,
+      { cause: err },
+    );
+  }
+
   await ensureBtreeIndexes(db);
 
   try {

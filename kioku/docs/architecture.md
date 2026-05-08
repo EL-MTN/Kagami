@@ -174,7 +174,7 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 4. `app.listen(PORT, HOST)` — `PORT` from Portless, `7777` fallback; `HOST` defaults to `127.0.0.1`.
 5. SIGINT / SIGTERM → close server → close Mongo client → exit.
 
-If `ensureIndexes()` throws (atlas-local container not running, embedding provider unreachable), the process exits with a pointed error: "is the atlas-local container running on KIOKU_MONGO_URI?"
+If `ensureIndexes()` throws, the process exits and logs `kioku startup failed` with a stage-specific cause: a Mongo connect failure names `KIOKU_MONGO_URI` and asks whether atlas-local is running, while an embedding probe failure names `EMBEDDING_PROVIDER`/`EMBEDDING_URL`/`EMBEDDING_MODEL` and asks whether the embedding endpoint is up.
 
 ## Key Design Decisions
 

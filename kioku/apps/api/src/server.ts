@@ -45,10 +45,7 @@ async function main(): Promise<void> {
   try {
     await ensureIndexes();
   } catch (err) {
-    logger.error(
-      { err: (err as Error).message },
-      "failed to initialize MongoDB — is the atlas-local container running on KIOKU_MONGO_URI?",
-    );
+    logger.error({ err: (err as Error).message }, "kioku startup failed");
     process.exit(1);
   }
 
