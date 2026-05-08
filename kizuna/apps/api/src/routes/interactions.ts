@@ -8,6 +8,7 @@ import { SOURCE_VALUES } from "../db/models/base.js";
 import { recordInteraction } from "../db/recordInteraction.js";
 import { encodeCursor, decodeCursor } from "../lib/cursor.js";
 import { errors } from "../lib/errors.js";
+import { appendAnd } from "../lib/query.js";
 import { serializeInteraction } from "../lib/serialize.js";
 import {
   BoolFlag,
@@ -96,9 +97,37 @@ export const ListInteractionsQuery = Pagination.extend({
   status: z.enum([...INTERACTION_STATUS, "any"] as const).default("active"),
   source: z.enum(SOURCE_VALUES).optional(),
   includeTombstoned: BoolFlag.optional(),
+  sort: z.enum(["_id:-1", "occurredAt:-1"]).default("_id:-1"),
 });
 
 export type ListInteractionsQueryT = z.infer<typeof ListInteractionsQuery>;
+
+type OccurredAtCursor = { oa: string; id: string };
+type LeanInteraction = {
+  _id: Types.ObjectId;
+  occurredAt?: Date | string;
+};
+
+function validateOccurredAtCursor(cursor: string): OccurredAtCursor {
+  const c = decodeCursor<OccurredAtCursor>(cursor);
+  if (
+    typeof c.oa !== "string" ||
+    Number.isNaN(new Date(c.oa).getTime()) ||
+    typeof c.id !== "string" ||
+    !Types.ObjectId.isValid(c.id)
+  ) {
+    throw errors.badRequest("invalid cursor");
+  }
+  return c;
+}
+
+function occurredAtIso(value: LeanInteraction["occurredAt"]): string {
+  const date = value instanceof Date ? value : new Date(value ?? "");
+  if (Number.isNaN(date.getTime())) {
+    throw errors.internal("interaction missing occurredAt");
+  }
+  return date.toISOString();
+}
 
 export async function listInteractionsForFilter(q: ListInteractionsQueryT) {
   const filter: Record<string, unknown> = {};
@@ -125,23 +154,42 @@ export async function listInteractionsForFilter(q: ListInteractionsQueryT) {
   if (q.query) filter.$text = { $search: q.query };
 
   if (q.cursor) {
-    const c = decodeCursor<{ id: string }>(q.cursor);
-    filter._id = { $lt: new Types.ObjectId(c.id) };
+    if (q.sort === "occurredAt:-1") {
+      const c = validateOccurredAtCursor(q.cursor);
+      const cDate = new Date(c.oa);
+      const cId = new Types.ObjectId(c.id);
+      appendAnd(filter, {
+        $or: [{ occurredAt: { $lt: cDate } }, { occurredAt: cDate, _id: { $lt: cId } }],
+      });
+    } else {
+      const c = decodeCursor<{ id: string }>(q.cursor);
+      filter._id = { $lt: new Types.ObjectId(c.id) };
+    }
   }
 
+  const sort: Record<string, 1 | -1> =
+    q.sort === "occurredAt:-1" ? { occurredAt: -1, _id: -1 } : { _id: -1 };
+
   const docs = await Interaction.find(filter)
-    .sort({ _id: -1 })
+    .sort(sort)
     .limit(q.limit + 1)
     .lean();
   const hasMore = docs.length > q.limit;
   const page = hasMore ? docs.slice(0, -1) : docs;
   const items = page.map(serializeInteraction);
-  const last = page[page.length - 1];
+  const last = page[page.length - 1] as LeanInteraction | undefined;
   const body: { items: unknown[]; nextCursor?: string } = { items };
-  if (hasMore && last)
-    body.nextCursor = encodeCursor({
-      id: last._id.toHexString(),
-    });
+  if (hasMore && last) {
+    body.nextCursor =
+      q.sort === "occurredAt:-1"
+        ? encodeCursor({
+            oa: occurredAtIso(last.occurredAt),
+            id: last._id.toHexString(),
+          })
+        : encodeCursor({
+            id: last._id.toHexString(),
+          });
+  }
   return body;
 }
 

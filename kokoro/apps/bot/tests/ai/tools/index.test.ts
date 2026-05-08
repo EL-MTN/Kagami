@@ -54,6 +54,7 @@ beforeEach(() => {
   for (const key of Object.keys(mockConfig)) {
     delete mockConfig[key];
   }
+  mockConfig.KIZUNA_ENABLED = true;
 });
 
 afterEach(() => {
@@ -66,9 +67,13 @@ describe("allTools — minimum-config baseline", () => {
     const names = Object.keys(tools).sort();
     expect(names).toEqual(
       [
+        "findPeople",
+        "getPersonContext",
+        "listMyFollowups",
         "manageRoutines",
         "manageWatchers",
         "rememberFact",
+        "recentInteractions",
         "searchMemory",
         "searchRoutines",
         "useRoutine",
@@ -109,6 +114,20 @@ describe("allTools — feature flags", () => {
     expect(names).toContain("browse");
     expect(names).toContain("requestConfirmation");
     expect(names).toContain("cancelConfirmation");
+  });
+
+  it("omits CRM tools only when parsed KIZUNA_ENABLED is false", () => {
+    mockConfig.KIZUNA_ENABLED = false;
+
+    const all = Object.keys(allTools(baseCtx));
+    const watcher = Object.keys(watcherTools(baseCtx));
+    const routine = Object.keys(routineToolsUnderWatcher(baseCtx));
+    for (const names of [all, watcher, routine]) {
+      expect(names).not.toContain("findPeople");
+      expect(names).not.toContain("getPersonContext");
+      expect(names).not.toContain("recentInteractions");
+      expect(names).not.toContain("listMyFollowups");
+    }
   });
 
   it("does NOT register confirmation primitives when neither Google OAuth nor browser is enabled", () => {
@@ -165,6 +184,10 @@ describe("watcherTools — read-only invariant", () => {
         "checkEmail",
         "listCalendarEvents", // the readOnly variant exposed under this name
         "browse",
+        "findPeople",
+        "getPersonContext",
+        "listMyFollowups",
+        "recentInteractions",
         "useRoutine",
         "reportWatcherResult",
         "searchMemory",

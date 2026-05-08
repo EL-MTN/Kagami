@@ -10,7 +10,7 @@ Watchers are scheduled, stateful **detection** jobs. Where Routines are _actors_
 | State across runs       | Stateless                | Stateful (`lastState`)                            |
 | Output                  | Free-form text           | Structured `{triggered, summary, newState}`       |
 | Notification            | Always (or `alert` mode) | Only when `triggered === true`                    |
-| Tool access             | Full                     | Read-only subset                                  |
+| Tool access             | Full                     | Read-only subset, including CRM lookups           |
 | Composes other routines | Yes (`useRoutine`)       | No (v1)                                           |
 | Lifecycle               | Evergreen until disabled | Auto-archives after `expiresAt` (default 30 days) |
 
@@ -79,19 +79,20 @@ Suppression preserves observation accuracy (`lastState` still rolls forward) whi
 - `webSearch` — gated on `BRAVE_SEARCH_API_KEY`; Brave-backed lookups return titles/URLs/snippets without spinning the browser. When the API tool is registered, the read-only `browse` tool drops its `search` action so lookups land here.
 - `browse` — read-only variant (`createReadOnlyBrowseTool()`); only `search`/`visit`/`extract` are permitted (no `screenshot`, `act`, `agent`, `login`). The `search` action falls back to a DuckDuckGo HTML scrape via Stagehand when `BRAVE_SEARCH_API_KEY` is unset.
 - `searchMemory` — hybrid retrieval over Kioku. Read-only by construction.
+- Kizuna CRM tools — `findPeople`, `getPersonContext`, `recentInteractions`, and `listMyFollowups`, gated by `KIZUNA_ENABLED` (default `true`). These tools use the GET-only `@kokoro/kizuna` client and return compact projections, so watchers can observe relationship context without creating people, interactions, or followups.
 - `checkEmail` (gated on `GOOGLE_OAUTH_CLIENT_ID`)
 - `listCalendarEvents` — `createManageCalendarTool({ mode: "readOnly" })` returns a list-only tool
 - `useRoutine` — gated to read-purity routines via `callingContext: "watcher"`. Action-purity routines are rejected with a clear error.
 - `reportWatcherResult` — required terminator
 
-Explicitly excluded: `sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, `sendVoice`, `manageRoutines`, `manageWatchers`. The principle: watchers observe; action belongs to the trigger handler. This bounds blast radius — a misfiring detection produces a spurious message, never a sent email or modified calendar or a write to long-term memory.
+Explicitly excluded: `sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, `sendVoice`, `manageRoutines`, `manageWatchers`, and any Kizuna write operation. The principle: watchers observe; action belongs to the trigger handler. This bounds blast radius — a misfiring detection produces a spurious message, never a sent email, modified calendar, write to long-term memory, or CRM mutation.
 
 ### Routine purity
 
 Routines carry a `purity: "read" | "action"` marker (default `"action"` for backward-compat safety). The watcher invariant is enforced in two layers:
 
 - **`useRoutine` gate** — only `purity: "read"` routines are invocable from `callingContext: "watcher"`. Action routines return `{ success: false, reason: "..." }` without executing.
-- **Tool-palette restriction** — when a routine _runs_ under `callingContext: "watcher"` (i.e., it was invoked by a watcher), the routine executor uses the read-only tool subset (`routineToolsUnderWatcher`) instead of `allTools`. The routine cannot send emails, write to long-term memory (no `rememberFact`), modify the calendar, or otherwise mutate external state through its own tool palette. `searchMemory` is allowed because reads are pure. This makes the read-only invariant **transitive**: a misbehaving read-purity routine can't leak mutations even if its prompt instructs otherwise.
+- **Tool-palette restriction** — when a routine _runs_ under `callingContext: "watcher"` (i.e., it was invoked by a watcher), the routine executor uses the read-only tool subset (`routineToolsUnderWatcher`) instead of `allTools`. The routine cannot send emails, write to long-term memory (no `rememberFact`), modify the calendar, or otherwise mutate external state through its own tool palette. `searchMemory` and the Kizuna CRM tools are allowed because they are read-only. This makes the read-only invariant **transitive**: a misbehaving read-purity routine can't leak mutations even if its prompt instructs otherwise.
 
 `callingContext` propagates through `executeRoutine` → `useRoutine` → next `executeRoutine`, so the gate stays watcher-scoped at every hop.
 

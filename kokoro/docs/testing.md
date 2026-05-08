@@ -30,8 +30,11 @@ covered, and how to add tests.
   `vi.mock("@kokoro/memory")` and replace `recall` / `appendFact` / etc.
   with `vi.fn()`s. There are no in-process embeddings to stub — the
   embedding + ranking pipeline lives inside the Kioku service.
+- **CRM (Kizuna):** package tests use MSW against Kizuna's HTTP surface; bot
+  tool tests mock `@kokoro/kizuna` so tool-envelope behavior stays isolated
+  from client parsing.
 - **External HTTP:** MSW for fetch interception (Gmail, Calendar, BlueBubbles,
-  Telegram CDN, Whisper / OpenAI STT).
+  Telegram CDN, Whisper / OpenAI STT, Kizuna package tests).
 - **Timer-driven schedulers:** `vi.useFakeTimers()` + `vi.advanceTimersByTimeAsync`.
 - **Naming:** `<src-path>.test.ts` mirrored under `tests/`. e.g.
   `apps/bot/src/stt/transcriber.ts` →
@@ -63,6 +66,7 @@ kokoro/
 │   ├── shared/tests/
 │   ├── db/tests/
 │   ├── memory/tests/
+│   ├── kizuna/tests/
 │   └── test-utils/                 # internal package
 │       └── src/
 │           ├── db.ts               # withTestDb() — Mongo lifecycle + index sync
@@ -164,6 +168,20 @@ HTTP surface or the exported client functions.
 | `sweeper.ts`    | ✅     | `tests/sweeper.test.ts`    | Idle-session sweeper: closes stale conversations + dispatches ingest, leaves active sessions alone.                                                                |
 | `ingest.ts`     | ⏭     | (transitive)               | `ingestClosedSession` thin wrapper exercised through `sweeper.test.ts` and conversation-lifecycle tests.                                                           |
 
+### `packages/kizuna/src/`
+
+The Kizuna package is a GET-only client over the external Kizuna API. Tests use
+MSW for URL/header assertions, response projection, manifest fixture checks, and
+safe error classification.
+
+| File              | Status | Test file             | Notes                                                                                                     |
+| ----------------- | ------ | --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `client.ts`       | ✅     | `tests/index.test.ts` | No auth header, timeout/transport/HTTP/schema classification, sanitized `KizunaClientError` messages.     |
+| `people.ts`       | ✅     | `tests/index.test.ts` | `identityQuery` URL mapping, `getPersonContext` fanout, compact profile/interaction/followup projections. |
+| `interactions.ts` | ✅     | `tests/index.test.ts` | `sort=occurredAt:-1`, `occurredAfter` mapping, excerpted interaction summaries.                           |
+| `followups.ts`    | ✅     | `tests/index.test.ts` | `sort=duePriority:1`, person hydration de-dupe, missing-person fallback, compact followup summaries.      |
+| `projections.ts`  | ✅     | `tests/index.test.ts` | Excerpt/truncation fields and opaque ID preservation for LLM-facing outputs.                              |
+
 ### `apps/bot/src/`
 
 | File                                                                                                                       | Status | Test file                                | Notes                                                                                                                                                                                                                                                                                                                                             |
@@ -199,6 +217,7 @@ covered.
 | MongoDB                         | `mongodb-memory-server` per test file; truncate between tests                  | `@kokoro/test-utils` `withTestDb()` |
 | LLM (Vercel AI SDK)             | Mock at the wrapper boundary — `vi.mock` the service / tool that calls the SDK | (per-test)                          |
 | Memory (Kioku)                  | `vi.mock("@kokoro/memory")` and replace the client functions used in the test  | (per-test)                          |
+| CRM (Kizuna)                    | MSW in `@kokoro/kizuna`; `vi.mock("@kokoro/kizuna")` in bot tool tests         | `setupMswServer()` / per-test mock  |
 | `PlatformAdapter`               | In-memory recorder, assertable via `adapter.calls.<method>`                    | `fakeAdapter()`                     |
 | BlueBubbles HTTP                | MSW handlers                                                                   | `setupMswServer()`                  |
 | Gmail / Calendar (`googleapis`) | `vi.mock` the service module per test                                          | (per-test)                          |
@@ -230,8 +249,8 @@ covered.
 
 ## What's left
 
-What we have today covers pure functions, DB models, the Kioku memory
-client, and tool contracts (~32 test files, ~10 s). Two phases remain:
+What we have today covers pure functions, DB models, the Kioku memory client,
+the Kizuna CRM client, and tool contracts. Two phases remain:
 
 - **Pipeline tests.** Real DB, a stub LanguageModel wired in via
   `vi.mock("../provider")`, fake timers, MSW. Generate-pipeline goldens,

@@ -1,0 +1,29 @@
+{
+  "name": "@kokoro/kizuna",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --project kizuna",
+    "test:watch": "vitest --project kizuna",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix"
+  },
+  "dependencies": {
+    "@kokoro/shared": "*",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@kagami/eslint-config": "*",
+    "@kagami/tsconfig": "*",
+    "@kokoro/test-utils": "*",
+    "@types/node": "^22.10.0",
+    "eslint": "^10.3.0",
+    "msw": "^2.10.4",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.5"
+  }
+}

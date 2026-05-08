@@ -45,9 +45,9 @@ Runtime coupling is intentionally narrow:
 
 ```text
 Kokoro -> Kioku   REST calls to KIOKU_URL for recall, fact writes, and session ingest
-Kokoro -> Kizuna  no current runtime dependency
-Kizuna -> Kioku   no current runtime dependency
-Kizuna -> Kokoro  no current runtime dependency
+Kokoro -> Kizuna  REST calls to KIZUNA_URL for read-only CRM lookup tools
+Kizuna -> Kioku   no outbound runtime dependency
+Kizuna -> Kokoro  no outbound runtime dependency
 Kioku  -> any     none; Kioku is pull-only by design
 ```
 
@@ -173,14 +173,14 @@ npm run kizuna:dev:dashboard
 
 Environment files are app-local and ignored by git. Keep secrets out of committed files.
 
-| App              | Template                             | Runtime file                       | Notes                                             |
-| ---------------- | ------------------------------------ | ---------------------------------- | ------------------------------------------------- |
-| Kioku API        | `kioku/apps/api/.env.example`        | `kioku/apps/api/.env`              | Mongo, chat model, embedding model, provider keys |
-| Kioku dashboard  | `kioku/apps/dashboard/.env.example`  | `kioku/apps/dashboard/.env`        | `KIOKU_API_URL`                                   |
-| Kokoro bot       | `kokoro/apps/bot/.env.example`       | `kokoro/apps/bot/.env`             | Telegram, Mongo, LLM, Kioku, optional tools       |
-| Kokoro dashboard | none currently                       | `kokoro/apps/dashboard/.env.local` | Optional `MONGODB_URI` and `DASHBOARD_PASSWORD`   |
-| Kizuna API       | `kizuna/apps/api/.env.example`       | `kizuna/apps/api/.env`             | API key, Mongo, Google OAuth, ingest scheduler    |
-| Kizuna dashboard | `kizuna/apps/dashboard/.env.example` | `kizuna/apps/dashboard/.env`       | API URL, API key, user emails                     |
+| App              | Template                             | Runtime file                       | Notes                                               |
+| ---------------- | ------------------------------------ | ---------------------------------- | --------------------------------------------------- |
+| Kioku API        | `kioku/apps/api/.env.example`        | `kioku/apps/api/.env`              | Mongo, chat model, embedding model, provider keys   |
+| Kioku dashboard  | `kioku/apps/dashboard/.env.example`  | `kioku/apps/dashboard/.env`        | `KIOKU_API_URL`                                     |
+| Kokoro bot       | `kokoro/apps/bot/.env.example`       | `kokoro/apps/bot/.env`             | Telegram, Mongo, LLM, Kioku, Kizuna, optional tools |
+| Kokoro dashboard | none currently                       | `kokoro/apps/dashboard/.env.local` | Optional `MONGODB_URI` and `DASHBOARD_PASSWORD`     |
+| Kizuna API       | `kizuna/apps/api/.env.example`       | `kizuna/apps/api/.env`             | Mongo, Google OAuth, ingest scheduler               |
+| Kizuna dashboard | `kizuna/apps/dashboard/.env.example` | `kizuna/apps/dashboard/.env`       | API URL, user emails                                |
 
 ### Kioku
 
@@ -228,6 +228,10 @@ Kokoro reaches Kioku through `KIOKU_URL`, which defaults to
 `https://api.kioku.localhost`. Use `http://localhost:7777` only when running Kioku standalone
 outside Portless.
 
+Kokoro reaches Kizuna through `KIZUNA_URL`, which defaults to
+`https://api.kizuna.localhost`. The read-only CRM tools are enabled by default; set
+`KIZUNA_ENABLED=false` in `kokoro/apps/bot/.env` to omit them from every tool palette.
+
 For Google tools, set:
 
 ```bash
@@ -253,7 +257,6 @@ Kizuna API config lives in `kizuna/apps/api/.env`.
 Common local fields:
 
 ```bash
-KIZUNA_API_KEY=replace-with-a-long-random-token
 MONGO_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com
 GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback
@@ -272,11 +275,10 @@ Then set:
 KIZUNA_OAUTH_ENCRYPTION_KEY=generated_base64_value
 ```
 
-The dashboard config must use the same API key:
+The dashboard config points at the API and reuses `USER_EMAILS` for local-user classification:
 
 ```bash
 KIZUNA_API_URL=https://api.kizuna.localhost
-KIZUNA_API_KEY=replace-with-the-same-key-as-the-api
 USER_EMAILS=you@example.com
 ```
 
@@ -484,11 +486,12 @@ Important runtime notes:
 
 - API runs at `https://api.kizuna.localhost`.
 - Dashboard runs at `https://kizuna.localhost`.
-- `/v1/*` routes use `Authorization: Bearer <KIZUNA_API_KEY>`.
-- Dashboard sessions are signed with `KIZUNA_API_KEY`, so API and dashboard values must match.
+- `/v1/*` routes are open at single-user localhost; there is no bearer token on local API calls.
+- The dashboard sends no API auth header and has no login layer.
 - `USER_EMAILS` identifies the local user's addresses for ingest and dashboard classification.
 - `KIZUNA_OAUTH_ENCRYPTION_KEY` must decode to exactly 32 bytes.
-- Kizuna has no current runtime dependency on Kioku or Kokoro.
+- Kizuna has no outbound runtime dependency on Kioku or Kokoro; Kokoro can consume Kizuna's
+  read-only CRM API.
 
 Key docs:
 
@@ -518,9 +521,9 @@ Conventions across projects:
 - Portless for stable HTTPS local URLs.
 - App and package scripts live in package manifests; root scripts delegate through Turbo.
 
-Kokoro is the only project with internal packages today. Kioku and Kizuna currently keep
-project-specific reusable logic inside their apps, with empty or reserved package slots for future
-libraries.
+Kokoro has internal packages for shared config, persistence, memory, the Kizuna client, and tests.
+Kioku and Kizuna currently keep project-specific reusable logic inside their apps, with empty or
+reserved package slots for future libraries.
 
 ## Testing and Quality Gates
 
@@ -596,8 +599,8 @@ Use Atlas Local or MongoDB Atlas for Kioku. Vanilla MongoDB does not support the
 
 ### Kizuna dashboard cannot log in or fetch data
 
-Check that `kizuna/apps/api/.env` and `kizuna/apps/dashboard/.env` use the same
-`KIZUNA_API_KEY`, and that the API is running at `https://api.kizuna.localhost`.
+Check that `KIZUNA_API_URL` points at `https://api.kizuna.localhost` and that the API is running.
+There is no Kizuna dashboard login or API key in local development.
 
 ### Kokoro starts but memory is unavailable
 

@@ -27,19 +27,19 @@ app.use(makeErrorHandler());          // ZodError / HttpError / mongoose / E1100
 - All request bodies, query strings, and path params parsed via zod. `.strict()` on every body schema rejects unknown fields with `400 bad_request`.
 - All Mongoose schemas use `strict: 'throw'`, so unknown fields that survive zod still fail at insert time and become `400 bad_request`.
 - Soft-delete by default. List endpoints filter `deletedAt: null` unless `?includeTombstoned=true`. DELETE handlers never `deleteOne`; they `findOneAndUpdate({ deletedAt: new Date() })`.
-- Cursor pagination is base64url-encoded JSON. Cursor shapes are endpoint-specific (`{ id }` for the simple case, `{ lia, id }` for the people list under `lastInteractionAt:-1`).
+- Cursor pagination is base64url-encoded JSON. Cursor shapes are endpoint-specific (`{ id }` for the simple case, `{ lia, id }` for the people list under `lastInteractionAt:-1`, `{ ib, lia, id }` for identity people search, `{ oa, id }` for interaction event-time sort, `{ dp, due, id }` for followup due-priority sort).
 - No API auth. The OS user boundary is the trust boundary; the API binds to `127.0.0.1` via Portless. See [auth.md](auth.md) for threat-model details.
 - Error envelope: `{ error: { code, message, details? } }` with codes `bad_request | unauthorized | not_found | conflict | rate_limited | internal`.
 
 ## Auth
 
-| Layer                    | Mechanism                                                                                   | File                                |
-| ------------------------ | ------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `/v1/*`                  | none — open at localhost                                                                    | —                                   |
-| `/oauth/google/start`    | none — open at localhost                                                                    | `apps/api/src/routes/oauth.ts`      |
-| `/oauth/google/callback` | HMAC-signed state token (10-min TTL, process-local secret); no credential on the wire       | `apps/api/src/lib/oauth-state.ts`   |
-| `/oauth/google/status`   | none — open at localhost                                                                    | `apps/api/src/routes/oauth.ts`      |
-| Dashboard sessions       | none — dashboard is open at localhost                                                       | —                                   |
+| Layer                    | Mechanism                                                                             | File                              |
+| ------------------------ | ------------------------------------------------------------------------------------- | --------------------------------- |
+| `/v1/*`                  | none — open at localhost                                                              | —                                 |
+| `/oauth/google/start`    | none — open at localhost                                                              | `apps/api/src/routes/oauth.ts`    |
+| `/oauth/google/callback` | HMAC-signed state token (10-min TTL, process-local secret); no credential on the wire | `apps/api/src/lib/oauth-state.ts` |
+| `/oauth/google/status`   | none — open at localhost                                                              | `apps/api/src/routes/oauth.ts`    |
+| Dashboard sessions       | none — dashboard is open at localhost                                                 | —                                 |
 
 See [auth.md](auth.md) for the full model.
 
@@ -47,14 +47,14 @@ See [auth.md](auth.md) for the full model.
 
 ### People (`apps/api/src/routes/people.ts`)
 
-| Method | Path                          | Body / Query                                                                                                             | Response                                                          |
-| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| GET    | `/v1/people`                  | `?limit&cursor&query&orgId&tag&lastInteractionBefore&lastInteractionAfter&hasOpenFollowup&source&includeTombstoned&sort` | `{ items: Person[], nextCursor? }`                                |
-| GET    | `/v1/people/:id`              | —                                                                                                                        | `Person`                                                          |
-| POST   | `/v1/people`                  | `PersonCreateBody`                                                                                                       | `201 Person` (with `firstSeen` set to now, `source: 'concierge'`) |
-| PATCH  | `/v1/people/:id`              | `PersonUpdateBody` (all `PersonCreateBody` fields, partial)                                                              | `Person`                                                          |
-| DELETE | `/v1/people/:id`              | —                                                                                                                        | `Person` with `deletedAt` set, `suppressReingest: true`           |
-| GET    | `/v1/people/:id/interactions` | (same query as `/v1/interactions`, with `personId` pinned)                                                               | `{ items: Interaction[], nextCursor? }`                           |
+| Method | Path                          | Body / Query                                                                                                                           | Response                                                          |
+| ------ | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| GET    | `/v1/people`                  | `?limit&cursor&query&identityQuery&orgId&tag&lastInteractionBefore&lastInteractionAfter&hasOpenFollowup&source&includeTombstoned&sort` | `{ items: Person[], nextCursor? }`                                |
+| GET    | `/v1/people/:id`              | —                                                                                                                                      | `Person`                                                          |
+| POST   | `/v1/people`                  | `PersonCreateBody`                                                                                                                     | `201 Person` (with `firstSeen` set to now, `source: 'concierge'`) |
+| PATCH  | `/v1/people/:id`              | `PersonUpdateBody` (all `PersonCreateBody` fields, partial)                                                                            | `Person`                                                          |
+| DELETE | `/v1/people/:id`              | —                                                                                                                                      | `Person` with `deletedAt` set, `suppressReingest: true`           |
+| GET    | `/v1/people/:id/interactions` | (same query as `/v1/interactions`, with `personId` pinned)                                                                             | `{ items: Interaction[], nextCursor? }`                           |
 
 `PersonCreateBody` (zod-strict):
 
@@ -103,13 +103,15 @@ The list filter `?hasOpenFollowup=true|false` runs a `Followup.distinct('personI
 
 The `?sort=lastInteractionAt:-1` mode uses a compound cursor (`{ lia, id }`) with a trailing-null bucket so people who've never had an interaction sort last but stay paginable. Default sort is `_id:-1` with a simple `{ id }` cursor.
 
+`?identityQuery=...` is a relevance-ordered identity search for consumers like Kokoro. It matches stable identity fields (`displayName`, `primaryEmail`, `emails`, `handles`) but not broad notes or relationship text. It cannot be combined with `query`; combining both returns `400 bad_request`. Its cursor stores the last identity relevance bucket plus secondary sort keys (`{ ib, lia, id }`) so pagination remains deterministic.
+
 ### Interactions (`apps/api/src/routes/interactions.ts`)
 
-| Method | Path                   | Body / Query                                                                                                      | Response                                |
-| ------ | ---------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| GET    | `/v1/interactions`     | `?limit&cursor&personId&orgId&context&channel&occurredBefore&occurredAfter&query&status&source&includeTombstoned` | `{ items: Interaction[], nextCursor? }` |
-| POST   | `/v1/interactions`     | `InteractionCreateBody`                                                                                           | `201 Interaction` (concierge-sourced)   |
-| DELETE | `/v1/interactions/:id` | —                                                                                                                 | `Interaction` with `deletedAt` set      |
+| Method | Path                   | Body / Query                                                                                                           | Response                                |
+| ------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| GET    | `/v1/interactions`     | `?limit&cursor&personId&orgId&context&channel&occurredBefore&occurredAfter&query&status&source&includeTombstoned&sort` | `{ items: Interaction[], nextCursor? }` |
+| POST   | `/v1/interactions`     | `InteractionCreateBody`                                                                                                | `201 Interaction` (concierge-sourced)   |
+| DELETE | `/v1/interactions/:id` | —                                                                                                                      | `Interaction` with `deletedAt` set      |
 
 `InteractionCreateBody` (zod-strict):
 
@@ -130,6 +132,8 @@ The `?sort=lastInteractionAt:-1` mode uses a compound cursor (`{ lia, id }`) wit
 ```
 
 The `status` query value `any` returns both `active` and `cancelled`. Default is `active`. `?orgId=<id>` runs a two-step join: `Person.distinct('_id', { primaryOrgId, deletedAt: null })` → `participants.personId: { $in: peopleIds }`. `?query=…` is a `$text` search over `title` + `body` (the `interactions_text` index).
+
+`?sort=occurredAt:-1` uses a compound cursor (`{ oa, id }`) so event-time lists remain deterministic across ties. Default sort is `_id:-1` with a simple `{ id }` cursor.
 
 POST goes through `db/recordInteraction.ts`, which also bumps `Person.lastInteractionAt` via `$max` for every linked participant in the same call. `source: 'concierge'` is set automatically.
 
@@ -158,14 +162,16 @@ POST goes through `db/recordInteraction.ts`, which also bumps `Person.lastIntera
 
 ### Followups (`apps/api/src/routes/followups.ts`)
 
-| Method | Path                | Body / Query                                                                   | Response                             |
-| ------ | ------------------- | ------------------------------------------------------------------------------ | ------------------------------------ |
-| GET    | `/v1/followups`     | `?limit&cursor&personId&direction&status&dueBefore&dueAfter&includeTombstoned` | `{ items: Followup[], nextCursor? }` |
-| POST   | `/v1/followups`     | `FollowupCreateBody`                                                           | `201 Followup`                       |
-| PATCH  | `/v1/followups/:id` | `FollowupUpdateBody` — `{ status, dueAt?, reason? }` (status is required)      | `Followup`                           |
-| DELETE | `/v1/followups/:id` | —                                                                              | `Followup` with `deletedAt` set      |
+| Method | Path                | Body / Query                                                                        | Response                             |
+| ------ | ------------------- | ----------------------------------------------------------------------------------- | ------------------------------------ |
+| GET    | `/v1/followups`     | `?limit&cursor&personId&direction&status&dueBefore&dueAfter&includeTombstoned&sort` | `{ items: Followup[], nextCursor? }` |
+| POST   | `/v1/followups`     | `FollowupCreateBody`                                                                | `201 Followup`                       |
+| PATCH  | `/v1/followups/:id` | `FollowupUpdateBody` — `{ status, dueAt?, reason? }` (status is required)           | `Followup`                           |
+| DELETE | `/v1/followups/:id` | —                                                                                   | `Followup` with `deletedAt` set      |
 
 `status` defaults to `open` on the list endpoint. `direction` is `'i_owe' | 'they_owe'`; `status` is `'open' | 'done' | 'snoozed' | 'dismissed'`.
+
+`?sort=duePriority:1` orders dated followups first by `dueAt` ascending, then undated followups, with a compound cursor (`{ dp, due, id }`). The persisted `duePriorityBucket` field is maintained by the Followup model and exists only to make that sort indexable.
 
 `FollowupCreateBody`:
 
@@ -247,7 +253,7 @@ https://www.googleapis.com/auth/calendar.readonly
 | ------ | --------------- | ------------------------------------------------------------------------------- |
 | GET    | `/v1/_manifest` | `{ version: 'v1', endpoints: ManifestEndpoint[] }` — JSON-Schema-shaped catalog |
 
-`ManifestEndpoint` carries `{ name, method, path, description, params?, query?, body?, response? }` where each schema is the output of `zodToJsonSchema(s, { target: 'jsonSchema7', name })`. Each route module exports its own `EndpointSpec[]`; `routes/manifest.ts` concatenates them and runs `buildManifest()` once at startup. This is the cheapest path to keep an OpenAPI-shaped catalog in lockstep with the zod schemas the routes already use.
+`ManifestEndpoint` carries `{ name, method, path, description, params?, query?, body?, response? }` where each schema is the output of Zod 4's `z.toJSONSchema(s, { target: 'draft-07', io: 'input' })`. Each route module exports its own `EndpointSpec[]`; `routes/manifest.ts` concatenates them and runs `buildManifest()` once at startup. This is the cheapest path to keep an OpenAPI-shaped catalog in lockstep with the zod schemas the routes already use.
 
 ### Health (`apps/api/src/routes/health.ts`)
 
@@ -277,5 +283,6 @@ https://www.googleapis.com/auth/calendar.readonly
 | Caller           | Env var          | Default                        |
 | ---------------- | ---------------- | ------------------------------ |
 | Kizuna dashboard | `KIZUNA_API_URL` | `https://api.kizuna.localhost` |
+| Kokoro bot       | `KIZUNA_URL`     | `https://api.kizuna.localhost` |
 
 Use the Portless URL whenever the API is launched by `npm run dev` / `portless run`. The numeric standalone-fallback port (`3000`) only applies when running the API directly outside Portless.

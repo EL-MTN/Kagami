@@ -6,6 +6,7 @@ import { FOLLOWUP_DIRECTIONS, FOLLOWUP_STATUSES } from "../db/models/Followup.js
 import { SOURCE_VALUES } from "../db/models/base.js";
 import { encodeCursor, decodeCursor } from "../lib/cursor.js";
 import { errors } from "../lib/errors.js";
+import { appendAnd } from "../lib/query.js";
 import { serializeFollowup } from "../lib/serialize.js";
 import {
   BoolFlag,
@@ -58,7 +59,40 @@ export const ListFollowupsQuery = Pagination.extend({
   dueBefore: DateInput.optional(),
   dueAfter: DateInput.optional(),
   includeTombstoned: BoolFlag.optional(),
+  sort: z.enum(["_id:-1", "duePriority:1"]).default("_id:-1"),
 });
+
+type DuePriorityCursor = { dp: 0 | 1; due: string | null; id: string };
+type LeanFollowup = {
+  _id: Types.ObjectId;
+  dueAt?: Date | string | null;
+  duePriorityBucket?: number | null;
+};
+
+function validateDuePriorityCursor(cursor: string): DuePriorityCursor {
+  const c = decodeCursor<DuePriorityCursor>(cursor);
+  if (
+    (c.dp !== 0 && c.dp !== 1) ||
+    typeof c.id !== "string" ||
+    !Types.ObjectId.isValid(c.id) ||
+    !(c.due === null || typeof c.due === "string")
+  ) {
+    throw errors.badRequest("invalid cursor");
+  }
+  if (c.dp === 0 && (typeof c.due !== "string" || Number.isNaN(new Date(c.due).getTime()))) {
+    throw errors.badRequest("invalid cursor");
+  }
+  if (c.dp === 1 && c.due !== null) {
+    throw errors.badRequest("invalid cursor");
+  }
+  return c;
+}
+
+function dueIso(value: LeanFollowup["dueAt"]): string | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
 
 export const followupsRouter = Router();
 
@@ -75,23 +109,53 @@ followupsRouter.get("/followups", async (req, res) => {
     filter.dueAt = range;
   }
   if (q.cursor) {
-    const c = decodeCursor<{ id: string }>(q.cursor);
-    filter._id = { $lt: new Types.ObjectId(c.id) };
+    if (q.sort === "duePriority:1") {
+      const c = validateDuePriorityCursor(q.cursor);
+      const cId = new Types.ObjectId(c.id);
+      if (c.dp === 0) {
+        if (c.due === null) throw errors.badRequest("invalid cursor");
+        const cDate = new Date(c.due);
+        appendAnd(filter, {
+          $or: [
+            { duePriorityBucket: 0, dueAt: { $gt: cDate } },
+            { duePriorityBucket: 0, dueAt: cDate, _id: { $lt: cId } },
+            { duePriorityBucket: 1 },
+          ],
+        });
+      } else {
+        appendAnd(filter, { duePriorityBucket: 1, _id: { $lt: cId } });
+      }
+    } else {
+      const c = decodeCursor<{ id: string }>(q.cursor);
+      filter._id = { $lt: new Types.ObjectId(c.id) };
+    }
   }
 
+  const sort: Record<string, 1 | -1> =
+    q.sort === "duePriority:1" ? { duePriorityBucket: 1, dueAt: 1, _id: -1 } : { _id: -1 };
+
   const docs = await Followup.find(filter)
-    .sort({ _id: -1 })
+    .sort(sort)
     .limit(q.limit + 1)
     .lean();
   const hasMore = docs.length > q.limit;
   const page = hasMore ? docs.slice(0, -1) : docs;
   const items = page.map(serializeFollowup);
-  const last = page[page.length - 1];
+  const last = page[page.length - 1] as LeanFollowup | undefined;
   const body: { items: unknown[]; nextCursor?: string } = { items };
-  if (hasMore && last)
-    body.nextCursor = encodeCursor({
-      id: last._id.toHexString(),
-    });
+  if (hasMore && last) {
+    const dp = last.duePriorityBucket === 0 ? 0 : 1;
+    body.nextCursor =
+      q.sort === "duePriority:1"
+        ? encodeCursor({
+            dp,
+            due: dp === 0 ? dueIso(last.dueAt) : null,
+            id: last._id.toHexString(),
+          })
+        : encodeCursor({
+            id: last._id.toHexString(),
+          });
+  }
   res.json(body);
 });
 
@@ -101,7 +165,9 @@ followupsRouter.post("/followups", async (req, res) => {
     personId: new Types.ObjectId(body.personId),
     direction: body.direction,
     reason: body.reason,
-    ...(body.dueAt ? { dueAt: new Date(body.dueAt) } : {}),
+    ...(body.dueAt
+      ? { dueAt: new Date(body.dueAt), duePriorityBucket: 0 }
+      : { duePriorityBucket: 1 }),
     ...(body.sourceInteractionId
       ? { sourceInteractionId: new Types.ObjectId(body.sourceInteractionId) }
       : {}),
@@ -115,6 +181,7 @@ followupsRouter.patch("/followups/:id", async (req, res) => {
   const body = FollowupUpdateBody.parse(req.body);
   const update: Record<string, unknown> = { status: body.status };
   if (body.dueAt) update.dueAt = new Date(body.dueAt);
+  if (body.dueAt) update.duePriorityBucket = 0;
   if (body.reason !== undefined) update.reason = body.reason;
 
   const doc = await Followup.findOneAndUpdate(

@@ -5,7 +5,7 @@ Kizuna's test suite covers the API workspace. Pure helpers run with no infrastru
 ## Goals
 
 1. Catch regressions in correctness invariants — soft-delete semantics, cursor shapes, dedup via `sourceRef`, OAuth + token-encryption round-trip, ingest pause/resume.
-2. Document the API contract via executable examples (per-resource endpoint tests).
+2. Document the API contract via executable examples (per-resource endpoint tests and the Kokoro consumer contract).
 3. Stay cheap. No live Google calls — the Gmail and Calendar clients are interfaces, and tests inject `FakeGmailClient` / `FakeCalendarClient` implementations.
 4. Be the source of truth for behavior — when a test and the API disagree, fix the API, not the test.
 
@@ -34,7 +34,8 @@ apps/api/tests/
 │   ├── fake-gmail.ts         # FakeGmailClient + buildPlainMessage helper
 │   └── fake-calendar.ts      # FakeCalendarClient
 ├── fixtures/
-│   └── gmail/                # (raw JSON fixtures slot, currently empty)
+│   ├── gmail/                # (raw JSON fixtures slot, currently empty)
+│   └── manifest.v1.json      # pinned /v1/_manifest fixture for downstream consumers
 ├── setup.ts                  # LOG_LEVEL=silent default
 ├── config.test.ts            # loadConfig branches (zod parse, defaults, CSV transforms)
 ├── duration.test.ts          # parseDurationMs (ISO + short forms)
@@ -47,6 +48,7 @@ apps/api/tests/
 ├── digest.test.ts            # /v1/digest overdue/upcoming + duration parsing
 ├── contexts.test.ts          # /v1/contexts aggregation + personId scoping
 ├── health.test.ts            # /health + /v1/* no-auth contract
+├── kokoro-contract.test.ts   # read-only CRM API contract consumed by Kokoro
 ├── oauth.test.ts             # /oauth/google/{start,callback,status}
 ├── v1.test.ts                # CRUD endpoints across people, organizations, interactions, followups
 ├── gmail-ingest.test.ts      # bootstrap + incremental + skip-self + newsletter + pause
@@ -209,11 +211,11 @@ The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (
 | CRUD across people/orgs/interactions/followups | `v1.test.ts`                                                                                                          |
 | Gmail ingest end-to-end                        | `gmail-ingest.test.ts` — bootstrap, incremental, skip-self, newsletter blocklist, dedup via `sourceRef`, pause/resume |
 | Calendar ingest end-to-end                     | `gcal-ingest.test.ts` — bootstrap, incremental, 410 → re-bootstrap, cancellation, edit reconciliation                 |
+| Kokoro read-only API contract                  | `kokoro-contract.test.ts` — identity search, sorted interactions/followups, and `/v1/_manifest` fixture parity        |
 
 ## What's not covered
 
 - **Dashboard.** No tests on `apps/dashboard/`. Server actions, server-component rendering, and the API client are all exercised manually for now. Revisit after the API surface stabilizes.
-- **Manifest.** `GET /v1/_manifest` shape is not asserted; the manifest is built once at module load from per-route `EndpointSpec[]` exports and is currently treated as developer documentation.
 - **Scheduler timing.** `startIngestScheduler` is a thin `setInterval` wrapper and is not exercised. The wrapped `runGmailSync` / `runCalendarSync` are covered.
 - **Concurrent-write races.** The unique partial index on `interactions.sourceRef` makes most ingest races safe at the DB level; tests don't currently assert "two parallel calls dedup correctly," but the index does the work. `upsertPerson`'s find-then-update window is also not stress-tested under concurrency.
 
