@@ -102,6 +102,21 @@ describe("Kokoro identity people search contract", () => {
     ]);
   });
 
+  it("matches stored values with non-canonical whitespace against a canonical query", async () => {
+    await makePerson({ displayName: "John  Smith", lastInteractionAt: "2026-01-01T00:00:00Z" });
+    await makePerson({ displayName: "Jane\tDoe", lastInteractionAt: "2026-02-01T00:00:00Z" });
+
+    const exact = await get("/v1/people?identityQuery=john%20smith");
+    expect(exact.body.items.map((p: { displayName: string }) => p.displayName)).toEqual([
+      "John  Smith",
+    ]);
+
+    const tabbed = await get("/v1/people?identityQuery=jane%20doe");
+    expect(tabbed.body.items.map((p: { displayName: string }) => p.displayName)).toEqual([
+      "Jane\tDoe",
+    ]);
+  });
+
   it("rejects combining identityQuery with the broad query search", async () => {
     const res = await get("/v1/people?identityQuery=sarah&query=notes");
 

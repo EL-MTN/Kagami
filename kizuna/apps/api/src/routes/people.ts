@@ -197,11 +197,22 @@ function identitySearchPipeline(
             input: {
               $map: {
                 input: "$_identityRawValues",
-                as: "value",
+                as: "raw",
                 in: {
-                  $trim: {
+                  $reduce: {
                     input: {
-                      $toLower: { $ifNull: ["$$value", ""] },
+                      $regexFindAll: {
+                        input: { $toLower: { $ifNull: ["$$raw", ""] } },
+                        regex: "\\S+",
+                      },
+                    },
+                    initialValue: "",
+                    in: {
+                      $cond: [
+                        { $eq: ["$$value", ""] },
+                        "$$this.match",
+                        { $concat: ["$$value", " ", "$$this.match"] },
+                      ],
                     },
                   },
                 },
