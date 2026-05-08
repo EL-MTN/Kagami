@@ -1,7 +1,6 @@
 import { generateText } from "ai";
 import { getModel, getModelName } from "./provider";
-import { assembleSystemPrompt, assembleMessages } from "./context-assembler";
-import { ACKNOWLEDGMENT_INSTRUCTIONS } from "./prompts";
+import { assembleSystemPrompt, assembleMessages, readInstruction } from "./context-assembler";
 import { getOrCreateSession, appendMessage } from "@kokoro/db";
 import { logger } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
@@ -42,12 +41,13 @@ export async function generateAcknowledgment(
   if (previouslyClosed) ingestClosedSession(previouslyClosed);
   const sessionId = conversation.sessionId;
 
-  const [baseSystemPrompt, messages] = await Promise.all([
+  const [baseSystemPrompt, messages, ack] = await Promise.all([
     assembleSystemPrompt(chatId),
     assembleMessages(chatId),
+    readInstruction("acknowledgment"),
   ]);
 
-  const systemPrompt = `${baseSystemPrompt}\n\n---\n\n${ACKNOWLEDGMENT_INSTRUCTIONS}`;
+  const systemPrompt = ack ? `${baseSystemPrompt}\n\n---\n\n${ack}` : baseSystemPrompt;
 
   // The bracketed event was just appended as a user-role message, so the
   // history already ends correctly for the model.

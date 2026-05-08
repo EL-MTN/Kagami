@@ -66,7 +66,7 @@ The atomic transition runs **before** dispatch. A second click that arrives mid-
 After dispatch settles and the bracketed resolution event is appended to conversation history, the callback handler kicks off `generateAcknowledgment(chatId, userId, adapter)` as fire-and-forget. This is a one-shot LLM turn that:
 
 - Reuses the regular system prompt (so personality, memory, pending-approvals context are all loaded)
-- Appends `ACKNOWLEDGMENT_INSTRUCTIONS` directing a single short in-character bubble
+- Appends the acknowledgment-turn instructions from `apps/bot/context/instructions/acknowledgment.md` (loaded via `readInstruction("acknowledgment")`) directing a single short in-character bubble
 - Caps at 2 steps, 60s timeout, temperature 0.6
 - Tracks token usage under category `conversation`
 
@@ -120,7 +120,7 @@ Telegram implementation in `apps/bot/src/platform/telegram/adapter.ts` uses Gram
 1. Append the name to `GATED_TOOL_NAMES` in `apps/bot/src/services/gated-actions.ts`.
 2. Add a Zod schema entry in `GATED_ARG_SCHEMAS` (the schema may narrow the action set — e.g., `manageCalendar` only accepts `update` and `delete`).
 3. Add a `case` in `dispatchGatedAction`'s switch — call the underlying service, return `{ success, summary, detail }`.
-4. Update the prompt guidance in `MAID_SERVICE_INSTRUCTIONS` so the LLM knows when to gate.
+4. Update the prompt guidance in `apps/bot/context/instructions/maid-service.md` so the LLM knows when to gate.
 
 The tool's underlying service stays untouched; the dispatcher calls it directly with validated args.
 
