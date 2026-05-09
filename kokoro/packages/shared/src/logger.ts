@@ -1,7 +1,10 @@
-import pino from "pino";
+import { createLogger } from "@kagami/logger";
 import { config } from "./config";
 
-export const logger = pino({
+export const logger = createLogger({
+  service: "kokoro-bot",
+  component: "bot",
+  env: config.NODE_ENV,
   level: config.LOG_LEVEL,
   formatters: {
     log(bindings) {
@@ -12,15 +15,4 @@ export const logger = pino({
       return bindings;
     },
   },
-  transport:
-    config.NODE_ENV === "development"
-      ? {
-          target: "pino-pretty",
-          options: {
-            colorize: true,
-            translateTime: "HH:MM:ss.l",
-            ignore: "pid,hostname",
-          },
-        }
-      : undefined,
 });

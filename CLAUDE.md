@@ -41,6 +41,7 @@ Kagami/                       # one git repo, one workspace
 └── shared/
     └── packages/
         ├── eslint-config/    # @kagami/eslint-config (./base, ./next)
+        ├── logger/           # @kagami/logger (createLogger factory, shared redact list, transport policy)
         └── tsconfig/         # @kagami/tsconfig (./base.json, ./library.json, ./server.json, ./nextjs.json)
 ```
 
@@ -119,6 +120,7 @@ All three projects share tooling via `shared/packages/`:
 
 - **`@kagami/eslint-config`** — flat ESLint config; `./base` for general TS, `./next` for Next.js apps.
 - **`@kagami/tsconfig`** — `./base.json`, `./library.json`, `./server.json`, `./nextjs.json`. Per-app `tsconfig.json` files extend one of these and add overrides (e.g. `verbatimModuleSyntax`, `esModuleInterop`, `noImplicitOverride`, `allowImportingTsExtensions`, `allowJs`) where projects diverge.
+- **`@kagami/logger`** — Pino factory exposing `createLogger({ service, component, env, level?, formatters? })`. Owns the shared redact path list and the `pino-pretty` transport policy (`env !== "production"`). Each service's `logger.ts` is a thin wrapper that calls it with service-specific bindings.
 
 Other workspace-wide conventions:
 
@@ -127,7 +129,7 @@ Other workspace-wide conventions:
 - **Apps split**: `apps/api` (or `apps/bot` for Kokoro) + `apps/dashboard`
 - **Local dev hosting**: Portless via stable HTTPS named `*.localhost` URLs
 - **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku)
-- **Logging**: Pino (structured)
+- **Logging**: Pino (structured) via `@kagami/logger` — stable `service`/`component`/`env` bindings + shared secret redaction
 - **Validation**: Zod schemas at boundaries
 - **Formatting**: Prettier; ESLint flat config
 

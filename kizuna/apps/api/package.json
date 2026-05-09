@@ -14,6 +14,7 @@
     "lint:fix": "eslint src tests scripts --fix"
   },
   "dependencies": {
+    "@kagami/logger": "*",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "google-auth-library": "^9.15.0",

@@ -1,19 +1,10 @@
-import pino from "pino";
+import { createLogger, type Logger } from "@kagami/logger";
 
-export type Logger = pino.Logger;
+export type { Logger };
 
-export const logger: Logger = pino({
+export const logger: Logger = createLogger({
+  service: "kizuna-api",
+  component: "api",
+  env: process.env.NODE_ENV ?? "development",
   level: process.env.LOG_LEVEL ?? "info",
-  base: { service: "kizuna-api" },
-  transport:
-    process.env.NODE_ENV === "development"
-      ? {
-          target: "pino-pretty",
-          options: {
-            colorize: true,
-            translateTime: "HH:MM:ss.l",
-            ignore: "pid,hostname",
-          },
-        }
-      : undefined,
 });
