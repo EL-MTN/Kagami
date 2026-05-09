@@ -1,6 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { Followup } from "../src/db/models/Followup.js";
@@ -10,7 +7,6 @@ import { startHarness, type TestHarness } from "./helpers/harness.js";
 
 let h: TestHarness;
 
-const testDir = dirname(fileURLToPath(import.meta.url));
 const get = (p: string) => request(h.app).get(p);
 const post = (p: string, body?: object) => request(h.app).post(p).send(body);
 
@@ -63,7 +59,7 @@ describe("Kokoro identity people search contract", () => {
       lastInteractionAt: "2026-04-01T00:00:00Z",
     });
 
-    const res = await get("/v1/people?identityQuery=sarah&limit=20");
+    const res = await get("/people?identityQuery=sarah&limit=20");
 
     expect(res.status).toBe(200);
     expect((res.body.items as Array<{ displayName: string }>).map((p) => p.displayName)).toEqual([
@@ -86,17 +82,17 @@ describe("Kokoro identity people search contract", () => {
       handles: { telegram: "@sarah-handle" },
     });
 
-    const primary = await get("/v1/people?identityQuery=PRIMARY%40EXAMPLE.COM");
+    const primary = await get("/people?identityQuery=PRIMARY%40EXAMPLE.COM");
     expect(primary.body.items.map((p: { displayName: string }) => p.displayName)).toEqual([
       "Primary Email",
     ]);
 
-    const secondary = await get("/v1/people?identityQuery=secondary%40example.com");
+    const secondary = await get("/people?identityQuery=secondary%40example.com");
     expect(secondary.body.items.map((p: { displayName: string }) => p.displayName)).toEqual([
       "Secondary Email",
     ]);
 
-    const handle = await get("/v1/people?identityQuery=%40sarah-handle");
+    const handle = await get("/people?identityQuery=%40sarah-handle");
     expect(handle.body.items.map((p: { displayName: string }) => p.displayName)).toEqual([
       "Handle Match",
     ]);
@@ -106,19 +102,19 @@ describe("Kokoro identity people search contract", () => {
     await makePerson({ displayName: "John  Smith", lastInteractionAt: "2026-01-01T00:00:00Z" });
     await makePerson({ displayName: "Jane\tDoe", lastInteractionAt: "2026-02-01T00:00:00Z" });
 
-    const exact = await get("/v1/people?identityQuery=john%20smith");
+    const exact = await get("/people?identityQuery=john%20smith");
     expect(exact.body.items.map((p: { displayName: string }) => p.displayName)).toEqual([
       "John  Smith",
     ]);
 
-    const tabbed = await get("/v1/people?identityQuery=jane%20doe");
+    const tabbed = await get("/people?identityQuery=jane%20doe");
     expect(tabbed.body.items.map((p: { displayName: string }) => p.displayName)).toEqual([
       "Jane\tDoe",
     ]);
   });
 
   it("rejects combining identityQuery with the broad query search", async () => {
-    const res = await get("/v1/people?identityQuery=sarah&query=notes");
+    const res = await get("/people?identityQuery=sarah&query=notes");
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("bad_request");
@@ -129,12 +125,12 @@ describe("Kokoro identity people search contract", () => {
     await makePerson({ displayName: "Sarah B", lastInteractionAt: "2026-02-01T00:00:00Z" });
     await makePerson({ displayName: "Sarah C", lastInteractionAt: "2026-01-01T00:00:00Z" });
 
-    const first = await get("/v1/people?identityQuery=sarah&limit=2");
+    const first = await get("/people?identityQuery=sarah&limit=2");
     expect(first.status).toBe(200);
     expect(first.body.nextCursor).toBeTruthy();
 
     const second = await get(
-      `/v1/people?identityQuery=sarah&limit=2&cursor=${encodeURIComponent(first.body.nextCursor)}`,
+      `/people?identityQuery=sarah&limit=2&cursor=${encodeURIComponent(first.body.nextCursor)}`,
     );
 
     expect([
@@ -156,27 +152,27 @@ describe("Kokoro identity people search contract", () => {
 
 describe("Kokoro interaction event-time sort contract", () => {
   it("sorts list interactions by occurredAt desc with _id desc as tie-breaker", async () => {
-    const person = await post("/v1/people", { displayName: "A" });
-    await post("/v1/interactions", {
+    const person = await post("/people", { displayName: "A" });
+    await post("/interactions", {
       occurredAt: "2026-01-01T00:00:00Z",
       channel: "email",
       title: "older",
       participants: [{ personId: person.body.id, role: "from" }],
     });
-    await post("/v1/interactions", {
+    await post("/interactions", {
       occurredAt: "2026-01-03T00:00:00Z",
       channel: "email",
       title: "newer",
       participants: [{ personId: person.body.id, role: "from" }],
     });
-    await post("/v1/interactions", {
+    await post("/interactions", {
       occurredAt: "2026-01-03T00:00:00Z",
       channel: "email",
       title: "same-time-newer-id",
       participants: [{ personId: person.body.id, role: "from" }],
     });
 
-    const res = await get("/v1/interactions?sort=occurredAt:-1");
+    const res = await get("/interactions?sort=occurredAt:-1");
 
     expect(res.status).toBe(200);
     expect(res.body.items.map((i: { title: string }) => i.title)).toEqual([
@@ -187,13 +183,13 @@ describe("Kokoro interaction event-time sort contract", () => {
   });
 
   it("paginates occurredAt desc sort with a compound cursor", async () => {
-    const person = await post("/v1/people", { displayName: "A" });
+    const person = await post("/people", { displayName: "A" });
     for (const [title, occurredAt] of [
       ["oldest", "2026-01-01T00:00:00Z"],
       ["middle", "2026-01-02T00:00:00Z"],
       ["newest", "2026-01-03T00:00:00Z"],
     ]) {
-      await post("/v1/interactions", {
+      await post("/interactions", {
         occurredAt,
         channel: "email",
         title,
@@ -205,7 +201,7 @@ describe("Kokoro interaction event-time sort contract", () => {
     let cursor: string | undefined;
     for (let i = 0; i < 3; i++) {
       const res = await get(
-        `/v1/interactions?sort=occurredAt:-1&limit=1${
+        `/interactions?sort=occurredAt:-1&limit=1${
           cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""
         }`,
       );
@@ -219,21 +215,21 @@ describe("Kokoro interaction event-time sort contract", () => {
   });
 
   it("supports occurredAt desc sort on the person interactions route", async () => {
-    const person = await post("/v1/people", { displayName: "A" });
-    await post("/v1/interactions", {
+    const person = await post("/people", { displayName: "A" });
+    await post("/interactions", {
       occurredAt: "2026-01-01T00:00:00Z",
       channel: "email",
       title: "older",
       participants: [{ personId: person.body.id, role: "from" }],
     });
-    await post("/v1/interactions", {
+    await post("/interactions", {
       occurredAt: "2026-01-02T00:00:00Z",
       channel: "email",
       title: "newer",
       participants: [{ personId: person.body.id, role: "from" }],
     });
 
-    const res = await get(`/v1/people/${person.body.id}/interactions?sort=occurredAt:-1`);
+    const res = await get(`/people/${person.body.id}/interactions?sort=occurredAt:-1`);
 
     expect(res.status).toBe(200);
     expect(res.body.items.map((i: { title: string }) => i.title)).toEqual(["newer", "older"]);
@@ -242,26 +238,26 @@ describe("Kokoro interaction event-time sort contract", () => {
 
 describe("Kokoro followup due-priority sort contract", () => {
   it("sorts due followups first, oldest due first, then null dueAt rows", async () => {
-    const person = await post("/v1/people", { displayName: "A" });
-    await post("/v1/followups", {
+    const person = await post("/people", { displayName: "A" });
+    await post("/followups", {
       personId: person.body.id,
       direction: "i_owe",
       reason: "undated",
     });
-    await post("/v1/followups", {
+    await post("/followups", {
       personId: person.body.id,
       direction: "i_owe",
       reason: "newer due",
       dueAt: "2026-01-10T00:00:00Z",
     });
-    await post("/v1/followups", {
+    await post("/followups", {
       personId: person.body.id,
       direction: "i_owe",
       reason: "older due",
       dueAt: "2026-01-01T00:00:00Z",
     });
 
-    const res = await get("/v1/followups?sort=duePriority:1");
+    const res = await get("/followups?sort=duePriority:1");
 
     expect(res.status).toBe(200);
     expect(res.body.items.map((f: { reason: string }) => f.reason)).toEqual([
@@ -272,19 +268,19 @@ describe("Kokoro followup due-priority sort contract", () => {
   });
 
   it("paginates due-priority sort across the due/null bucket boundary", async () => {
-    const person = await post("/v1/people", { displayName: "A" });
-    await post("/v1/followups", {
+    const person = await post("/people", { displayName: "A" });
+    await post("/followups", {
       personId: person.body.id,
       direction: "i_owe",
       reason: "undated",
     });
-    await post("/v1/followups", {
+    await post("/followups", {
       personId: person.body.id,
       direction: "i_owe",
       reason: "due 2",
       dueAt: "2026-01-02T00:00:00Z",
     });
-    await post("/v1/followups", {
+    await post("/followups", {
       personId: person.body.id,
       direction: "i_owe",
       reason: "due 1",
@@ -295,7 +291,7 @@ describe("Kokoro followup due-priority sort contract", () => {
     let cursor: string | undefined;
     for (let i = 0; i < 3; i++) {
       const res = await get(
-        `/v1/followups?sort=duePriority:1&limit=1${
+        `/followups?sort=duePriority:1&limit=1${
           cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""
         }`,
       );
@@ -312,18 +308,5 @@ describe("Kokoro followup due-priority sort contract", () => {
     const indexes = Followup.schema.indexes().map(([, options]) => options?.name);
 
     expect(indexes).toContain("followups_due_priority_page");
-  });
-});
-
-describe("Kokoro manifest contract", () => {
-  it("matches the checked-in v1 manifest fixture", async () => {
-    const expected = JSON.parse(
-      await readFile(resolve(testDir, "fixtures/manifest.v1.json"), "utf8"),
-    ) as unknown;
-
-    const res = await get("/v1/_manifest");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual(expected);
   });
 });

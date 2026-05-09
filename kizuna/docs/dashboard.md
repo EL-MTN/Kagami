@@ -37,7 +37,7 @@ The sidebar (`src/components/sidebar.tsx`) is the canonical link list:
 
 Every page is a **server component** with `export const dynamic = 'force-dynamic'`. There is no client-side data fetching, no SWR, no React Query — every render hits the API fresh. Mutations are server actions:
 
-- `src/app/(app)/sync/page.tsx` → `runGmailSyncAction`, `runGcalSyncAction` (POST `/v1/sync/.../run` then `revalidatePath('/sync')`).
+- `src/app/(app)/sync/page.tsx` → `runGmailSyncAction`, `runGcalSyncAction` (POST `/sync/.../run` then `revalidatePath('/sync')`).
 
 There are no POST/PATCH/DELETE for People / Interactions / Followups in the dashboard — the API has them, but the dashboard is intentionally read-only. The roadmap is to keep mutation in the concierge agent and use the dashboard for inspection only.
 
@@ -77,7 +77,7 @@ The exported `config` object also reads `process.env.USER_EMAILS` at module scop
 
 ### `types.ts`
 
-Hand-mirrored from `apps/api/src/lib/serialize.ts`. The header comment says "Mirrors the API response shapes ... Keep in sync with that file when shapes change." A future refactor could emit these from the manifest's JSON Schema.
+Hand-mirrored from `apps/api/src/lib/serialize.ts`. The header comment says "Mirrors the API response shapes ... Keep in sync with that file when shapes change."
 
 ## Components
 
@@ -178,13 +178,13 @@ Followup direction (`DirectionBadge`):
 
 The dashboard hits the same REST endpoints documented in [api.md](api.md):
 
-- `GET /v1/people`, `/v1/people/:id`, `/v1/people/:id/interactions`
-- `GET /v1/interactions`, `/v1/followups`, `/v1/organizations`, `/v1/contexts`
+- `GET /people`, `/people/:id`, `/people/:id/interactions`
+- `GET /interactions`, `/followups`, `/organizations`, `/contexts`
 - `GET /oauth/google/status`
-- `GET /v1/sync/{gmail,gcal}/state`
-- `POST /v1/sync/{gmail,gcal}/run` (force optional)
+- `GET /sync/{gmail,gcal}/state`
+- `POST /sync/{gmail,gcal}/run` (force optional)
 
-The dashboard does not write CRM data — there's no `POST /v1/people` UI today.
+The dashboard does not write CRM data — there's no `POST /people` UI today.
 
 ## Configuration
 

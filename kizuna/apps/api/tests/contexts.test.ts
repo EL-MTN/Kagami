@@ -78,16 +78,16 @@ async function seed() {
   };
 }
 
-describe("GET /v1/contexts", () => {
+describe("GET /contexts", () => {
   it("returns empty when no interactions exist", async () => {
-    const res = await request(h.app).get("/v1/contexts");
+    const res = await request(h.app).get("/contexts");
     expect(res.status).toBe(200);
     expect(res.body.items).toEqual([]);
   });
 
   it("aggregates distinct context tags + counts, sorted desc", async () => {
     await seed();
-    const res = await request(h.app).get("/v1/contexts");
+    const res = await request(h.app).get("/contexts");
     expect(res.status).toBe(200);
     expect(res.body.items).toEqual([
       { tag: "project:acme-redesign", count: 4 },
@@ -98,7 +98,7 @@ describe("GET /v1/contexts", () => {
 
   it("filters by personId via participants.personId", async () => {
     const { bobId } = await seed();
-    const res = await request(h.app).get(`/v1/contexts?personId=${bobId}`);
+    const res = await request(h.app).get(`/contexts?personId=${bobId}`);
     expect(res.body.items).toEqual([
       // bob has trip:tokyo + acme-redesign (1 each) + strangeloop (1)
       { tag: "conf:strangeloop-2025", count: 1 },
@@ -111,16 +111,10 @@ describe("GET /v1/contexts", () => {
     await seed();
     await Interaction.updateOne({ title: "Tokyo" }, { $set: { deletedAt: new Date() } });
     await Interaction.updateOne({ title: "Strangeloop" }, { $set: { status: "cancelled" } });
-    const res = await request(h.app).get("/v1/contexts");
+    const res = await request(h.app).get("/contexts");
     const tags = res.body.items.map((r: { tag: string }) => r.tag);
     expect(tags).not.toContain("trip:tokyo-jan26");
     expect(tags).not.toContain("conf:strangeloop-2025");
     expect(tags).toContain("project:acme-redesign");
-  });
-
-  it("appears in the manifest", async () => {
-    const res = await request(h.app).get("/v1/_manifest");
-    const names = (res.body.endpoints as Array<{ name: string }>).map((e) => e.name);
-    expect(names).toContain("list_contexts");
   });
 });

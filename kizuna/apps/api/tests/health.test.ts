@@ -21,9 +21,9 @@ describe("GET /health", () => {
   });
 });
 
-describe("/v1/* (no auth at single-user localhost)", () => {
-  it("404s an unknown /v1 route", async () => {
-    const res = await request(h.app).get("/v1/anything");
+describe("resource routes (no auth at single-user localhost)", () => {
+  it("404s an unknown resource route", async () => {
+    const res = await request(h.app).get("/anything");
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("not_found");
   });
