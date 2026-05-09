@@ -18,7 +18,7 @@ Kagami ("mirror") is a personal-AI workspace housing three TypeScript projects i
                                                   │
                                   ┌───────────────┴──────────────┐
                                   │            Kokoro            │  Telegram AI agent
-                                  │  Grammy bot (no HTTP server) │
+                                  │  Grammy bot (long-poll)      │
                                   │  kokoro.localhost (Next.js)  │
                                   │  MongoDB                     │
                                   └──────────────────────────────┘
@@ -31,7 +31,7 @@ Kagami ("mirror") is a personal-AI workspace housing three TypeScript projects i
       └──────────────────────────────┘
 ```
 
-All HTTP entry points are served as HTTPS named URLs by [Portless](https://github.com/vercel-labs/portless) — see "Local hosting via Portless" below.
+Dashboard and API HTTP entry points are served as HTTPS named URLs by [Portless](https://github.com/vercel-labs/portless) — see "Local hosting via Portless" below.
 
 ## How they relate
 
@@ -42,7 +42,7 @@ All HTTP entry points are served as HTTPS named URLs by [Portless](https://githu
 | Kizuna → Kioku/Kokoro | none                    | exposes API; never initiates outbound calls to siblings                                          |
 | Kioku → anything      | none (pull-only)        | exposes API; never initiates outbound to siblings                                                |
 
-There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open at the client (`KiokuClientError` is caught by the AI tool layer; chat continues degraded) and any pending writes are retried by Kokoro's 5-min sweeper. The Kokoro → Kizuna edge is also fail-open at the CRM tool layer, but read-only and without retries. `dev-all.sh` boots all three in parallel.
+There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open at the client (`KiokuClientError` is caught by the AI tool layer; chat continues degraded). Closed-session transcript ingest is retried by Kokoro's 5-min sweeper; one-off `rememberFact` and location writes fail open but are not queued for retry today. The Kokoro → Kizuna edge is also fail-open at the CRM tool layer, but read-only and without retries. `dev-all.sh` boots selected apps together under Turbo.
 
 ## Shared conventions
 
@@ -62,7 +62,7 @@ All three projects converge on the same stack. Tooling lives in `shared/packages
 
 [Portless](https://github.com/vercel-labs/portless) is a Vercel Labs reverse proxy that replaces numeric `localhost:<port>` URLs with stable, named `*.localhost` URLs over HTTPS. Each app is launched with `portless run <cmd>`; on first run Portless generates a local CA, trusts it system-wide (one-time `sudo` prompt), and binds port 443. It assigns each app an ephemeral port via the `PORT` env var and proxies HTTPS requests at the configured name to that port — meaning the framework's own listen port is no longer something you have to remember or coordinate.
 
-Apps register their name either via a top-level `portless.json` (Kioku, Kizuna) or a `portless` field in `package.json` (Kokoro's dashboard):
+Apps register their name either via a top-level `portless.json` (Kioku, Kizuna) or a `portless` field in `package.json` (Kokoro):
 
 | Project | Component | Portless URL                   | Source of registration                                 |
 | ------- | --------- | ------------------------------ | ------------------------------------------------------ |
@@ -71,7 +71,7 @@ Apps register their name either via a top-level `portless.json` (Kioku, Kizuna) 
 | Kizuna  | dashboard | `https://kizuna.localhost`     | `portless.json` → `apps/dashboard`                     |
 | Kizuna  | API       | `https://api.kizuna.localhost` | `portless.json` → `apps/api`                           |
 | Kokoro  | dashboard | `https://kokoro.localhost`     | `apps/dashboard/package.json` → `"portless": "kokoro"` |
-| Kokoro  | bot       | (none — Telegram long-poll)    | no HTTP listener                                       |
+| Kokoro  | bot       | (no browser URL)               | `apps/bot/package.json` → `"portless": "bot.kokoro"`   |
 
 Each app server honors Portless's injected `PORT`, falling back to its own numeric default only when run standalone. For example, in `kioku/apps/api/src/server.ts`:
 
@@ -80,9 +80,9 @@ Each app server honors Portless's injected `PORT`, falling back to its own numer
 const PORT = Number.parseInt(process.env.PORT ?? "7777", 10);
 ```
 
-So under normal `npm run dev`, Kioku doesn't actually bind to 7777 — Portless picks an ephemeral port in 4000–4999 and routes `https://api.kioku.localhost` to it. Numeric ports in this document are standalone-only fallbacks; everything that reaches the apps in normal use should go through the Portless URLs.
+So under normal `npm run dev`, Kioku doesn't actually bind to 7777 — Portless picks an ephemeral port in 4000–4999 and routes `https://api.kioku.localhost` to it. Numeric ports in this document are standalone-only fallbacks; everything that reaches the dashboard/API apps in normal use should go through the Portless URLs. Kokoro's bot dev script is also wrapped in Portless for consistency, but Telegram uses long-polling and the optional BlueBubbles webhook listens on `BLUEBUBBLES_WEBHOOK_PORT` rather than exposing a standard browser URL.
 
-The same convention extends to inter-service config: Kizuna's dashboard reaches its API via `KIZUNA_API_URL=https://api.kizuna.localhost`, Kizuna's Google OAuth uses `GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback`, Kokoro's `KIOKU_URL` defaults to `https://api.kioku.localhost`, and Kokoro's `KIZUNA_URL` defaults to `https://api.kizuna.localhost` (Zod defaults in `kokoro/packages/shared/src/config.ts`). The numeric-port forms only matter when running a project standalone outside Portless.
+The same convention extends to inter-service config: Kizuna's dashboard reaches its API via `KIZUNA_API_URL=https://api.kizuna.localhost`, Kizuna's `.env.example` sets `GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback`, Kokoro's `KIOKU_URL` defaults to `https://api.kioku.localhost`, and Kokoro's `KIZUNA_URL` defaults to `https://api.kizuna.localhost` (Zod defaults in `kokoro/packages/shared/src/config.ts`). The numeric-port forms only matter when running a project standalone outside Portless.
 
 ---
 
@@ -140,7 +140,7 @@ packages/kizuna   Kizuna read-only CRM client + compact projections
 packages/test-utils
 ```
 
-**Endpoints.** Bot has **no HTTP server** — it long-polls Telegram and so doesn't need Portless. Optional BlueBubbles webhook listens on `BLUEBUBBLES_WEBHOOK_PORT` (default 4000) for inbound iMessage events. Dashboard runs under Portless at `https://kokoro.localhost` (registered via the `"portless": "kokoro"` field in `apps/dashboard/package.json`).
+**Endpoints.** The Telegram bot long-polls and has no normal browser URL. Its dev script is still wrapped in Portless via the `"portless": "bot.kokoro"` field in `apps/bot/package.json`; optional BlueBubbles support starts an HTTP webhook on `BLUEBUBBLES_WEBHOOK_PORT` (default 4000) for inbound iMessage events. Dashboard runs under Portless at `https://kokoro.localhost` (registered via the `"portless": "kokoro"` field in `apps/dashboard/package.json`).
 
 **Dashboard API.** Next.js route handlers under `/api/`:
 
@@ -158,16 +158,17 @@ packages/test-utils
 | GET | `/facts/count` | health/stats | 10 s |
 | POST | `/sessions` | full transcript ingest (LLM extraction) | 180 s |
 
-Failure mode is **fail-open** via `KiokuClientError`: chat continues degraded, and `apps/bot/src/scheduler/maintenance.ts` runs a 5-minute sweeper (`sweepPendingIngests`, `sweepStaleActiveSessions`) to retry.
+Failure mode is **fail-open** via `KiokuClientError`: chat continues degraded. Closed-session transcript ingest has durable retry through `apps/bot/src/scheduler/maintenance.ts`, which runs a 5-minute sweeper (`sweepPendingIngests`, `sweepStaleActiveSessions`). One-off `rememberFact` and location writes are not queued for retry today.
 
 **Kizuna client.** Read-only CRM calls live in `packages/kizuna/src/` and are exposed to the LLM through `apps/bot/src/ai/tools/crm.ts`. Base URL comes from `KIZUNA_URL` (default `https://api.kizuna.localhost`) and the tool palette is gated by `KIZUNA_ENABLED` (default `true`):
 
-| Method | Path                                             | Used for                                   | Timeout                   |
-| ------ | ------------------------------------------------ | ------------------------------------------ | ------------------------- |
-| GET    | `/v1/people?identityQuery=...`                   | bot tool: identity-focused people search   | shared 10 s call deadline |
-| GET    | `/v1/people/:id`                                 | bot tool: person profile context           | shared 10 s call deadline |
-| GET    | `/v1/people/:id/interactions?sort=occurredAt:-1` | bot tool: recent interactions              | shared 10 s call deadline |
-| GET    | `/v1/followups?sort=duePriority:1`               | bot tool: followups, with person hydration | shared 10 s call deadline |
+| Method | Path                                               | Used for                                   | Timeout                   |
+| ------ | -------------------------------------------------- | ------------------------------------------ | ------------------------- |
+| GET    | `/v1/people?identityQuery=...`                     | bot tool: identity-focused people search   | shared 10 s call deadline |
+| GET    | `/v1/people/:id`                                   | bot tool: person profile context           | shared 10 s call deadline |
+| GET    | `/v1/interactions?personId=...&sort=occurredAt:-1` | bot tool: recent interactions              | shared 10 s call deadline |
+| GET    | `/v1/people/:id/interactions?sort=occurredAt:-1`   | person-context hydration                   | shared 10 s call deadline |
+| GET    | `/v1/followups?sort=duePriority:1`                 | bot tool: followups, with person hydration | shared 10 s call deadline |
 
 Failure mode is **fail-open** via `KizunaClientError`: CRM tools return sanitized degraded results and chat continues. There is no auth header; Kizuna is treated as a single-user localhost service.
 
@@ -193,7 +194,7 @@ apps/dashboard    Next.js 15 app (App Router, single (app) route group)
 packages/         reserved for future Kizuna-only libs
 ```
 
-**Endpoints.** Both apps run under Portless: API at `https://api.kizuna.localhost`, dashboard at `https://kizuna.localhost`. Portless injects each process's `PORT` and proxies the named HTTPS URLs to those ephemeral ports; the API's `3000` fallback only matters when running it standalone outside Portless. The Google OAuth redirect URI defaults to `https://api.kizuna.localhost/oauth/google/callback`, so the redirect lands on the Portless HTTPS origin.
+**Endpoints.** Both apps run under Portless: API at `https://api.kizuna.localhost`, dashboard at `https://kizuna.localhost`. Portless injects each process's `PORT` and proxies the named HTTPS URLs to those ephemeral ports; the API's `3000` fallback only matters when running it standalone outside Portless. The checked-in `.env.example` uses `GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback`, so the redirect lands on the Portless HTTPS origin.
 
 **HTTP API surface.** Open at single-user localhost — no bearer auth on `/v1/*`, no auth on `/oauth/google/{start,status}`. The OAuth callback is still CSRF-protected by a signed state token (process-local HMAC secret).
 
@@ -201,7 +202,7 @@ packages/         reserved for future Kizuna-only libs
 | ------------- | ------------------------------------------------------------------ |
 | People        | `GET/POST /v1/people`, `PATCH/DELETE /v1/people/:id`               |
 | Interactions  | `GET/POST /v1/interactions`, `DELETE /v1/interactions/:id`         |
-| Followups     | `GET /v1/followups`, `PATCH /v1/followups/:id`                     |
+| Followups     | `GET/POST /v1/followups`, `PATCH/DELETE /v1/followups/:id`         |
 | Organizations | `GET/POST /v1/organizations`, `PATCH/DELETE /v1/organizations/:id` |
 | Contexts      | `GET /v1/contexts` (distinct tags + counts)                        |
 | Digest        | `GET /v1/digest?window=P7D`                                        |
