@@ -55,7 +55,7 @@ All three projects converge on the same stack. Tooling lives in `shared/packages
 - **Per-project internal packages**: Kokoro has `kokoro/packages/{shared,db,memory,kizuna,test-utils}`. Kioku and Kizuna have empty `packages/` slots reserved for future project-only libs.
 - **Local dev hosting**: [Portless](https://github.com/vercel-labs/portless) (Vercel Labs) for stable HTTPS named `*.localhost` URLs — see below
 - **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku)
-- **Logging**: Pino with stable `service`, `component`, and `env` bindings plus common secret redaction.
+- **Logging**: Pino, built via the workspace-shared `@kagami/logger` factory. Provides stable `service`, `component`, and `env` bindings, the common secret-redaction list, and the `pino-pretty` transport policy (`env !== "production"`). Each service's `logger.ts` is a thin wrapper that calls the factory with its own service/component name.
 - **Validation**: Zod 4 schemas at boundaries (uniform across all three projects).
 
 ### Local hosting via Portless

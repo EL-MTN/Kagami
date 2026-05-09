@@ -1,57 +1,10 @@
-import { hostname } from "node:os";
-import pino from "pino";
+import { createLogger, type Logger } from "@kagami/logger";
 
-export type Logger = pino.Logger;
+export type { Logger };
 
-const redactPaths = [
-  "authorization",
-  "cookie",
-  "password",
-  "token",
-  "apiKey",
-  "api_key",
-  "secret",
-  "accessToken",
-  "refreshToken",
-  "headers.authorization",
-  "headers.cookie",
-  "req.headers.authorization",
-  "req.headers.cookie",
-  "*.authorization",
-  "*.cookie",
-  "*.password",
-  "*.token",
-  "*.apiKey",
-  "*.api_key",
-  "*.secret",
-  "*.accessToken",
-  "*.refreshToken",
-];
-
-export const loggerBase = {
-  pid: process.pid,
-  hostname: hostname(),
+export const logger: Logger = createLogger({
   service: "kizuna-api",
   component: "api",
   env: process.env.NODE_ENV ?? "development",
-};
-
-export const logger: Logger = pino({
   level: process.env.LOG_LEVEL ?? "info",
-  base: loggerBase,
-  redact: {
-    paths: redactPaths,
-    censor: "[redacted]",
-  },
-  transport:
-    process.env.NODE_ENV === "development"
-      ? {
-          target: "pino-pretty",
-          options: {
-            colorize: true,
-            translateTime: "HH:MM:ss.l",
-            ignore: "pid,hostname",
-          },
-        }
-      : undefined,
 });
