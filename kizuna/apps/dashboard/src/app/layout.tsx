@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Instrument_Serif, DM_Sans, JetBrains_Mono } from "next/font/google";
+import { Sidebar } from "@/components/sidebar";
 import "./globals.css";
 
 const instrumentSerif = Instrument_Serif({
@@ -32,7 +33,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${instrumentSerif.variable} ${dmSans.variable} ${jetbrainsMono.variable}`}
     >
-      <body className="min-h-screen">{children}</body>
+      <body className="flex min-h-screen">
+        <Sidebar />
+        <main className="relative flex-1 overflow-auto">
+          <div className="mx-auto max-w-6xl px-8 py-8">{children}</div>
+        </main>
+      </body>
     </html>
   );
 }
