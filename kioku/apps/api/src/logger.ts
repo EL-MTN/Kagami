@@ -1,16 +1,8 @@
-import { pino } from "pino";
+import { createLogger } from "@kagami/logger";
 
-export const logger = pino({
+export const logger = createLogger({
+  service: "kioku-api",
+  component: "api",
+  env: process.env.NODE_ENV ?? "development",
   level: process.env.LOG_LEVEL ?? "info",
-  transport:
-    process.env.NODE_ENV !== "production"
-      ? {
-          target: "pino-pretty",
-          options: {
-            colorize: true,
-            translateTime: "HH:MM:ss.l",
-            ignore: "pid,hostname",
-          },
-        }
-      : undefined,
 });
