@@ -41,6 +41,7 @@ Kagami/                       # one git repo, one workspace
 └── shared/
     └── packages/
         ├── eslint-config/    # @kagami/eslint-config (./base, ./next)
+        ├── logger/           # @kagami/logger (createLogger factory, shared redact list, transport policy)
         └── tsconfig/         # @kagami/tsconfig (./base.json, ./library.json, ./server.json, ./nextjs.json)
 ```
 

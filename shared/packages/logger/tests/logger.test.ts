@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_REDACT_PATHS, createLogger } from "../src/index";
+import { DEFAULT_REDACT_PATHS, buildLoggerBase, createLogger } from "../src/index";
+
+describe("buildLoggerBase", () => {
+  it("snapshots pid and hostname at call time alongside service bindings", () => {
+    const base = buildLoggerBase({
+      service: "test-service",
+      component: "test-component",
+      env: "test",
+    });
+
+    expect(base.pid).toBe(process.pid);
+    expect(base.hostname.length).toBeGreaterThan(0);
+    expect(base).toMatchObject({
+      service: "test-service",
+      component: "test-component",
+      env: "test",
+    });
+  });
+});
 
 describe("createLogger", () => {
   it("exposes stable service/component/env bindings", () => {

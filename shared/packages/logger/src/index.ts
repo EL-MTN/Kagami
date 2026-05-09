@@ -27,10 +27,28 @@ export const DEFAULT_REDACT_PATHS = [
   "*.refreshToken",
 ];
 
-export interface CreateLoggerOptions {
+export interface ServiceBindings {
   service: string;
   component: string;
   env: string;
+}
+
+export interface LoggerBaseBindings extends ServiceBindings {
+  pid: number;
+  hostname: string;
+}
+
+// Snapshot pid + hostname eagerly at call time so loggers built at module load
+// don't drift if a later refactor wraps them in a deferred factory.
+export function buildLoggerBase(bindings: ServiceBindings): LoggerBaseBindings {
+  return {
+    pid: process.pid,
+    hostname: hostname(),
+    ...bindings,
+  };
+}
+
+export interface CreateLoggerOptions extends ServiceBindings {
   level?: string;
   formatters?: LoggerOptions["formatters"];
 }
@@ -40,13 +58,7 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
 
   return pino({
     level,
-    base: {
-      pid: process.pid,
-      hostname: hostname(),
-      service,
-      component,
-      env,
-    },
+    base: buildLoggerBase({ service, component, env }),
     redact: {
       paths: DEFAULT_REDACT_PATHS,
       censor: "[redacted]",

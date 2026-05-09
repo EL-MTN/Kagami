@@ -28,6 +28,7 @@ apps/api/tests/
 ├── scoring.test.ts           # scoring.ts + text.ts (pure)
 ├── session-summary.test.ts   # cache hit/miss semantics
 ├── transcript.test.ts        # parseTranscript shape
+├── logger.test.ts            # stable service/component/env bindings on the @kagami/logger wrapper
 └── fixtures/
     └── transcript-1.md
 ```
@@ -96,6 +97,7 @@ Turbo's `test` task depends on `^build`, but neither workspace has a build step 
 | Scoring + text utils  | `scoring.test.ts`                                                                                 |
 | Answerer formatters   | `query.test.ts` (`formatFactsGroupedByDateNewestFirst`, `stripMemThinking`, `deriveQuestionDate`) |
 | Session-summary cache | `session-summary.test.ts`                                                                         |
+| Logger bindings       | `logger.test.ts` — stable `service`/`component`/`env` on the `@kagami/logger` wrapper             |
 
 ## What's not covered (yet)
 
