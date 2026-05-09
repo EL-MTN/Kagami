@@ -12,7 +12,6 @@ const redactPaths = [
   "secret",
   "accessToken",
   "refreshToken",
-  "imageData",
   "headers.authorization",
   "headers.cookie",
   "req.headers.authorization",
@@ -26,7 +25,6 @@ const redactPaths = [
   "*.secret",
   "*.accessToken",
   "*.refreshToken",
-  "*.imageData",
 ];
 
 export const loggerBase = {

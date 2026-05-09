@@ -82,7 +82,7 @@ Apps share no in-process code. The dashboard reaches the API only through `fetch
 - **TypeScript + ESM** — strict mode, ES2022 target, `NodeNext` module resolution for the API; bundler resolution for the dashboard. Server config sets `noUncheckedIndexedAccess`.
 - **Async everywhere** — all I/O is async/await, no callbacks
 - **Zod at boundaries** — request bodies validated in `apps/api/src/routes/*` and `mcp.ts`; transcript frontmatter validated in `types.ts`. Internal modules trust their inputs.
-- **Pino logging** — structured logs via `logger.info({ context }, "message")`. `pino-http` is mounted on the API. Pretty transport in non-production.
+- **Pino logging** — structured logs via `logger.info({ context }, "message")` with stable `service`, `component`, and `env` bindings plus common secret redaction. `pino-http` is mounted on the API. Pretty transport in non-production.
 - **Vercel AI SDK + OpenAI-compatible provider** — `generateObject()` for extraction/summary, `generateText()` for the answerer, `embed()` / `embedMany()` for vectors. Any OpenAI-compatible endpoint works (LM Studio, OpenAI, vLLM, Ollama).
 - **No classes for services** — prefer standalone exported functions. Routers, ranker, ingest paths, and MCP tools are all plain functions.
 - **Atomic facts are write-once** — no UPDATE/DELETE on the `facts` collection. Corrections happen by appending newer facts with later `event_date`; the answerer prompt resolves contradictions newest-wins. Every mutation leaves a row in `history`.
