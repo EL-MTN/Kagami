@@ -118,7 +118,7 @@ An MCP transport at `/mcp` exposes the same operations as 7 tools (`recall`, `qu
 
 **Storage.** MongoDB collections: `facts` (with `$vectorSearch` HNSW + `$search` BM25 indexes), `entities`, `transcripts`, `session_summaries`, `history`. Facts are scoped by `(user_id, run_id, agent_id)` — no auth layer; multi-tenancy is filter-based.
 
-**External services.** OpenAI-compatible LLM (default LM Studio at `http://localhost:1234`) and a separately-configured embedding provider (default nomic-embed). Both pluggable via `LLM_*` / `EMBEDDING_*` env vars.
+**External services.** OpenAI-compatible LLM (default LM Studio at `http://localhost:1234/v1`) and a separately-configured embedding provider (default nomic-embed). Both pluggable via `LLM_*` / `EMBEDDING_*` env vars.
 
 **Coupling notes.** No code references to Kokoro or Kizuna. Pull-only by design. The dashboard CSS contains a stray comment referencing a "Warm-paper light theme inherited from Kokoro" — the only cross-project trace, and cosmetic.
 
