@@ -44,7 +44,7 @@ https://www.googleapis.com/auth/calendar.readonly
 startIngestScheduler({ config }) → { stop() }
 ```
 
-- If `KIZUNA_INGEST_INTERVAL_SEC === 0` (the default), the scheduler is a no-op. Manual triggers via `POST /v1/sync/{gmail,gcal}/run` still work.
+- If `KIZUNA_INGEST_INTERVAL_SEC === 0` (the default), the scheduler is a no-op. Manual triggers via `POST /sync/{gmail,gcal}/run` still work.
 - Otherwise: `setInterval(tick, intervalSec * 1000)`. Each tick runs Gmail then Calendar sequentially; failures are logged but not rethrown so the next tick still fires.
 - A `running = true` flag guards against overlapping ticks (if a tick takes longer than the interval, the next is skipped with `logger.warn('ingest tick skipped')`).
 - **No tick on startup.** First tick is one full interval after boot; this avoids surprise sync runs on `tsx watch` reloads.
@@ -101,7 +101,7 @@ Per ID:
 
 - On `OAuthError('invalid_grant')` or a Gmail 401 outside `getMessage` → `pauseWith(message)`: set `pausedAt: now`, increment `errorCount`, write `lastError`. Subsequent runs short-circuit with `{ status: 'paused' }` until either:
   - The user re-authorizes via `/oauth/google/start` → `/callback`, which calls `SyncState.updateMany({ pausedAt: { $ne: null } }, { pausedAt: null, lastError: null })`; or
-  - The caller passes `force: true` to `POST /v1/sync/gmail/run`, which clears `pausedAt` and runs once.
+  - The caller passes `force: true` to `POST /sync/gmail/run`, which clears `pausedAt` and runs once.
 - On any other error → write `lastError` + bump `errorCount` (without setting `pausedAt`). Next tick retries.
 - A successful run clears `lastError` and writes `lastRunAt`. `errorCount` is monotonic — it isn't cleared on success today.
 
@@ -198,17 +198,17 @@ That's the whole point of `sourceRef` carrying the provider's stable ID instead 
 
 ## Failure modes — quick reference
 
-| Trigger                                             | What happens                                                                                                                              |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `OAuthToken` row missing                            | `OAuthError('no_grant')` → `result.status = 'no_grant'`. Not a pause; just an empty run.                                                  |
-| `KIZUNA_OAUTH_ENCRYPTION_KEY` missing               | Caught at the route level (`POST /v1/sync/.../run`) — `400 bad_request`. Direct calls to the worker raise `OAuthError('refresh_failed')`. |
-| Google rejects the refresh token (`invalid_grant`)  | `pauseWith('invalid_grant')` → `pausedAt` set, `errorCount++`. Worker stays paused until re-grant or `force: true`.                       |
-| Gmail 401 inside `getMessage`                       | Re-raised as `OAuthError('invalid_grant')` so the run pauses cleanly mid-batch.                                                           |
-| Calendar 410 on syncToken                           | `clearSyncToken()` + rebootstrap; `resyncedFromBootstrap: true` in the result.                                                            |
-| Single message / event fails to fetch or parse      | `result.errors++`, `logger.warn`, continue to next ID. Whole run still succeeds.                                                          |
-| Mongo dup-key on `sourceRef`                        | `recordInteraction` returns `null` (`skipIfDuplicate`); `result.skippedExisting++`.                                                       |
-| Tombstoned `Person` (with `suppressReingest: true`) | New interactions still link via the existing `personId`. The Person row itself is left alone.                                             |
+| Trigger                                             | What happens                                                                                                                           |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `OAuthToken` row missing                            | `OAuthError('no_grant')` → `result.status = 'no_grant'`. Not a pause; just an empty run.                                               |
+| `KIZUNA_OAUTH_ENCRYPTION_KEY` missing               | Caught at the route level (`POST /sync/.../run`) — `400 bad_request`. Direct calls to the worker raise `OAuthError('refresh_failed')`. |
+| Google rejects the refresh token (`invalid_grant`)  | `pauseWith('invalid_grant')` → `pausedAt` set, `errorCount++`. Worker stays paused until re-grant or `force: true`.                    |
+| Gmail 401 inside `getMessage`                       | Re-raised as `OAuthError('invalid_grant')` so the run pauses cleanly mid-batch.                                                        |
+| Calendar 410 on syncToken                           | `clearSyncToken()` + rebootstrap; `resyncedFromBootstrap: true` in the result.                                                         |
+| Single message / event fails to fetch or parse      | `result.errors++`, `logger.warn`, continue to next ID. Whole run still succeeds.                                                       |
+| Mongo dup-key on `sourceRef`                        | `recordInteraction` returns `null` (`skipIfDuplicate`); `result.skippedExisting++`.                                                    |
+| Tombstoned `Person` (with `suppressReingest: true`) | New interactions still link via the existing `personId`. The Person row itself is left alone.                                          |
 
 ## Ad-hoc imports
 
-`apps/api/scripts/import-vcards.ts` is a one-shot script that parses an Apple Contacts vCard export and POSTs each card to `/v1/people`. It uses the regular concierge API (no auth at single-user localhost) and is not part of the scheduler. Conflicts (`409` from the unique-domain index, etc.) are counted but not rethrown.
+`apps/api/scripts/import-vcards.ts` is a one-shot script that parses an Apple Contacts vCard export and POSTs each card to `/people`. It uses the regular concierge API (no auth at single-user localhost) and is not part of the scheduler. Conflicts (`409` from the unique-domain index, etc.) are counted but not rethrown.

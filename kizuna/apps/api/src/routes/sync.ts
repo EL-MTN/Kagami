@@ -5,40 +5,6 @@ import { SyncState } from "../db/models/SyncState.js";
 import { runCalendarSyncOnce } from "../ingest/calendar.js";
 import { runGmailSyncOnce } from "../ingest/gmail.js";
 import { errors } from "../lib/errors.js";
-import { ISODateString } from "../schemas/common.js";
-import type { EndpointSpec } from "../manifest.js";
-
-export const SyncStateResponse = z.object({
-  provider: z.enum(["gmail", "gcal"]),
-  historyId: z.string().nullable(),
-  syncToken: z.string().nullable(),
-  lastRunAt: ISODateString.nullable(),
-  errorCount: z.number(),
-  lastError: z.string().nullable(),
-  pausedAt: ISODateString.nullable(),
-});
-
-export const RunSyncResponse = z.object({
-  status: z.enum(["ok", "paused", "no_grant", "error"]),
-  fetched: z.number(),
-  inserted: z.number(),
-  skippedExisting: z.number(),
-  skippedNewsletter: z.number(),
-  errors: z.number(),
-  historyIdAfter: z.string().nullable(),
-  message: z.string().optional(),
-});
-
-export const RunCalendarSyncResponse = z.object({
-  status: z.enum(["ok", "paused", "no_grant", "error"]),
-  fetched: z.number(),
-  upserted: z.number(),
-  cancelled: z.number(),
-  errors: z.number(),
-  syncTokenAfter: z.string().nullable(),
-  resyncedFromBootstrap: z.boolean(),
-  message: z.string().optional(),
-});
 
 export const RunSyncBody = z.object({ force: z.boolean().optional() }).strict();
 
@@ -131,38 +97,3 @@ export function makeSyncRouter(config: Config): Router {
 
   return r;
 }
-
-export const syncEndpoints: EndpointSpec[] = [
-  {
-    name: "get_gmail_sync_state",
-    method: "GET",
-    path: "/v1/sync/gmail/state",
-    description: "Return the Gmail sync state (historyId, lastRunAt, errors, pause).",
-    response: SyncStateResponse,
-  },
-  {
-    name: "run_gmail_sync",
-    method: "POST",
-    path: "/v1/sync/gmail/run",
-    description:
-      "Run a Gmail sync pass synchronously. Bootstrap on first run; incremental thereafter. Returns counts + final historyId.",
-    body: RunSyncBody,
-    response: RunSyncResponse,
-  },
-  {
-    name: "get_calendar_sync_state",
-    method: "GET",
-    path: "/v1/sync/gcal/state",
-    description: "Return the Calendar sync state.",
-    response: SyncStateResponse,
-  },
-  {
-    name: "run_calendar_sync",
-    method: "POST",
-    path: "/v1/sync/gcal/run",
-    description:
-      "Run a Calendar sync pass synchronously. Bootstrap on first run; sync-token-incremental thereafter. Reconciles edits + cancellations on existing events.",
-    body: RunSyncBody,
-    response: RunCalendarSyncResponse,
-  },
-];

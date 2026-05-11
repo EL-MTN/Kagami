@@ -488,7 +488,7 @@ Important runtime notes:
 
 - API runs at `https://api.kizuna.localhost`.
 - Dashboard runs at `https://kizuna.localhost`.
-- `/v1/*` routes are open at single-user localhost; there is no bearer token on local API calls.
+- Kizuna resource routes are open at single-user localhost; there is no bearer token on local API calls.
 - The dashboard sends no API auth header and has no login layer.
 - `USER_EMAILS` identifies the local user's addresses for ingest and dashboard classification.
 - `KIZUNA_OAUTH_ENCRYPTION_KEY` must decode to exactly 32 bytes.

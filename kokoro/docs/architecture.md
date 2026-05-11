@@ -104,12 +104,12 @@ Tooling bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from the Kagami
 
 ┌────────────┐     ┌──────────────────┐
 │@kokoro/    │     │  Kizuna service  │
-│kizuna HTTP │────►│ /v1/people       │
-│client      │     │ /v1/interactions │
-└────────────┘     │ /v1/followups    │
-KIZUNA_URL         │ /v1/_manifest    │
-(default           └──────────────────┘
-https://api.kizuna.localhost)
+│kizuna HTTP │────►│ /people       │
+│client      │     │ /interactions │
+│            │     │ /followups    │
+└────────────┘     └──────────────────┘
+KIZUNA_URL
+(default https://api.kizuna.localhost)
 
 ┌──────────────────────────┐
 │   Proactive Scheduler    │    ← apps/bot/src/scheduler/proactive.ts
@@ -225,7 +225,7 @@ https://api.kizuna.localhost)
        │   └─ LLM may call tools (searchMemory, rememberFact, sendPhoto, sendEmail, etc.)
        │       searchMemory → @kokoro/memory.recall() → POST Kioku /recall
        │       rememberFact → @kokoro/memory.appendFact() → POST Kioku /facts
-       │       CRM tools → @kokoro/kizuna → GET Kizuna /v1/* read-only endpoints
+       │       CRM tools → @kokoro/kizuna → GET Kizuna /* read-only endpoints
        │
 11. extractResponseText(steps) + collectToolCalls(steps)
        │

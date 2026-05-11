@@ -125,7 +125,7 @@ async function main(): Promise<void> {
 
   for (const card of cards) {
     const payload = buildPayload(card);
-    const res = await fetch(`${baseUrl}/v1/people`, {
+    const res = await fetch(`${baseUrl}/people`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),

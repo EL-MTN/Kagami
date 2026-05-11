@@ -6,29 +6,7 @@ import { SOURCE_VALUES } from "../db/models/base.js";
 import { encodeCursor, decodeCursor } from "../lib/cursor.js";
 import { errors } from "../lib/errors.js";
 import { serializeOrganization } from "../lib/serialize.js";
-import {
-  BoolFlag,
-  IdParam,
-  ISODateString,
-  ListResponse,
-  ObjectIdString,
-  Pagination,
-} from "../schemas/common.js";
-import type { EndpointSpec } from "../manifest.js";
-
-export const OrganizationResponseShape = z.object({
-  id: ObjectIdString,
-  name: z.string(),
-  domain: z.string().nullable(),
-  website: z.string().nullable(),
-  industry: z.string().nullable(),
-  notes: z.string().nullable(),
-  source: z.enum(SOURCE_VALUES),
-  sourceVersion: z.string().nullable(),
-  deletedAt: ISODateString.nullable(),
-  createdAt: ISODateString,
-  updatedAt: ISODateString,
-});
+import { BoolFlag, IdParam, Pagination } from "../schemas/common.js";
 
 export const OrganizationCreateBody = z
   .object({
@@ -118,47 +96,3 @@ organizationsRouter.delete("/organizations/:id", async (req, res) => {
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-
-export const organizationsEndpoints: EndpointSpec[] = [
-  {
-    name: "find_organizations",
-    method: "GET",
-    path: "/v1/organizations",
-    description: "List organizations.",
-    query: ListOrganizationsQuery,
-    response: ListResponse(OrganizationResponseShape),
-  },
-  {
-    name: "get_organization",
-    method: "GET",
-    path: "/v1/organizations/:id",
-    description: "Fetch one organization by id (live rows only).",
-    params: IdParam,
-    response: OrganizationResponseShape,
-  },
-  {
-    name: "add_organization",
-    method: "POST",
-    path: "/v1/organizations",
-    description: "Create an organization.",
-    body: OrganizationCreateBody,
-    response: OrganizationResponseShape,
-  },
-  {
-    name: "update_organization",
-    method: "PATCH",
-    path: "/v1/organizations/:id",
-    description: "Patch an organization.",
-    params: IdParam,
-    body: OrganizationUpdateBody,
-    response: OrganizationResponseShape,
-  },
-  {
-    name: "tombstone_organization",
-    method: "DELETE",
-    path: "/v1/organizations/:id",
-    description: "Soft-delete an organization.",
-    params: IdParam,
-    response: OrganizationResponseShape,
-  },
-];

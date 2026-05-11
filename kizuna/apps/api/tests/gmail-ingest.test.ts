@@ -465,9 +465,9 @@ describe("runGmailSync — invalid_grant", () => {
   });
 });
 
-describe("GET /v1/sync/gmail/state", () => {
+describe("GET /sync/gmail/state", () => {
   it("returns a default state when no doc exists", async () => {
-    const res = await request(h.app).get("/v1/sync/gmail/state");
+    const res = await request(h.app).get("/sync/gmail/state");
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       provider: "gmail",
@@ -487,7 +487,7 @@ describe("GET /v1/sync/gmail/state", () => {
       lastError: "transient",
       source: "gmail-sync",
     });
-    const res = await request(h.app).get("/v1/sync/gmail/state");
+    const res = await request(h.app).get("/sync/gmail/state");
     expect(res.status).toBe(200);
     expect(res.body.historyId).toBe("7777");
     expect(res.body.errorCount).toBe(2);

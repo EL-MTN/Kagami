@@ -14,7 +14,6 @@ kizuna/                              # subtree within the Kagami nested monorepo
 │   │   │   ├── main.ts              # boot: loadConfig → connectDb → createApp → ingestScheduler
 │   │   │   ├── server.ts            # Express app builder + middleware mount order
 │   │   │   ├── config.ts            # zod env schema; throws on misconfig
-│   │   │   ├── manifest.ts          # z.toJSONSchema → /v1/_manifest
 │   │   │   ├── db/
 │   │   │   │   ├── connect.ts       # mongoose.connect + syncIndexes + ping/close handle
 │   │   │   │   ├── models/          # Person, Organization, Interaction, Followup, OAuthToken, SyncState, base
@@ -37,10 +36,10 @@ kizuna/                              # subtree within the Kagami nested monorepo
 │   │   │   │   ├── duration.ts      # ISO duration parser (P7D, PT12H, "7d")
 │   │   │   │   ├── serialize.ts     # mongo doc → wire shape
 │   │   │   │   └── logger.ts        # pino singleton
-│   │   │   ├── routes/              # one router per resource (people, organizations, interactions, followups, contexts, digest, oauth, sync, manifest, health)
-│   │   │   └── schemas/common.ts    # Pagination, IdParam, ISODateString, BoolFlag, ListResponse
+│   │   │   ├── routes/              # one router per resource (people, organizations, interactions, followups, contexts, digest, oauth, sync, health)
+│   │   │   └── schemas/common.ts    # Pagination, IdParam, ISODateString, BoolFlag
 │   │   ├── tests/                   # vitest + supertest + mongodb-memory-server
-│   │   └── scripts/import-vcards.ts # vCard → POST /v1/people
+│   │   └── scripts/import-vcards.ts # vCard → POST /people
 │   └── dashboard/                   # Next.js 15 (App Router)
 ├── packages/                        # reserved for future Kizuna-only libs (currently empty)
 ├── portless.json                    # api.kizuna + kizuna registrations
@@ -76,10 +75,10 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 │                                                                   │
 │  health      (open)                                               │
 │  /oauth/*    (start/status open; callback uses HMAC state)        │
-│  /v1/*       (open at single-user localhost)                      │
+│  resource routes (open at single-user localhost)                  │
 │      │                                                            │
 │      ├── routes/people · interactions · followups ·               │
-│      │   organizations · contexts · digest · sync · manifest      │
+│      │   organizations · contexts · digest · sync                 │
 │      ▼                                                            │
 │  db/recordInteraction.ts        (only insert path; touches        │
 │                                  Person.lastInteractionAt via $max) │
@@ -114,7 +113,7 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 
 ## Request Flow
 
-### `/v1/*` (people, interactions, etc.)
+### Resource Routes (people, interactions, etc.)
 
 ```
 1. express.json({ limit: "1mb" }) parses the body.
@@ -156,7 +155,7 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 7. 200 text/html "Granted ✓".
 ```
 
-### Gmail sync tick (`POST /v1/sync/gmail/run` or scheduler)
+### Gmail sync tick (`POST /sync/gmail/run` or scheduler)
 
 ```
 1. loadOrInitState() — upsert SyncState{ provider:'gmail' }.
@@ -217,9 +216,9 @@ See [sync.md](sync.md) for the full state machine.
 1. `import 'dotenv/config'` — pick up `apps/api/.env`.
 2. `loadConfig()` — zod-parse `process.env`. Throws with formatted issues on misconfig.
 3. `connectDb(MONGO_URI)` — `mongoose.connect` (5 s server-selection timeout) + `mongoose.syncIndexes()` for every registered model. Returns a `DbHandle` exposing `ping()` and `close()`.
-4. `createApp({ db, config })` — builds the Express app: disables `x-powered-by`, mounts `express.json({ limit: '1mb' })`, then `health` (open), `/oauth/*` (start/status open; callback uses signed CSRF state), `/v1/*` (open at single-user localhost) for the rest of the routers, a 404 handler, and finally `makeErrorHandler()`.
+4. `createApp({ db, config })` — builds the Express app: disables `x-powered-by`, mounts `express.json({ limit: '1mb' })`, then `health` (open), `/oauth/*` (start/status open; callback uses signed CSRF state), resource routers (open at single-user localhost), a 404 handler, and finally `makeErrorHandler()`.
 5. `app.listen(config.PORT, …)` — Portless injects `PORT` under the normal `dev` script and routes `https://api.kizuna.localhost` to it. The API's `3000` default is only a standalone fallback outside Portless.
-6. `startIngestScheduler({ config })` — `setInterval` every `KIZUNA_INGEST_INTERVAL_SEC` seconds (no startup tick — first run is one interval after boot, to avoid surprise sync runs on `tsx watch` reloads). When the env var is `0`, the scheduler is a no-op and ingest runs only via `POST /v1/sync/{gmail,gcal}/run`.
+6. `startIngestScheduler({ config })` — `setInterval` every `KIZUNA_INGEST_INTERVAL_SEC` seconds (no startup tick — first run is one interval after boot, to avoid surprise sync runs on `tsx watch` reloads). When the env var is `0`, the scheduler is a no-op and ingest runs only via `POST /sync/{gmail,gcal}/run`.
 7. SIGINT / SIGTERM → stop scheduler → `server.close()` → `db.close()` → `process.exit(0)`. There is no app-level `SIGINT` handler for in-flight requests — Express's default is to stop accepting and let the active ones drain.
 
 ## Key Design Decisions
@@ -230,7 +229,7 @@ See [sync.md](sync.md) for the full state machine.
 - **Dedup by `sourceRef`.** `Interaction.sourceRef = { provider, id }` carries Gmail's message ID or Calendar's event ID. A unique partial index `(sourceRef.provider, sourceRef.id)` enforces "one interaction per Gmail message" and "one per Calendar event"; ingest workers replay safely. Concierge-created interactions have `sourceRef: null` and are exempt.
 - **Skip-self on group threads.** When ≥ 2 non-user recipients remain, USER_EMAILS addresses are dropped from `to/cc` so the dashboard's relationship graph doesn't bloat with self-edges. The `from` role is preserved either way, which is what makes the dashboard's "outbound" badge work.
 - **AES-256-GCM at rest, signed CSRF in flight.** Refresh tokens are encrypted with `KIZUNA_OAUTH_ENCRYPTION_KEY` (a base64 32-byte key, generated via `node -e "console.log(crypto.randomBytes(32).toString('base64'))"`); IV is random per write, auth tag concatenated, base64 envelope. The OAuth callback is protected by an HMAC-signed state token (`apps/api/src/lib/oauth-state.ts`, 10-min TTL, secret is a process-local `randomBytes(32)` generated at module load — restarting the API invalidates in-flight consent flows but no on-disk credential is needed).
-- **In-process scheduler, no queue.** Ingest is a setInterval loop with a re-entrancy guard. Tradeoff: simpler ops, no external broker, no horizontal scale; for a single-user CRM this is fine. The manual triggers (`POST /v1/sync/{gmail,gcal}/run`) work regardless of the scheduler.
+- **In-process scheduler, no queue.** Ingest is a setInterval loop with a re-entrancy guard. Tradeoff: simpler ops, no external broker, no horizontal scale; for a single-user CRM this is fine. The manual triggers (`POST /sync/{gmail,gcal}/run`) work regardless of the scheduler.
 - **Two layers of contract enforcement.** Zod-strict request bodies (`.strict()`) reject unknown fields at the route boundary; Mongoose `strict: 'throw'` rejects them at the model boundary. Both surface as `400 bad_request`. Belt and suspenders, on the theory that a CRM's data quality is the product.
 - **Cursor pagination, base64url JSON.** `apps/api/src/lib/cursor.ts`. Most cursors are `{ id }` (descending `_id`); the people list under `sort=lastInteractionAt:-1` uses a compound `{ lia, id }` cursor with a trailing-null bucket so people who've never had an interaction sort last but stay paginable.
 - **Pull-only by design (system level).** Kizuna exposes an API consumed by the dashboard and Kokoro, but it never initiates outbound calls to sibling services in the Kagami workspace. Its only outbound network calls are to Google.
@@ -242,9 +241,8 @@ See [sync.md](sync.md) for the full state machine.
 | `apps/api/src/db/models/`              | Mongoose schemas (Person, Organization, Interaction, Followup, OAuthToken, SyncState) + `base.ts` provenance fields. See [data-model.md](data-model.md).                                  |
 | `apps/api/src/db/recordInteraction.ts` | The only insert path for `interactions`; maintains `Person.lastInteractionAt`.                                                                                                            |
 | `apps/api/src/ingest/`                 | Gmail + Calendar workers (state machines, paging, error mapping), pure parsers, `upsertPerson`, in-process scheduler. See [sync.md](sync.md).                                             |
-| `apps/api/src/routes/`                 | One Express router per resource. Each exports both the router and an `EndpointSpec[]` so the manifest stays in sync.                                                                      |
+| `apps/api/src/routes/`                 | One Express router per resource. Route handlers own both zod validation and response serialization.                                                                                       |
 | `apps/api/src/lib/`                    | Cross-cutting helpers — error envelope, AES-256-GCM, signed CSRF state, OAuth client + cached access token, base64url cursor, ISO duration parser, mongo→wire serializer, pino singleton. |
-| `apps/api/src/manifest.ts`             | Zod 4 `z.toJSONSchema` factory used by `routes/manifest.ts` to render `GET /v1/_manifest` (OpenAPI-shaped endpoint catalog).                                                              |
 | `apps/dashboard/src/app/`              | Next.js 15 App Router. Single `(app)` route group; no login. See [dashboard.md](dashboard.md).                                                                                            |
 | `apps/dashboard/src/lib/`              | Typed API client, hand-mirrored response types, formatters.                                                                                                                               |
 

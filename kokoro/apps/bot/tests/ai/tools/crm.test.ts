@@ -136,7 +136,7 @@ describe("getPersonContext CRM tool", () => {
     mockGetPersonContext.mockRejectedValue(
       new MockError("http", "Kizuna request failed with status 404", {
         status: 404,
-        routeTemplate: "/v1/people/:id",
+        routeTemplate: "/people/:id",
       }),
     );
 
@@ -153,7 +153,7 @@ describe("getPersonContext CRM tool", () => {
     mockGetPersonContext.mockRejectedValue(
       new MockError("http", "Kizuna request failed with status 429", {
         status: 429,
-        routeTemplate: "/v1/people/:id",
+        routeTemplate: "/people/:id",
       }),
     );
 

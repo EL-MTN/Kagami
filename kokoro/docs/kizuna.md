@@ -11,7 +11,7 @@ Defined in `@kokoro/shared`:
 | `KIZUNA_URL`     | `https://api.kizuna.localhost` | Base URL for Kizuna API calls                |
 | `KIZUNA_ENABLED` | `true`                         | When `false`, CRM tools are omitted entirely |
 
-Kokoro sends no `Authorization` header to Kizuna. The v1 integration matches Kizuna's single-user localhost API model; the read-only invariant is enforced by this package and the bot tool palette.
+Kokoro sends no `Authorization` header to Kizuna. The integration matches Kizuna's single-user localhost API model; the read-only invariant is enforced by this package and the bot tool palette.
 
 ## Package Surface
 
@@ -30,7 +30,7 @@ Exported package functions are reads only. Do not add POST/PATCH/DELETE helpers 
 
 `apps/bot/src/ai/tools/crm.ts` wraps the package as four model-facing tools:
 
-- `findPeople({ query, limit? })` → `GET /v1/people?identityQuery=...`.
+- `findPeople({ query, limit? })` → `GET /people?identityQuery=...`.
 - `getPersonContext({ personId })` → profile, recent interactions, open followups under one shared deadline.
 - `recentInteractions({ personId, channel?, since?, limit? })` → `sort=occurredAt:-1`.
 - `listMyFollowups({ direction?, status?, limit? })` → `sort=duePriority:1`, hydrated with compact person summaries.
@@ -46,6 +46,5 @@ Package tests live in `packages/kizuna/tests/` and use MSW to assert:
 - Compact projections and excerpt truncation.
 - Followup hydration de-duplication, order preservation, and missing-person fallback.
 - `KizunaClientError` classification and redaction.
-- Consumer fixture coverage against `tests/fixtures/kizuna-manifest.v1.json`.
 
 Bot tool tests mock `@kokoro/kizuna` so tool-envelope behavior stays isolated from HTTP parsing.

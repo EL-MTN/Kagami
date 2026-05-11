@@ -43,9 +43,9 @@ async function createFollowup(opts: {
   });
 }
 
-describe("GET /v1/digest", () => {
+describe("GET /digest", () => {
   it("returns empty arrays when nothing is open", async () => {
-    const res = await request(h.app).get("/v1/digest");
+    const res = await request(h.app).get("/digest");
     expect(res.status).toBe(200);
     expect(res.body.window).toBe("P7D");
     expect(res.body.overdue).toEqual([]);
@@ -74,7 +74,7 @@ describe("GET /v1/digest", () => {
       dueAt: new Date(now + 30 * 86_400_000), // +30d, outside default
     });
 
-    const res = await request(h.app).get("/v1/digest");
+    const res = await request(h.app).get("/digest");
     expect(res.status).toBe(200);
     expect(res.body.overdue.map((f: { reason: string }) => f.reason)).toEqual(["send the deck"]);
     expect(res.body.upcoming.map((f: { reason: string }) => f.reason)).toEqual(["lunch"]);
@@ -87,12 +87,12 @@ describe("GET /v1/digest", () => {
       reason: "distant",
       dueAt: new Date(Date.now() + 20 * 86_400_000),
     });
-    const res = await request(h.app).get("/v1/digest?window=P30D");
+    const res = await request(h.app).get("/digest?window=P30D");
     expect(res.body.upcoming.map((f: { reason: string }) => f.reason)).toEqual(["distant"]);
   });
 
   it('accepts the short "7d" form', async () => {
-    const res = await request(h.app).get("/v1/digest?window=7d");
+    const res = await request(h.app).get("/digest?window=7d");
     expect(res.status).toBe(200);
     expect(res.body.window).toBe("7d");
   });
@@ -104,7 +104,7 @@ describe("GET /v1/digest", () => {
       reason: "note",
       dueAt: new Date(Date.now() + 86_400_000),
     });
-    const res = await request(h.app).get("/v1/digest");
+    const res = await request(h.app).get("/digest");
     expect(res.body.upcoming[0].person).toMatchObject({
       id: sarah,
       displayName: "Sarah",
@@ -129,19 +129,13 @@ describe("GET /v1/digest", () => {
       deletedAt: new Date(),
       source: "concierge",
     });
-    const res = await request(h.app).get("/v1/digest");
+    const res = await request(h.app).get("/digest");
     expect(res.body.overdue).toEqual([]);
     expect(res.body.upcoming).toEqual([]);
   });
 
   it("rejects an invalid window with 400", async () => {
-    const res = await request(h.app).get("/v1/digest?window=garbage");
+    const res = await request(h.app).get("/digest?window=garbage");
     expect(res.status).toBe(400);
-  });
-
-  it("appears in the manifest", async () => {
-    const res = await request(h.app).get("/v1/_manifest");
-    const names = (res.body.endpoints as Array<{ name: string }>).map((e) => e.name);
-    expect(names).toContain("get_digest");
   });
 });

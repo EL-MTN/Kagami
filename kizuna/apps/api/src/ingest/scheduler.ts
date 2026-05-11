@@ -12,7 +12,7 @@ export type Scheduler = {
  * workers sequentially. A re-entrancy guard ensures a slow tick never
  * overlaps with the next one. Disabled when intervalSec is 0.
  *
- * Manual triggers via POST /v1/sync/{gmail,gcal}/run remain available
+ * Manual triggers via POST /sync/{gmail,gcal}/run remain available
  * regardless of the scheduler.
  */
 export function startIngestScheduler(args: { config: Config }): Scheduler {

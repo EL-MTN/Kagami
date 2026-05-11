@@ -61,28 +61,28 @@ const qs = (q?: Record<string, unknown>): string => {
 };
 
 export const api = {
-  listPeople: (q?: ListPeopleQuery) => kz<ListResp<Person>>(`/v1/people${qs(q)}`),
-  getPerson: (id: string) => kz<Person>(`/v1/people/${id}`),
+  listPeople: (q?: ListPeopleQuery) => kz<ListResp<Person>>(`/people${qs(q)}`),
+  getPerson: (id: string) => kz<Person>(`/people/${id}`),
   getPersonInteractions: (id: string, q?: ListInteractionsQuery) =>
-    kz<ListResp<Interaction>>(`/v1/people/${id}/interactions${qs(q)}`),
+    kz<ListResp<Interaction>>(`/people/${id}/interactions${qs(q)}`),
   listInteractions: (q?: ListInteractionsQuery) =>
-    kz<ListResp<Interaction>>(`/v1/interactions${qs(q)}`),
-  listFollowups: (q?: ListFollowupsQuery) => kz<ListResp<Followup>>(`/v1/followups${qs(q)}`),
+    kz<ListResp<Interaction>>(`/interactions${qs(q)}`),
+  listFollowups: (q?: ListFollowupsQuery) => kz<ListResp<Followup>>(`/followups${qs(q)}`),
   listOrganizations: (q?: ListOrganizationsQuery) =>
-    kz<ListResp<Organization>>(`/v1/organizations${qs(q)}`),
-  getOrganization: (id: string) => kz<Organization>(`/v1/organizations/${id}`),
-  listContexts: (q?: ListContextsQuery) => kz<{ items: ContextRow[] }>(`/v1/contexts${qs(q)}`),
+    kz<ListResp<Organization>>(`/organizations${qs(q)}`),
+  getOrganization: (id: string) => kz<Organization>(`/organizations/${id}`),
+  listContexts: (q?: ListContextsQuery) => kz<{ items: ContextRow[] }>(`/contexts${qs(q)}`),
   oauthStatus: () => kz<OAuthStatus>("/oauth/google/status"),
-  gmailSyncState: () => kz<SyncState>("/v1/sync/gmail/state"),
+  gmailSyncState: () => kz<SyncState>("/sync/gmail/state"),
   runGmailSync: (force?: boolean) =>
-    kz<RunSyncResult>("/v1/sync/gmail/run", {
+    kz<RunSyncResult>("/sync/gmail/run", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(force ? { force: true } : {}),
     }),
-  gcalSyncState: () => kz<SyncState>("/v1/sync/gcal/state"),
+  gcalSyncState: () => kz<SyncState>("/sync/gcal/state"),
   runGcalSync: (force?: boolean) =>
-    kz<RunCalendarSyncResult>("/v1/sync/gcal/run", {
+    kz<RunCalendarSyncResult>("/sync/gcal/run", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(force ? { force: true } : {}),

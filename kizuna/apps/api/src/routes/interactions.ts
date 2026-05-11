@@ -10,16 +10,7 @@ import { encodeCursor, decodeCursor } from "../lib/cursor.js";
 import { errors } from "../lib/errors.js";
 import { appendAnd } from "../lib/query.js";
 import { serializeInteraction } from "../lib/serialize.js";
-import {
-  BoolFlag,
-  DateInput,
-  IdParam,
-  ISODateString,
-  ListResponse,
-  ObjectIdString,
-  Pagination,
-} from "../schemas/common.js";
-import type { EndpointSpec } from "../manifest.js";
+import { BoolFlag, DateInput, IdParam, ObjectIdString, Pagination } from "../schemas/common.js";
 
 const ParticipantInput = z
   .object({
@@ -36,42 +27,6 @@ const AttachmentInput = z
     ref: z.string().optional(),
   })
   .strict();
-
-export const ParticipantResponse = z.object({
-  personId: ObjectIdString,
-  role: z.enum(PARTICIPANT_ROLES),
-});
-
-export const SourceRefResponse = z.object({
-  provider: z.enum(["gmail", "gcal"]),
-  id: z.string(),
-});
-
-export const AttachmentResponse = z.object({
-  name: z.string(),
-  mimeType: z.string().nullable(),
-  size: z.number().nullable(),
-  ref: z.string().nullable(),
-});
-
-export const InteractionResponseShape = z.object({
-  id: ObjectIdString,
-  occurredAt: ISODateString,
-  channel: z.enum(CHANNEL_VALUES),
-  title: z.string(),
-  body: z.string(),
-  sourceRef: SourceRefResponse.nullable(),
-  participants: z.array(ParticipantResponse),
-  location: z.string().nullable(),
-  attachments: z.array(AttachmentResponse),
-  context: z.array(z.string()),
-  status: z.enum(INTERACTION_STATUS),
-  source: z.enum(SOURCE_VALUES),
-  sourceVersion: z.string().nullable(),
-  deletedAt: ISODateString.nullable(),
-  createdAt: ISODateString,
-  updatedAt: ISODateString,
-});
 
 export const InteractionCreateBody = z
   .object({
@@ -232,30 +187,3 @@ interactionsRouter.delete("/interactions/:id", async (req, res) => {
   if (!doc) throw errors.notFound("interaction not found");
   res.status(200).json(serializeInteraction(doc));
 });
-
-export const interactionsEndpoints: EndpointSpec[] = [
-  {
-    name: "list_interactions",
-    method: "GET",
-    path: "/v1/interactions",
-    description: "List interactions with filter DSL + cursor pagination.",
-    query: ListInteractionsQuery,
-    response: ListResponse(InteractionResponseShape),
-  },
-  {
-    name: "log_interaction",
-    method: "POST",
-    path: "/v1/interactions",
-    description: "Insert an interaction; updates lastInteractionAt on each participant via $max.",
-    body: InteractionCreateBody,
-    response: InteractionResponseShape,
-  },
-  {
-    name: "tombstone_interaction",
-    method: "DELETE",
-    path: "/v1/interactions/:id",
-    description: "Soft-delete an interaction. Does NOT roll back lastInteractionAt.",
-    params: IdParam,
-    response: InteractionResponseShape,
-  },
-];

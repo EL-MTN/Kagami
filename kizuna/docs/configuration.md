@@ -34,7 +34,7 @@ Notes:
 - The API has no bearer/auth env var. The OAuth CSRF state token (`apps/api/src/lib/oauth-state.ts`) uses a process-local `randomBytes(32)` secret regenerated on every API restart; an API restart invalidates any in-flight consent flow (the user re-clicks "Authorize"). See [auth.md](auth.md) for the threat model.
 - `KIZUNA_OAUTH_ENCRYPTION_KEY` is decoded from base64; the resulting buffer must be exactly 32 bytes. The schema rejects anything else with "must be a base64-encoded 32-byte key."
 - `USER_EMAILS` controls the ingest workers' "self" detection — see [sync.md](sync.md) and [auth.md](auth.md). It is _not_ an authentication boundary.
-- `KIZUNA_INGEST_INTERVAL_SEC=0` disables the in-process scheduler entirely. Manual triggers via `POST /v1/sync/{gmail,gcal}/run` work regardless. Set to `300` (5 min) for typical dev use.
+- `KIZUNA_INGEST_INTERVAL_SEC=0` disables the in-process scheduler entirely. Manual triggers via `POST /sync/{gmail,gcal}/run` work regardless. Set to `300` (5 min) for typical dev use.
 - `PORT` only applies when running standalone. Under `npm run dev`, Portless picks an ephemeral port and routes `https://api.kizuna.localhost` to it. Prefer the Portless URL in local config and docs.
 
 ### Generating the encryption key
@@ -92,10 +92,10 @@ First run prompts once for sudo to install a local CA (HTTPS auto-trusted therea
 MONGO_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com
 KIZUNA_INGEST_INTERVAL_SEC=0
-# Skip GOOGLE_OAUTH_* and KIZUNA_OAUTH_ENCRYPTION_KEY — start/callback will reject, but the rest of /v1/* works.
+# Skip GOOGLE_OAUTH_* and KIZUNA_OAUTH_ENCRYPTION_KEY — start/callback will reject, but the rest of the resource API works.
 ```
 
-You'll be able to use the concierge endpoints (`POST /v1/people`, etc.) and the dashboard's read-only views, but `/sync` will report "Google OAuth is not configured."
+You'll be able to use the concierge endpoints (`POST /people`, etc.) and the dashboard's read-only views, but `/sync` will report "Google OAuth is not configured."
 
 ### Single-machine dev with Google ingest
 
@@ -123,7 +123,7 @@ These only apply on the first run of each worker (the bootstrap path); increment
 
 ```bash
 mongosh kizuna --eval "db.syncstates.deleteOne({ provider: 'gmail' })"
-curl -XPOST https://api.kizuna.localhost/v1/sync/gmail/run \
+curl -XPOST https://api.kizuna.localhost/sync/gmail/run \
      -H 'content-type: application/json' -d '{}'
 ```
 
