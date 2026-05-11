@@ -1,10 +1,7 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { setupMswServer } from "@kokoro/test-utils";
 import { config, logger } from "@kokoro/shared";
 import { http, HttpResponse } from "msw";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import * as kizuna from "../src";
 import { findPeople, getPersonContext, listMyFollowups, recentInteractions } from "../src";
 
 type ConfigWithKizuna = {
@@ -163,7 +160,7 @@ describe("findPeople", () => {
     let observedUrl = "";
     let authHeader: string | null = null;
     server.use(
-      http.get(`${KIZUNA_BASE}/v1/people`, ({ request }) => {
+      http.get(`${KIZUNA_BASE}/people`, ({ request }) => {
         observedUrl = request.url;
         authHeader = request.headers.get("authorization");
         return HttpResponse.json({
@@ -198,7 +195,7 @@ describe("recentInteractions", () => {
   it("maps since to occurredAfter, sets occurredAt sort, clamps limits, and drops sourceRef", async () => {
     let observedUrl = "";
     server.use(
-      http.get(`${KIZUNA_BASE}/v1/interactions`, ({ request }) => {
+      http.get(`${KIZUNA_BASE}/interactions`, ({ request }) => {
         observedUrl = request.url;
         return HttpResponse.json({
           items: [interaction({ body: "hello\n\nworld" })],
@@ -232,7 +229,7 @@ describe("getPersonContext", () => {
   it("fans out to the person, sorted interactions, and due-priority followups endpoints", async () => {
     const observed: string[] = [];
     server.use(
-      http.get(`${KIZUNA_BASE}/v1/people/111111111111111111111111`, ({ request }) => {
+      http.get(`${KIZUNA_BASE}/people/111111111111111111111111`, ({ request }) => {
         observed.push(new URL(request.url).pathname);
         return HttpResponse.json(
           person({
@@ -241,13 +238,13 @@ describe("getPersonContext", () => {
           }),
         );
       }),
-      http.get(`${KIZUNA_BASE}/v1/people/111111111111111111111111/interactions`, ({ request }) => {
+      http.get(`${KIZUNA_BASE}/people/111111111111111111111111/interactions`, ({ request }) => {
         observed.push(
           `${new URL(request.url).pathname}?${new URL(request.url).searchParams.toString()}`,
         );
         return HttpResponse.json({ items: [interaction()], nextCursor: "i-next" });
       }),
-      http.get(`${KIZUNA_BASE}/v1/followups`, ({ request }) => {
+      http.get(`${KIZUNA_BASE}/followups`, ({ request }) => {
         observed.push(
           `${new URL(request.url).pathname}?${new URL(request.url).searchParams.toString()}`,
         );
@@ -259,9 +256,9 @@ describe("getPersonContext", () => {
 
     expect(observed).toEqual(
       expect.arrayContaining([
-        "/v1/people/111111111111111111111111",
-        "/v1/people/111111111111111111111111/interactions?limit=10&sort=occurredAt%3A-1",
-        "/v1/followups?status=open&limit=50&sort=duePriority%3A1&personId=111111111111111111111111",
+        "/people/111111111111111111111111",
+        "/people/111111111111111111111111/interactions?limit=10&sort=occurredAt%3A-1",
+        "/followups?status=open&limit=50&sort=duePriority%3A1&personId=111111111111111111111111",
       ]),
     );
     expect(result.pagination).toEqual({
@@ -279,7 +276,7 @@ describe("listMyFollowups", () => {
     const hydrated: string[] = [];
     let listUrl = "";
     server.use(
-      http.get(`${KIZUNA_BASE}/v1/followups`, ({ request }) => {
+      http.get(`${KIZUNA_BASE}/followups`, ({ request }) => {
         listUrl = request.url;
         return HttpResponse.json({
           items: [
@@ -290,7 +287,7 @@ describe("listMyFollowups", () => {
           nextCursor: "more",
         });
       }),
-      http.get(`${KIZUNA_BASE}/v1/people/:id`, ({ params }) => {
+      http.get(`${KIZUNA_BASE}/people/:id`, ({ params }) => {
         const rawId: unknown = params.id;
         const id =
           Array.isArray(rawId) && typeof rawId[0] === "string"
@@ -317,10 +314,10 @@ describe("listMyFollowups", () => {
 
   it("uses an Unknown person placeholder for followup hydration 404s", async () => {
     server.use(
-      http.get(`${KIZUNA_BASE}/v1/followups`, () =>
+      http.get(`${KIZUNA_BASE}/followups`, () =>
         HttpResponse.json({ items: [followup({ personId: "999999999999999999999999" })] }),
       ),
-      http.get(`${KIZUNA_BASE}/v1/people/999999999999999999999999`, () =>
+      http.get(`${KIZUNA_BASE}/people/999999999999999999999999`, () =>
         HttpResponse.json({ error: { code: "not_found" } }, { status: 404 }),
       ),
     );
@@ -355,7 +352,7 @@ describe("error handling", () => {
 
   it("classifies non-2xx and schema failures without leaking request details into safe messages", async () => {
     server.use(
-      http.get(`${KIZUNA_BASE}/v1/people`, () =>
+      http.get(`${KIZUNA_BASE}/people`, () =>
         HttpResponse.json({ error: "rate limit for Sarah" }, { status: 429 }),
       ),
     );
@@ -363,32 +360,16 @@ describe("error handling", () => {
     await expect(findPeople({ query: "Sarah Secret" })).rejects.toMatchObject({
       kind: "http",
       status: 429,
-      routeTemplate: "/v1/people",
+      routeTemplate: "/people",
       message: "Kizuna request failed with status 429",
     });
 
-    server.use(http.get(`${KIZUNA_BASE}/v1/people`, () => HttpResponse.json({ items: [{}] })));
+    server.use(http.get(`${KIZUNA_BASE}/people`, () => HttpResponse.json({ items: [{}] })));
 
     await expect(findPeople({ query: "Sarah Secret" })).rejects.toMatchObject({
       kind: "schema",
-      routeTemplate: "/v1/people",
+      routeTemplate: "/people",
       message: "Kizuna response schema mismatch",
     });
-  });
-});
-
-describe("manifest fixture", () => {
-  it("contains the Kizuna v1 manifest and remains inert test data", async () => {
-    const manifest = JSON.parse(
-      await readFile(resolve("tests/fixtures/kizuna-manifest.v1.json"), "utf8"),
-    ) as { endpoints: Array<{ name: string; method: string; query?: unknown }> };
-
-    expect(manifest.endpoints.some((endpoint) => endpoint.name === "create_followup")).toBe(true);
-    expect(JSON.stringify(manifest)).toContain("identityQuery");
-    expect(JSON.stringify(manifest)).toContain("occurredAt:-1");
-    expect(JSON.stringify(manifest)).toContain("duePriority:1");
-    expect(Object.keys(kizuna)).not.toEqual(
-      expect.arrayContaining(["createFollowup", "updatePerson"]),
-    );
   });
 });

@@ -54,8 +54,8 @@ async function findPeopleWithSignal(
   params.set("identityQuery", input.query);
   params.set("limit", String(clampLimit(input.limit, 10, 1, 20)));
   const result = await getJson(
-    `/v1/people?${params.toString()}`,
-    "/v1/people",
+    `/people?${params.toString()}`,
+    "/people",
     PeopleEnvelopeSchema,
     signal,
   );
@@ -70,8 +70,8 @@ export async function getPersonWithSignal(
   signal: AbortSignal,
 ): Promise<PersonWire> {
   return getJson(
-    `/v1/people/${encodeURIComponent(personId)}`,
-    "/v1/people/:id",
+    `/people/${encodeURIComponent(personId)}`,
+    "/people/:id",
     PersonWireSchema,
     signal,
   );
@@ -81,5 +81,5 @@ export function buildPeopleSearchPath(input: { query: string; limit?: number }) 
   const params = new URLSearchParams();
   appendParam(params, "identityQuery", input.query);
   params.set("limit", String(clampLimit(input.limit, 10, 1, 20)));
-  return `/v1/people?${params.toString()}`;
+  return `/people?${params.toString()}`;
 }

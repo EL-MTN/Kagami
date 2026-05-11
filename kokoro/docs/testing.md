@@ -171,8 +171,7 @@ HTTP surface or the exported client functions.
 ### `packages/kizuna/src/`
 
 The Kizuna package is a GET-only client over the external Kizuna API. Tests use
-MSW for URL/header assertions, response projection, manifest fixture checks, and
-safe error classification.
+MSW for URL/header assertions, response projection, and safe error classification.
 
 | File              | Status | Test file             | Notes                                                                                                     |
 | ----------------- | ------ | --------------------- | --------------------------------------------------------------------------------------------------------- |

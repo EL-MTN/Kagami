@@ -34,8 +34,7 @@ apps/api/tests/
 │   ├── fake-gmail.ts         # FakeGmailClient + buildPlainMessage helper
 │   └── fake-calendar.ts      # FakeCalendarClient
 ├── fixtures/
-│   ├── gmail/                # (raw JSON fixtures slot, currently empty)
-│   └── manifest.v1.json      # pinned /v1/_manifest fixture for downstream consumers
+│   └── gmail/                # (raw JSON fixtures slot, currently empty)
 ├── setup.ts                  # LOG_LEVEL=silent default
 ├── config.test.ts            # loadConfig branches (zod parse, defaults, CSV transforms)
 ├── duration.test.ts          # parseDurationMs (ISO + short forms)
@@ -45,12 +44,12 @@ apps/api/tests/
 ├── parse-event.test.ts       # parseCalendarEvent (organizer dedup, all-day, cancelled)
 ├── upsert-person.test.ts     # find-or-create semantics; suppressReingest; un-tombstone
 ├── people-sort.test.ts       # lastInteractionAt:-1 cursor (null bucket)
-├── digest.test.ts            # /v1/digest overdue/upcoming + duration parsing
-├── contexts.test.ts          # /v1/contexts aggregation + personId scoping
-├── health.test.ts            # /health + /v1/* no-auth contract
+├── digest.test.ts            # /digest overdue/upcoming + duration parsing
+├── contexts.test.ts          # /contexts aggregation + personId scoping
+├── health.test.ts            # /health + resource-route no-auth contract
 ├── kokoro-contract.test.ts   # read-only CRM API contract consumed by Kokoro
 ├── oauth.test.ts             # /oauth/google/{start,callback,status}
-├── v1.test.ts                # CRUD endpoints across people, organizations, interactions, followups
+├── crud.test.ts              # CRUD endpoints across people, organizations, interactions, followups
 ├── gmail-ingest.test.ts      # bootstrap + incremental + skip-self + newsletter + pause
 ├── gcal-ingest.test.ts       # bootstrap + incremental + 410 SyncTokenExpired + cancellation
 └── logger.test.ts            # stable service/component/env bindings on the @kagami/logger wrapper
@@ -123,7 +122,7 @@ beforeEach(async () => {
 const post = (p: string, body?: object) => request(h.app).post(p).send(body);
 
 it("creates a person with source=concierge and firstSeen set", async () => {
-  const r = await post("/v1/people", {
+  const r = await post("/people", {
     displayName: "Sarah Connor",
     primaryEmail: "Sarah@Example.com",
   });
@@ -204,15 +203,15 @@ The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (
 | `parse-message.ts` (Gmail parser)              | `parse-message.test.ts`                                                                                               |
 | `parse-event.ts` (Calendar parser)             | `parse-event.test.ts`                                                                                                 |
 | `upsertPerson` semantics                       | `upsert-person.test.ts` — find-or-create, suppressReingest, un-tombstone                                              |
-| `/v1/people` cursor + sort                     | `people-sort.test.ts` — `lastInteractionAt:-1` compound cursor + null bucket                                          |
-| `/v1/digest`                                   | `digest.test.ts`                                                                                                      |
-| `/v1/contexts`                                 | `contexts.test.ts`                                                                                                    |
-| `/health` + `/v1/*` no-auth contract           | `health.test.ts`                                                                                                      |
+| `/people` cursor + sort                        | `people-sort.test.ts` — `lastInteractionAt:-1` compound cursor + null bucket                                          |
+| `/digest`                                      | `digest.test.ts`                                                                                                      |
+| `/contexts`                                    | `contexts.test.ts`                                                                                                    |
+| `/health` + resource-route no-auth contract    | `health.test.ts`                                                                                                      |
 | OAuth start/callback/status                    | `oauth.test.ts` — including refresh-token encryption-at-rest verification                                             |
-| CRUD across people/orgs/interactions/followups | `v1.test.ts`                                                                                                          |
+| CRUD across people/orgs/interactions/followups | `crud.test.ts`                                                                                                        |
 | Gmail ingest end-to-end                        | `gmail-ingest.test.ts` — bootstrap, incremental, skip-self, newsletter blocklist, dedup via `sourceRef`, pause/resume |
 | Calendar ingest end-to-end                     | `gcal-ingest.test.ts` — bootstrap, incremental, 410 → re-bootstrap, cancellation, edit reconciliation                 |
-| Kokoro read-only API contract                  | `kokoro-contract.test.ts` — identity search, sorted interactions/followups, and `/v1/_manifest` fixture parity        |
+| Kokoro read-only API contract                  | `kokoro-contract.test.ts` — identity search and sorted interactions/followups                                         |
 | Logger bindings                                | `logger.test.ts` — stable `service`/`component`/`env` on the `@kagami/logger` wrapper                                 |
 
 ## What's not covered

@@ -7,21 +7,8 @@ import { SOURCE_VALUES } from "../db/models/base.js";
 import { encodeCursor, decodeCursor } from "../lib/cursor.js";
 import { errors } from "../lib/errors.js";
 import { serializePerson } from "../lib/serialize.js";
-import {
-  BoolFlag,
-  DateInput,
-  IdParam,
-  ISODateString,
-  ListResponse,
-  ObjectIdString,
-  Pagination,
-} from "../schemas/common.js";
-import type { EndpointSpec } from "../manifest.js";
-import {
-  ListInteractionsQuery,
-  listInteractionsForFilter,
-  InteractionResponseShape,
-} from "./interactions.js";
+import { BoolFlag, DateInput, IdParam, ObjectIdString, Pagination } from "../schemas/common.js";
+import { ListInteractionsQuery, listInteractionsForFilter } from "./interactions.js";
 
 const Birthday = z.union([
   z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -29,28 +16,6 @@ const Birthday = z.union([
 ]);
 
 const HandlesInput = z.record(z.string(), z.string());
-
-export const PersonResponseShape = z.object({
-  id: ObjectIdString,
-  displayName: z.string(),
-  primaryEmail: z.string().nullable(),
-  primaryOrgId: ObjectIdString.nullable(),
-  relationship: z.string().nullable(),
-  firstSeen: ISODateString.nullable(),
-  lastInteractionAt: ISODateString.nullable(),
-  emails: z.array(z.string()),
-  phones: z.array(z.string()),
-  handles: z.record(z.string(), z.string()),
-  tags: z.array(z.string()),
-  birthday: z.string().nullable(),
-  notes: z.string().nullable(),
-  suppressReingest: z.boolean(),
-  source: z.enum(SOURCE_VALUES),
-  sourceVersion: z.string().nullable(),
-  deletedAt: ISODateString.nullable(),
-  createdAt: ISODateString,
-  updatedAt: ISODateString,
-});
 
 export const PersonCreateBody = z
   .object({
@@ -413,56 +378,3 @@ peopleRouter.get("/people/:id/interactions", async (req, res) => {
   const result = await listInteractionsForFilter(q);
   res.json(result);
 });
-
-export const peopleEndpoints: EndpointSpec[] = [
-  {
-    name: "find_people",
-    method: "GET",
-    path: "/v1/people",
-    description: "List people, with filter DSL + cursor pagination.",
-    query: ListPeopleQuery,
-    response: ListResponse(PersonResponseShape),
-  },
-  {
-    name: "get_person",
-    method: "GET",
-    path: "/v1/people/:id",
-    description: "Fetch one person by id (live rows only).",
-    params: IdParam,
-    response: PersonResponseShape,
-  },
-  {
-    name: "add_person",
-    method: "POST",
-    path: "/v1/people",
-    description: "Create a person (concierge-sourced).",
-    body: PersonCreateBody,
-    response: PersonResponseShape,
-  },
-  {
-    name: "update_person",
-    method: "PATCH",
-    path: "/v1/people/:id",
-    description: "Patch a person; firstSeen + lastInteractionAt are not settable.",
-    params: IdParam,
-    body: PersonUpdateBody,
-    response: PersonResponseShape,
-  },
-  {
-    name: "tombstone_person",
-    method: "DELETE",
-    path: "/v1/people/:id",
-    description: "Soft-delete a person; sets suppressReingest=true.",
-    params: IdParam,
-    response: PersonResponseShape,
-  },
-  {
-    name: "get_interactions_for",
-    method: "GET",
-    path: "/v1/people/:id/interactions",
-    description: "List interactions where the person is a participant.",
-    params: IdParam,
-    query: ListInteractionsQuery,
-    response: ListResponse(InteractionResponseShape),
-  },
-];

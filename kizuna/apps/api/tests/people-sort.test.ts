@@ -27,12 +27,12 @@ async function makePerson(name: string, lastInteractionAt: Date | null) {
   return (p._id as { toHexString(): string }).toHexString();
 }
 
-describe("GET /v1/people?sort=lastInteractionAt:-1", () => {
+describe("GET /people?sort=lastInteractionAt:-1", () => {
   it("sorts non-null lastInteractionAt rows newest-first", async () => {
     await makePerson("Old", new Date("2025-01-01T00:00:00Z"));
     await makePerson("Newer", new Date("2026-03-01T00:00:00Z"));
     await makePerson("Newest", new Date("2026-04-01T00:00:00Z"));
-    const res = await request(h.app).get("/v1/people?sort=lastInteractionAt:-1");
+    const res = await request(h.app).get("/people?sort=lastInteractionAt:-1");
     expect(res.status).toBe(200);
     expect((res.body.items as Array<{ displayName: string }>).map((p) => p.displayName)).toEqual([
       "Newest",
@@ -45,7 +45,7 @@ describe("GET /v1/people?sort=lastInteractionAt:-1", () => {
     await makePerson("Touched", new Date("2026-04-01T00:00:00Z"));
     await makePerson("NeverA", null);
     await makePerson("NeverB", null);
-    const res = await request(h.app).get("/v1/people?sort=lastInteractionAt:-1");
+    const res = await request(h.app).get("/people?sort=lastInteractionAt:-1");
     const names = (res.body.items as Array<{ displayName: string }>).map((p) => p.displayName);
     expect(names[0]).toBe("Touched");
     expect(names.slice(1).sort()).toEqual(["NeverA", "NeverB"]);
@@ -60,7 +60,7 @@ describe("GET /v1/people?sort=lastInteractionAt:-1", () => {
     const seen: string[] = [];
     let cursor: string | undefined;
     for (let i = 0; i < 5; i++) {
-      const path = `/v1/people?sort=lastInteractionAt:-1&limit=1${
+      const path = `/people?sort=lastInteractionAt:-1&limit=1${
         cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""
       }`;
       const res = await request(h.app).get(path);
@@ -76,7 +76,7 @@ describe("GET /v1/people?sort=lastInteractionAt:-1", () => {
   it("falls back to _id:-1 sort by default (back-compat)", async () => {
     await makePerson("X", new Date("2025-01-01T00:00:00Z"));
     await makePerson("Y", new Date("2026-04-01T00:00:00Z"));
-    const res = await request(h.app).get("/v1/people");
+    const res = await request(h.app).get("/people");
     // Default _id:-1 sort: most recently created first.
     expect((res.body.items as Array<{ displayName: string }>).map((p) => p.displayName)).toEqual([
       "Y",

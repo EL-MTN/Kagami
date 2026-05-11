@@ -6,31 +6,9 @@ import { Person } from "../db/models/Person.js";
 import { parseDurationMs } from "../lib/duration.js";
 import { errors } from "../lib/errors.js";
 import { serializeFollowup } from "../lib/serialize.js";
-import { ISODateString, ObjectIdString } from "../schemas/common.js";
-import type { EndpointSpec } from "../manifest.js";
-import { FollowupResponseShape } from "./followups.js";
 
 const DigestQuery = z.object({
   window: z.string().default("P7D"),
-});
-
-const DigestPersonShape = z.object({
-  id: ObjectIdString,
-  displayName: z.string(),
-  primaryEmail: z.string().nullable(),
-});
-
-const DigestFollowupShape = FollowupResponseShape.extend({
-  person: DigestPersonShape.nullable(),
-});
-
-export const DigestResponseShape = z.object({
-  window: z.string(),
-  generatedAt: ISODateString,
-  windowStart: ISODateString,
-  windowEnd: ISODateString,
-  overdue: z.array(DigestFollowupShape),
-  upcoming: z.array(DigestFollowupShape),
 });
 
 export const digestRouter = Router();
@@ -111,15 +89,3 @@ digestRouter.get("/digest", async (req, res) => {
     upcoming: upcoming.map(hydrate),
   });
 });
-
-export const digestEndpoints: EndpointSpec[] = [
-  {
-    name: "get_digest",
-    method: "GET",
-    path: "/v1/digest",
-    description:
-      "Overdue + upcoming open followups within the window (default P7D). Each followup is hydrated with {id, displayName, primaryEmail} for its person.",
-    query: DigestQuery,
-    response: DigestResponseShape,
-  },
-];

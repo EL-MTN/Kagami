@@ -31,7 +31,7 @@ beforeEach(async () => {
 
 describe("people CRUD", () => {
   it("creates a person with source=concierge and firstSeen set", async () => {
-    const r = await post("/v1/people", {
+    const r = await post("/people", {
       displayName: "Sarah Connor",
       primaryEmail: "Sarah@Example.com",
       tags: ["friend", "mentor"],
@@ -52,7 +52,7 @@ describe("people CRUD", () => {
   });
 
   it("rejects unknown fields with 400 (Zod strict)", async () => {
-    const r = await post("/v1/people", {
+    const r = await post("/people", {
       displayName: "X",
       bogus: "nope",
     });
@@ -61,7 +61,7 @@ describe("people CRUD", () => {
   });
 
   it("rejects malformed email with 400", async () => {
-    const r = await post("/v1/people", {
+    const r = await post("/people", {
       displayName: "X",
       primaryEmail: "not-an-email",
     });
@@ -69,19 +69,19 @@ describe("people CRUD", () => {
   });
 
   it("GET by id returns the same shape; tombstoned id 404s", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const r = await get(`/v1/people/${a.body.id}`);
+    const a = await post("/people", { displayName: "A" });
+    const r = await get(`/people/${a.body.id}`);
     expect(r.status).toBe(200);
     expect(r.body.id).toBe(a.body.id);
 
-    await del(`/v1/people/${a.body.id}`);
-    const r2 = await get(`/v1/people/${a.body.id}`);
+    await del(`/people/${a.body.id}`);
+    const r2 = await get(`/people/${a.body.id}`);
     expect(r2.status).toBe(404);
   });
 
   it("PATCH updates a subset of fields and rejects unknown fields", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const r = await patch(`/v1/people/${a.body.id}`, {
+    const a = await post("/people", { displayName: "A" });
+    const r = await patch(`/people/${a.body.id}`, {
       relationship: "colleague",
       tags: ["work"],
     });
@@ -89,59 +89,59 @@ describe("people CRUD", () => {
     expect(r.body.relationship).toBe("colleague");
     expect(r.body.tags).toEqual(["work"]);
 
-    const r2 = await patch(`/v1/people/${a.body.id}`, { firstSeen: new Date().toISOString() });
+    const r2 = await patch(`/people/${a.body.id}`, { firstSeen: new Date().toISOString() });
     expect(r2.status).toBe(400);
   });
 
   it("DELETE tombstones and sets suppressReingest=true", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const r = await del(`/v1/people/${a.body.id}`);
+    const a = await post("/people", { displayName: "A" });
+    const r = await del(`/people/${a.body.id}`);
     expect(r.status).toBe(200);
     expect(r.body.suppressReingest).toBe(true);
     expect(r.body.deletedAt).toBeTruthy();
   });
 
   it("list excludes tombstoned by default; includeTombstoned=true shows them", async () => {
-    const live = await post("/v1/people", { displayName: "Live" });
-    const dead = await post("/v1/people", { displayName: "Dead" });
-    await del(`/v1/people/${dead.body.id}`);
+    const live = await post("/people", { displayName: "Live" });
+    const dead = await post("/people", { displayName: "Dead" });
+    await del(`/people/${dead.body.id}`);
 
-    const r1 = await get("/v1/people");
+    const r1 = await get("/people");
     expect(r1.body.items.map((p: { id: string }) => p.id)).toEqual([live.body.id]);
 
-    const r2 = await get("/v1/people?includeTombstoned=true");
+    const r2 = await get("/people?includeTombstoned=true");
     const ids = r2.body.items.map((p: { id: string }) => p.id).sort();
     expect(ids).toEqual([live.body.id, dead.body.id].sort());
   });
 
   it("list filters by tag (AND of repeated tag params)", async () => {
-    const a = await post("/v1/people", { displayName: "A", tags: ["x", "y"] });
-    await post("/v1/people", { displayName: "B", tags: ["x"] });
-    const r = await get("/v1/people?tag=x&tag=y");
+    const a = await post("/people", { displayName: "A", tags: ["x", "y"] });
+    await post("/people", { displayName: "B", tags: ["x"] });
+    const r = await get("/people?tag=x&tag=y");
     expect(r.body.items.map((p: { id: string }) => p.id)).toEqual([a.body.id]);
   });
 
   it("list filters by orgId", async () => {
-    const o = await post("/v1/organizations", { name: "Acme" });
-    const a = await post("/v1/people", { displayName: "A", primaryOrgId: o.body.id });
-    await post("/v1/people", { displayName: "B" });
-    const r = await get(`/v1/people?orgId=${o.body.id}`);
+    const o = await post("/organizations", { name: "Acme" });
+    const a = await post("/people", { displayName: "A", primaryOrgId: o.body.id });
+    await post("/people", { displayName: "B" });
+    const r = await get(`/people?orgId=${o.body.id}`);
     expect(r.body.items.map((p: { id: string }) => p.id)).toEqual([a.body.id]);
   });
 
   it("list paginates by cursor", async () => {
     const ids: string[] = [];
     for (let i = 0; i < 3; i++) {
-      const r = await post("/v1/people", { displayName: `P${i}` });
+      const r = await post("/people", { displayName: `P${i}` });
       ids.push(r.body.id);
     }
-    const r1 = await get("/v1/people?limit=1");
+    const r1 = await get("/people?limit=1");
     expect(r1.body.items.length).toBe(1);
     expect(r1.body.nextCursor).toBeTruthy();
-    const r2 = await get(`/v1/people?limit=1&cursor=${r1.body.nextCursor}`);
+    const r2 = await get(`/people?limit=1&cursor=${r1.body.nextCursor}`);
     expect(r2.body.items.length).toBe(1);
     expect(r2.body.nextCursor).toBeTruthy();
-    const r3 = await get(`/v1/people?limit=1&cursor=${r2.body.nextCursor}`);
+    const r3 = await get(`/people?limit=1&cursor=${r2.body.nextCursor}`);
     expect(r3.body.items.length).toBe(1);
     expect(r3.body.nextCursor).toBeUndefined();
 
@@ -150,28 +150,28 @@ describe("people CRUD", () => {
   });
 
   it("rejects malformed cursor with 400", async () => {
-    const r = await get("/v1/people?cursor=not-base64-objectid");
+    const r = await get("/people?cursor=not-base64-objectid");
     expect(r.status).toBe(400);
   });
 
   it("hasOpenFollowup=true filters to people with open followups", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const b = await post("/v1/people", { displayName: "B" });
-    await post("/v1/followups", {
+    const a = await post("/people", { displayName: "A" });
+    const b = await post("/people", { displayName: "B" });
+    await post("/followups", {
       personId: a.body.id,
       direction: "i_owe",
       reason: "send the deck",
     });
-    const r = await get("/v1/people?hasOpenFollowup=true");
+    const r = await get("/people?hasOpenFollowup=true");
     expect(r.body.items.map((p: { id: string }) => p.id)).toEqual([a.body.id]);
-    const r2 = await get("/v1/people?hasOpenFollowup=false");
+    const r2 = await get("/people?hasOpenFollowup=false");
     expect(r2.body.items.map((p: { id: string }) => p.id)).toEqual([b.body.id]);
   });
 });
 
 describe("organizations CRUD", () => {
   it("creates and patches an org", async () => {
-    const r = await post("/v1/organizations", {
+    const r = await post("/organizations", {
       name: "Acme",
       domain: "Acme.com",
     });
@@ -179,34 +179,34 @@ describe("organizations CRUD", () => {
     expect(r.body.name).toBe("Acme");
     expect(r.body.domain).toBe("acme.com");
 
-    const r2 = await patch(`/v1/organizations/${r.body.id}`, { industry: "tech" });
+    const r2 = await patch(`/organizations/${r.body.id}`, { industry: "tech" });
     expect(r2.status).toBe(200);
     expect(r2.body.industry).toBe("tech");
   });
 
   it("rejects duplicate domain with 409", async () => {
-    await post("/v1/organizations", { name: "A", domain: "dup.com" });
-    const r = await post("/v1/organizations", { name: "B", domain: "dup.com" });
+    await post("/organizations", { name: "A", domain: "dup.com" });
+    const r = await post("/organizations", { name: "B", domain: "dup.com" });
     expect(r.status).toBe(409);
     expect(r.body.error.code).toBe("conflict");
   });
 
   it("list filters by domain and excludes tombstoned by default", async () => {
-    const o1 = await post("/v1/organizations", { name: "A", domain: "a.com" });
-    const o2 = await post("/v1/organizations", { name: "B", domain: "b.com" });
-    await del(`/v1/organizations/${o2.body.id}`);
+    const o1 = await post("/organizations", { name: "A", domain: "a.com" });
+    const o2 = await post("/organizations", { name: "B", domain: "b.com" });
+    await del(`/organizations/${o2.body.id}`);
 
-    const r = await get("/v1/organizations?domain=a.com");
+    const r = await get("/organizations?domain=a.com");
     expect(r.body.items.map((o: { id: string }) => o.id)).toEqual([o1.body.id]);
   });
 });
 
 describe("interactions + recordInteraction", () => {
   it("POST inserts and $max-updates lastInteractionAt on participants", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const b = await post("/v1/people", { displayName: "B" });
+    const a = await post("/people", { displayName: "A" });
+    const b = await post("/people", { displayName: "B" });
     const t1 = "2026-01-15T12:00:00Z";
-    const r = await post("/v1/interactions", {
+    const r = await post("/interactions", {
       occurredAt: t1,
       channel: "email",
       title: "Subject 1",
@@ -221,46 +221,46 @@ describe("interactions + recordInteraction", () => {
     expect(r.body.source).toBe("concierge");
     expect(r.body.sourceRef).toBeNull();
 
-    const ar = await get(`/v1/people/${a.body.id}`);
-    const br = await get(`/v1/people/${b.body.id}`);
+    const ar = await get(`/people/${a.body.id}`);
+    const br = await get(`/people/${b.body.id}`);
     expect(new Date(ar.body.lastInteractionAt).toISOString()).toBe(new Date(t1).toISOString());
     expect(new Date(br.body.lastInteractionAt).toISOString()).toBe(new Date(t1).toISOString());
   });
 
   it("does not roll back lastInteractionAt on an earlier interaction", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
+    const a = await post("/people", { displayName: "A" });
     const t1 = "2026-02-01T00:00:00Z";
     const t0 = "2026-01-01T00:00:00Z";
     const t2 = "2026-03-01T00:00:00Z";
 
-    await post("/v1/interactions", {
+    await post("/interactions", {
       occurredAt: t1,
       channel: "email",
       title: "one",
       participants: [{ personId: a.body.id, role: "from" }],
     });
-    await post("/v1/interactions", {
+    await post("/interactions", {
       occurredAt: t0,
       channel: "email",
       title: "earlier",
       participants: [{ personId: a.body.id, role: "from" }],
     });
-    let r = await get(`/v1/people/${a.body.id}`);
+    let r = await get(`/people/${a.body.id}`);
     expect(new Date(r.body.lastInteractionAt).toISOString()).toBe(new Date(t1).toISOString());
 
-    await post("/v1/interactions", {
+    await post("/interactions", {
       occurredAt: t2,
       channel: "email",
       title: "later",
       participants: [{ personId: a.body.id, role: "from" }],
     });
-    r = await get(`/v1/people/${a.body.id}`);
+    r = await get(`/people/${a.body.id}`);
     expect(new Date(r.body.lastInteractionAt).toISOString()).toBe(new Date(t2).toISOString());
   });
 
   it("rejects sourceRef in concierge writes (unknown field)", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const r = await post("/v1/interactions", {
+    const a = await post("/people", { displayName: "A" });
+    const r = await post("/interactions", {
       occurredAt: "2026-01-01T00:00:00Z",
       channel: "email",
       title: "x",
@@ -271,7 +271,7 @@ describe("interactions + recordInteraction", () => {
   });
 
   it("rejects empty participants array", async () => {
-    const r = await post("/v1/interactions", {
+    const r = await post("/interactions", {
       occurredAt: "2026-01-01T00:00:00Z",
       channel: "email",
       title: "x",
@@ -281,65 +281,65 @@ describe("interactions + recordInteraction", () => {
   });
 
   it("list filters by personId, channel, and date range", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const b = await post("/v1/people", { displayName: "B" });
-    await post("/v1/interactions", {
+    const a = await post("/people", { displayName: "A" });
+    const b = await post("/people", { displayName: "B" });
+    await post("/interactions", {
       occurredAt: "2026-01-15T00:00:00Z",
       channel: "email",
       title: "A-jan",
       participants: [{ personId: a.body.id, role: "from" }],
     });
-    await post("/v1/interactions", {
+    await post("/interactions", {
       occurredAt: "2026-02-15T00:00:00Z",
       channel: "calendar",
       title: "A-feb",
       participants: [{ personId: a.body.id, role: "attendee" }],
     });
-    await post("/v1/interactions", {
+    await post("/interactions", {
       occurredAt: "2026-01-10T00:00:00Z",
       channel: "email",
       title: "B-jan",
       participants: [{ personId: b.body.id, role: "from" }],
     });
 
-    const r1 = await get(`/v1/interactions?personId=${a.body.id}`);
+    const r1 = await get(`/interactions?personId=${a.body.id}`);
     expect(r1.body.items.map((i: { title: string }) => i.title).sort()).toEqual(["A-feb", "A-jan"]);
 
-    const r2 = await get(`/v1/interactions?channel=email`);
+    const r2 = await get(`/interactions?channel=email`);
     expect(r2.body.items.map((i: { title: string }) => i.title).sort()).toEqual(["A-jan", "B-jan"]);
 
     const r3 = await get(
-      `/v1/interactions?occurredAfter=2026-01-31T00:00:00Z&occurredBefore=2026-03-01T00:00:00Z`,
+      `/interactions?occurredAfter=2026-01-31T00:00:00Z&occurredBefore=2026-03-01T00:00:00Z`,
     );
     expect(r3.body.items.map((i: { title: string }) => i.title)).toEqual(["A-feb"]);
   });
 
   it("list filters by orgId via participant→primaryOrg join", async () => {
-    const org = await post("/v1/organizations", { name: "Acme" });
-    const a = await post("/v1/people", {
+    const org = await post("/organizations", { name: "Acme" });
+    const a = await post("/people", {
       displayName: "A",
       primaryOrgId: org.body.id,
     });
-    const b = await post("/v1/people", { displayName: "B" });
-    await post("/v1/interactions", {
+    const b = await post("/people", { displayName: "B" });
+    await post("/interactions", {
       occurredAt: "2026-01-01T00:00:00Z",
       channel: "email",
       title: "A-msg",
       participants: [{ personId: a.body.id, role: "from" }],
     });
-    await post("/v1/interactions", {
+    await post("/interactions", {
       occurredAt: "2026-01-02T00:00:00Z",
       channel: "email",
       title: "B-msg",
       participants: [{ personId: b.body.id, role: "from" }],
     });
-    const r = await get(`/v1/interactions?orgId=${org.body.id}`);
+    const r = await get(`/interactions?orgId=${org.body.id}`);
     expect(r.body.items.map((i: { title: string }) => i.title)).toEqual(["A-msg"]);
   });
 
   it("list filters by status (default active hides cancelled)", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const i1 = await post("/v1/interactions", {
+    const a = await post("/people", { displayName: "A" });
+    const i1 = await post("/interactions", {
       occurredAt: "2026-01-01T00:00:00Z",
       channel: "calendar",
       title: "live",
@@ -347,56 +347,56 @@ describe("interactions + recordInteraction", () => {
     });
     // Manually flip one to cancelled to simulate calendar cancellation.
     await Interaction.updateOne({ _id: i1.body.id }, { $set: { status: "cancelled" } });
-    const r1 = await get("/v1/interactions");
+    const r1 = await get("/interactions");
     expect(r1.body.items).toEqual([]);
-    const r2 = await get("/v1/interactions?status=cancelled");
+    const r2 = await get("/interactions?status=cancelled");
     expect(r2.body.items.length).toBe(1);
-    const r3 = await get("/v1/interactions?status=any");
+    const r3 = await get("/interactions?status=any");
     expect(r3.body.items.length).toBe(1);
   });
 
-  it("GET /v1/people/:id/interactions filters to that person", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const b = await post("/v1/people", { displayName: "B" });
-    await post("/v1/interactions", {
+  it("GET /people/:id/interactions filters to that person", async () => {
+    const a = await post("/people", { displayName: "A" });
+    const b = await post("/people", { displayName: "B" });
+    await post("/interactions", {
       occurredAt: "2026-01-01T00:00:00Z",
       channel: "email",
       title: "mine",
       participants: [{ personId: a.body.id, role: "from" }],
     });
-    await post("/v1/interactions", {
+    await post("/interactions", {
       occurredAt: "2026-01-02T00:00:00Z",
       channel: "email",
       title: "theirs",
       participants: [{ personId: b.body.id, role: "from" }],
     });
-    const r = await get(`/v1/people/${a.body.id}/interactions`);
+    const r = await get(`/people/${a.body.id}/interactions`);
     expect(r.body.items.map((i: { title: string }) => i.title)).toEqual(["mine"]);
   });
 
   it("DELETE tombstones and excludes from default list", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const i = await post("/v1/interactions", {
+    const a = await post("/people", { displayName: "A" });
+    const i = await post("/interactions", {
       occurredAt: "2026-01-01T00:00:00Z",
       channel: "email",
       title: "x",
       participants: [{ personId: a.body.id, role: "from" }],
     });
-    const r = await del(`/v1/interactions/${i.body.id}`);
+    const r = await del(`/interactions/${i.body.id}`);
     expect(r.status).toBe(200);
     expect(r.body.deletedAt).toBeTruthy();
 
-    const r2 = await get("/v1/interactions");
+    const r2 = await get("/interactions");
     expect(r2.body.items.length).toBe(0);
-    const r3 = await get("/v1/interactions?includeTombstoned=true");
+    const r3 = await get("/interactions?includeTombstoned=true");
     expect(r3.body.items.length).toBe(1);
   });
 });
 
 describe("followups CRUD", () => {
   it("creates a followup; list defaults to status=open", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const r = await post("/v1/followups", {
+    const a = await post("/people", { displayName: "A" });
+    const r = await post("/followups", {
       personId: a.body.id,
       direction: "i_owe",
       reason: "send the deck",
@@ -406,89 +406,53 @@ describe("followups CRUD", () => {
     expect(r.body.status).toBe("open");
     expect(r.body.direction).toBe("i_owe");
 
-    const list = await get("/v1/followups");
+    const list = await get("/followups");
     expect(list.body.items.length).toBe(1);
   });
 
   it("PATCH transitions status", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const f = await post("/v1/followups", {
+    const a = await post("/people", { displayName: "A" });
+    const f = await post("/followups", {
       personId: a.body.id,
       direction: "they_owe",
       reason: "await reply",
     });
-    const r = await patch(`/v1/followups/${f.body.id}`, { status: "done" });
+    const r = await patch(`/followups/${f.body.id}`, { status: "done" });
     expect(r.status).toBe(200);
     expect(r.body.status).toBe("done");
 
-    const open = await get("/v1/followups");
+    const open = await get("/followups");
     expect(open.body.items.length).toBe(0);
-    const done = await get("/v1/followups?status=done");
+    const done = await get("/followups?status=done");
     expect(done.body.items.length).toBe(1);
   });
 
   it("filters by direction", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    await post("/v1/followups", {
+    const a = await post("/people", { displayName: "A" });
+    await post("/followups", {
       personId: a.body.id,
       direction: "i_owe",
       reason: "r1",
     });
-    await post("/v1/followups", {
+    await post("/followups", {
       personId: a.body.id,
       direction: "they_owe",
       reason: "r2",
     });
-    const r = await get("/v1/followups?direction=i_owe");
+    const r = await get("/followups?direction=i_owe");
     expect(r.body.items.length).toBe(1);
     expect(r.body.items[0].direction).toBe("i_owe");
   });
 
   it("DELETE tombstones", async () => {
-    const a = await post("/v1/people", { displayName: "A" });
-    const f = await post("/v1/followups", {
+    const a = await post("/people", { displayName: "A" });
+    const f = await post("/followups", {
       personId: a.body.id,
       direction: "i_owe",
       reason: "r",
     });
-    const r = await del(`/v1/followups/${f.body.id}`);
+    const r = await del(`/followups/${f.body.id}`);
     expect(r.status).toBe(200);
     expect(r.body.deletedAt).toBeTruthy();
-  });
-});
-
-describe("manifest", () => {
-  it("GET /v1/_manifest returns endpoints + JSON Schemas", async () => {
-    const r = await get("/v1/_manifest");
-    expect(r.status).toBe(200);
-    expect(r.body.version).toBe("v1");
-    const names = (r.body.endpoints as Array<{ name: string }>).map((e) => e.name);
-    expect(names).toEqual(
-      expect.arrayContaining([
-        "find_people",
-        "get_person",
-        "add_person",
-        "update_person",
-        "tombstone_person",
-        "get_interactions_for",
-        "find_organizations",
-        "list_interactions",
-        "log_interaction",
-        "list_followups",
-        "create_followup",
-        "update_followup",
-      ]),
-    );
-    const addPerson = (
-      r.body.endpoints as Array<{
-        name: string;
-        method: string;
-        path: string;
-        body?: unknown;
-      }>
-    ).find((e) => e.name === "add_person");
-    expect(addPerson?.method).toBe("POST");
-    expect(addPerson?.path).toBe("/v1/people");
-    expect(addPerson?.body).toBeTruthy();
   });
 });

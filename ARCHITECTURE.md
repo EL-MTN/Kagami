@@ -162,13 +162,13 @@ Failure mode is **fail-open** via `KiokuClientError`: chat continues degraded. C
 
 **Kizuna client.** Read-only CRM calls live in `packages/kizuna/src/` and are exposed to the LLM through `apps/bot/src/ai/tools/crm.ts`. Base URL comes from `KIZUNA_URL` (default `https://api.kizuna.localhost`) and the tool palette is gated by `KIZUNA_ENABLED` (default `true`):
 
-| Method | Path                                               | Used for                                   | Timeout                   |
-| ------ | -------------------------------------------------- | ------------------------------------------ | ------------------------- |
-| GET    | `/v1/people?identityQuery=...`                     | bot tool: identity-focused people search   | shared 10 s call deadline |
-| GET    | `/v1/people/:id`                                   | bot tool: person profile context           | shared 10 s call deadline |
-| GET    | `/v1/interactions?personId=...&sort=occurredAt:-1` | bot tool: recent interactions              | shared 10 s call deadline |
-| GET    | `/v1/people/:id/interactions?sort=occurredAt:-1`   | person-context hydration                   | shared 10 s call deadline |
-| GET    | `/v1/followups?sort=duePriority:1`                 | bot tool: followups, with person hydration | shared 10 s call deadline |
+| Method | Path                                            | Used for                                   | Timeout                   |
+| ------ | ----------------------------------------------- | ------------------------------------------ | ------------------------- |
+| GET    | `/people?identityQuery=...`                     | bot tool: identity-focused people search   | shared 10 s call deadline |
+| GET    | `/people/:id`                                   | bot tool: person profile context           | shared 10 s call deadline |
+| GET    | `/interactions?personId=...&sort=occurredAt:-1` | bot tool: recent interactions              | shared 10 s call deadline |
+| GET    | `/people/:id/interactions?sort=occurredAt:-1`   | person-context hydration                   | shared 10 s call deadline |
+| GET    | `/followups?sort=duePriority:1`                 | bot tool: followups, with person hydration | shared 10 s call deadline |
 
 Failure mode is **fail-open** via `KizunaClientError`: CRM tools return sanitized degraded results and chat continues. There is no auth header; Kizuna is treated as a single-user localhost service.
 
@@ -196,19 +196,18 @@ packages/         reserved for future Kizuna-only libs
 
 **Endpoints.** Both apps run under Portless: API at `https://api.kizuna.localhost`, dashboard at `https://kizuna.localhost`. Portless injects each process's `PORT` and proxies the named HTTPS URLs to those ephemeral ports; the API's `3000` fallback only matters when running it standalone outside Portless. The checked-in `.env.example` uses `GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback`, so the redirect lands on the Portless HTTPS origin.
 
-**HTTP API surface.** Open at single-user localhost — no bearer auth on `/v1/*`, no auth on `/oauth/google/{start,status}`. The OAuth callback is still CSRF-protected by a signed state token (process-local HMAC secret).
+**HTTP API surface.** Open at single-user localhost — no bearer auth on resource routes, no auth on `/oauth/google/{start,status}`. The OAuth callback is still CSRF-protected by a signed state token (process-local HMAC secret).
 
-| Group         | Endpoints                                                          |
-| ------------- | ------------------------------------------------------------------ |
-| People        | `GET/POST /v1/people`, `PATCH/DELETE /v1/people/:id`               |
-| Interactions  | `GET/POST /v1/interactions`, `DELETE /v1/interactions/:id`         |
-| Followups     | `GET/POST /v1/followups`, `PATCH/DELETE /v1/followups/:id`         |
-| Organizations | `GET/POST /v1/organizations`, `PATCH/DELETE /v1/organizations/:id` |
-| Contexts      | `GET /v1/contexts` (distinct tags + counts)                        |
-| Digest        | `GET /v1/digest?window=P7D`                                        |
-| Sync          | `GET/POST /v1/sync/{gmail,gcal}/{state,run}`                       |
-| OAuth         | `/oauth/google/{start,callback,status}`                            |
-| Manifest      | `GET /v1/_manifest` (OpenAPI-like)                                 |
+| Group         | Endpoints                                                    |
+| ------------- | ------------------------------------------------------------ |
+| People        | `GET/POST /people`, `PATCH/DELETE /people/:id`               |
+| Interactions  | `GET/POST /interactions`, `DELETE /interactions/:id`         |
+| Followups     | `GET/POST /followups`, `PATCH/DELETE /followups/:id`         |
+| Organizations | `GET/POST /organizations`, `PATCH/DELETE /organizations/:id` |
+| Contexts      | `GET /contexts` (distinct tags + counts)                     |
+| Digest        | `GET /digest?window=P7D`                                     |
+| Sync          | `GET/POST /sync/{gmail,gcal}/{state,run}`                    |
+| OAuth         | `/oauth/google/{start,callback,status}`                      |
 
 **Storage.** Mongoose models: `Person`, `Interaction`, `Followup`, `Organization`, `OAuthToken` (AES-256-GCM-encrypted refresh tokens), `SyncState`. Text indexes on people/interactions; unique sourceRef per Gmail/Calendar id.
 

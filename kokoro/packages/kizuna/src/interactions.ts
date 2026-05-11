@@ -21,7 +21,7 @@ export async function recentInteractionsWithSignal(
 ): Promise<ListEnvelope<InteractionSummary>> {
   const result = await getJson(
     buildRecentInteractionsPath(input),
-    "/v1/interactions",
+    "/interactions",
     InteractionsEnvelopeSchema,
     signal,
   );
@@ -40,8 +40,8 @@ export async function listInteractionsForPerson(
   params.set("limit", String(clampLimit(input.limit, 10, 1, 50)));
   params.set("sort", "occurredAt:-1");
   const result = await getJson(
-    `/v1/people/${encodeURIComponent(personId)}/interactions?${params.toString()}`,
-    "/v1/people/:id/interactions",
+    `/people/${encodeURIComponent(personId)}/interactions?${params.toString()}`,
+    "/people/:id/interactions",
     InteractionsEnvelopeSchema,
     signal,
   );
@@ -58,5 +58,5 @@ export function buildRecentInteractionsPath(input: RecentInteractionsInput) {
   appendParam(params, "occurredAfter", input.since);
   params.set("limit", String(clampLimit(input.limit, 20, 1, 50)));
   params.set("sort", "occurredAt:-1");
-  return `/v1/interactions?${params.toString()}`;
+  return `/interactions?${params.toString()}`;
 }

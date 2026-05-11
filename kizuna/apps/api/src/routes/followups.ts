@@ -3,36 +3,11 @@ import { Types } from "mongoose";
 import { z } from "zod";
 import { Followup } from "../db/models/Followup.js";
 import { FOLLOWUP_DIRECTIONS, FOLLOWUP_STATUSES } from "../db/models/Followup.js";
-import { SOURCE_VALUES } from "../db/models/base.js";
 import { encodeCursor, decodeCursor } from "../lib/cursor.js";
 import { errors } from "../lib/errors.js";
 import { appendAnd } from "../lib/query.js";
 import { serializeFollowup } from "../lib/serialize.js";
-import {
-  BoolFlag,
-  DateInput,
-  IdParam,
-  ISODateString,
-  ListResponse,
-  ObjectIdString,
-  Pagination,
-} from "../schemas/common.js";
-import type { EndpointSpec } from "../manifest.js";
-
-export const FollowupResponseShape = z.object({
-  id: ObjectIdString,
-  personId: ObjectIdString,
-  direction: z.enum(FOLLOWUP_DIRECTIONS),
-  dueAt: ISODateString.nullable(),
-  status: z.enum(FOLLOWUP_STATUSES),
-  reason: z.string(),
-  sourceInteractionId: ObjectIdString.nullable(),
-  source: z.enum(SOURCE_VALUES),
-  sourceVersion: z.string().nullable(),
-  deletedAt: ISODateString.nullable(),
-  createdAt: ISODateString,
-  updatedAt: ISODateString,
-});
+import { BoolFlag, DateInput, IdParam, ObjectIdString, Pagination } from "../schemas/common.js";
 
 export const FollowupCreateBody = z
   .object({
@@ -203,39 +178,3 @@ followupsRouter.delete("/followups/:id", async (req, res) => {
   if (!doc) throw errors.notFound("followup not found");
   res.status(200).json(serializeFollowup(doc));
 });
-
-export const followupsEndpoints: EndpointSpec[] = [
-  {
-    name: "list_followups",
-    method: "GET",
-    path: "/v1/followups",
-    description: "List followups (default status=open).",
-    query: ListFollowupsQuery,
-    response: ListResponse(FollowupResponseShape),
-  },
-  {
-    name: "create_followup",
-    method: "POST",
-    path: "/v1/followups",
-    description: "Create a followup. Mashiro sets direction.",
-    body: FollowupCreateBody,
-    response: FollowupResponseShape,
-  },
-  {
-    name: "update_followup",
-    method: "PATCH",
-    path: "/v1/followups/:id",
-    description: "Update a followup status (complete/snooze/dismiss).",
-    params: IdParam,
-    body: FollowupUpdateBody,
-    response: FollowupResponseShape,
-  },
-  {
-    name: "tombstone_followup",
-    method: "DELETE",
-    path: "/v1/followups/:id",
-    description: "Soft-delete a followup.",
-    params: IdParam,
-    response: FollowupResponseShape,
-  },
-];

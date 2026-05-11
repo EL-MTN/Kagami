@@ -156,7 +156,7 @@ Indexes:
 | `occurredAt_-1`                         | `{ occurredAt: -1 }`                                                                                     | Time-sorted lists, digest                                                                                                                                                                     |
 | `participants.personId_1_occurredAt_-1` | `{ 'participants.personId': 1, occurredAt: -1 }`                                                         | Per-person interaction timeline                                                                                                                                                               |
 | **`interactions_sourceRef_unique`**     | `{ 'sourceRef.provider': 1, 'sourceRef.id': 1 }` (unique partial: `'sourceRef.id': { $type: 'string' }`) | One interaction per Gmail message / Calendar event. Concierge-created rows have `sourceRef: null` and are exempt from the partial filter. Hard guarantee that ingest replays don't duplicate. |
-| `context_1_occurredAt_-1`               | `{ context: 1, occurredAt: -1 }`                                                                         | `/v1/contexts` aggregation, `?context=…` filter                                                                                                                                               |
+| `context_1_occurredAt_-1`               | `{ context: 1, occurredAt: -1 }`                                                                         | `/contexts` aggregation, `?context=…` filter                                                                                                                                                  |
 | `interactions_text`                     | `{ title: 'text', body: 'text' }`                                                                        | `?query=…` search                                                                                                                                                                             |
 | `deletedAt_1`                           | `{ deletedAt: 1 }` (sparse)                                                                              | Tombstone scan                                                                                                                                                                                |
 
@@ -206,7 +206,7 @@ Indexes:
 | ------------------------------------ | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `status_1_dueAt_1`                   | `{ status: 1, dueAt: 1 }`                                                           | Digest queries (`overdue` = open + dueAt<now; `upcoming` = open + now<=dueAt<=end) |
 | `personId_1_direction_1_status_1`    | `{ personId: 1, direction: 1, status: 1 }`                                          | Per-person followup lists                                                          |
-| `followups_due_priority_page`        | `{ status: 1, duePriorityBucket: 1, dueAt: 1, _id: -1 }`                            | `/v1/followups?sort=duePriority:1` pagination                                      |
+| `followups_due_priority_page`        | `{ status: 1, duePriorityBucket: 1, dueAt: 1, _id: -1 }`                            | `/followups?sort=duePriority:1` pagination                                         |
 | `followups_due_priority_scoped_page` | `{ status: 1, personId: 1, direction: 1, duePriorityBucket: 1, dueAt: 1, _id: -1 }` | Scoped due-priority pagination                                                     |
 | `deletedAt_1`                        | `{ deletedAt: 1 }` (sparse)                                                         | Tombstone scan                                                                     |
 
@@ -284,4 +284,4 @@ The semantics around `historyId`, `syncToken`, `pausedAt`, and `force` are docum
 2. Replaces `undefined` with `null` for nullable fields so the response shape is stable.
 3. Converts Mongoose `Map`s (notably `Person.handles`) to plain objects.
 
-The dashboard hand-mirrors these shapes in `apps/dashboard/src/lib/types.ts` — keep that file in sync when shapes change. Future consideration: emit the dashboard types from the manifest's JSON Schema instead.
+The dashboard hand-mirrors these shapes in `apps/dashboard/src/lib/types.ts` — keep that file in sync when shapes change.

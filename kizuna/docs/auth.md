@@ -1,6 +1,6 @@
 # Auth
 
-Single-user-per-deployment, single-machine, localhost-only. The OS user boundary is the trust boundary; there is no API-level authentication. The `/v1/*` routes accept any caller that can reach `https://api.kizuna.localhost`, and the dashboard at `https://kizuna.localhost` is open.
+Single-user-per-deployment, single-machine, localhost-only. The OS user boundary is the trust boundary; there is no API-level authentication. The resource routes accept any caller that can reach `https://api.kizuna.localhost`, and the dashboard at `https://kizuna.localhost` is open.
 
 The only credentials Kizuna still owns are:
 
@@ -12,7 +12,7 @@ The only credentials Kizuna still owns are:
 
 | Layer                    | Mechanism                                                                                       | Source                            |
 | ------------------------ | ----------------------------------------------------------------------------------------------- | --------------------------------- |
-| `/v1/*` (API)            | none — open at localhost                                                                        | —                                 |
+| resource routes (API)    | none — open at localhost                                                                        | —                                 |
 | `/oauth/google/start`    | none — open at localhost                                                                        | `apps/api/src/routes/oauth.ts`    |
 | `/oauth/google/callback` | HMAC-SHA-256 signed CSRF state token (10-min TTL, process-local secret); no credential on wire  | `apps/api/src/lib/oauth-state.ts` |
 | `/oauth/google/status`   | none — open at localhost                                                                        | `apps/api/src/routes/oauth.ts`    |
@@ -53,7 +53,7 @@ On success:
 2. If `tokens.refresh_token` is missing → `400 bad_request`.
 3. `encrypt(refresh_token, KIZUNA_OAUTH_ENCRYPTION_KEY)` (AES-256-GCM).
 4. `OAuthToken.findOneAndUpdate({ provider:'google' }, { $set: { refreshToken, scopes, grantedAt: now, deletedAt: null, source: 'concierge' } }, { upsert: true })`.
-5. **Auto-resume paused workers**: `SyncState.updateMany({ pausedAt: { $ne: null } }, { $set: { pausedAt: null, lastError: null } })`. A re-grant after `invalid_grant` should "just work" without forcing the operator to also `POST /v1/sync/.../run` with `force: true`.
+5. **Auto-resume paused workers**: `SyncState.updateMany({ pausedAt: { $ne: null } }, { $set: { pausedAt: null, lastError: null } })`. A re-grant after `invalid_grant` should "just work" without forcing the operator to also `POST /sync/.../run` with `force: true`.
 6. `clearAccessTokenCache()` — drop the in-process access-token cache so the next worker run re-derives from the new refresh token.
 7. Return a small inline HTML page: "Google access granted ✓".
 
@@ -146,22 +146,21 @@ There is **no per-request user identification** — every `USER_EMAILS` address 
 3. Visit `https://kizuna.localhost` — no login.
 4. Navigate to `/sync`, click "Connect Google" — `<a href={oauthStartUrl()}>` resolves to `${API_URL}/oauth/google/start`.
 5. Consent on Google. Land on `/oauth/google/callback?...&state=...`. Refresh token is encrypted + stored.
-6. Click "Run sync now" — this hits `POST /v1/sync/gmail/run` (and Calendar).
+6. Click "Run sync now" — this hits `POST /sync/gmail/run` (and Calendar).
 
 ### Concierge / programmatic caller
 
-1. POST directly to `/v1/people`, `/v1/interactions`, `/v1/followups`, etc. No auth header. Source is auto-set to `'concierge'`.
+1. POST directly to `/people`, `/interactions`, `/followups`, etc. No auth header. Source is auto-set to `'concierge'`.
 2. List endpoints support cursor pagination via `?cursor=…`.
-3. To know what endpoints exist: `GET /v1/_manifest` returns a JSON-Schema-shaped catalog.
 
 ### Re-authorize after `invalid_grant`
 
 1. Worker pauses; `SyncState.pausedAt` is set, `lastError = 'invalid_grant'`.
 2. Operator visits `/sync`, clicks "Re-authorize" → re-runs the consent flow.
 3. The callback handler clears `pausedAt` on every paused row.
-4. Next tick (or manual `POST /v1/sync/.../run`) runs cleanly.
+4. Next tick (or manual `POST /sync/.../run`) runs cleanly.
 
-If the operator wants to override the pause without re-granting (e.g. transient outage): `POST /v1/sync/gmail/run` with `{ "force": true }`. The route clears `pausedAt` and runs once.
+If the operator wants to override the pause without re-granting (e.g. transient outage): `POST /sync/gmail/run` with `{ "force": true }`. The route clears `pausedAt` and runs once.
 
 ## Threat model
 

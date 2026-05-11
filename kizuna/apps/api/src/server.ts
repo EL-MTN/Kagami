@@ -9,7 +9,6 @@ import { interactionsRouter } from "./routes/interactions.js";
 import { followupsRouter } from "./routes/followups.js";
 import { contextsRouter } from "./routes/contexts.js";
 import { digestRouter } from "./routes/digest.js";
-import { manifestRouter } from "./routes/manifest.js";
 import { makeOauthRouter } from "./routes/oauth.js";
 import { makeSyncRouter } from "./routes/sync.js";
 
@@ -29,14 +28,13 @@ export function createApp({ db, config }: ServerDeps): Express {
   // the callback is still CSRF-protected by signed state.
   app.use("/oauth", makeOauthRouter(config));
 
-  app.use("/v1", manifestRouter);
-  app.use("/v1", peopleRouter);
-  app.use("/v1", organizationsRouter);
-  app.use("/v1", interactionsRouter);
-  app.use("/v1", followupsRouter);
-  app.use("/v1", contextsRouter);
-  app.use("/v1", digestRouter);
-  app.use("/v1", makeSyncRouter(config));
+  app.use(peopleRouter);
+  app.use(organizationsRouter);
+  app.use(interactionsRouter);
+  app.use(followupsRouter);
+  app.use(contextsRouter);
+  app.use(digestRouter);
+  app.use(makeSyncRouter(config));
 
   app.use((_req, _res, next) => {
     next(errors.notFound("route not found"));

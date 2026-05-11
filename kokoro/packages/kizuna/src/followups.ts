@@ -44,19 +44,14 @@ export async function listFollowupsForPerson(
 ): Promise<ListEnvelope<FollowupWire>> {
   const params = listFollowupsParams(input);
   params.set("personId", personId);
-  return getJson(
-    `/v1/followups?${params.toString()}`,
-    "/v1/followups",
-    FollowupsEnvelopeSchema,
-    signal,
-  );
+  return getJson(`/followups?${params.toString()}`, "/followups", FollowupsEnvelopeSchema, signal);
 }
 
 async function listFollowupsWithSignal(
   input: ListFollowupsInput,
   signal: AbortSignal,
 ): Promise<ListEnvelope<FollowupWire>> {
-  return getJson(buildListFollowupsPath(input), "/v1/followups", FollowupsEnvelopeSchema, signal);
+  return getJson(buildListFollowupsPath(input), "/followups", FollowupsEnvelopeSchema, signal);
 }
 
 function listFollowupsParams(input: ListFollowupsInput) {
@@ -69,7 +64,7 @@ function listFollowupsParams(input: ListFollowupsInput) {
 }
 
 export function buildListFollowupsPath(input: ListFollowupsInput = {}) {
-  return `/v1/followups?${listFollowupsParams(input).toString()}`;
+  return `/followups?${listFollowupsParams(input).toString()}`;
 }
 
 async function hydratePeopleForFollowups(followups: FollowupWire[], signal: AbortSignal) {
