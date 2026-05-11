@@ -51,9 +51,9 @@ Kizuna -> Kokoro  no outbound runtime dependency
 Kioku  -> any     none; Kioku is pull-only by design
 ```
 
-`dev-all.sh` starts Kioku first, waits briefly, then starts Kokoro and Kizuna in parallel. This
-keeps Kokoro's first memory operations clean while still letting the services run as separate
-processes.
+`dev-all.sh` starts the selected apps together under Turbo. There is no service startup ordering;
+Kokoro's Kioku and Kizuna clients are designed to fail open when a sibling API is still coming up or
+temporarily unavailable.
 
 For the full cross-service map, endpoint surfaces, env var details, auth notes, and future-edge
 ideas, read [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -149,11 +149,9 @@ Start the full workspace:
 npm run dev
 ```
 
-`npm run dev` delegates to `./dev-all.sh`, which starts:
-
-1. Kioku
-2. Kokoro
-3. Kizuna
+`npm run dev` delegates to `./dev-all.sh`, which starts the selected Kioku, Kokoro, and Kizuna
+components together under Turbo's TUI. The default selection is every API, dashboard, and the Kokoro
+bot.
 
 Use `Ctrl-C` to stop all child processes.
 
@@ -446,10 +444,14 @@ kokoro/docs
 
 Important runtime notes:
 
-- Bot long-polls Telegram and does not expose a browser URL.
+- Bot long-polls Telegram and does not expose a normal browser URL. Its dev script is wrapped in
+  Portless for consistency, and the optional BlueBubbles webhook listens separately on
+  `BLUEBUBBLES_WEBHOOK_PORT` when iMessage is enabled.
 - Dashboard runs at `https://kokoro.localhost`.
 - `KIOKU_URL` defaults to `https://api.kioku.localhost`.
-- Kioku failures are handled fail-open so chat can continue in degraded mode.
+- Kioku failures are handled fail-open so chat can continue in degraded mode. Closed-session
+  transcript ingest is retried by the maintenance sweeper; one-off `rememberFact` and location
+  writes are not queued for retry today.
 - `ALLOWED_USER_IDS` gates Telegram users for a single-user deployment.
 - Optional Google tools require all `GOOGLE_OAUTH_*` fields together.
 
@@ -605,8 +607,9 @@ There is no Kizuna dashboard login or API key in local development.
 ### Kokoro starts but memory is unavailable
 
 Confirm Kioku is running at `https://api.kioku.localhost`, or override `KIOKU_URL` in
-`kokoro/apps/bot/.env`. Kokoro is designed to fail open and retry memory ingest later, so a memory
-outage does not necessarily stop chat.
+`kokoro/apps/bot/.env`. Kokoro is designed to fail open so a memory outage does not necessarily stop
+chat. Closed-session transcript ingest is retried later; ad hoc fact writes are not currently
+backfilled.
 
 ### Google OAuth fails
 

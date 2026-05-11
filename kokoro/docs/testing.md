@@ -137,7 +137,7 @@ untested (thin wrapper, init code).
 | `geo.ts`                | ✅     | `tests/geo.test.ts`                | Reference distances (NYC↔London, antipodes, equator step, identity).                                  |
 | `markdown.ts`           | ✅     | `tests/markdown.test.ts`           | `parseMarkdown` — no writer exists.                                                                   |
 | `routine-validation.ts` | ✅     | `tests/routine-validation.test.ts` | `computeNextRunAt` + every `validateCronAndDefaults` branch.                                          |
-| `logger.ts`             | ⏭     | —                                  | Pino wrapper. Exercised transitively wherever it's imported.                                          |
+| `logger.ts`             | ✅     | `tests/logger.test.ts`             | Asserts stable `service`/`component`/`env` bindings on the exported logger.                           |
 | `types.ts`              | n/a    | —                                  | Type-only.                                                                                            |
 
 ### `packages/db/src/`

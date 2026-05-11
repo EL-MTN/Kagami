@@ -51,7 +51,8 @@ apps/api/tests/
 ├── oauth.test.ts             # /oauth/google/{start,callback,status}
 ├── crud.test.ts              # CRUD endpoints across people, organizations, interactions, followups
 ├── gmail-ingest.test.ts      # bootstrap + incremental + skip-self + newsletter + pause
-└── gcal-ingest.test.ts       # bootstrap + incremental + 410 SyncTokenExpired + cancellation
+├── gcal-ingest.test.ts       # bootstrap + incremental + 410 SyncTokenExpired + cancellation
+└── logger.test.ts            # stable service/component/env bindings on the @kagami/logger wrapper
 ```
 
 ## Harness
@@ -211,6 +212,7 @@ The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (
 | Gmail ingest end-to-end                        | `gmail-ingest.test.ts` — bootstrap, incremental, skip-self, newsletter blocklist, dedup via `sourceRef`, pause/resume |
 | Calendar ingest end-to-end                     | `gcal-ingest.test.ts` — bootstrap, incremental, 410 → re-bootstrap, cancellation, edit reconciliation                 |
 | Kokoro read-only API contract                  | `kokoro-contract.test.ts` — identity search and sorted interactions/followups                                         |
+| Logger bindings                                | `logger.test.ts` — stable `service`/`component`/`env` on the `@kagami/logger` wrapper                                 |
 
 ## What's not covered
 

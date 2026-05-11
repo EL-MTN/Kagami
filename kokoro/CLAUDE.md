@@ -78,7 +78,7 @@ Lint and tsconfig bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from 
 - **TypeScript + ESM** — strict mode, ES2022 target, ESNext modules. `verbatimModuleSyntax: true` is now applied **per-tsconfig.json** as an override (the new shared `@kagami/tsconfig/base.json` doesn't enable it by default, so each Kokoro tsconfig sets it explicitly to preserve the previous behavior).
 - **Async everywhere** — all I/O is async/await, no callbacks
 - **Zod for config** — environment variables validated at startup via `@kokoro/shared` config
-- **Pino logging** — structured logs, use `logger.info({ context }, "message")` pattern
+- **Pino logging** — structured logs via the workspace-shared `@kagami/logger` factory (stable `service`/`component`/`env` bindings + common secret redaction); Kokoro adds a `formatters.log` hook to strip base64 `imageData` to `[base64 omitted]`. Use `logger.info({ context }, "message")` pattern
 - **Vercel AI SDK** — `generateText()` from `ai` package for all LLM calls
 - **No classes for services** — prefer standalone exported functions
 - **Platform-agnostic types** — `IncomingMessage`/`PlatformAdapter` in `@kokoro/shared`
