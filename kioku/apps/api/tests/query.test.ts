@@ -1,9 +1,11 @@
 import { expect, it } from "vitest";
 import {
   deriveQuestionDate,
+  extractCitations,
   formatFactsGroupedByDateNewestFirst,
   stripMemThinking,
 } from "../src/query/answer.ts";
+import { computeCitationRecall } from "../scripts/citation-recall.ts";
 import type { RankedFact } from "../src/retrieval/embeddings.ts";
 
 const fact = (overrides: Partial<RankedFact>): RankedFact => ({
@@ -69,4 +71,88 @@ it("deriveQuestionDate falls back to wall clock on empty facts", () => {
 it("deriveQuestionDate uses createdAt when eventDate is empty", () => {
   const facts: RankedFact[] = [fact({ eventDate: "", createdAt: "2025-04-01T00:00:00Z" })];
   expect(deriveQuestionDate(facts)).toBe("2025-04-01");
+});
+
+it("extractCitations strips raw/ prefix and preserves rank order", () => {
+  const facts: RankedFact[] = [
+    fact({ id: "a", sourceSession: "raw/sess-z" }),
+    fact({ id: "b", sourceSession: "raw/sess-a" }),
+    fact({ id: "c", sourceSession: "raw/sess-m" }),
+  ];
+  expect(extractCitations(facts)).toEqual(["sess-z", "sess-a", "sess-m"]);
+});
+
+it("extractCitations dedupes multiple facts from the same session", () => {
+  const facts: RankedFact[] = [
+    fact({ id: "a", sourceSession: "raw/sess-1" }),
+    fact({ id: "b", sourceSession: "raw/sess-2" }),
+    fact({ id: "c", sourceSession: "raw/sess-1" }),
+    fact({ id: "d", sourceSession: "raw/sess-2" }),
+  ];
+  expect(extractCitations(facts)).toEqual(["sess-1", "sess-2"]);
+});
+
+it("extractCitations drops empty sourceSession", () => {
+  const facts: RankedFact[] = [
+    fact({ id: "a", sourceSession: "raw/sess-1" }),
+    fact({ id: "b", sourceSession: "" }),
+    fact({ id: "c", sourceSession: "raw/sess-2" }),
+  ];
+  expect(extractCitations(facts)).toEqual(["sess-1", "sess-2"]);
+});
+
+it("extractCitations passes through ids that lack the raw/ prefix", () => {
+  // appendSingleFact lets callers supply arbitrary source_session
+  // values — the prefix isn't guaranteed and shouldn't be required.
+  const facts: RankedFact[] = [
+    fact({ id: "a", sourceSession: "telegram-12345" }),
+    fact({ id: "b", sourceSession: "raw/sess-1" }),
+  ];
+  expect(extractCitations(facts)).toEqual(["telegram-12345", "sess-1"]);
+});
+
+it("extractCitations only strips the leading raw/, not mid-string occurrences", () => {
+  const facts: RankedFact[] = [fact({ id: "a", sourceSession: "raw/raw/odd" })];
+  expect(extractCitations(facts)).toEqual(["raw/odd"]);
+});
+
+it("extractCitations on empty input returns empty array", () => {
+  expect(extractCitations([])).toEqual([]);
+});
+
+it("extractCitations tolerates null/undefined sourceSession from legacy docs", () => {
+  // The TS type says `string`, but `RankedFact` is projected from
+  // Mongo, which doesn't enforce the field — docs predating the
+  // `source_session` write could surface as undefined here at runtime.
+  // Cast to bypass the type guard and exercise the runtime guard.
+  const facts = [
+    fact({ id: "a", sourceSession: "raw/sess-1" }),
+    { ...fact({ id: "b" }), sourceSession: undefined as unknown as string },
+    { ...fact({ id: "c" }), sourceSession: null as unknown as string },
+    fact({ id: "d", sourceSession: "raw/sess-2" }),
+  ] as RankedFact[];
+  expect(extractCitations(facts)).toEqual(["sess-1", "sess-2"]);
+});
+
+it("computeCitationRecall returns 1.0 when every truth id is cited", () => {
+  expect(computeCitationRecall(["a", "b", "c"], ["a", "b"])).toBe(1);
+});
+
+it("computeCitationRecall returns hit/total", () => {
+  expect(computeCitationRecall(["a", "x"], ["a", "b", "c", "d"])).toBe(0.25);
+});
+
+it("computeCitationRecall returns 0 when no truth ids are cited", () => {
+  expect(computeCitationRecall(["x", "y"], ["a", "b"])).toBe(0);
+});
+
+it("computeCitationRecall is undefined when truth is missing or empty", () => {
+  expect(computeCitationRecall(["a"], undefined)).toBeUndefined();
+  expect(computeCitationRecall(["a"], [])).toBeUndefined();
+});
+
+it("computeCitationRecall ignores duplicates in the predicted citations", () => {
+  // citations come from extractCitations which dedupes, but the
+  // function shouldn't depend on that invariant.
+  expect(computeCitationRecall(["a", "a", "a"], ["a", "b"])).toBe(0.5);
 });

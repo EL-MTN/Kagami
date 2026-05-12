@@ -82,6 +82,7 @@ Per-item record includes the question, ground truth, Kioku's prediction, judge v
 
 - `scripts/longmemeval.ts` — orchestrator. Iterates items, spawns one worker subprocess per item with an isolated `KIOKU_MONGO_DB`, then runs the judge pass.
 - `scripts/longmemeval-worker.ts` — single-item worker. Parses each `haystack_session` into a `Transcript`, calls `consolidate()` to extract atomic facts into the per-item Mongo DB, then `query()`. Auto-skips ingest when the per-item DB already has facts (lets `--keep-vaults` cycle the query/judge layer cheaply).
+- `scripts/citation-recall.ts` — `computeCitationRecall(citations, truth)` helper. Set-overlap recall used by the orchestrator's summary; lives in its own file so the test suite can import it without triggering the orchestrator's top-level `main()` call.
 
 Per-item subprocesses give clean DB isolation without refactoring `apps/api/src/storage/mongo.ts` (which freezes the DB name at module load).
 
@@ -98,6 +99,6 @@ The probe is split into orchestrator (default) and per-item worker (`KIOKU_PROBE
 ## Caveats
 
 - **Self-judging bias**: by default the judge model is the same as the answerer. Cheap but biased — use `--judge-model` with a stronger model for headline numbers.
-- **Citation recall is not computed.** Kioku currently returns empty citations from `query()`; LongMemEval's `answer_session_ids` references sessions, but the mapping from fact → session in the answerer is TODO. The MCP and REST `query` responses always return `citations: []`.
+- **Citation recall is retrieval-side, not answerer-grounded.** `query()` now populates `citations` with the deduped source sessions of the top-K facts returned by the hybrid ranker (see `extractCitations` in `apps/api/src/query/answer.ts`). The bench computes `recall = |citations ∩ answer_session_ids| / |answer_session_ids|` per item and reports the mean. This scores retrieval coverage — whether the ranker pulled the evidence sessions into the answerer's context — not which facts the answerer actually leaned on. Per-answer grounding (which retrieved fact the LLM cited) is a separate concern and is not measured here.
 - **Latency profile**: with OpenAI gpt-4o-mini, expect ~30–50 s per item end-to-end (ingest dominates); a full 100-item run is ~50 min and ~$5–7 in API. With local GLM-4.7-flash via LM Studio it's bound by local model speed.
 - **Architecture lineage.** The pipeline shape, prompts, and additive scoring formula are closely modeled on [mem0ai/memory-benchmarks](https://github.com/mem0ai/memory-benchmarks). Implementation is independent (pure TypeScript, no spaCy / Qdrant) but the contracts come from there.

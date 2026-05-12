@@ -62,6 +62,33 @@ export function stripMemThinking(text: string): string {
     .trim();
 }
 
+// Retrieval-side citations: the deduped set of source sessions the
+// hybrid ranker pulled facts from. `consolidate()` writes sessions as
+// `raw/${sessionId}` so the prefix is stripped here — external
+// consumers (and LongMemEval's `answer_session_ids` ground truth)
+// expect the bare id. This is asymmetric with `recall()`, which
+// returns `source_session` verbatim (prefix included) as part of the
+// raw fact record; the stripping is a query-response presentation
+// choice, not a storage-format change. Order follows the rank order
+// of `facts`, so the most-relevant session is first.
+//
+// Empty/missing sourceSession is dropped. The TS type says `string`
+// but Mongo doesn't enforce the field — `appendSingleFact` callers
+// can pass empty (`""`, see append.ts), and legacy docs may lack the
+// field entirely (`undefined` at runtime). Guard against both.
+export function extractCitations(facts: RankedFact[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const f of facts) {
+    if (!f.sourceSession) continue;
+    const id = f.sourceSession.replace(/^raw\//, "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
 // `today` defaults to the latest fact's event_date, falling back to wall
 // clock when the vault is empty. Used as the anchor for the answerer's
 // relative-date arithmetic ("last year", "two months ago").
@@ -96,6 +123,8 @@ export async function query(question: string, deps: QueryDeps = {}): Promise<Que
     .replace("{memories}", memoriesText)
     .replace("{question}", question);
 
+  const citations = extractCitations(facts);
+
   try {
     const result = await generateText({
       model,
@@ -105,12 +134,12 @@ export async function query(question: string, deps: QueryDeps = {}): Promise<Que
     });
     return {
       answer: stripMemThinking(result.text) || "(empty answer)",
-      citations: [],
+      citations,
     };
   } catch (err) {
     return {
       answer: `(no answer — query failed: ${(err as Error).message})`,
-      citations: [],
+      citations,
     };
   }
 }
