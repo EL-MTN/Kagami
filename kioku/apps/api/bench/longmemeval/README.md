@@ -63,5 +63,5 @@ Per-item subprocesses give clean DB isolation without refactoring `mongo.ts` (wh
 ## Caveats
 
 - **Self-judging bias**: by default the judge model is the same as the answerer. Cheap but biased — use `--judge-model` with a stronger model for headline numbers.
-- **Citation recall is not computed.** Kioku currently returns empty citations from `query()`; LongMemEval's `answer_session_ids` references sessions, but mapping is TODO.
+- **Citation recall is retrieval-side.** `query()` populates `citations` with the deduped source sessions of the top-K retrieved facts; the bench reports the mean of `|citations ∩ answer_session_ids| / |answer_session_ids|` over items that have ground truth. This measures retrieval coverage, not which facts the LLM actually grounded the answer in.
 - **Latency profile**: with OpenAI gpt-4o-mini, expect ~30–50s per item end-to-end (ingest dominates); a full 100-item run is ~50 min and ~$5–7 in API. With local GLM-4.7-flash via LM Studio it's bound by local model speed.

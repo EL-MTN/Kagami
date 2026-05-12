@@ -13,6 +13,7 @@ import { MongoClient } from "mongodb";
 import { model as defaultModel, llmEndpoint } from "../src/llm.js";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { logger } from "../src/logger.js";
+import { computeCitationRecall } from "./citation-recall.js";
 
 // Per-item DB names: each worker gets its own kioku DB so retrieval
 // over fact A doesn't see facts from fact B. Sanitized to satisfy
@@ -40,6 +41,7 @@ interface DatasetItem {
   question_type: string;
   question: string;
   answer: string;
+  answer_session_ids?: string[];
 }
 
 interface WorkerResult {
@@ -57,13 +59,33 @@ interface WorkerResult {
 interface JudgedItem extends WorkerResult {
   judge_verdict: boolean;
   judge_raw: string;
+  // Set of evidence session ids the dataset says contain the answer.
+  // Threaded through from the dataset so the results JSON is self-contained.
+  answer_session_ids?: string[];
+  // |citations ∩ answer_session_ids| / |answer_session_ids|. Undefined
+  // when the dataset omits ground truth or supplies an empty list.
+  citation_recall?: number;
+}
+
+interface TypeStats {
+  correct: number;
+  total: number;
+  accuracy: number;
+  // Mean citation recall over items in this type that have ground-truth
+  // answer_session_ids. `cited` counts how many items contributed to the mean.
+  citation_recall: number;
+  cited: number;
 }
 
 interface Summary {
   total: number;
   correct: number;
   accuracy: number;
-  by_type: Record<string, { correct: number; total: number; accuracy: number }>;
+  // Mean citation recall over the subset of items with non-empty
+  // answer_session_ids. `cited` is that subset's size.
+  citation_recall: number;
+  cited: number;
+  by_type: Record<string, TypeStats>;
 }
 
 function parseArgs(): CliArgs {
@@ -189,17 +211,39 @@ async function main() {
     console.log("");
   }
 
+  // Map question_id → ground-truth answer_session_ids, used to compute
+  // citation recall against the retrieval-side citations returned by
+  // query(). Items without the field (or with an empty list) are
+  // excluded from the recall mean.
+  const truthById = new Map<string, string[] | undefined>(
+    items.map((it) => [it.question_id, it.answer_session_ids]),
+  );
+
   console.log(`## Judging ${predictions.length} predictions with ${judgeModelId}`);
   const judge = buildJudge(judgeModelId);
   const judged: JudgedItem[] = [];
   for (let i = 0; i < predictions.length; i++) {
     const p = predictions[i]!;
+    const truth = truthById.get(p.question_id);
+    const citation_recall = computeCitationRecall(p.citations, truth);
     if (p.error || !p.prediction) {
-      judged.push({ ...p, judge_verdict: false, judge_raw: "(no prediction)" });
+      judged.push({
+        ...p,
+        judge_verdict: false,
+        judge_raw: "(no prediction)",
+        ...(truth ? { answer_session_ids: truth } : {}),
+        ...(citation_recall !== undefined ? { citation_recall } : {}),
+      });
       continue;
     }
     const { verdict, raw } = await judge(p);
-    judged.push({ ...p, judge_verdict: verdict, judge_raw: raw });
+    judged.push({
+      ...p,
+      judge_verdict: verdict,
+      judge_raw: raw,
+      ...(truth ? { answer_session_ids: truth } : {}),
+      ...(citation_recall !== undefined ? { citation_recall } : {}),
+    });
     process.stdout.write(
       `  [${i + 1}/${predictions.length}] ${verdict ? "YES" : "no "} ${p.question_id}\n`,
     );
@@ -209,10 +253,17 @@ async function main() {
   console.log("");
   console.log("## Summary");
   console.log(
-    `accuracy: ${(summary.accuracy * 100).toFixed(1)}%  (${summary.correct}/${summary.total})`,
+    `accuracy:        ${(summary.accuracy * 100).toFixed(1)}%  (${summary.correct}/${summary.total})`,
+  );
+  console.log(
+    `citation recall: ${(summary.citation_recall * 100).toFixed(1)}%  (mean over ${summary.cited} items with ground truth)`,
   );
   for (const [t, s] of Object.entries(summary.by_type)) {
-    console.log(`  ${t.padEnd(28)} ${(s.accuracy * 100).toFixed(1)}%  (${s.correct}/${s.total})`);
+    const recall =
+      s.cited > 0 ? `cite=${(s.citation_recall * 100).toFixed(1)}% (${s.cited})` : "cite=n/a";
+    console.log(
+      `  ${t.padEnd(28)} acc=${(s.accuracy * 100).toFixed(1)}%  (${s.correct}/${s.total})  ${recall}`,
+    );
   }
 
   const resultsRoot = path.join(benchRoot, "results");
@@ -346,24 +397,35 @@ function anscheckPrompt(
 }
 
 function summarize(items: JudgedItem[]): Summary {
-  const byType: Record<string, { correct: number; total: number; accuracy: number }> = {};
+  const byType: Record<string, TypeStats> = {};
   let correct = 0;
+  let recallSum = 0;
+  let recallCount = 0;
   for (const it of items) {
     const t = it.question_type;
-    byType[t] ??= { correct: 0, total: 0, accuracy: 0 };
+    byType[t] ??= { correct: 0, total: 0, accuracy: 0, citation_recall: 0, cited: 0 };
     byType[t].total += 1;
     if (it.judge_verdict) {
       byType[t].correct += 1;
       correct += 1;
     }
+    if (it.citation_recall !== undefined) {
+      byType[t].citation_recall += it.citation_recall;
+      byType[t].cited += 1;
+      recallSum += it.citation_recall;
+      recallCount += 1;
+    }
   }
   for (const v of Object.values(byType)) {
     v.accuracy = v.total > 0 ? v.correct / v.total : 0;
+    v.citation_recall = v.cited > 0 ? v.citation_recall / v.cited : 0;
   }
   return {
     total: items.length,
     correct,
     accuracy: items.length > 0 ? correct / items.length : 0,
+    citation_recall: recallCount > 0 ? recallSum / recallCount : 0,
+    cited: recallCount,
     by_type: byType,
   };
 }

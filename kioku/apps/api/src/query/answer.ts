@@ -62,6 +62,25 @@ export function stripMemThinking(text: string): string {
     .trim();
 }
 
+// Retrieval-side citations: the deduped set of source sessions the
+// hybrid ranker pulled facts from. `consolidate()` writes sessions as
+// `raw/${sessionId}` so the prefix is stripped here — external
+// consumers (and LongMemEval's `answer_session_ids` ground truth)
+// expect the bare id. Order follows the rank order of `facts`, so the
+// most-relevant session is first. Empty/missing sourceSession is
+// dropped (bot-written facts via appendSingleFact may omit it).
+export function extractCitations(facts: RankedFact[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const f of facts) {
+    const id = f.sourceSession.replace(/^raw\//, "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
 // `today` defaults to the latest fact's event_date, falling back to wall
 // clock when the vault is empty. Used as the anchor for the answerer's
 // relative-date arithmetic ("last year", "two months ago").
@@ -96,6 +115,8 @@ export async function query(question: string, deps: QueryDeps = {}): Promise<Que
     .replace("{memories}", memoriesText)
     .replace("{question}", question);
 
+  const citations = extractCitations(facts);
+
   try {
     const result = await generateText({
       model,
@@ -105,12 +126,12 @@ export async function query(question: string, deps: QueryDeps = {}): Promise<Que
     });
     return {
       answer: stripMemThinking(result.text) || "(empty answer)",
-      citations: [],
+      citations,
     };
   } catch (err) {
     return {
       answer: `(no answer — query failed: ${(err as Error).message})`,
-      citations: [],
+      citations,
     };
   }
 }

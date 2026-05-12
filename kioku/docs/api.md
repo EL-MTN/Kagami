@@ -12,12 +12,12 @@ The bot (Kokoro) uses REST directly; external agents typically use MCP.
 Routers in `apps/api/src/routes/*` are mounted in `server.ts`:
 
 ```ts
-app.use("/",          metaRouter);
-app.use("/facts",     factsRouter);
-app.use("/recall",    recallRouter);
-app.use("/query",     queryRouter);
-app.use("/sessions",  sessionsRouter);
-app.use("/mcp",       mcpRouter);
+app.use("/", metaRouter);
+app.use("/facts", factsRouter);
+app.use("/recall", recallRouter);
+app.use("/query", queryRouter);
+app.use("/sessions", sessionsRouter);
+app.use("/mcp", mcpRouter);
 ```
 
 ### Conventions
@@ -30,19 +30,19 @@ app.use("/mcp",       mcpRouter);
 
 ### Endpoint reference
 
-| Method | Path                  | Body / Query                                                                                                              | Response                                                                                                  |
-| ------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| GET    | `/health`             | —                                                                                                                         | `{ ok: true }`                                                                                            |
-| GET    | `/version`            | —                                                                                                                         | `{ name: "kioku", version }` (read from `apps/api/package.json`, cached)                                  |
-| POST   | `/facts`              | `{ text, event_date?, source_session?, user_id?, run_id?, agent_id?, metadata?, category? }`                              | `201 { id, status: "added" }` or `200 { id, status: "duplicate", similarity }`                            |
-| POST   | `/facts/bulk`         | `{ facts: AppendBody[] }` (1–500)                                                                                         | `201 { results, added, duplicates }`                                                                      |
-| GET    | `/facts/count`        | —                                                                                                                         | `{ count }`                                                                                               |
-| GET    | `/facts`              | `?limit=100&offset=0&since=YYYY-MM-DD&until=YYYY-MM-DD&source_session&user_id&run_id&agent_id`                            | `{ total, limit, offset, facts: PublicFact[] }` (`embedding` stripped, sorted newest event_date first)    |
-| GET    | `/facts/:id`          | —                                                                                                                         | `PublicFact` or `404 { error: "not_found" }`                                                              |
-| GET    | `/facts/:id/history`  | —                                                                                                                         | `{ id, events: HistoryEvent[] }` (newest first; today only ADD events are written)                       |
-| POST   | `/recall`             | `{ query, k?, since?, until?, filters? }`                                                                                 | `{ facts: RecalledFact[], total }`                                                                        |
-| POST   | `/query`              | `{ question, k?, filters? }`                                                                                              | `{ answer, citations: [] }` (citations TODO — see [bench.md](bench.md))                                   |
-| POST   | `/sessions`           | `{ transcript, user_id?, run_id?, agent_id?, metadata? }`                                                                  | `201 { sessionId, added, batches }`                                                                       |
+| Method | Path                 | Body / Query                                                                                   | Response                                                                                                                                           |
+| ------ | -------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/health`            | —                                                                                              | `{ ok: true }`                                                                                                                                     |
+| GET    | `/version`           | —                                                                                              | `{ name: "kioku", version }` (read from `apps/api/package.json`, cached)                                                                           |
+| POST   | `/facts`             | `{ text, event_date?, source_session?, user_id?, run_id?, agent_id?, metadata?, category? }`   | `201 { id, status: "added" }` or `200 { id, status: "duplicate", similarity }`                                                                     |
+| POST   | `/facts/bulk`        | `{ facts: AppendBody[] }` (1–500)                                                              | `201 { results, added, duplicates }`                                                                                                               |
+| GET    | `/facts/count`       | —                                                                                              | `{ count }`                                                                                                                                        |
+| GET    | `/facts`             | `?limit=100&offset=0&since=YYYY-MM-DD&until=YYYY-MM-DD&source_session&user_id&run_id&agent_id` | `{ total, limit, offset, facts: PublicFact[] }` (`embedding` stripped, sorted newest event_date first)                                             |
+| GET    | `/facts/:id`         | —                                                                                              | `PublicFact` or `404 { error: "not_found" }`                                                                                                       |
+| GET    | `/facts/:id/history` | —                                                                                              | `{ id, events: HistoryEvent[] }` (newest first; today only ADD events are written)                                                                 |
+| POST   | `/recall`            | `{ query, k?, since?, until?, filters? }`                                                      | `{ facts: RecalledFact[], total }`                                                                                                                 |
+| POST   | `/query`             | `{ question, k?, filters? }`                                                                   | `{ answer, citations: string[] }` — citations are the deduped source session ids of the top-K retrieved facts (rank order, `raw/` prefix stripped) |
+| POST   | `/sessions`          | `{ transcript, user_id?, run_id?, agent_id?, metadata? }`                                      | `201 { sessionId, added, batches }`                                                                                                                |
 
 `AppendBody` shape (from `apps/api/src/routes/facts.ts`):
 
@@ -74,7 +74,9 @@ app.use("/mcp",       mcpRouter);
 `RecalledFact` shape (`apps/api/src/query/recall.ts`):
 
 ```ts
-{ id, text, event_date, source_session, created_at }
+{
+  (id, text, event_date, source_session, created_at);
+}
 ```
 
 ### Recall semantics
@@ -94,15 +96,15 @@ See [retrieval.md](retrieval.md) for the ranking formula.
 
 ### Tools
 
-| Tool             | Inputs                                                                                                                | Returns                                                                                                                                |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `recall`         | `{ query, k?, since?, until?, filters? }`                                                                             | `{ facts, total }` — same shape as `POST /recall`, JSON-stringified into a text content block.                                          |
-| `query`          | `{ question, filters? }`                                                                                              | `{ answer, citations }` — same as `POST /query`. Use this when you want a synthesized answer; use `recall` for raw facts.              |
-| `append_fact`    | `{ text, event_date?, source_session?, user_id?, run_id?, agent_id?, metadata?, category? }`                          | `{ id, status: "added"|"duplicate", reason?, similarity? }`                                                                            |
-| `append_facts`   | `{ facts: AppendBody[] }` (1–500)                                                                                     | `{ results, added, duplicates }`. Equivalent to mem0 `add(infer=False)` — store N caller-supplied facts verbatim, no LLM extraction.   |
-| `ingest_session` | `{ transcript, user_id?, run_id?, agent_id?, metadata? }`                                                              | `{ sessionId, added, batches }`                                                                                                        |
-| `fact_count`     | `{}`                                                                                                                  | The integer count, as a string in the text content block.                                                                              |
-| `fact_history`   | `{ id }`                                                                                                              | `{ id, events }`                                                                                                                       |
+| Tool             | Inputs                                                                                       | Returns                                                                                                                              |
+| ---------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| `recall`         | `{ query, k?, since?, until?, filters? }`                                                    | `{ facts, total }` — same shape as `POST /recall`, JSON-stringified into a text content block.                                       |
+| `query`          | `{ question, filters? }`                                                                     | `{ answer, citations }` — same as `POST /query`. Use this when you want a synthesized answer; use `recall` for raw facts.            |
+| `append_fact`    | `{ text, event_date?, source_session?, user_id?, run_id?, agent_id?, metadata?, category? }` | `{ id, status: "added"                                                                                                               | "duplicate", reason?, similarity? }` |
+| `append_facts`   | `{ facts: AppendBody[] }` (1–500)                                                            | `{ results, added, duplicates }`. Equivalent to mem0 `add(infer=False)` — store N caller-supplied facts verbatim, no LLM extraction. |
+| `ingest_session` | `{ transcript, user_id?, run_id?, agent_id?, metadata? }`                                    | `{ sessionId, added, batches }`                                                                                                      |
+| `fact_count`     | `{}`                                                                                         | The integer count, as a string in the text content block.                                                                            |
+| `fact_history`   | `{ id }`                                                                                     | `{ id, events }`                                                                                                                     |
 
 All tools return their payload as a single text content block (`{ content: [{ type: "text", text: JSON.stringify(...) }] }`). Errors return `isError: true`.
 
@@ -118,10 +120,10 @@ All tools return their payload as a single text content block (`{ content: [{ ty
 
 Default Kioku URL across the Kagami workspace:
 
-| Caller                           | Env var          | Default                          |
-| -------------------------------- | ---------------- | -------------------------------- |
-| Kokoro bot                       | `KIOKU_URL`      | `https://api.kioku.localhost`    |
-| Kioku dashboard                  | `KIOKU_API_URL`  | `https://api.kioku.localhost`    |
-| Standalone fallback (no Portless)| —                | `http://localhost:7777`          |
+| Caller                            | Env var         | Default                       |
+| --------------------------------- | --------------- | ----------------------------- |
+| Kokoro bot                        | `KIOKU_URL`     | `https://api.kioku.localhost` |
+| Kioku dashboard                   | `KIOKU_API_URL` | `https://api.kioku.localhost` |
+| Standalone fallback (no Portless) | —               | `http://localhost:7777`       |
 
 The standalone-fallback port (`7777`) only matters when running the API outside Portless; under `npm run dev`, Portless picks an ephemeral port and routes `https://api.kioku.localhost` to it.
