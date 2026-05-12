@@ -255,9 +255,13 @@ async function main() {
   console.log(
     `accuracy:        ${(summary.accuracy * 100).toFixed(1)}%  (${summary.correct}/${summary.total})`,
   );
-  console.log(
-    `citation recall: ${(summary.citation_recall * 100).toFixed(1)}%  (mean over ${summary.cited} items with ground truth)`,
-  );
+  // When no items have ground truth, print "n/a" instead of "0.0%" so
+  // a missing measurement is not confusable with a zero-recall result.
+  const recallLine =
+    summary.cited > 0
+      ? `${(summary.citation_recall * 100).toFixed(1)}%  (mean over ${summary.cited} items with ground truth)`
+      : "n/a  (no items had answer_session_ids)";
+  console.log(`citation recall: ${recallLine}`);
   for (const [t, s] of Object.entries(summary.by_type)) {
     const recall =
       s.cited > 0 ? `cite=${(s.citation_recall * 100).toFixed(1)}% (${s.cited})` : "cite=n/a";

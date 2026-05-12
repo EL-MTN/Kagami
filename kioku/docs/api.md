@@ -74,8 +74,12 @@ app.use("/mcp", mcpRouter);
 `RecalledFact` shape (`apps/api/src/query/recall.ts`):
 
 ```ts
-{
-  (id, text, event_date, source_session, created_at);
+interface RecalledFact {
+  id: string;
+  text: string;
+  event_date: string;
+  source_session: string;
+  created_at: string;
 }
 ```
 
@@ -97,10 +101,10 @@ See [retrieval.md](retrieval.md) for the ranking formula.
 ### Tools
 
 | Tool             | Inputs                                                                                       | Returns                                                                                                                              |
-| ---------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| ---------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `recall`         | `{ query, k?, since?, until?, filters? }`                                                    | `{ facts, total }` — same shape as `POST /recall`, JSON-stringified into a text content block.                                       |
 | `query`          | `{ question, filters? }`                                                                     | `{ answer, citations }` — same as `POST /query`. Use this when you want a synthesized answer; use `recall` for raw facts.            |
-| `append_fact`    | `{ text, event_date?, source_session?, user_id?, run_id?, agent_id?, metadata?, category? }` | `{ id, status: "added"                                                                                                               | "duplicate", reason?, similarity? }` |
+| `append_fact`    | `{ text, event_date?, source_session?, user_id?, run_id?, agent_id?, metadata?, category? }` | `{ id, status: "added" \| "duplicate", reason?, similarity? }`                                                                       |
 | `append_facts`   | `{ facts: AppendBody[] }` (1–500)                                                            | `{ results, added, duplicates }`. Equivalent to mem0 `add(infer=False)` — store N caller-supplied facts verbatim, no LLM extraction. |
 | `ingest_session` | `{ transcript, user_id?, run_id?, agent_id?, metadata? }`                                    | `{ sessionId, added, batches }`                                                                                                      |
 | `fact_count`     | `{}`                                                                                         | The integer count, as a string in the text content block.                                                                            |

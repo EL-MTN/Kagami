@@ -120,6 +120,20 @@ it("extractCitations on empty input returns empty array", () => {
   expect(extractCitations([])).toEqual([]);
 });
 
+it("extractCitations tolerates null/undefined sourceSession from legacy docs", () => {
+  // The TS type says `string`, but `RankedFact` is projected from
+  // Mongo, which doesn't enforce the field — docs predating the
+  // `source_session` write could surface as undefined here at runtime.
+  // Cast to bypass the type guard and exercise the runtime guard.
+  const facts = [
+    fact({ id: "a", sourceSession: "raw/sess-1" }),
+    { ...fact({ id: "b" }), sourceSession: undefined as unknown as string },
+    { ...fact({ id: "c" }), sourceSession: null as unknown as string },
+    fact({ id: "d", sourceSession: "raw/sess-2" }),
+  ] as RankedFact[];
+  expect(extractCitations(facts)).toEqual(["sess-1", "sess-2"]);
+});
+
 it("computeCitationRecall returns 1.0 when every truth id is cited", () => {
   expect(computeCitationRecall(["a", "b", "c"], ["a", "b"])).toBe(1);
 });
