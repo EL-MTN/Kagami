@@ -26,7 +26,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 │   │   │   ├── extraction.md   # ingest prompt (8K-token rulebook)
 │   │   │   └── answer.md       # answerer prompt (3K-token rulebook)
 │   │   ├── tests/           # vitest suite + mongodb-memory-server harness
-│   │   ├── scripts/         # cc-to-transcript, cc-ingest-chunked, longmemeval, probe-bm25-scores
+│   │   ├── scripts/         # cc-to-transcript, cc-ingest-chunked, longmemeval, longmemeval-worker, citation-recall, probe-bm25-scores
 │   │   ├── tsconfig.json    # extends @kagami/tsconfig/server.json (+ esModuleInterop, allowImportingTsExtensions)
 │   │   ├── eslint.config.js # imports from @kagami/eslint-config/base
 │   │   └── bench/longmemeval/  # benchmark runner + datasets + results
