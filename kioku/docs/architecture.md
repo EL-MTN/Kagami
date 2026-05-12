@@ -161,7 +161,9 @@ The two apps share **no in-process code**. The dashboard's contract with the API
        │
 6. stripMemThinking(result.text) → answer
        │
-7. Response: { answer, citations: [] }   // citations TODO; LongMemEval mapping is a known gap
+7. extractCitations(facts) → deduped source sessions, raw/ prefix stripped
+       │
+8. Response: { answer, citations }   // citations = retrieved sessions, not answerer-grounded
 ```
 
 ## Boot Sequence

@@ -24,7 +24,7 @@ apps/api/tests/
 ├── entities.test.ts          # upsertEntitiesFromFacts race semantics
 ├── history.test.ts           # ADD events + readHistoryFor newest-first
 ├── mongo.test.ts             # ensureIndexes idempotency + index shapes
-├── query.test.ts             # answer.ts formatters (pure)
+├── query.test.ts             # answer.ts formatters + citation helpers (pure)
 ├── scoring.test.ts           # scoring.ts + text.ts (pure)
 ├── session-summary.test.ts   # cache hit/miss semantics
 ├── transcript.test.ts        # parseTranscript shape
@@ -89,15 +89,16 @@ Turbo's `test` task depends on `^build`, but neither workspace has a build step 
 
 ## What's covered
 
-| Area                  | Coverage                                                                                          |
-| --------------------- | ------------------------------------------------------------------------------------------------- |
-| Storage primitives    | `facts.test.ts`, `entities.test.ts`, `history.test.ts`, `mongo.test.ts`                           |
-| Index setup           | `mongo.test.ts` — btree shapes + idempotency                                                      |
-| Transcript parsing    | `transcript.test.ts` (frontmatter, turn parsing, heading exclusion)                               |
-| Scoring + text utils  | `scoring.test.ts`                                                                                 |
-| Answerer formatters   | `query.test.ts` (`formatFactsGroupedByDateNewestFirst`, `stripMemThinking`, `deriveQuestionDate`) |
-| Session-summary cache | `session-summary.test.ts`                                                                         |
-| Logger bindings       | `logger.test.ts` — stable `service`/`component`/`env` on the `@kagami/logger` wrapper             |
+| Area                  | Coverage                                                                                                                            |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Storage primitives    | `facts.test.ts`, `entities.test.ts`, `history.test.ts`, `mongo.test.ts`                                                             |
+| Index setup           | `mongo.test.ts` — btree shapes + idempotency                                                                                        |
+| Transcript parsing    | `transcript.test.ts` (frontmatter, turn parsing, heading exclusion)                                                                 |
+| Scoring + text utils  | `scoring.test.ts`                                                                                                                   |
+| Answerer formatters   | `query.test.ts` (`formatFactsGroupedByDateNewestFirst`, `stripMemThinking`, `deriveQuestionDate`, `extractCitations`)               |
+| Bench scoring         | `query.test.ts` (`computeCitationRecall` from `scripts/citation-recall.ts` — set-overlap recall, dedup, undefined-on-missing-truth) |
+| Session-summary cache | `session-summary.test.ts`                                                                                                           |
+| Logger bindings       | `logger.test.ts` — stable `service`/`component`/`env` on the `@kagami/logger` wrapper                                               |
 
 ## What's not covered (yet)
 
