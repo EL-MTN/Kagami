@@ -24,6 +24,7 @@ NEWSLETTER_DOMAIN_BLOCKLIST=mailchimp.com,substack.com    # comma-separated; low
 KIZUNA_GMAIL_BACKFILL_DAYS=30                              # default 30; range 1–365
 KIZUNA_GCAL_BACKFILL_DAYS=60                               # default 60; range 1–365
 KIZUNA_INGEST_INTERVAL_SEC=0                               # default 0 (scheduler disabled); 300 ≈ 5 min for typical dev
+KIZUNA_HOST=127.0.0.1                                      # standalone bind host; Portless uses its proxy
 # PORT=3000                                                # standalone only; Portless injects this in dev
 LOG_LEVEL=info                                             # pino level (`silent` in tests)
 NODE_ENV=development                                       # enables pino-pretty in dev
@@ -33,9 +34,10 @@ Notes:
 
 - The API has no bearer/auth env var. The OAuth CSRF state token (`apps/api/src/lib/oauth-state.ts`) uses a process-local `randomBytes(32)` secret regenerated on every API restart; an API restart invalidates any in-flight consent flow (the user re-clicks "Authorize"). See [auth.md](auth.md) for the threat model.
 - `KIZUNA_OAUTH_ENCRYPTION_KEY` is decoded from base64; the resulting buffer must be exactly 32 bytes. The schema rejects anything else with "must be a base64-encoded 32-byte key."
+- Blank optional string values are treated as unset, so copying `.env.example` as-is keeps Google OAuth disabled until real values are provided.
 - `USER_EMAILS` controls the ingest workers' "self" detection — see [sync.md](sync.md) and [auth.md](auth.md). It is _not_ an authentication boundary.
 - `KIZUNA_INGEST_INTERVAL_SEC=0` disables the in-process scheduler entirely. Manual triggers via `POST /sync/{gmail,gcal}/run` work regardless. Set to `300` (5 min) for typical dev use.
-- `PORT` only applies when running standalone. Under `npm run dev`, Portless picks an ephemeral port and routes `https://api.kizuna.localhost` to it. Prefer the Portless URL in local config and docs.
+- `KIZUNA_HOST` and `PORT` only apply when running standalone. Under `npm run dev`, Portless picks an ephemeral port and routes `https://api.kizuna.localhost` to it. Prefer the Portless URL in local config and docs.
 
 ### Generating the encryption key
 

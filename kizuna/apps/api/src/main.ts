@@ -12,8 +12,8 @@ async function main(): Promise<void> {
   const db = await connectDb(config.MONGO_URI);
   const app = createApp({ db, config });
 
-  const server = app.listen(config.PORT, () => {
-    logger.info({ port: config.PORT }, "kizuna api listening");
+  const server = app.listen(config.PORT, config.KIZUNA_HOST, () => {
+    logger.info({ host: config.KIZUNA_HOST, port: config.PORT }, "kizuna api listening");
   });
   const scheduler = startIngestScheduler({ config });
 
