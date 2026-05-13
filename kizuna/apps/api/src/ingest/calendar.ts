@@ -1,7 +1,9 @@
-import { Types } from "mongoose";
 import type { Config } from "../config.js";
 import { SyncState } from "../db/models/SyncState.js";
-import { upsertInteractionBySourceRef } from "../db/recordInteraction.js";
+import {
+  upsertInteractionBySourceRef,
+  type RecordInteractionInput,
+} from "../db/recordInteraction.js";
 import { OAuthError } from "../lib/google-auth.js";
 import { logger } from "../lib/logger.js";
 import { CalendarHttpError, SyncTokenExpired, type CalendarClient } from "./calendar-client.js";
@@ -115,7 +117,7 @@ async function processEvent(
   }
 
   // Resolve participants. Organizer first (role 'from'), then attendees.
-  const participants: Array<{ personId: Types.ObjectId; role: string }> = [];
+  const participants: RecordInteractionInput["participants"] = [];
   const seen = new Set<string>();
 
   const link = async (a: ParsedAttendee, role: "from" | "attendee"): Promise<void> => {

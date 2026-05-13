@@ -1,14 +1,19 @@
 import { Types } from "mongoose";
-import { Interaction } from "./models/Interaction.js";
+import {
+  Interaction,
+  type InteractionChannel,
+  type InteractionParticipant,
+  type InteractionStatus,
+} from "./models/Interaction.js";
 import { Person } from "./models/Person.js";
 import type { Source } from "./models/base.js";
 
 export type RecordInteractionInput = {
   occurredAt: Date;
-  channel: string;
+  channel: InteractionChannel;
   title: string;
   body?: string;
-  participants: Array<{ personId: Types.ObjectId; role: string }>;
+  participants: InteractionParticipant[];
   context?: string[];
   location?: string;
   attachments?: Array<{
@@ -20,7 +25,7 @@ export type RecordInteractionInput = {
   sourceRef?: { provider: "gmail" | "gcal"; id: string } | null;
   source: Source;
   sourceVersion?: string;
-  status?: "active" | "cancelled";
+  status?: InteractionStatus;
 };
 
 export type RecordOpts = {
@@ -55,12 +60,10 @@ export async function recordInteraction(input: RecordInteractionInput, opts: Rec
     }
     throw err;
   }
-  const participants =
-    (created.get("participants") as unknown as Array<{ personId: Types.ObjectId }> | undefined) ??
-    [];
+  const participants = created.participants ?? [];
   await touchLastInteraction(
     participants.map((p) => p.personId),
-    created.get("occurredAt") as Date,
+    created.occurredAt,
   );
   return created;
 }
@@ -117,13 +120,12 @@ export async function upsertInteractionBySourceRef(input: RecordInteractionInput
   );
   if (!doc) throw new Error("upsert returned no document");
 
-  const status = (doc.get("status") as string | undefined) ?? "active";
+  const status = doc.status ?? "active";
   if (status === "active") {
-    const participants =
-      (doc.get("participants") as unknown as Array<{ personId: Types.ObjectId }> | undefined) ?? [];
+    const participants = doc.participants ?? [];
     await touchLastInteraction(
       participants.map((p) => p.personId),
-      doc.get("occurredAt") as Date,
+      doc.occurredAt,
     );
   }
   return doc;

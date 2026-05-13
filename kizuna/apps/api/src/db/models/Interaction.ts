@@ -1,5 +1,5 @@
-import { Schema, model } from "mongoose";
-import { baseSchemaOptions, provenanceFields } from "./base.js";
+import { Schema, Types, model, type HydratedDocument } from "mongoose";
+import { baseSchemaOptions, provenanceFields, type Source } from "./base.js";
 
 export const CHANNEL_VALUES = [
   "email",
@@ -14,7 +14,46 @@ export const PARTICIPANT_ROLES = ["from", "to", "cc", "attendee", "subject"] as 
 
 export const INTERACTION_STATUS = ["active", "cancelled"] as const;
 
-const ParticipantSchema = new Schema(
+export type InteractionChannel = (typeof CHANNEL_VALUES)[number];
+export type ParticipantRole = (typeof PARTICIPANT_ROLES)[number];
+export type InteractionStatus = (typeof INTERACTION_STATUS)[number];
+
+export type InteractionParticipant = {
+  personId: Types.ObjectId;
+  role: ParticipantRole;
+};
+
+export type InteractionSourceRef = {
+  provider: "gmail" | "gcal";
+  id: string;
+};
+
+export type InteractionAttachment = {
+  name: string;
+  mimeType?: string;
+  size?: number;
+  ref?: string;
+};
+
+export type InteractionAttrs = {
+  occurredAt: Date;
+  channel: InteractionChannel;
+  title: string;
+  body: string;
+  sourceRef: InteractionSourceRef | null;
+  participants: InteractionParticipant[];
+  location?: string;
+  attachments: InteractionAttachment[];
+  context: string[];
+  status: InteractionStatus;
+  source: Source;
+  sourceVersion?: string;
+  deletedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const ParticipantSchema = new Schema<InteractionParticipant>(
   {
     personId: {
       type: Schema.Types.ObjectId,
@@ -26,7 +65,7 @@ const ParticipantSchema = new Schema(
   { _id: false },
 );
 
-const SourceRefSchema = new Schema(
+const SourceRefSchema = new Schema<InteractionSourceRef>(
   {
     provider: { type: String, required: true, enum: ["gmail", "gcal"] },
     id: { type: String, required: true },
@@ -34,7 +73,7 @@ const SourceRefSchema = new Schema(
   { _id: false },
 );
 
-const AttachmentSchema = new Schema(
+const AttachmentSchema = new Schema<InteractionAttachment>(
   {
     name: { type: String, required: true },
     mimeType: { type: String },
@@ -44,7 +83,7 @@ const AttachmentSchema = new Schema(
   { _id: false },
 );
 
-const InteractionSchema = new Schema(
+const InteractionSchema = new Schema<InteractionAttrs>(
   {
     occurredAt: { type: Date, required: true },
     channel: { type: String, required: true, enum: CHANNEL_VALUES },
@@ -81,5 +120,5 @@ InteractionSchema.index({ context: 1, occurredAt: -1 });
 InteractionSchema.index({ title: "text", body: "text" }, { name: "interactions_text" });
 InteractionSchema.index({ deletedAt: 1 }, { sparse: true });
 
-export const Interaction = model("Interaction", InteractionSchema);
-export type InteractionDoc = ReturnType<(typeof Interaction)["hydrate"]>;
+export const Interaction = model<InteractionAttrs>("Interaction", InteractionSchema);
+export type InteractionDoc = HydratedDocument<InteractionAttrs>;

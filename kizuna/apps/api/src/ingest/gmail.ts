@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import type { Config } from "../config.js";
 import { SyncState } from "../db/models/SyncState.js";
-import { recordInteraction } from "../db/recordInteraction.js";
+import { recordInteraction, type RecordInteractionInput } from "../db/recordInteraction.js";
 import { logger } from "../lib/logger.js";
 import { OAuthError } from "../lib/google-auth.js";
 import type { GmailClient } from "./gmail-client.js";
@@ -125,7 +125,7 @@ async function processMessageIds(
 
     // Upsert participants. Build unique by email so we don't double-link.
     const personByEmail = new Map<string, Types.ObjectId>();
-    const participants: Array<{ personId: Types.ObjectId; role: string }> = [];
+    const participants: RecordInteractionInput["participants"] = [];
 
     const link = async (addr: ParsedAddress | null, role: "from" | "to" | "cc") => {
       if (!addr) return;
