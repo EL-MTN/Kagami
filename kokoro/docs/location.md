@@ -98,6 +98,9 @@ When a location event (arrival) is detected, `triggerLocationProactive(chatId)` 
 | `LOCATION_MOVEMENT_THRESHOLD_M` | number  | `100`     | Min meters moved before storing a live location update     |
 | `LOCATION_PROACTIVE_DELAY_MS`   | number  | `1200000` | Delay before location-triggered proactive message (20min)  |
 | `LOCATION_CONTEXT_MAX_AGE_H`    | number  | `12`      | Max age for location data to appear in LLM context         |
+| `PLACE_LEARNING_VISITS`         | integer | `3`       | Visits required before a place is learned into Kioku       |
+| `PLACE_LEARNING_RADIUS_M`       | number  | `200`     | Radius used when counting repeat visits to the same place  |
+| `PLACE_LEARNING_WINDOW_DAYS`    | integer | `30`      | Lookback window for repeat-visit place learning            |
 
 **Validation**: `LOCATION_ENABLED=true` requires `GOOGLE_MAPS_API_KEY` to be set.
 
@@ -116,7 +119,7 @@ When a location event (arrival) is detected, `triggerLocationProactive(chatId)` 
 
 **Modified**:
 
-- `packages/shared/src/config.ts` — 5 config vars + validation
+- `packages/shared/src/config.ts` — location config vars + validation
 - `packages/shared/src/types.ts` — `location` field on `IncomingMessage`
 - `packages/db/src/index.ts` — LocationHistory exports
 - `apps/bot/src/platform/telegram/adapter.ts` — `normalizeLocation`, `normalizeLocationEdit`

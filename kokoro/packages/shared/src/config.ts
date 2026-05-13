@@ -77,6 +77,9 @@ const baseSchema = z.object({
   LOCATION_MOVEMENT_THRESHOLD_M: z.coerce.number().default(100),
   LOCATION_PROACTIVE_DELAY_MS: z.coerce.number().default(1_200_000),
   LOCATION_CONTEXT_MAX_AGE_H: z.coerce.number().default(12),
+  PLACE_LEARNING_VISITS: z.coerce.number().int().positive().default(3),
+  PLACE_LEARNING_RADIUS_M: z.coerce.number().positive().default(200),
+  PLACE_LEARNING_WINDOW_DAYS: z.coerce.number().int().positive().default(30),
 
   BLUEBUBBLES_HOST: z.string().optional(),
   BLUEBUBBLES_PASSWORD: z.string().optional(),

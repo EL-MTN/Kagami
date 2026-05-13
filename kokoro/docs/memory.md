@@ -84,7 +84,7 @@ When Mashiro decides a fact is worth keeping across sessions, she calls `remembe
 
 ### Place-learning (passive)
 
-`apps/bot/src/services/location.ts:learnPlace` watches for frequent visits: 3+ stored locations within 200m / 30 days. When the threshold trips, it calls `appendFact` (with `source_session: "location-learning"`) with `"User frequently visits {placeName} ({placeCategory})."` Format is stable so cosine dedup at the append path catches re-saves (identical text gets cosine 1.0; well above the 0.97 threshold).
+`apps/bot/src/services/location.ts:learnPlace` watches for frequent visits using `PLACE_LEARNING_VISITS` (default `3`) within `PLACE_LEARNING_RADIUS_M` meters (default `200`) over `PLACE_LEARNING_WINDOW_DAYS` days (default `30`). When the threshold trips, it calls `appendFact` (with `source_session: "location-learning"`) with `"User frequently visits {placeName} ({placeCategory})."` Format is stable so cosine dedup at the append path catches re-saves (identical text gets cosine 1.0; well above the 0.97 threshold).
 
 ## Conversation schema
 

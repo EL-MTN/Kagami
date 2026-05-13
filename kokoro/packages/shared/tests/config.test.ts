@@ -37,6 +37,9 @@ const RELEVANT_ENV_KEYS = [
   "BROWSERBASE_PROJECT_ID",
   "LOCATION_ENABLED",
   "GOOGLE_MAPS_API_KEY",
+  "PLACE_LEARNING_VISITS",
+  "PLACE_LEARNING_RADIUS_M",
+  "PLACE_LEARNING_WINDOW_DAYS",
   "BLUEBUBBLES_HOST",
   "BLUEBUBBLES_PASSWORD",
   "ALLOWED_IMESSAGE_HANDLES",
@@ -341,6 +344,27 @@ describe("validateConfig — browser cloud mode", () => {
 });
 
 describe("validateConfig — location", () => {
+  it("defaults place-learning thresholds", async () => {
+    const { config } = await loadConfig();
+
+    expect(config.PLACE_LEARNING_VISITS).toBe(3);
+    expect(config.PLACE_LEARNING_RADIUS_M).toBe(200);
+    expect(config.PLACE_LEARNING_WINDOW_DAYS).toBe(30);
+  });
+
+  it("parses place-learning threshold overrides", async () => {
+    vi.stubEnv("PLACE_LEARNING_VISITS", "5");
+    vi.stubEnv("PLACE_LEARNING_RADIUS_M", "125.5");
+    vi.stubEnv("PLACE_LEARNING_WINDOW_DAYS", "14");
+    vi.resetModules();
+
+    const { config } = await loadConfig();
+
+    expect(config.PLACE_LEARNING_VISITS).toBe(5);
+    expect(config.PLACE_LEARNING_RADIUS_M).toBe(125.5);
+    expect(config.PLACE_LEARNING_WINDOW_DAYS).toBe(14);
+  });
+
   it("rejects LOCATION_ENABLED without GOOGLE_MAPS_API_KEY", async () => {
     vi.stubEnv("LOCATION_ENABLED", "true");
     vi.stubEnv("GOOGLE_MAPS_API_KEY", "");

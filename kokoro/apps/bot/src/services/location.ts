@@ -3,10 +3,6 @@ import { storeLocation, getLatestLocation, getLocationVisitCount } from "@kokoro
 import { appendFact, KiokuClientError } from "@kokoro/memory";
 import { reverseGeocode } from "./geocoding";
 
-const PLACE_LEARNING_VISITS = 3;
-const PLACE_LEARNING_RADIUS_M = 200;
-const PLACE_LEARNING_WINDOW_DAYS = 30;
-
 export interface LocationEvent {
   type: "arrival";
   placeName: string;
@@ -66,8 +62,8 @@ export async function processLocation(
     }
   }
 
-  // Place learning: after 3+ visits within 200m / 30 days, promote a fact
-  // into Kioku. Format is stable so md5-dedup catches re-saves; Kioku's
+  // Place learning: after enough visits within the configured radius/window,
+  // promote a fact into Kioku. Format is stable so md5-dedup catches re-saves; Kioku's
   // cosine gate (≥0.97) catches paraphrased near-duplicates.
   if (geo?.placeName) {
     void learnPlace(chatId, latitude, longitude, geo.placeName, geo.placeCategory ?? "place");
@@ -88,10 +84,10 @@ async function learnPlace(
       chatId,
       latitude,
       longitude,
-      PLACE_LEARNING_RADIUS_M,
-      PLACE_LEARNING_WINDOW_DAYS,
+      config.PLACE_LEARNING_RADIUS_M,
+      config.PLACE_LEARNING_WINDOW_DAYS,
     );
-    if (visitCount < PLACE_LEARNING_VISITS) return;
+    if (visitCount < config.PLACE_LEARNING_VISITS) return;
 
     const text = `User frequently visits ${placeName} (${placeCategory}).`;
     const result = await appendFact({ text, source_session: "location-learning" });
