@@ -9,9 +9,101 @@
 // fired) so the combined score stays in [0, 1] regardless of which
 // channels are active for a given query.
 
+import { z } from "zod";
 import { lemmatizeForBm25 } from "./text.js";
 
 export const ENTITY_BOOST_WEIGHT = 0.5;
+
+export interface Bm25ParamBucket {
+  maxTerms: number | null;
+  midpointEnv: string;
+  steepnessEnv: string;
+  midpoint: number;
+  steepness: number;
+}
+
+const DEFAULT_BM25_PARAM_BUCKETS: readonly Bm25ParamBucket[] = [
+  {
+    maxTerms: 3,
+    midpointEnv: "BM25_SIGMOID_MIDPOINT_3",
+    steepnessEnv: "BM25_SIGMOID_STEEPNESS_3",
+    midpoint: 1.5,
+    steepness: 1.5,
+  },
+  {
+    maxTerms: 6,
+    midpointEnv: "BM25_SIGMOID_MIDPOINT_6",
+    steepnessEnv: "BM25_SIGMOID_STEEPNESS_6",
+    midpoint: 2.0,
+    steepness: 1.0,
+  },
+  {
+    maxTerms: 9,
+    midpointEnv: "BM25_SIGMOID_MIDPOINT_9",
+    steepnessEnv: "BM25_SIGMOID_STEEPNESS_9",
+    midpoint: 2.5,
+    steepness: 1.2,
+  },
+  {
+    maxTerms: 15,
+    midpointEnv: "BM25_SIGMOID_MIDPOINT_15",
+    steepnessEnv: "BM25_SIGMOID_STEEPNESS_15",
+    midpoint: 3.0,
+    steepness: 1.0,
+  },
+  {
+    maxTerms: null,
+    midpointEnv: "BM25_SIGMOID_MIDPOINT_GT15",
+    steepnessEnv: "BM25_SIGMOID_STEEPNESS_GT15",
+    midpoint: 3.5,
+    steepness: 1.0,
+  },
+] as const;
+
+const NonNegativeFiniteNumber = z.coerce.number().finite().nonnegative();
+const PositiveFiniteNumber = z.coerce.number().finite().positive();
+
+function parseOptionalNumber(
+  envName: string,
+  fallback: number,
+  schema: z.ZodType<number>,
+  description: string,
+  env: NodeJS.ProcessEnv,
+): number {
+  const raw = env[envName];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`${envName} must be a finite ${description}`);
+  }
+  return parsed.data;
+}
+
+export function loadBm25ParamsFromEnv(env: NodeJS.ProcessEnv = process.env): Bm25ParamBucket[] {
+  return DEFAULT_BM25_PARAM_BUCKETS.map((bucket) => ({
+    ...bucket,
+    midpoint: parseOptionalNumber(
+      bucket.midpointEnv,
+      bucket.midpoint,
+      NonNegativeFiniteNumber,
+      "non-negative number",
+      env,
+    ),
+    steepness: parseOptionalNumber(
+      bucket.steepnessEnv,
+      bucket.steepness,
+      PositiveFiniteNumber,
+      "positive number",
+      env,
+    ),
+  }));
+}
+
+const BM25_PARAM_BUCKETS = loadBm25ParamsFromEnv();
+
+export function getBm25ParamConfig(): Bm25ParamBucket[] {
+  return BM25_PARAM_BUCKETS.map((bucket) => ({ ...bucket }));
+}
 
 // Returns [midpoint, steepness] for sigmoid normalization of $search BM25
 // raw scores. Calibrated against Lucene/Atlas BM25, which produces scores
@@ -30,11 +122,10 @@ export const ENTITY_BOOST_WEIGHT = 0.5;
 export function getBm25Params(query: string, lemmatized?: string): [number, number] {
   const lem = lemmatized ?? lemmatizeForBm25(query);
   const numTerms = lem.split(/\s+/).filter(Boolean).length || 1;
-  if (numTerms <= 3) return [1.5, 1.5];
-  if (numTerms <= 6) return [2.0, 1.0];
-  if (numTerms <= 9) return [2.5, 1.2];
-  if (numTerms <= 15) return [3.0, 1.0];
-  return [3.5, 1.0];
+  const bucket = BM25_PARAM_BUCKETS.find((candidate) => {
+    return candidate.maxTerms === null || numTerms <= candidate.maxTerms;
+  })!;
+  return [bucket.midpoint, bucket.steepness];
 }
 
 export function normalizeBm25(rawScore: number, midpoint: number, steepness: number): number {

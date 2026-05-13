@@ -17,14 +17,14 @@ apps/api/src/retrieval/
 
 `defaultFactRanker(question, k, opts)` returns the top-K `RankedFact[]`. Constants:
 
-| Constant                  | Value | Purpose                                                                  |
-| ------------------------- | ----- | ------------------------------------------------------------------------ |
-| `SEMANTIC_THRESHOLD`      | 0.1   | Drop candidates whose cosine score is below this gate before fusion.     |
-| `ENTITY_SIM_THRESHOLD`    | 0.5   | Entity-store hits below this similarity contribute no boost.             |
-| `MAX_QUERY_ENTITIES`      | 8     | Cap on deduped entities embedded from the question.                      |
-| `ENTITY_VS_NUM_CANDIDATES`| 100   | HNSW beam for `$vectorSearch` over the entity store.                     |
-| `ENTITY_VS_LIMIT`         | 20    | Per-entity cap on entity-store hits considered for boosts.               |
-| `internalLimit`           | `max(k*4, 60)` | Per-channel candidate cap before fusion.                          |
+| Constant                   | Value          | Purpose                                                              |
+| -------------------------- | -------------- | -------------------------------------------------------------------- |
+| `SEMANTIC_THRESHOLD`       | 0.1            | Drop candidates whose cosine score is below this gate before fusion. |
+| `ENTITY_SIM_THRESHOLD`     | 0.5            | Entity-store hits below this similarity contribute no boost.         |
+| `MAX_QUERY_ENTITIES`       | 8              | Cap on deduped entities embedded from the question.                  |
+| `ENTITY_VS_NUM_CANDIDATES` | 100            | HNSW beam for `$vectorSearch` over the entity store.                 |
+| `ENTITY_VS_LIMIT`          | 20             | Per-entity cap on entity-store hits considered for boosts.           |
+| `internalLimit`            | `max(k*4, 60)` | Per-channel candidate cap before fusion.                             |
 
 ### The pipeline
 
@@ -63,13 +63,13 @@ interface MemoryFilters {
 
 Pushed down where the search engines support it:
 
-| Field         | Vector index (`facts_vec`)                         | Search index (`facts_text`)                                  |
-| ------------- | -------------------------------------------------- | ------------------------------------------------------------ |
-| `user_id`     | `type: filter` → `$vectorSearch.filter.user_id`    | `type: token` → `compound.filter.equals.path: user_id`       |
-| `run_id`      | `type: filter`                                     | `type: token`                                                |
-| `agent_id`    | `type: filter`                                     | `type: token`                                                |
-| `category`    | `type: filter`                                     | `type: token`                                                |
-| `metadata.*`  | (dynamic — not pre-declared)                       | (dynamic — not pre-declared)                                 |
+| Field        | Vector index (`facts_vec`)                      | Search index (`facts_text`)                            |
+| ------------ | ----------------------------------------------- | ------------------------------------------------------ |
+| `user_id`    | `type: filter` → `$vectorSearch.filter.user_id` | `type: token` → `compound.filter.equals.path: user_id` |
+| `run_id`     | `type: filter`                                  | `type: token`                                          |
+| `agent_id`   | `type: filter`                                  | `type: token`                                          |
+| `category`   | `type: filter`                                  | `type: token`                                          |
+| `metadata.*` | (dynamic — not pre-declared)                    | (dynamic — not pre-declared)                           |
 
 Dynamic `metadata.<key>` filters apply post-vector-search, in the `$match` stage that runs after `$in` on the union. Values match exactly via `$eq`; only flat string/number/boolean metadata is filterable.
 
@@ -117,21 +117,23 @@ sort desc, take top K.
 
 Atlas's `$search` returns Lucene-shaped raw scores, typically in the 1–8 range on Kioku-scale corpora. `LUCENE-8563` (2018) dropped the `(k1+1)` numerator factor so per-term contributions are ~2.4× smaller than older Okapi BM25 references. Small per-vault corpora compress further via reduced IDF.
 
-`normalizeBm25(raw, midpoint, steepness) = 1 / (1 + exp(-steepness * (raw - midpoint)))` — a logistic sigmoid. Parameters are query-length-adaptive:
+`normalizeBm25(raw, midpoint, steepness) = 1 / (1 + exp(-steepness * (raw - midpoint)))` — a logistic sigmoid. Parameters are query-length-adaptive and can be overridden with env vars:
 
-| Token count (lemmatized) | midpoint | steepness |
-| ------------------------ | -------- | --------- |
-| ≤ 3                      | 1.5      | 1.5       |
-| ≤ 6                      | 2.0      | 1.0       |
-| ≤ 9                      | 2.5      | 1.2       |
-| ≤ 15                     | 3.0      | 1.0       |
-| > 15                     | 3.5      | 1.0       |
+| Token count (lemmatized) | Midpoint env                 | Default | Steepness env                 | Default |
+| ------------------------ | ---------------------------- | ------- | ----------------------------- | ------- |
+| ≤ 3                      | `BM25_SIGMOID_MIDPOINT_3`    | `1.5`   | `BM25_SIGMOID_STEEPNESS_3`    | `1.5`   |
+| ≤ 6                      | `BM25_SIGMOID_MIDPOINT_6`    | `2.0`   | `BM25_SIGMOID_STEEPNESS_6`    | `1.0`   |
+| ≤ 9                      | `BM25_SIGMOID_MIDPOINT_9`    | `2.5`   | `BM25_SIGMOID_STEEPNESS_9`    | `1.2`   |
+| ≤ 15                     | `BM25_SIGMOID_MIDPOINT_15`   | `3.0`   | `BM25_SIGMOID_STEEPNESS_15`   | `1.0`   |
+| > 15                     | `BM25_SIGMOID_MIDPOINT_GT15` | `3.5`   | `BM25_SIGMOID_STEEPNESS_GT15` | `1.0`   |
+
+Midpoints must be finite non-negative numbers; steepness values must be finite positive numbers. Kioku logs the resolved table once at API boot.
 
 Calibrated empirically on a 20-item LongMemEval-Oracle slice so:
 
 - top-relevant docs (max raw) → ≥ 0.85 normalized
-- p75 docs                    → 0.5–0.7
-- irrelevant tail             → < 0.15
+- p75 docs → 0.5–0.7
+- irrelevant tail → < 0.15
 
 Refit after embedding-model or corpus-shape changes via `apps/api/scripts/probe-bm25-scores.ts` — a one-shot diagnostic that ingests a slice of LongMemEval items, captures raw `$search` scores, and emits a bucketed distribution summary. See [bench.md](bench.md).
 
@@ -179,7 +181,7 @@ Not pluggable today:
 
 - Lemmatizer (Porter-lite — no spaCy / NLTK dep)
 - Entity extractor (regex-based — no NER model)
-- BM25 sigmoid parameters (compile-time table; refit via the probe script)
+- BM25 sigmoid parameter buckets (env-tunable; refit via the probe script)
 - Three-channel additive fusion (cosine + BM25 + entity boost)
 - `SEMANTIC_THRESHOLD = 0.1`, `ENTITY_BOOST_WEIGHT = 0.5`
 
