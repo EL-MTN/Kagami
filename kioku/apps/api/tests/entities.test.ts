@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { setupTestMongo, teardownTestMongo } from "./helpers/mongo.ts";
 
@@ -68,4 +68,45 @@ it("parallel upsert-style updateOnes converge on union of linked_memory_ids", as
   expect(docs.length).toBe(1);
   const linked = (docs[0] as unknown as { linked_memory_ids: string[] }).linked_memory_ids;
   expect([...linked].sort()).toEqual(["fact-A", "fact-B", "fact-C"]);
+});
+
+it("upsertEntitiesFromFacts stores new entities with empty embeddings when embedding fails", async () => {
+  vi.resetModules();
+  vi.doMock("../src/llm.ts", () => ({
+    embedTexts: vi.fn(async () => {
+      throw new Error("embedding provider down");
+    }),
+  }));
+
+  const { upsertEntitiesFromFacts } = await import("../src/storage/entities.ts");
+  const result = await upsertEntitiesFromFacts([
+    {
+      id: "fact-entity-failure",
+      text: "Mira visited New York.",
+      user_id: "default",
+      created_at: "2026-05-12T00:00:00Z",
+      event_date: "2026-05-12",
+      source_session: "raw/test",
+      embedding: [1, 0, 0],
+    },
+  ]);
+
+  const { getDb } = await import("../src/storage/mongo.ts");
+  const db = await getDb();
+  const docs = await db.collection("entities").find({}).sort({ text_lower: 1 }).toArray();
+
+  expect(result).toEqual({ created: 2, linked: 2 });
+  expect(
+    docs.map((doc) => ({
+      text: doc.text,
+      embedding: doc.embedding,
+      linked_memory_ids: doc.linked_memory_ids,
+    })),
+  ).toEqual([
+    { text: "Mira", embedding: [], linked_memory_ids: ["fact-entity-failure"] },
+    { text: "New York", embedding: [], linked_memory_ids: ["fact-entity-failure"] },
+  ]);
+
+  vi.doUnmock("../src/llm.ts");
+  vi.resetModules();
 });
