@@ -4,11 +4,11 @@ export const SOURCE_VALUES = ["concierge", "gmail-sync", "gcal-sync", "manual", 
 
 export type Source = (typeof SOURCE_VALUES)[number];
 
-export const baseSchemaOptions: SchemaOptions = {
+export const baseSchemaOptions = {
   timestamps: true,
   strict: "throw",
   versionKey: false,
-};
+} satisfies SchemaOptions;
 
 export const provenanceFields = {
   source: {
