@@ -9,8 +9,8 @@ Kioku uses `@ai-sdk/openai-compatible`, so any OpenAI-shaped endpoint works (LM 
 ```ts
 PROFILES = {
   lmstudio: { baseURL: "http://localhost:1234/v1", apiKey: "lm-studio" },
-  openai:   { baseURL: "https://api.openai.com/v1", apiKey: process.env.OPENAI_API_KEY ?? "" },
-}
+  openai: { baseURL: "https://api.openai.com/v1", apiKey: process.env.OPENAI_API_KEY ?? "" },
+};
 ```
 
 Explicit `LLM_URL` / `LLM_API_KEY` (and `EMBEDDING_*` counterparts) always win as overrides. Chat and embedding providers are independent — pick separately.
@@ -26,6 +26,10 @@ KIOKU_TOP_K=50                                   # answerer top-K (default 50)
 # ── MongoDB (defaults to local atlas-local on 27017) ────
 # KIOKU_MONGO_URI=mongodb://127.0.0.1:27017/?directConnection=true
 # KIOKU_MONGO_DB=kioku
+
+# ── Ingest rate limits (per IP, one-minute window) ──────
+# KIOKU_BULK_RATE_LIMIT_PER_MIN=10             # POST /facts/bulk
+# KIOKU_SESSION_RATE_LIMIT_PER_MIN=5           # POST /sessions
 
 # ── Standalone bind (only used outside Portless) ────────
 # PORT=7777                                      # Portless injects this; 7777 is the fallback
@@ -54,6 +58,7 @@ OPENAI_API_KEY=sk-...
 ## Common combinations
 
 - **All-local** — LM Studio on `localhost:1234` for both chat and embeddings:
+
   ```sh
   LLM_PROVIDER=lmstudio
   EMBEDDING_PROVIDER=lmstudio
@@ -62,6 +67,7 @@ OPENAI_API_KEY=sk-...
   ```
 
 - **All-OpenAI** — paid chat + paid embeddings:
+
   ```sh
   LLM_PROVIDER=openai
   EMBEDDING_PROVIDER=openai
@@ -80,6 +86,17 @@ OPENAI_API_KEY=sk-...
   ```
 
 The provider abstraction collapses to a single OpenAI-compatible client when chat and embedding URLs/keys match (no duplicate provider instance).
+
+## Write rate limits
+
+`POST /facts/bulk` and `POST /sessions` run embedding-heavy ingest work. Kioku applies per-IP rate limits over a 60-second window before either handler starts provider calls:
+
+| Env var                            | Default | Endpoint           |
+| ---------------------------------- | ------- | ------------------ |
+| `KIOKU_BULK_RATE_LIMIT_PER_MIN`    | `10`    | `POST /facts/bulk` |
+| `KIOKU_SESSION_RATE_LIMIT_PER_MIN` | `5`     | `POST /sessions`   |
+
+Rate-limited requests return `429 { error: "rate_limited", limit, window_seconds: 60 }` with standard `RateLimit` headers.
 
 ## Embedding-model swaps
 
@@ -114,7 +131,7 @@ Both apps register through `portless.json` at the repo root:
 {
   "apps": {
     "apps/dashboard": { "name": "kioku" },
-    "apps/api":       { "name": "api.kioku" }
+    "apps/api": { "name": "api.kioku" }
   }
 }
 ```
@@ -130,9 +147,9 @@ First run prompts once for sudo to install a local CA (HTTPS auto-trusted therea
 
 Default Kioku URLs across the Kagami workspace:
 
-| Caller            | Env var          | Default                          |
-| ----------------- | ---------------- | -------------------------------- |
-| Kokoro bot        | `KIOKU_URL`      | `https://api.kioku.localhost`    |
-| Kioku dashboard   | `KIOKU_API_URL`  | `https://api.kioku.localhost`    |
+| Caller          | Env var         | Default                       |
+| --------------- | --------------- | ----------------------------- |
+| Kokoro bot      | `KIOKU_URL`     | `https://api.kioku.localhost` |
+| Kioku dashboard | `KIOKU_API_URL` | `https://api.kioku.localhost` |
 
 See `Kagami/ARCHITECTURE.md` for the full cross-service map.

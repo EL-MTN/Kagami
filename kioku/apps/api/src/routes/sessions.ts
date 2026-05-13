@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { ingestSessionFromString } from "../ingest/sessions.js";
+import { sessionIngestRateLimit } from "./rate-limit.js";
 
 const SessionBody = z.object({
   transcript: z.string().min(1),
@@ -12,7 +13,7 @@ const SessionBody = z.object({
 
 export const sessionsRouter = Router();
 
-sessionsRouter.post("/", async (req, res, next) => {
+sessionsRouter.post("/", sessionIngestRateLimit, async (req, res, next) => {
   try {
     const body = SessionBody.parse(req.body);
     const result = await ingestSessionFromString({
