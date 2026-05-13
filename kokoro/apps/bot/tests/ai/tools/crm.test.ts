@@ -17,6 +17,10 @@ const {
   mockGetPersonContext,
   mockRecentInteractions,
   mockListMyFollowups,
+  mockLogInteraction,
+  mockCreateFollowup,
+  mockResolveFollowup,
+  mockUpdatePerson,
   MockError,
 } = vi.hoisted(() => {
   class MockError extends Error {
@@ -38,6 +42,10 @@ const {
     mockGetPersonContext: vi.fn(),
     mockRecentInteractions: vi.fn(),
     mockListMyFollowups: vi.fn(),
+    mockLogInteraction: vi.fn(),
+    mockCreateFollowup: vi.fn(),
+    mockResolveFollowup: vi.fn(),
+    mockUpdatePerson: vi.fn(),
     MockError,
   };
 });
@@ -47,14 +55,22 @@ vi.mock("@kokoro/kizuna", () => ({
   getPersonContext: mockGetPersonContext,
   recentInteractions: mockRecentInteractions,
   listMyFollowups: mockListMyFollowups,
+  logInteraction: mockLogInteraction,
+  createFollowup: mockCreateFollowup,
+  resolveFollowup: mockResolveFollowup,
+  updatePerson: mockUpdatePerson,
   KizunaClientError: MockError,
 }));
 
 import {
+  createCreateFollowupTool,
   createFindPeopleTool,
   createGetPersonContextTool,
   createListMyFollowupsTool,
+  createLogInteractionTool,
   createRecentInteractionsTool,
+  createResolveFollowupTool,
+  createUpdatePersonTool,
 } from "../../../src/ai/tools/crm";
 
 interface ExecutableTool {
@@ -67,7 +83,53 @@ beforeEach(() => {
   mockGetPersonContext.mockReset();
   mockRecentInteractions.mockReset();
   mockListMyFollowups.mockReset();
+  mockLogInteraction.mockReset();
+  mockCreateFollowup.mockReset();
+  mockResolveFollowup.mockReset();
+  mockUpdatePerson.mockReset();
 });
+
+const PERSON_ID = "111111111111111111111111";
+const FOLLOWUP_ID = "333333333333333333333333";
+const INTERACTION_ID = "222222222222222222222222";
+
+function personSummary() {
+  return {
+    id: PERSON_ID,
+    displayName: "Sarah Chen",
+    primaryEmail: "sarah@example.com",
+    primaryOrgId: null,
+    tags: [],
+    lastInteractionAt: null,
+  };
+}
+
+function followupSummary() {
+  return {
+    id: FOLLOWUP_ID,
+    person: personSummary(),
+    direction: "i_owe",
+    dueAt: null,
+    status: "open",
+    reasonExcerpt: "Send the deck",
+    reasonTruncated: false,
+    sourceInteractionId: null,
+  };
+}
+
+function interactionSummary() {
+  return {
+    id: INTERACTION_ID,
+    occurredAt: "2026-05-13T12:00:00.000Z",
+    channel: "call",
+    title: "Catch up",
+    bodyExcerpt: null,
+    bodyTruncated: false,
+    participants: [{ personId: PERSON_ID, role: "subject" }],
+    context: [],
+    status: "active",
+  };
+}
 
 describe("findPeople CRM tool", () => {
   it("trims query, clamps limit, and returns count/truncation metadata", async () => {
@@ -182,5 +244,131 @@ describe("listMyFollowups CRM tool", () => {
     });
     expect(tool.description).toContain("i_owe means Eric owes the person");
     expect(result).toMatchObject({ success: true, count: 0, data: [] });
+  });
+});
+
+describe("logInteraction CRM tool", () => {
+  it("forwards the input to the client and returns the projected summary", async () => {
+    const summary = interactionSummary();
+    mockLogInteraction.mockResolvedValue(summary);
+
+    const tool = createLogInteractionTool() as unknown as ExecutableTool;
+    const input = {
+      occurredAt: "2026-05-13T12:00:00.000Z",
+      channel: "call",
+      title: "Catch up",
+      body: "Spoke for ~20 min",
+      participants: [{ personId: PERSON_ID, role: "subject" }],
+      context: ["work"],
+    };
+    const result = await tool.execute(input, undefined);
+
+    expect(mockLogInteraction).toHaveBeenCalledWith(input);
+    expect(result).toEqual({ success: true, data: summary });
+    expect(tool.description).toContain("MUST be wrapped in requestConfirmation");
+  });
+
+  it("marks Kizuna 500 failures as degraded so the tool envelope fails open", async () => {
+    mockLogInteraction.mockRejectedValue(
+      new MockError("http", "Kizuna request failed with status 500", {
+        status: 500,
+        routeTemplate: "/interactions",
+      }),
+    );
+
+    const tool = createLogInteractionTool() as unknown as ExecutableTool;
+    const result = await tool.execute(
+      {
+        occurredAt: "2026-05-13T12:00:00.000Z",
+        channel: "call",
+        title: "Catch up",
+        participants: [{ personId: PERSON_ID, role: "subject" }],
+      },
+      undefined,
+    );
+
+    expect(result).toEqual({
+      success: false,
+      reason: "Kizuna request failed with status 500",
+      degraded: true,
+    });
+  });
+});
+
+describe("createFollowup CRM tool", () => {
+  it("forwards the input and returns the hydrated followup summary", async () => {
+    const followup = followupSummary();
+    mockCreateFollowup.mockResolvedValue(followup);
+
+    const tool = createCreateFollowupTool() as unknown as ExecutableTool;
+    const input = {
+      personId: PERSON_ID,
+      direction: "i_owe",
+      reason: "Send the deck",
+      dueAt: "2026-06-01T12:00:00.000Z",
+    };
+    const result = await tool.execute(input, undefined);
+
+    expect(mockCreateFollowup).toHaveBeenCalledWith(input);
+    expect(result).toEqual({ success: true, data: followup });
+    expect(tool.description).toContain("MUST be wrapped in requestConfirmation");
+  });
+
+  it("treats a 404 from the hydration path as a non-degraded failure", async () => {
+    mockCreateFollowup.mockRejectedValue(
+      new MockError("http", "Kizuna request failed with status 404", {
+        status: 404,
+        routeTemplate: "/people/:id",
+      }),
+    );
+
+    const tool = createCreateFollowupTool() as unknown as ExecutableTool;
+    const result = await tool.execute(
+      {
+        personId: PERSON_ID,
+        direction: "i_owe",
+        reason: "Send the deck",
+      },
+      undefined,
+    );
+
+    expect(result).toEqual({
+      success: false,
+      reason: "Kizuna request failed with status 404",
+    });
+  });
+});
+
+describe("resolveFollowup CRM tool", () => {
+  it("forwards the followup id and target status and returns the updated summary", async () => {
+    const followup = { ...followupSummary(), status: "done" };
+    mockResolveFollowup.mockResolvedValue(followup);
+
+    const tool = createResolveFollowupTool() as unknown as ExecutableTool;
+    const result = await tool.execute({ followupId: FOLLOWUP_ID, status: "done" }, undefined);
+
+    expect(mockResolveFollowup).toHaveBeenCalledWith({
+      followupId: FOLLOWUP_ID,
+      status: "done",
+    });
+    expect(result).toEqual({ success: true, data: followup });
+  });
+});
+
+describe("updatePerson CRM tool", () => {
+  it("forwards only the supplied fields and returns the projected summary", async () => {
+    const person = personSummary();
+    mockUpdatePerson.mockResolvedValue(person);
+
+    const tool = createUpdatePersonTool() as unknown as ExecutableTool;
+    const input = {
+      personId: PERSON_ID,
+      tags: ["close-friend"],
+      notes: "lives in Brooklyn now",
+    };
+    const result = await tool.execute(input, undefined);
+
+    expect(mockUpdatePerson).toHaveBeenCalledWith(input);
+    expect(result).toEqual({ success: true, data: person });
   });
 });

@@ -4,7 +4,7 @@ Approval primitive for risky tool calls. Mashiro can ask Goshujin-sama to tap-ap
 
 ## When to use
 
-Gate any action you wouldn't want to misfire. v2 covers `sendEmail`, mutating `manageCalendar` actions (`update`/`delete`), and `browseAgent` (the autonomous browse mode). Architecture is designed for further expansion.
+Gate any action you wouldn't want to misfire. Coverage today: `sendEmail`, mutating `manageCalendar` actions (`update`/`delete`), `browseAgent` (the autonomous browse mode), and the Kizuna CRM writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`). Architecture is designed for further expansion.
 
 | Use directly                                 | Wrap in `requestConfirmation`                          |
 | -------------------------------------------- | ------------------------------------------------------ |
@@ -12,7 +12,8 @@ Gate any action you wouldn't want to misfire. v2 covers `sendEmail`, mutating `m
 | Self-addressed drafts / notes                | `manageCalendar` with `action: "update"` or `"delete"` |
 | Setting reminders                            | `browseAgent` (autonomous multi-step browser)          |
 | Saving facts (`rememberFact`)                | Replying to a thread on his behalf                     |
-| `browse` search/visit/extract/act/screenshot | (anything outbound or irreversible)                    |
+| `browse` search/visit/extract/act/screenshot | Kizuna CRM writes: `logInteraction`, `createFollowup`, |
+| Kizuna CRM reads (`findPeople`, etc.)        | `resolveFollowup`, `updatePerson`                      |
 
 The gated allowlist is the single source of truth at `apps/bot/src/services/gated-actions.ts::GATED_TOOL_NAMES`. The `requestConfirmation` tool's `action.tool` parameter is a Zod enum bound to that list — the LLM cannot route a non-gated tool through the wrapper.
 
@@ -86,25 +87,25 @@ The tool is registered alongside `requestConfirmation` whenever any gated underl
 
 `PendingConfirmation` (MongoDB, TTL on `expiresAt`):
 
-| Field             | Type                                                              | Description                                                            |
-| ----------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `chatId`          | string                                                            | Telegram chat                                                          |
-| `summary`         | string                                                            | One-line user-facing description; shown on the prompt and in the event |
-| `action.tool`     | `"sendEmail" \| "manageCalendar" \| "browseAgent"`                | Gated tool name (validated against `GATED_TOOL_NAMES` at both ends)    |
-| `action.args`     | mixed                                                             | Tool args; re-validated by Zod at dispatch time                        |
-| `status`          | `"pending" \| "approved" \| "denied" \| "expired" \| "cancelled"` | State machine                                                          |
-| `origin`          | `"conversation" \| "routine" \| "watcher"`                        | Where the request came from (watchers can't author, but reserved)      |
-| `originRef`       | string?                                                           | Reserved for routine/watcher id when those origins are wired           |
-| `promptMessageId` | string?                                                           | Telegram message id, used for in-place editing                         |
-| `resultText`      | string?                                                           | Short outcome line, set after dispatch settles                         |
-| `expiresAt`       | Date                                                              | Default `+24h`; MongoDB TTL index auto-removes after this              |
-| `resolvedAt`      | Date?                                                             | When transitioned out of `pending`                                     |
+| Field             | Type                                                                                                                              | Description                                                            |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `chatId`          | string                                                                                                                            | Telegram chat                                                          |
+| `summary`         | string                                                                                                                            | One-line user-facing description; shown on the prompt and in the event |
+| `action.tool`     | `"sendEmail" \| "manageCalendar" \| "browseAgent" \| "logInteraction" \| "createFollowup" \| "resolveFollowup" \| "updatePerson"` | Gated tool name (validated against `GATED_TOOL_NAMES` at both ends)    |
+| `action.args`     | mixed                                                                                                                             | Tool args; re-validated by Zod at dispatch time                        |
+| `status`          | `"pending" \| "approved" \| "denied" \| "expired" \| "cancelled"`                                                                 | State machine                                                          |
+| `origin`          | `"conversation" \| "routine" \| "watcher"`                                                                                        | Where the request came from (watchers can't author, but reserved)      |
+| `originRef`       | string?                                                                                                                           | Reserved for routine/watcher id when those origins are wired           |
+| `promptMessageId` | string?                                                                                                                           | Telegram message id, used for in-place editing                         |
+| `resultText`      | string?                                                                                                                           | Short outcome line, set after dispatch settles                         |
+| `expiresAt`       | Date                                                                                                                              | Default `+24h`; MongoDB TTL index auto-removes after this              |
+| `resolvedAt`      | Date?                                                                                                                             | When transitioned out of `pending`                                     |
 
 Atomic transitions live in `resolvePendingConfirmation(id, verdict, resultText?)` — a `findOneAndUpdate` with `status: "pending"` in the filter. Double-clicks and racing handlers get a null result and bow out cleanly.
 
 ## Tool surface
 
-`requestConfirmation({ summary, action: { tool, args } })` and `cancelConfirmation({ confirmationId, reason? })` are both registered in `allTools(ctx)` whenever any gated underlying tool is available (currently `GOOGLE_OAUTH_CLIENT_ID` or `BROWSER_ENABLED`). Excluded from `watcherTools` (watchers can't mutate) and `routineToolsUnderWatcher` (transitive read-only invariant).
+`requestConfirmation({ summary, action: { tool, args } })` and `cancelConfirmation({ confirmationId, reason? })` are both registered in `allTools(ctx)` whenever any gated underlying tool is available (currently `GOOGLE_OAUTH_CLIENT_ID`, `BROWSER_ENABLED`, or `KIZUNA_ENABLED`). Excluded from `watcherTools` (watchers can't mutate) and `routineToolsUnderWatcher` (transitive read-only invariant).
 
 ## Adapter contract
 

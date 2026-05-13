@@ -1,11 +1,15 @@
 import { tool } from "ai";
 import { z } from "zod";
 import {
+  createFollowup,
   findPeople,
   getPersonContext,
   KizunaClientError,
   listMyFollowups,
+  logInteraction,
   recentInteractions,
+  resolveFollowup,
+  updatePerson,
   type FollowupSummary,
   type InteractionSummary,
   type PersonContext,
@@ -225,11 +229,186 @@ export function createListMyFollowupsTool() {
   });
 }
 
+// ─── Write tools ─────────────────────────────────────────────────────────────
+//
+// Each write tool MUST be wrapped in `requestConfirmation` so Goshujin-sama
+// approves before the mutation lands. The tools below still execute their
+// underlying client call when invoked directly — fail-open envelopes on
+// KizunaClientError mirror the read tools — but they are listed in
+// GATED_TOOL_NAMES so the gated dispatcher is the canonical run path.
+
+const writeGateGuidance =
+  "MUST be wrapped in requestConfirmation — call requestConfirmation({ summary, action: { tool, args } }) instead of invoking this tool directly.";
+
+const participantRole = z.enum(["from", "to", "cc", "attendee", "subject"]);
+const interactionChannel = z.enum(["email", "calendar", "call", "in_person", "message", "manual"]);
+const followupStatus = z.enum(["open", "done", "snoozed", "dismissed"]);
+const followupDirection = z.enum(["i_owe", "they_owe"]);
+const birthday = z.union([
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be YYYY-MM-DD or --MM-DD"),
+  z.string().regex(/^--\d{2}-\d{2}$/, "must be YYYY-MM-DD or --MM-DD"),
+]);
+
+export function createLogInteractionTool() {
+  return tool({
+    description: `Log a Kizuna interaction with one or more people (call, in_person meeting, manual message log, etc). ${writeGateGuidance} ${opaqueIdGuidance}`,
+    inputSchema: z.object({
+      occurredAt: isoDatetime.describe("ISO 8601 timestamp the interaction happened at."),
+      channel: interactionChannel.describe(
+        "Channel for this interaction. Gmail/calendar ingest already auto-logs email/calendar entries, so concierge writes are almost always call/in_person/message/manual.",
+      ),
+      title: z.string().min(1).max(200).describe("Short title shown on Kizuna's timeline."),
+      body: z
+        .string()
+        .max(8000)
+        .optional()
+        .describe("Optional longer narrative — what was discussed, decisions, follow-ups noted."),
+      participants: z
+        .array(z.object({ personId: objectId, role: participantRole }))
+        .min(1)
+        .describe(
+          "Each personId is a PersonSummary.id. role is from/to/cc/attendee/subject from Goshujin-sama's perspective.",
+        ),
+      context: z
+        .array(z.string())
+        .optional()
+        .describe("Optional context tags (e.g. 'work', 'side-project')."),
+      location: z.string().optional().describe("Optional location string."),
+    }),
+    execute: async (input): Promise<CrmToolResult<InteractionSummary>> => {
+      try {
+        const data = await logInteraction(input);
+        logger.info(
+          {
+            tool: "logInteraction",
+            channel: input.channel,
+            participants: input.participants.length,
+          },
+          "Tool: logInteraction",
+        );
+        return { success: true, data };
+      } catch (err) {
+        logFailure("logInteraction", err);
+        return crmFailure(err);
+      }
+    },
+  });
+}
+
+export function createCreateFollowupTool() {
+  return tool({
+    description: `Create a Kizuna followup. direction is Eric-relative: i_owe means Eric owes the person, they_owe means the person owes Eric. ${writeGateGuidance} ${opaqueIdGuidance}`,
+    inputSchema: z.object({
+      personId: objectId.describe("PersonSummary.id from a CRM tool."),
+      direction: followupDirection.describe(
+        "i_owe = Eric owes the person; they_owe = the person owes Eric.",
+      ),
+      reason: z.string().min(1).max(400).describe("Short reason — what's owed."),
+      dueAt: isoDatetime
+        .optional()
+        .describe("Optional ISO 8601 due date. Omit for an open-ended followup."),
+      sourceInteractionId: objectId
+        .optional()
+        .describe("Optional InteractionSummary.id this followup stems from."),
+    }),
+    execute: async (input): Promise<CrmToolResult<FollowupSummary>> => {
+      try {
+        const data = await createFollowup(input);
+        logger.info(
+          { tool: "createFollowup", direction: input.direction, hasDue: Boolean(input.dueAt) },
+          "Tool: createFollowup",
+        );
+        return { success: true, data };
+      } catch (err) {
+        logFailure("createFollowup", err);
+        return crmFailure(err);
+      }
+    },
+  });
+}
+
+export function createResolveFollowupTool() {
+  return tool({
+    description: `Resolve (or re-open) a Kizuna followup — set status to done/snoozed/dismissed. Reuse the same tool to reopen by passing status=open. ${writeGateGuidance} ${opaqueIdGuidance}`,
+    inputSchema: z.object({
+      followupId: objectId.describe("FollowupSummary.id from listMyFollowups or getPersonContext."),
+      status: followupStatus.describe(
+        "Target status — done when complete, snoozed/dismissed to clear without completion, open to reopen.",
+      ),
+      dueAt: isoDatetime
+        .optional()
+        .describe("Optional new ISO 8601 due date — useful when snoozing."),
+      reason: z.string().min(1).max(400).optional().describe("Optional updated reason text."),
+    }),
+    execute: async (input): Promise<CrmToolResult<FollowupSummary>> => {
+      try {
+        const data = await resolveFollowup(input);
+        logger.info({ tool: "resolveFollowup", status: input.status }, "Tool: resolveFollowup");
+        return { success: true, data };
+      } catch (err) {
+        logFailure("resolveFollowup", err);
+        return crmFailure(err);
+      }
+    },
+  });
+}
+
+export function createUpdatePersonTool() {
+  return tool({
+    description: `Update a Kizuna person profile. Only the fields you pass are changed; omit unchanged fields. ${writeGateGuidance} ${opaqueIdGuidance}`,
+    inputSchema: z
+      .object({
+        personId: objectId.describe("PersonSummary.id from a CRM tool."),
+        displayName: z.string().min(1).optional(),
+        primaryEmail: z.string().email().optional(),
+        primaryOrgId: objectId.optional(),
+        relationship: z.string().max(2000).optional().describe("Free-form relationship narrative."),
+        emails: z.array(z.string().email()).optional(),
+        phones: z.array(z.string()).optional(),
+        handles: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe("Map of provider → handle, e.g. { telegram: '@sarah' }."),
+        tags: z.array(z.string()).optional(),
+        birthday: birthday.optional().describe("YYYY-MM-DD or --MM-DD (no year known)."),
+        notes: z.string().max(8000).optional(),
+      })
+      .refine((v) => Object.keys(v).some((k) => k !== "personId"), {
+        message: "updatePerson requires at least one field to change",
+      }),
+    execute: async (input): Promise<CrmToolResult<PersonSummary>> => {
+      try {
+        const data = await updatePerson(input);
+        logger.info(
+          {
+            tool: "updatePerson",
+            fields: Object.keys(input).filter((k) => k !== "personId"),
+          },
+          "Tool: updatePerson",
+        );
+        return { success: true, data };
+      } catch (err) {
+        logFailure("updatePerson", err);
+        return crmFailure(err);
+      }
+    },
+  });
+}
+
 export function createCrmTools() {
   return {
     findPeople: createFindPeopleTool(),
     getPersonContext: createGetPersonContextTool(),
     recentInteractions: createRecentInteractionsTool(),
     listMyFollowups: createListMyFollowupsTool(),
+  };
+}
+
+export function createCrmWriteTools() {
+  return {
+    logInteraction: createLogInteractionTool(),
+    createFollowup: createCreateFollowupTool(),
+    resolveFollowup: createResolveFollowupTool(),
+    updatePerson: createUpdatePersonTool(),
   };
 }

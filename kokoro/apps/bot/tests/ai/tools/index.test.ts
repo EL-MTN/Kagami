@@ -62,20 +62,28 @@ afterEach(() => {
 });
 
 describe("allTools — minimum-config baseline", () => {
-  it("registers the always-on tools (routine mgmt, watcher mgmt, memory) with no flags set", () => {
+  it("registers the always-on tools (routine mgmt, watcher mgmt, memory, CRM read+write, confirmation primitives) with KIZUNA_ENABLED on", () => {
+    // KIZUNA_ENABLED is set in beforeEach, so CRM reads + writes are present,
+    // and writes being gated triggers the confirmation primitives.
     const tools = allTools(baseCtx);
     const names = Object.keys(tools).sort();
     expect(names).toEqual(
       [
+        "cancelConfirmation",
+        "createFollowup",
         "findPeople",
         "getPersonContext",
         "listMyFollowups",
+        "logInteraction",
         "manageRoutines",
         "manageWatchers",
-        "rememberFact",
         "recentInteractions",
+        "rememberFact",
+        "requestConfirmation",
+        "resolveFollowup",
         "searchMemory",
         "searchRoutines",
+        "updatePerson",
         "useRoutine",
       ].sort(),
     );
@@ -130,10 +138,25 @@ describe("allTools — feature flags", () => {
     }
   });
 
-  it("does NOT register confirmation primitives when neither Google OAuth nor browser is enabled", () => {
+  it("does NOT register confirmation primitives when no gated tool is enabled (no Google OAuth, no browser, no Kizuna writes)", () => {
+    mockConfig.KIZUNA_ENABLED = false;
     const names = Object.keys(allTools(baseCtx));
     expect(names).not.toContain("requestConfirmation");
     expect(names).not.toContain("cancelConfirmation");
+  });
+
+  it("registers confirmation primitives when KIZUNA_ENABLED alone is on (CRM writes are gated)", () => {
+    const names = Object.keys(allTools(baseCtx));
+    expect(names).toContain("requestConfirmation");
+    expect(names).toContain("cancelConfirmation");
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "logInteraction",
+        "createFollowup",
+        "resolveFollowup",
+        "updatePerson",
+      ]),
+    );
   });
 });
 
@@ -168,6 +191,10 @@ describe("watcherTools — read-only invariant", () => {
       "cancelConfirmation",
       "searchRoutines",
       "rememberFact", // mutates the vault; searchMemory (read-only) is allowed
+      "logInteraction", // CRM writes — read tools are allowed
+      "createFollowup",
+      "resolveFollowup",
+      "updatePerson",
     ];
     for (const f of forbidden) {
       expect(names, `watcherTools must not include ${f}`).not.toContain(f);

@@ -1,6 +1,26 @@
-import { getJson, appendParam, clampLimit, withKizunaDeadline } from "./client";
+import { getJson, sendJson, appendParam, clampLimit, withKizunaDeadline } from "./client";
 import { interactionSummary } from "./projections";
-import { InteractionsEnvelopeSchema, type InteractionSummary, type ListEnvelope } from "./schemas";
+import {
+  InteractionWireSchema,
+  InteractionsEnvelopeSchema,
+  type InteractionSummary,
+  type ListEnvelope,
+} from "./schemas";
+
+export type InteractionParticipantInput = {
+  personId: string;
+  role: "from" | "to" | "cc" | "attendee" | "subject";
+};
+
+export type LogInteractionInput = {
+  occurredAt: string;
+  channel: "email" | "calendar" | "call" | "in_person" | "message" | "manual";
+  title: string;
+  body?: string;
+  participants: InteractionParticipantInput[];
+  context?: string[];
+  location?: string;
+};
 
 export type RecentInteractionsInput = {
   personId: string;
@@ -49,6 +69,34 @@ export async function listInteractionsForPerson(
     items: result.items.map(interactionSummary),
     ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
   };
+}
+
+export async function logInteraction(input: LogInteractionInput): Promise<InteractionSummary> {
+  return withKizunaDeadline((signal) => logInteractionWithSignal(input, signal));
+}
+
+export async function logInteractionWithSignal(
+  input: LogInteractionInput,
+  signal: AbortSignal,
+): Promise<InteractionSummary> {
+  const body: Record<string, unknown> = {
+    occurredAt: input.occurredAt,
+    channel: input.channel,
+    title: input.title,
+    participants: input.participants,
+  };
+  if (input.body !== undefined) body.body = input.body;
+  if (input.context !== undefined) body.context = input.context;
+  if (input.location !== undefined) body.location = input.location;
+  const wire = await sendJson(
+    "POST",
+    "/interactions",
+    "/interactions",
+    body,
+    InteractionWireSchema,
+    signal,
+  );
+  return interactionSummary(wire);
 }
 
 export function buildRecentInteractionsPath(input: RecentInteractionsInput) {

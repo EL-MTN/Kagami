@@ -2,6 +2,7 @@ import { z } from "zod";
 import { sendEmail } from "./gmail";
 import { updateEvent, deleteEvent } from "./google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser, withBrowserLock } from "./browser";
+import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
 import { logger } from "@kokoro/shared";
 
 /**
@@ -14,7 +15,15 @@ import { logger } from "@kokoro/shared";
  *   2. add a Zod schema entry in `GATED_ARG_SCHEMAS`
  *   3. add a case in `dispatchGatedAction`
  */
-export const GATED_TOOL_NAMES = ["sendEmail", "manageCalendar", "browseAgent"] as const;
+export const GATED_TOOL_NAMES = [
+  "sendEmail",
+  "manageCalendar",
+  "browseAgent",
+  "logInteraction",
+  "createFollowup",
+  "resolveFollowup",
+  "updatePerson",
+] as const;
 export type GatedToolName = (typeof GATED_TOOL_NAMES)[number];
 
 export function isGatedTool(name: string): name is GatedToolName {
@@ -49,10 +58,64 @@ const browseAgentArgs = z.object({
   goal: z.string().min(1),
 });
 
+const objectIdString = z.string().regex(/^[a-f0-9]{24}$/i);
+const isoDatetime = z.string().datetime({ offset: true });
+const participantRole = z.enum(["from", "to", "cc", "attendee", "subject"]);
+const interactionChannel = z.enum(["email", "calendar", "call", "in_person", "message", "manual"]);
+
+const logInteractionArgs = z.object({
+  occurredAt: isoDatetime,
+  channel: interactionChannel,
+  title: z.string().min(1),
+  body: z.string().optional(),
+  participants: z.array(z.object({ personId: objectIdString, role: participantRole })).min(1),
+  context: z.array(z.string()).optional(),
+  location: z.string().optional(),
+});
+
+const createFollowupArgs = z.object({
+  personId: objectIdString,
+  direction: z.enum(["i_owe", "they_owe"]),
+  reason: z.string().min(1),
+  dueAt: isoDatetime.optional(),
+  sourceInteractionId: objectIdString.optional(),
+});
+
+const resolveFollowupArgs = z.object({
+  followupId: objectIdString,
+  status: z.enum(["open", "done", "snoozed", "dismissed"]),
+  dueAt: isoDatetime.optional(),
+  reason: z.string().min(1).optional(),
+});
+
+const updatePersonArgs = z
+  .object({
+    personId: objectIdString,
+    displayName: z.string().min(1).optional(),
+    primaryEmail: z.string().email().optional(),
+    primaryOrgId: objectIdString.optional(),
+    relationship: z.string().optional(),
+    emails: z.array(z.string().email()).optional(),
+    phones: z.array(z.string()).optional(),
+    handles: z.record(z.string(), z.string()).optional(),
+    tags: z.array(z.string()).optional(),
+    birthday: z
+      .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.string().regex(/^--\d{2}-\d{2}$/)])
+      .optional(),
+    notes: z.string().optional(),
+  })
+  .refine((v) => Object.keys(v).some((k) => k !== "personId"), {
+    message: "updatePerson requires at least one field to change",
+  });
+
 const GATED_ARG_SCHEMAS: Record<GatedToolName, z.ZodTypeAny> = {
   sendEmail: sendEmailArgs,
   manageCalendar: manageCalendarArgs,
   browseAgent: browseAgentArgs,
+  logInteraction: logInteractionArgs,
+  createFollowup: createFollowupArgs,
+  resolveFollowup: resolveFollowupArgs,
+  updatePerson: updatePersonArgs,
 };
 
 export interface DispatchResult {
@@ -171,6 +234,59 @@ export async function dispatchGatedAction(tool: string, rawArgs: unknown): Promi
           // override the default 2-min circuit breaker.
           { timeoutMs: 10 * 60 * 1000, label: "browseAgent" },
         );
+      }
+
+      case "logInteraction": {
+        const args = parsed.data as z.infer<typeof logInteractionArgs>;
+        logger.info(
+          { channel: args.channel, participants: args.participants.length },
+          "Dispatching approved logInteraction",
+        );
+        const interaction = await logInteraction(args);
+        return {
+          success: true,
+          summary: `interaction logged: ${args.title}`,
+          detail: { interaction },
+        };
+      }
+
+      case "createFollowup": {
+        const args = parsed.data as z.infer<typeof createFollowupArgs>;
+        logger.info(
+          { direction: args.direction, hasDue: Boolean(args.dueAt) },
+          "Dispatching approved createFollowup",
+        );
+        const followup = await createFollowup(args);
+        return {
+          success: true,
+          summary: `followup created for ${followup.person.displayName}`,
+          detail: { followup },
+        };
+      }
+
+      case "resolveFollowup": {
+        const args = parsed.data as z.infer<typeof resolveFollowupArgs>;
+        logger.info({ status: args.status }, "Dispatching approved resolveFollowup");
+        const followup = await resolveFollowup(args);
+        return {
+          success: true,
+          summary: `followup ${args.status}`,
+          detail: { followup },
+        };
+      }
+
+      case "updatePerson": {
+        const args = parsed.data as z.infer<typeof updatePersonArgs>;
+        logger.info(
+          { fields: Object.keys(args).filter((k) => k !== "personId") },
+          "Dispatching approved updatePerson",
+        );
+        const person = await updatePerson(args);
+        return {
+          success: true,
+          summary: `updated ${person.displayName}`,
+          detail: { person },
+        };
       }
     }
   } catch (error) {

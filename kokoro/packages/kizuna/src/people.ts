@@ -1,4 +1,4 @@
-import { getJson, appendParam, clampLimit, withKizunaDeadline } from "./client";
+import { getJson, sendJson, appendParam, clampLimit, withKizunaDeadline } from "./client";
 import { listFollowupsForPerson } from "./followups";
 import { listInteractionsForPerson } from "./interactions";
 import { personContextSummary, personSummary, followupSummary } from "./projections";
@@ -10,6 +10,20 @@ import {
   type PersonSummary,
   type PersonWire,
 } from "./schemas";
+
+export type UpdatePersonInput = {
+  personId: string;
+  displayName?: string;
+  primaryEmail?: string;
+  primaryOrgId?: string;
+  relationship?: string;
+  emails?: string[];
+  phones?: string[];
+  handles?: Record<string, string>;
+  tags?: string[];
+  birthday?: string;
+  notes?: string;
+};
 
 export async function findPeople(input: {
   query: string;
@@ -44,6 +58,30 @@ export async function getPersonContext(input: { personId: string }): Promise<Per
       lastInteractionAt: compactPerson.lastInteractionAt,
     };
   });
+}
+
+export async function updatePerson(input: UpdatePersonInput): Promise<PersonSummary> {
+  return withKizunaDeadline((signal) => updatePersonWithSignal(input, signal));
+}
+
+export async function updatePersonWithSignal(
+  input: UpdatePersonInput,
+  signal: AbortSignal,
+): Promise<PersonSummary> {
+  const { personId, ...rest } = input;
+  const body: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rest)) {
+    if (value !== undefined) body[key] = value;
+  }
+  const wire = await sendJson(
+    "PATCH",
+    `/people/${encodeURIComponent(personId)}`,
+    "/people/:id",
+    body,
+    PersonWireSchema,
+    signal,
+  );
+  return personSummary(wire);
 }
 
 async function findPeopleWithSignal(

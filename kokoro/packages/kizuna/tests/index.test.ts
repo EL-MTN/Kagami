@@ -2,7 +2,16 @@ import { setupMswServer } from "@kokoro/test-utils";
 import { config, logger } from "@kokoro/shared";
 import { http, HttpResponse } from "msw";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { findPeople, getPersonContext, listMyFollowups, recentInteractions } from "../src";
+import {
+  createFollowup,
+  findPeople,
+  getPersonContext,
+  listMyFollowups,
+  logInteraction,
+  recentInteractions,
+  resolveFollowup,
+  updatePerson,
+} from "../src";
 
 type ConfigWithKizuna = {
   KIZUNA_URL: string;
@@ -333,6 +342,115 @@ describe("listMyFollowups", () => {
       lastInteractionAt: null,
     });
     expect(logger.warn).toHaveBeenCalled();
+  });
+});
+
+describe("logInteraction", () => {
+  it("POSTs the body, sets content-type, and projects the wire response to an InteractionSummary", async () => {
+    let observedMethod = "";
+    let observedBody: unknown = null;
+    let observedContentType: string | null = null;
+    server.use(
+      http.post(`${KIZUNA_BASE}/interactions`, async ({ request }) => {
+        observedMethod = request.method;
+        observedContentType = request.headers.get("content-type");
+        observedBody = await request.json();
+        return HttpResponse.json(
+          interaction({ body: "Spoke for ~20 min", channel: "call", title: "Catch up" }),
+          { status: 201 },
+        );
+      }),
+    );
+
+    const result = await logInteraction({
+      occurredAt: "2026-05-13T12:00:00.000Z",
+      channel: "call",
+      title: "Catch up",
+      body: "Spoke for ~20 min",
+      participants: [{ personId: "111111111111111111111111", role: "subject" }],
+    });
+
+    expect(observedMethod).toBe("POST");
+    expect(observedContentType).toMatch(/application\/json/);
+    expect(observedBody).toMatchObject({
+      channel: "call",
+      title: "Catch up",
+      body: "Spoke for ~20 min",
+    });
+    expect(result).toMatchObject({
+      channel: "call",
+      title: "Catch up",
+      bodyExcerpt: "Spoke for ~20 min",
+      bodyTruncated: false,
+    });
+  });
+});
+
+describe("createFollowup", () => {
+  it("POSTs the body, hydrates the followup person, and returns a FollowupSummary", async () => {
+    server.use(
+      http.post(`${KIZUNA_BASE}/followups`, () =>
+        HttpResponse.json(followup({ reason: "Send the deck" }), { status: 201 }),
+      ),
+      http.get(`${KIZUNA_BASE}/people/111111111111111111111111`, () =>
+        HttpResponse.json(person({ displayName: "Sarah Chen" })),
+      ),
+    );
+
+    const result = await createFollowup({
+      personId: "111111111111111111111111",
+      direction: "i_owe",
+      reason: "Send the deck",
+    });
+
+    expect(result.person.displayName).toBe("Sarah Chen");
+    expect(result.direction).toBe("i_owe");
+    expect(result.reasonExcerpt).toBe("Send the deck");
+  });
+});
+
+describe("resolveFollowup", () => {
+  it("PATCHes the followup id, applies the target status, and hydrates the person", async () => {
+    let observedMethod = "";
+    let observedBody: unknown = null;
+    server.use(
+      http.patch(`${KIZUNA_BASE}/followups/333333333333333333333333`, async ({ request }) => {
+        observedMethod = request.method;
+        observedBody = await request.json();
+        return HttpResponse.json(followup({ status: "done" }));
+      }),
+      http.get(`${KIZUNA_BASE}/people/111111111111111111111111`, () => HttpResponse.json(person())),
+    );
+
+    const result = await resolveFollowup({
+      followupId: "333333333333333333333333",
+      status: "done",
+    });
+
+    expect(observedMethod).toBe("PATCH");
+    expect(observedBody).toEqual({ status: "done" });
+    expect(result.status).toBe("done");
+  });
+});
+
+describe("updatePerson", () => {
+  it("PATCHes the person id with only supplied fields and projects to a PersonSummary", async () => {
+    let observedBody: unknown = null;
+    server.use(
+      http.patch(`${KIZUNA_BASE}/people/111111111111111111111111`, async ({ request }) => {
+        observedBody = await request.json();
+        return HttpResponse.json(person({ tags: ["close-friend"] }));
+      }),
+    );
+
+    const result = await updatePerson({
+      personId: "111111111111111111111111",
+      tags: ["close-friend"],
+    });
+
+    expect(observedBody).toEqual({ tags: ["close-friend"] });
+    expect(result.tags).toEqual(["close-friend"]);
+    expect(result.id).toBe("111111111111111111111111");
   });
 });
 

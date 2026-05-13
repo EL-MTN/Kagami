@@ -1,6 +1,6 @@
 # Kizuna CRM Client
 
-`@kokoro/kizuna` is Kokoro's read-only client for Kizuna relationship data. It gives the bot compact CRM context on demand without adding write paths from Kokoro into Kizuna.
+`@kokoro/kizuna` is Kokoro's client for Kizuna relationship data. It gives the bot compact CRM context on demand, plus concierge-style write helpers (interaction logs, followups, person edits) that the bot exposes only behind the confirmation primitive.
 
 ## Configuration
 
@@ -11,31 +11,38 @@ Defined in `@kokoro/shared`:
 | `KIZUNA_URL`     | `https://api.kizuna.localhost` | Base URL for Kizuna API calls                |
 | `KIZUNA_ENABLED` | `true`                         | When `false`, CRM tools are omitted entirely |
 
-Kokoro sends no `Authorization` header to Kizuna. The integration matches Kizuna's single-user localhost API model; the read-only invariant is enforced by this package and the bot tool palette.
+Kokoro sends no `Authorization` header to Kizuna. The integration matches Kizuna's single-user localhost API model. Reads are unconditional; writes always go through the confirmation primitive so Goshujin-sama approves before any mutation lands.
 
 ## Package Surface
 
 Source lives in `packages/kizuna/src/`:
 
-- `client.ts` — GET-only fetch wrapper, shared 10 s deadline helpers, sanitized `KizunaClientError`.
+- `client.ts` — GET/POST/PATCH/DELETE fetch wrapper (`getJson` for reads, `sendJson` for writes), shared 10 s deadline helpers, sanitized `KizunaClientError`.
 - `schemas.ts` — Kizuna wire schemas and compact LLM-facing types.
 - `projections.ts` — `PersonSummary`, `InteractionSummary`, `FollowupSummary`, excerpts, missing-person placeholder.
-- `people.ts` — `findPeople`, `getPerson`, `getPersonContext`.
-- `interactions.ts` — `recentInteractions`, `listInteractionsForPerson`.
-- `followups.ts` — `listFollowups`, `listMyFollowups`, `listFollowupsForPerson` with de-duped person hydration.
-
-Exported package functions are reads only. Do not add POST/PATCH/DELETE helpers here without a separate writeback design.
+- `people.ts` — `findPeople`, `getPerson`, `getPersonContext`, `updatePerson`.
+- `interactions.ts` — `recentInteractions`, `listInteractionsForPerson`, `logInteraction`.
+- `followups.ts` — `listFollowups`, `listMyFollowups`, `listFollowupsForPerson` with de-duped person hydration, `createFollowup`, `resolveFollowup`.
 
 ## Tool Integration
 
-`apps/bot/src/ai/tools/crm.ts` wraps the package as four model-facing tools:
+`apps/bot/src/ai/tools/crm.ts` exposes the package as model-facing tools:
+
+Read tools (called directly):
 
 - `findPeople({ query, limit? })` → `GET /people?identityQuery=...`.
 - `getPersonContext({ personId })` → profile, recent interactions, open followups under one shared deadline.
 - `recentInteractions({ personId, channel?, since?, limit? })` → `sort=occurredAt:-1`.
 - `listMyFollowups({ direction?, status?, limit? })` → `sort=duePriority:1`, hydrated with compact person summaries.
 
-The tools are included in `allTools`, `watcherTools`, and `routineToolsUnderWatcher` when `KIZUNA_ENABLED` is true. They return sanitized degraded envelopes on disabled config, transport failures, timeouts, non-404 HTTP failures, and schema mismatches so conversation generation can continue.
+Write tools (always wrapped in `requestConfirmation`; see [confirmations.md](confirmations.md)):
+
+- `logInteraction({ occurredAt, channel, title, body?, participants, context?, location? })` → `POST /interactions`.
+- `createFollowup({ personId, direction, reason, dueAt?, sourceInteractionId? })` → `POST /followups`, then hydrates the followup's person for the compact summary.
+- `resolveFollowup({ followupId, status, dueAt?, reason? })` → `PATCH /followups/:id`.
+- `updatePerson({ personId, displayName?, primaryEmail?, primaryOrgId?, relationship?, emails?, phones?, handles?, tags?, birthday?, notes? })` → `PATCH /people/:id`.
+
+The read tools are included in `allTools`, `watcherTools`, and `routineToolsUnderWatcher` when `KIZUNA_ENABLED` is true. The write tools are included in `allTools` only — `watcherTools` and `routineToolsUnderWatcher` stay read-only by construction. All tools return sanitized degraded envelopes on disabled config, transport failures, timeouts, non-404 HTTP failures, and schema mismatches so conversation generation can continue.
 
 ## Testing
 
