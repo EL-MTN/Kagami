@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import {
   ENTITY_BOOST_WEIGHT,
   getBm25Params,
+  loadBm25ParamsFromEnv,
   normalizeBm25,
   scoreAndRank,
 } from "../src/retrieval/scoring.ts";
@@ -60,6 +61,33 @@ it("getBm25Params adapts midpoint to query length", () => {
       "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen",
     ),
   ).toEqual([3.5, 1.0]);
+});
+
+it("loadBm25ParamsFromEnv applies BM25 sigmoid env overrides", () => {
+  const params = loadBm25ParamsFromEnv({
+    BM25_SIGMOID_MIDPOINT_3: "1.75",
+    BM25_SIGMOID_STEEPNESS_3: "1.25",
+    BM25_SIGMOID_MIDPOINT_GT15: "4.25",
+    BM25_SIGMOID_STEEPNESS_GT15: "0.8",
+  });
+
+  expect(params[0]).toMatchObject({ maxTerms: 3, midpoint: 1.75, steepness: 1.25 });
+  expect(params[1]).toMatchObject({ maxTerms: 6, midpoint: 2.0, steepness: 1.0 });
+  expect(params.at(-1)).toMatchObject({ maxTerms: null, midpoint: 4.25, steepness: 0.8 });
+});
+
+it("loadBm25ParamsFromEnv rejects invalid BM25 sigmoid env overrides", () => {
+  expect(() =>
+    loadBm25ParamsFromEnv({
+      BM25_SIGMOID_MIDPOINT_3: "-1",
+    }),
+  ).toThrow("BM25_SIGMOID_MIDPOINT_3 must be a finite non-negative number");
+
+  expect(() =>
+    loadBm25ParamsFromEnv({
+      BM25_SIGMOID_STEEPNESS_3: "0",
+    }),
+  ).toThrow("BM25_SIGMOID_STEEPNESS_3 must be a finite positive number");
 });
 
 it("normalizeBm25 maps midpoint to 0.5", () => {

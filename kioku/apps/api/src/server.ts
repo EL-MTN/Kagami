@@ -9,6 +9,7 @@ import { recallRouter } from "./routes/recall.js";
 import { queryRouter } from "./routes/query.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { mcpRouter } from "./mcp.js";
+import { getBm25ParamConfig } from "./retrieval/scoring.js";
 import { ensureIndexes } from "./storage/indexes.js";
 import { closeMongo } from "./storage/mongo.js";
 
@@ -46,6 +47,8 @@ const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
 app.use(errorHandler);
 
 async function main(): Promise<void> {
+  logger.info({ bm25Sigmoid: getBm25ParamConfig() }, "bm25 sigmoid params configured");
+
   try {
     await ensureIndexes();
   } catch (err) {
