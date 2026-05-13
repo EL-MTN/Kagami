@@ -101,6 +101,18 @@ export function deriveQuestionDate(facts: RankedFact[]): string {
   return max || new Date().toISOString().slice(0, 10);
 }
 
+export function renderAnswerPrompt(
+  template: string,
+  questionDate: string,
+  memoriesText: string,
+  question: string,
+): string {
+  return template
+    .replaceAll("{question_date}", questionDate)
+    .replaceAll("{memories}", memoriesText)
+    .replaceAll("{question}", question);
+}
+
 export async function query(question: string, deps: QueryDeps = {}): Promise<QueryResult> {
   const k = deps.topK ?? DEFAULT_TOP_K;
   const ranker = deps.factRank ?? defaultFactRanker;
@@ -117,11 +129,7 @@ export async function query(question: string, deps: QueryDeps = {}): Promise<Que
   const questionDate = deriveQuestionDate(facts);
 
   const template = await getAnswerPromptTemplate();
-  const prompt = template
-    .replace("{question_date}", questionDate)
-    .replace("{question_date}", questionDate)
-    .replace("{memories}", memoriesText)
-    .replace("{question}", question);
+  const prompt = renderAnswerPrompt(template, questionDate, memoriesText, question);
 
   const citations = extractCitations(facts);
 

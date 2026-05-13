@@ -3,6 +3,7 @@ import {
   deriveQuestionDate,
   extractCitations,
   formatFactsGroupedByDateNewestFirst,
+  renderAnswerPrompt,
   stripMemThinking,
 } from "../src/query/answer.ts";
 import { computeCitationRecall } from "../scripts/citation-recall.ts";
@@ -71,6 +72,20 @@ it("deriveQuestionDate falls back to wall clock on empty facts", () => {
 it("deriveQuestionDate uses createdAt when eventDate is empty", () => {
   const facts: RankedFact[] = [fact({ eventDate: "", createdAt: "2025-04-01T00:00:00Z" })];
   expect(deriveQuestionDate(facts)).toBe("2025-04-01");
+});
+
+it("renderAnswerPrompt replaces every template placeholder", () => {
+  const template =
+    "{question_date}\n{question_date}\n{memories}\n{question_date}\n{question}\n{question_date}";
+
+  const prompt = renderAnswerPrompt(template, "2026-05-12", "- remembered fact", "What happened?");
+
+  expect(prompt).toBe(
+    "2026-05-12\n2026-05-12\n- remembered fact\n2026-05-12\nWhat happened?\n2026-05-12",
+  );
+  expect(prompt).not.toContain("{question_date}");
+  expect(prompt).not.toContain("{memories}");
+  expect(prompt).not.toContain("{question}");
 });
 
 it("extractCitations strips raw/ prefix and preserves rank order", () => {
