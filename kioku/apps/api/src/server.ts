@@ -18,6 +18,10 @@ const HOST = process.env.KIOKU_HOST ?? "127.0.0.1";
 
 const app = express();
 
+// Portless runs as a local reverse proxy; trust loopback so req.ip reflects
+// the forwarded client for per-IP rate limits without trusting arbitrary peers.
+app.set("trust proxy", "loopback");
+
 // Transcripts can be sizeable; bump beyond the 100kb default.
 app.use(express.json({ limit: "10mb" }));
 app.use(pinoHttp({ logger }));

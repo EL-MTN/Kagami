@@ -3,6 +3,7 @@ import { z } from "zod";
 import { readFacts, type Fact } from "../storage/facts.js";
 import { readHistoryFor } from "../storage/history.js";
 import { appendFactsBulk, appendSingleFact } from "../ingest/append.js";
+import { bulkFactsRateLimit } from "./rate-limit.js";
 
 const AppendBody = z.object({
   text: z.string().min(1),
@@ -64,7 +65,7 @@ const BulkBody = z.object({
   facts: z.array(AppendBody).min(1).max(500),
 });
 
-factsRouter.post("/bulk", async (req, res, next) => {
+factsRouter.post("/bulk", bulkFactsRateLimit, async (req, res, next) => {
   try {
     const body = BulkBody.parse(req.body);
     const results = await appendFactsBulk(body.facts);
