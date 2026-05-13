@@ -78,7 +78,7 @@ it("readFactsInScope filters to the supplied scope", async () => {
 });
 
 it("normalizeCategory accepts the known list, falls back to misc otherwise", async () => {
-  const { normalizeCategory, KIOKU_CATEGORIES } = await import("../src/ingest/consolidate.ts");
+  const { normalizeCategory, KIOKU_CATEGORIES } = await import("../src/ingest/categories.ts");
   for (const c of KIOKU_CATEGORIES) {
     expect(normalizeCategory(c)).toBe(c);
   }

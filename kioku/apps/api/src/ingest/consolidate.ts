@@ -8,6 +8,7 @@ import { appendFacts, newFactId, readFactsInScope, type Fact } from "../storage/
 import { lemmatizeForBm25 } from "../retrieval/text.js";
 import { upsertEntitiesFromFacts } from "../storage/entities.js";
 import { getOrComputeSessionSummary } from "./session-summary.js";
+import { normalizeCategory } from "./categories.js";
 import { logger } from "../logger.js";
 
 // Kioku's atomic-fact extraction pipeline.
@@ -43,25 +44,6 @@ const NEAR_DUPE_COSINE = 0.97;
 // doesn't list each key in `required`. category is therefore required
 // on the wire; normalizeCategory clamps unknown / empty values to 'misc'
 // so a confused model still produces a usable category tag.
-const CATEGORIES = [
-  "personal_details",
-  "family",
-  "professional_details",
-  "sports",
-  "travel",
-  "food",
-  "music",
-  "health",
-  "technology",
-  "hobbies",
-  "fashion",
-  "entertainment",
-  "milestones",
-  "user_preferences",
-  "misc",
-] as const;
-const KNOWN_CATEGORIES = new Set<string>(CATEGORIES);
-
 const ExtractionResult = z.object({
   memory: z.array(
     z.object({
@@ -71,14 +53,6 @@ const ExtractionResult = z.object({
     }),
   ),
 });
-
-export function normalizeCategory(raw: string | undefined): string {
-  if (!raw) return "misc";
-  const c = raw.trim().toLowerCase();
-  return KNOWN_CATEGORIES.has(c) ? c : "misc";
-}
-
-export const KIOKU_CATEGORIES: readonly string[] = CATEGORIES;
 
 interface Message {
   role: string;
