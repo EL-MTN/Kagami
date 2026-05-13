@@ -45,7 +45,7 @@ State token format (`apps/api/src/lib/oauth-state.ts`):
 - TTL: 10 minutes by default (`DEFAULT_TTL_SEC`).
 - Secret: `randomBytes(32)` generated at module load. **Process-local; not persisted.** Restarting the API invalidates any in-flight consent flows; the user re-clicks "Authorize."
 
-A forged or expired state → `401 unauthorized`. Missing `code` or `state` → `400 bad_request`. Google reporting an error in `?error=access_denied` → `400 bad_request` with the error code surfaced.
+A forged or expired state → `401 unauthorized`. Missing `code` or `state` → `400 bad_request`. Google reporting one of the allowed OAuth error codes (`access_denied`, `server_error`, `invalid_scope`, `temporarily_unavailable`, `interaction_required`) → `400 bad_request` with that code surfaced. Unexpected `?error=` values are collapsed to a generic `google denied consent` response.
 
 On success:
 

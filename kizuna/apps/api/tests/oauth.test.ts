@@ -57,6 +57,14 @@ describe("GET /oauth/google/callback", () => {
     expect(res.body.error.message).toMatch(/access_denied/);
   });
 
+  it("does not echo unexpected Google error values", async () => {
+    const raw = "<script>alert(1)</script>";
+    const res = await request(h.app).get(`/oauth/google/callback?error=${encodeURIComponent(raw)}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toBe("google denied consent");
+    expect(JSON.stringify(res.body)).not.toContain(raw);
+  });
+
   it("rejects an unsigned/forged state (401)", async () => {
     const res = await request(h.app).get("/oauth/google/callback?code=abc&state=not-real.signed");
     expect(res.status).toBe(401);

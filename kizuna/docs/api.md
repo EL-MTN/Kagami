@@ -233,11 +233,11 @@ The duration parser (`apps/api/src/lib/duration.ts`) supports a subset of ISO 86
 
 ### OAuth (`apps/api/src/routes/oauth.ts`)
 
-| Method | Path                     | Auth               | Behavior                                                                                                                                                                                             |
-| ------ | ------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/oauth/google/start`    | none               | 302 to Google with `access_type=offline`, `prompt=consent`, `scope=gmail.readonly+calendar.readonly`, `state` = signed CSRF token                                                                    |
-| GET    | `/oauth/google/callback` | Signed state token | Exchanges code, encrypts refresh token with `KIZUNA_OAUTH_ENCRYPTION_KEY`, upserts `OAuthToken{ provider:'google' }`, unpauses workers, clears access-token cache, returns 200 text/html "Granted ✓" |
-| GET    | `/oauth/google/status`   | none               | `{ granted: false }` or `{ granted: true, scopes: string[], grantedAt: ISODateString }`                                                                                                              |
+| Method | Path                     | Auth               | Behavior                                                                                                                                                                                                                                                                                    |
+| ------ | ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/oauth/google/start`    | none               | 302 to Google with `access_type=offline`, `prompt=consent`, `scope=gmail.readonly+calendar.readonly`, `state` = signed CSRF token                                                                                                                                                           |
+| GET    | `/oauth/google/callback` | Signed state token | Exchanges code, encrypts refresh token with `KIZUNA_OAUTH_ENCRYPTION_KEY`, upserts `OAuthToken{ provider:'google' }`, unpauses workers, clears access-token cache, returns 200 text/html "Granted ✓"; whitelisted Google OAuth errors return 400, unexpected `error=` values are not echoed |
+| GET    | `/oauth/google/status`   | none               | `{ granted: false }` or `{ granted: true, scopes: string[], grantedAt: ISODateString }`                                                                                                                                                                                                     |
 
 Scopes (constant in `apps/api/src/lib/google-auth.ts`):
 
