@@ -2,6 +2,7 @@ import { Router } from "express";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { KIOKU_CATEGORIES } from "../ingest/categories.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,4 +28,8 @@ metaRouter.get("/version", async (_req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+metaRouter.get("/meta/categories", (_req, res) => {
+  res.json({ categories: KIOKU_CATEGORIES });
 });
