@@ -1,6 +1,6 @@
-import { Conversation } from "@kokoro/db";
+import { Conversation, PendingFact } from "@kokoro/db";
 import { logger } from "@kokoro/shared";
-import { hasFactsForSession } from "./index";
+import { appendFact, hasFactsForSession } from "./index";
 import { ingestClosedSessionAwaited } from "./ingest";
 
 // Sweepers backstop the per-call-site ingest trigger so we never lose a
@@ -25,6 +25,10 @@ export interface SweepPendingResult {
 
 const DEFAULT_STALENESS_MS = 60_000;
 const DEFAULT_MAX_PER_SWEEP = 10;
+const DEFAULT_PENDING_FACT_MAX_PER_SWEEP = 25;
+const DEFAULT_PENDING_FACT_MAX_ATTEMPTS = 5;
+const DEFAULT_PENDING_FACT_BASE_BACKOFF_MS = 5 * 60_000;
+const DEFAULT_PENDING_FACT_MAX_BACKOFF_MS = 60 * 60_000;
 
 /**
  * Drive any closed conversation whose ingest is still pending to "done".
@@ -111,6 +115,111 @@ export async function sweepPendingIngests(
 
   if (result.scanned > 0) {
     logger.info({ ...result }, "kioku sweeper: pending ingest sweep finished");
+  }
+  return result;
+}
+
+export interface SweepPendingFactsOptions {
+  maxPerSweep?: number;
+  maxAttempts?: number;
+  baseBackoffMs?: number;
+  maxBackoffMs?: number;
+  now?: Date;
+}
+
+export interface SweepPendingFactsResult {
+  scanned: number;
+  appended: number;
+  failed: number;
+  abandoned: number;
+}
+
+export function nextPendingFactAttemptAt(
+  attemptCount: number,
+  now = new Date(),
+  baseBackoffMs = DEFAULT_PENDING_FACT_BASE_BACKOFF_MS,
+  maxBackoffMs = DEFAULT_PENDING_FACT_MAX_BACKOFF_MS,
+): Date {
+  const delay = Math.min(maxBackoffMs, baseBackoffMs * 2 ** Math.max(0, attemptCount - 1));
+  return new Date(now.getTime() + delay);
+}
+
+export async function sweepPendingFacts(
+  opts: SweepPendingFactsOptions = {},
+): Promise<SweepPendingFactsResult> {
+  const now = opts.now ?? new Date();
+  const maxPerSweep = opts.maxPerSweep ?? DEFAULT_PENDING_FACT_MAX_PER_SWEEP;
+  const maxAttempts = opts.maxAttempts ?? DEFAULT_PENDING_FACT_MAX_ATTEMPTS;
+  const baseBackoffMs = opts.baseBackoffMs ?? DEFAULT_PENDING_FACT_BASE_BACKOFF_MS;
+  const maxBackoffMs = opts.maxBackoffMs ?? DEFAULT_PENDING_FACT_MAX_BACKOFF_MS;
+
+  const due = await PendingFact.find({
+    status: "pending",
+    nextAttemptAt: { $lte: now },
+  })
+    .sort({ nextAttemptAt: 1, createdAt: 1 })
+    .limit(maxPerSweep);
+
+  const result: SweepPendingFactsResult = {
+    scanned: due.length,
+    appended: 0,
+    failed: 0,
+    abandoned: 0,
+  };
+
+  for (const pending of due) {
+    if (pending.attemptCount >= maxAttempts) {
+      pending.status = "failed";
+      pending.failedAt = now;
+      pending.lastError = pending.lastError ?? "max attempts reached";
+      await pending.save();
+      result.abandoned += 1;
+      continue;
+    }
+
+    try {
+      await appendFact({
+        text: pending.text,
+        event_date: pending.eventDate,
+        source_session: pending.sourceSession,
+        user_id: pending.userId,
+      });
+      await PendingFact.deleteOne({ _id: pending._id });
+      result.appended += 1;
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "pending fact append failed";
+      const nextAttemptCount = pending.attemptCount + 1;
+      pending.attemptCount = nextAttemptCount;
+      pending.lastAttemptAt = now;
+      pending.lastError = reason;
+      if (nextAttemptCount >= maxAttempts) {
+        pending.status = "failed";
+        pending.failedAt = now;
+        result.abandoned += 1;
+      } else {
+        pending.nextAttemptAt = nextPendingFactAttemptAt(
+          nextAttemptCount,
+          now,
+          baseBackoffMs,
+          maxBackoffMs,
+        );
+        result.failed += 1;
+      }
+      await pending.save();
+      logger.warn(
+        {
+          err: reason,
+          sourceSession: pending.sourceSession,
+          attempts: nextAttemptCount,
+          status: pending.status,
+        },
+        "kioku sweeper: pending fact append failed",
+      );
+    }
+  }
+
+  if (result.scanned > 0) {
+    logger.info({ ...result }, "kioku sweeper: pending fact sweep finished");
   }
   return result;
 }

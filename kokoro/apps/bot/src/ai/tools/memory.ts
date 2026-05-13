@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { logger } from "@kokoro/shared";
-import { recall, appendFact, KiokuClientError } from "@kokoro/memory";
+import { recall, appendFactWithRetryQueue, KiokuClientError } from "@kokoro/memory";
 
 /**
  * Memory retrieval tool. Calls Kioku's hybrid ranker (cosine + BM25 +
@@ -82,7 +82,7 @@ export function createRememberFactTool() {
     execute: async ({ text, eventDate }) => {
       try {
         logger.info({ text, eventDate }, "Tool: rememberFact");
-        const result = await appendFact({
+        const result = await appendFactWithRetryQueue({
           text,
           event_date: eventDate,
           source_session: "rememberFact",

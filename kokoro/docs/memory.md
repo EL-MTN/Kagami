@@ -16,7 +16,7 @@ packages/memory/src/
   index.ts         typed fetch wrapper around Kioku's REST API
   transcript.ts    IConversation → Kioku transcript markdown
   ingest.ts        ingestClosedSession (fire-and-forget) + ingestClosedSessionAwaited
-  sweeper.ts       sweepPendingIngests + sweepStaleActiveSessions
+  sweeper.ts       sweepPendingIngests + sweepPendingFacts + sweepStaleActiveSessions
 ```
 
 `apps/bot/src/ai/tools/memory.ts` — AI SDK tool factories (`searchMemory`, `rememberFact`).
@@ -67,9 +67,10 @@ The transcript shape (see `packages/memory/src/transcript.ts`) is YAML-frontmatt
 
 ### Sweeper-driven (correctness layer)
 
-Every 5 minutes the maintenance scheduler (`apps/bot/src/scheduler/maintenance.ts`, started from `apps/bot/src/index.ts`) runs both sweepers on the same tick — stale-active first, pending-ingest second:
+Every 5 minutes the maintenance scheduler (`apps/bot/src/scheduler/maintenance.ts`, started from `apps/bot/src/index.ts`) runs Kioku recovery on the same tick — stale-active first, pending session-ingest second, pending one-off facts third:
 
 - **`sweepPendingIngests`** — finds `{closed && (ingestStatus pending or absent) && closedAt < now-60s}` (default `stalenessMs: 60_000`, `maxPerSweep: 10`, ordered oldest-first by `closedAt`). For each match it probes Kioku via `hasFactsForSession("raw/<sessionId>")` and, if facts already exist, marks the conversation `done` ("reconciled"). Otherwise it calls `ingestClosedSessionAwaited`. Matches legacy documents that pre-date the `ingestStatus` field via `$or: [{ ingestStatus: "pending" }, { ingestStatus: { $exists: false } }]`.
+- **`sweepPendingFacts`** — drains one-off facts queued by `rememberFact` and place-learning when Kioku append fails. It processes due `PendingFact` rows (default `maxPerSweep: 25`), retries with exponential backoff (5 minutes → 10 → 20 → 40 → max 60), and marks rows `failed` after 5 attempts.
 - **`sweepStaleActiveSessions`** — finds `{active && updatedAt < now-6h}` (default `idleHours: 6`, `maxPerSweep: 50`), flips them to `closed` with a fresh `closedAt`, and explicitly sets `ingestStatus: "pending"` so the next pending sweep picks them up. Catches sessions where the user idled for days and never returned.
 
 A one-shot run also fires 30s after process start so a fresh boot recovers anything that was pending when the previous process died.
@@ -80,11 +81,11 @@ The trigger is the latency optimization; the sweeper is the correctness layer. I
 
 ### LLM-driven — `rememberFact` tool
 
-When Mashiro decides a fact is worth keeping across sessions, she calls `rememberFact(text, eventDate?)` (defined in `apps/bot/src/ai/tools/memory.ts`). Forwards to `@kokoro/memory.appendFact()` → `POST /facts` with `source_session: "rememberFact"`. Kioku does cosine dedup against existing in-scope facts, embeds, lemmatizes, and upserts entities. Idempotent — near-paraphrases of an existing fact return `{status: "duplicate", similarity}` with the existing id. Available in conversational paths; **excluded from watcher contexts** (watchers are read-only). The exact cosine threshold lives in Kioku, not Kokoro.
+When Mashiro decides a fact is worth keeping across sessions, she calls `rememberFact(text, eventDate?)` (defined in `apps/bot/src/ai/tools/memory.ts`). Forwards to `@kokoro/memory.appendFactWithRetryQueue()` → `POST /facts` with `source_session: "rememberFact"`. Kioku does cosine dedup against existing in-scope facts, embeds, lemmatizes, and upserts entities. Idempotent — near-paraphrases of an existing fact return `{status: "duplicate", similarity}` with the existing id. If Kioku append fails, the fact is stored as a `PendingFact` and `sweepPendingFacts` retries it. Available in conversational paths; **excluded from watcher contexts** (watchers are read-only). The exact cosine threshold lives in Kioku, not Kokoro.
 
 ### Place-learning (passive)
 
-`apps/bot/src/services/location.ts:learnPlace` watches for frequent visits using `PLACE_LEARNING_VISITS` (default `3`) within `PLACE_LEARNING_RADIUS_M` meters (default `200`) over `PLACE_LEARNING_WINDOW_DAYS` days (default `30`). When the threshold trips, it calls `appendFact` (with `source_session: "location-learning"`) with `"User frequently visits {placeName} ({placeCategory})."` Format is stable so cosine dedup at the append path catches re-saves (identical text gets cosine 1.0; well above the 0.97 threshold).
+`apps/bot/src/services/location.ts:learnPlace` watches for frequent visits using `PLACE_LEARNING_VISITS` (default `3`) within `PLACE_LEARNING_RADIUS_M` meters (default `200`) over `PLACE_LEARNING_WINDOW_DAYS` days (default `30`). When the threshold trips, it calls `appendFactWithRetryQueue` (with `source_session: "location-learning"`) with `"User frequently visits {placeName} ({placeCategory})."` Format is stable so cosine dedup at the append path catches re-saves (identical text gets cosine 1.0; well above the 0.97 threshold).
 
 ## Conversation schema
 
@@ -100,14 +101,15 @@ Indexed by `{ status, ingestStatus, closedAt }` for the sweeper query.
 
 ## Failure modes and recovery
 
-| Failure                                       | Recovery                                                                                            |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Kioku unreachable on session rollover         | Trigger throws but is caught internally; `ingestStatus` stays `pending`. Sweeper retries in ≤5 min. |
-| Crash mid-trigger before status update        | Same as above. Sweeper probes Kioku first; if facts already landed, just flips status to `done`.    |
-| User idles for days; session never rolls over | `sweepStaleActiveSessions` closes after 6h. Next pending sweep ingests.                             |
-| Legacy session pre-dates `ingestStatus` field | Pending-sweep query matches `{ ingestStatus: { $exists: false } }` too.                             |
-| LLM extraction text drifts on retry           | Pre-ingest probe via `hasFactsForSession` skips re-ingest if any facts already match the session.   |
-| Kioku returns 5xx on `searchMemory`           | `searchMemory` returns `{degraded: true, facts: []}`. Bot responds without memory context.          |
+| Failure                                            | Recovery                                                                                                       |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Kioku unreachable on session rollover              | Trigger throws but is caught internally; `ingestStatus` stays `pending`. Sweeper retries in ≤5 min.            |
+| Crash mid-trigger before status update             | Same as above. Sweeper probes Kioku first; if facts already landed, just flips status to `done`.               |
+| User idles for days; session never rolls over      | `sweepStaleActiveSessions` closes after 6h. Next pending sweep ingests.                                        |
+| Legacy session pre-dates `ingestStatus` field      | Pending-sweep query matches `{ ingestStatus: { $exists: false } }` too.                                        |
+| LLM extraction text drifts on retry                | Pre-ingest probe via `hasFactsForSession` skips re-ingest if any facts already match the session.              |
+| Kioku returns 5xx on `searchMemory`                | `searchMemory` returns `{degraded: true, facts: []}`. Bot responds without memory context.                     |
+| Kioku unreachable on `rememberFact`/place-learning | Fact is queued in `PendingFact`; `sweepPendingFacts` retries with backoff and marks failed after max attempts. |
 
 ## What's deliberately not here
 

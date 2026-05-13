@@ -27,7 +27,7 @@ Telegram location share
 2. **Geocode**: Call Google Maps Geocoding API to resolve place name and category. Non-blocking on failure.
 3. **Store**: Write to `LocationHistory` collection in MongoDB.
 4. **Event detection**: If moved >500m from last known position → `arrival` event.
-5. **Place learning**: If same area (200m radius) visited 3+ times in 30 days, append a fact via `appendFact()` from `@kokoro/memory`. Kioku handles dedup/idempotency on its side.
+5. **Place learning**: If the same area is visited often enough within the configured radius/window, append a fact via `appendFactWithRetryQueue()` from `@kokoro/memory`. Kioku handles dedup/idempotency on its side, and Kokoro queues the write if Kioku is down.
 
 ### Geocoding Service (`apps/bot/src/services/geocoding.ts`)
 
@@ -107,7 +107,7 @@ When a location event (arrival) is detected, `triggerLocationProactive(chatId)` 
 ## Cost
 
 - **Google Maps Geocoding API**: ~$5 per 1,000 requests. One-time location shares cost 1 request each. Live location updates are debounced by movement threshold, so cost depends on user movement patterns.
-- **Memory engine**: Place learning calls `appendFact()` (Kioku), which uses the embedding API. Only triggered when a place is visited 3+ times, so minimal cost.
+- **Memory engine**: Place learning calls `appendFactWithRetryQueue()` (Kioku), which uses the embedding API. Only triggered after the configured repeat-visit threshold, so minimal cost.
 
 ## Files
 

@@ -2,8 +2,13 @@ import { setupMswServer, withTestDb } from "@kokoro/test-utils";
 import { http, HttpResponse } from "msw";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { config, logger } from "@kokoro/shared";
-import { Conversation, type IConversation } from "@kokoro/db";
-import { sweepPendingIngests, sweepStaleActiveSessions } from "../src/sweeper";
+import { Conversation, PendingFact, enqueuePendingFact, type IConversation } from "@kokoro/db";
+import {
+  nextPendingFactAttemptAt,
+  sweepPendingFacts,
+  sweepPendingIngests,
+  sweepStaleActiveSessions,
+} from "../src/sweeper";
 
 withTestDb();
 
@@ -64,8 +69,9 @@ async function makeConvo(overrides: ConvoOverrides = {}): Promise<IConversation>
 }
 
 describe("sweepPendingIngests", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     server.resetHandlers();
+    await PendingFact.deleteMany({});
   });
 
   it("reconciles status to 'done' without re-ingesting when facts already exist for the session", async () => {
@@ -100,10 +106,7 @@ describe("sweepPendingIngests", () => {
         HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
       ),
       http.post(`${KIOKU_BASE}/sessions`, () =>
-        HttpResponse.json(
-          { sessionId: "x", added: 5, batches: 2 },
-          { status: 201 },
-        ),
+        HttpResponse.json({ sessionId: "x", added: 5, batches: 2 }, { status: 201 }),
       ),
     );
 
@@ -174,10 +177,7 @@ describe("sweepPendingIngests", () => {
     server.use(
       http.get(`${KIOKU_BASE}/facts`, () => HttpResponse.json({ error: "boom" }, { status: 503 })),
       http.post(`${KIOKU_BASE}/sessions`, () =>
-        HttpResponse.json(
-          { sessionId: "x", added: 1, batches: 1 },
-          { status: 201 },
-        ),
+        HttpResponse.json({ sessionId: "x", added: 1, batches: 1 }, { status: 201 }),
       ),
     );
 
@@ -208,10 +208,7 @@ describe("sweepPendingIngests", () => {
         HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
       ),
       http.post(`${KIOKU_BASE}/sessions`, () =>
-        HttpResponse.json(
-          { sessionId: "legacy-session", added: 2, batches: 1 },
-          { status: 201 },
-        ),
+        HttpResponse.json({ sessionId: "legacy-session", added: 2, batches: 1 }, { status: 201 }),
       ),
     );
 
@@ -221,6 +218,94 @@ describe("sweepPendingIngests", () => {
 
     const fresh = await Conversation.findById(raw.insertedId);
     expect(fresh?.ingestStatus).toBe("done");
+  });
+});
+
+describe("sweepPendingFacts", () => {
+  beforeEach(async () => {
+    server.resetHandlers();
+    await PendingFact.deleteMany({});
+  });
+
+  it("appends due queued facts and removes them from the queue", async () => {
+    await enqueuePendingFact({
+      text: "User likes ramen.",
+      eventDate: "2026-05-01",
+      sourceSession: "rememberFact",
+    });
+    let body: unknown;
+    server.use(
+      http.post(`${KIOKU_BASE}/facts`, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ id: "fact-1", status: "added" }, { status: 201 });
+      }),
+    );
+
+    const result = await sweepPendingFacts();
+
+    expect(result).toEqual({ scanned: 1, appended: 1, failed: 0, abandoned: 0 });
+    expect(body).toEqual({
+      text: "User likes ramen.",
+      event_date: "2026-05-01",
+      source_session: "rememberFact",
+    });
+    expect(await PendingFact.countDocuments()).toBe(0);
+  });
+
+  it("backs off failed queued facts", async () => {
+    const now = new Date("2026-05-12T12:00:00Z");
+    await PendingFact.create({
+      text: "User likes udon.",
+      sourceSession: "location-learning",
+      status: "pending",
+      attemptCount: 0,
+      nextAttemptAt: now,
+    });
+    server.use(
+      http.post(`${KIOKU_BASE}/facts`, () => HttpResponse.json({ error: "down" }, { status: 503 })),
+    );
+
+    const result = await sweepPendingFacts({ now, baseBackoffMs: 1_000, maxBackoffMs: 10_000 });
+
+    expect(result).toEqual({ scanned: 1, appended: 0, failed: 1, abandoned: 0 });
+    const pending = await PendingFact.findOne({ text: "User likes udon." });
+    expect(pending?.status).toBe("pending");
+    expect(pending?.attemptCount).toBe(1);
+    expect(pending?.nextAttemptAt.toISOString()).toBe("2026-05-12T12:00:01.000Z");
+  });
+
+  it("marks queued facts failed when max attempts is reached", async () => {
+    await PendingFact.create({
+      text: "User likes soba.",
+      sourceSession: "rememberFact",
+      status: "pending",
+      attemptCount: 1,
+      nextAttemptAt: new Date("2026-05-12T12:00:00Z"),
+    });
+    server.use(
+      http.post(`${KIOKU_BASE}/facts`, () => HttpResponse.json({ error: "down" }, { status: 503 })),
+    );
+
+    const result = await sweepPendingFacts({
+      now: new Date("2026-05-12T12:00:00Z"),
+      maxAttempts: 2,
+    });
+
+    expect(result).toEqual({ scanned: 1, appended: 0, failed: 0, abandoned: 1 });
+    const pending = await PendingFact.findOne({ text: "User likes soba." });
+    expect(pending?.status).toBe("failed");
+    expect(pending?.attemptCount).toBe(2);
+    expect(pending?.failedAt).toBeInstanceOf(Date);
+  });
+
+  it("computes exponential backoff with a cap", () => {
+    const now = new Date("2026-05-12T12:00:00Z");
+    expect(nextPendingFactAttemptAt(1, now, 1_000, 10_000).toISOString()).toBe(
+      "2026-05-12T12:00:01.000Z",
+    );
+    expect(nextPendingFactAttemptAt(5, now, 1_000, 10_000).toISOString()).toBe(
+      "2026-05-12T12:00:10.000Z",
+    );
   });
 });
 

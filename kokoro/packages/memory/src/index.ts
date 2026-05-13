@@ -1,4 +1,5 @@
 import { config, logger } from "@kokoro/shared";
+import { enqueuePendingFact } from "@kokoro/db";
 
 // Typed fetch wrapper around Kioku's REST API. The only Kokoro module
 // that knows Kioku exists — bot tools, schedulers, and context
@@ -50,6 +51,12 @@ export interface AppendFactResult {
   id: string;
   status: "added" | "duplicate";
   similarity?: number;
+}
+
+export interface QueuedAppendFactResult {
+  status: "queued";
+  queued: true;
+  reason: string;
 }
 
 export interface FactDetail {
@@ -137,6 +144,32 @@ export async function appendFact(input: AppendFactInput): Promise<AppendFactResu
   });
 }
 
+function kiokuFailureReason(err: unknown): string {
+  return err instanceof KiokuClientError
+    ? err.message
+    : err instanceof Error
+      ? err.message
+      : "Kioku append failed";
+}
+
+export async function appendFactWithRetryQueue(
+  input: AppendFactInput,
+): Promise<AppendFactResult | QueuedAppendFactResult> {
+  try {
+    return await appendFact(input);
+  } catch (err) {
+    const reason = kiokuFailureReason(err);
+    await enqueuePendingFact({
+      text: input.text,
+      eventDate: input.event_date,
+      sourceSession: input.source_session ?? "appendFact",
+      userId: input.user_id,
+    });
+    logger.warn({ err: reason, sourceSession: input.source_session }, "queued pending Kioku fact");
+    return { status: "queued", queued: true, reason };
+  }
+}
+
 export async function getFactById(id: string): Promise<FactDetail | null> {
   try {
     return await request<FactDetail>("GET", `/facts/${encodeURIComponent(id)}`, {
@@ -178,8 +211,12 @@ export async function ingestSession(input: IngestSessionInput): Promise<IngestSe
 export { buildTranscript, transcriptHasContent } from "./transcript";
 export { ingestClosedSession, ingestClosedSessionAwaited } from "./ingest";
 export {
+  nextPendingFactAttemptAt,
   sweepPendingIngests,
+  sweepPendingFacts,
   sweepStaleActiveSessions,
+  type SweepPendingFactsOptions,
+  type SweepPendingFactsResult,
   type SweepPendingOptions,
   type SweepPendingResult,
   type SweepStaleActiveOptions,

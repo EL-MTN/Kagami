@@ -27,6 +27,12 @@ export {
   type OverflowResult,
 } from "./models/conversation";
 export {
+  PendingFact,
+  enqueuePendingFact,
+  type IPendingFact,
+  type PendingFactInput,
+} from "./models/pending-fact";
+export {
   Reminder,
   createReminder,
   getPendingReminders,
