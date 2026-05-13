@@ -13,6 +13,20 @@ import {
 import { errors } from "../lib/errors.js";
 import { makeState, verifyState } from "../lib/oauth-state.js";
 
+const GOOGLE_OAUTH_ERROR_CODES = new Set([
+  "access_denied",
+  "server_error",
+  "invalid_scope",
+  "temporarily_unavailable",
+  "interaction_required",
+]);
+
+function googleOAuthErrorMessage(error: string): string {
+  return GOOGLE_OAUTH_ERROR_CODES.has(error)
+    ? `google denied consent: ${error}`
+    : "google denied consent";
+}
+
 export function makeOauthRouter(config: Config): Router {
   const r = Router();
 
@@ -36,7 +50,7 @@ export function makeOauthRouter(config: Config): Router {
     const error = typeof req.query.error === "string" ? req.query.error : undefined;
 
     if (error) {
-      throw errors.badRequest(`google denied consent: ${error}`);
+      throw errors.badRequest(googleOAuthErrorMessage(error));
     }
     if (!code || !state) {
       throw errors.badRequest("missing code or state");
