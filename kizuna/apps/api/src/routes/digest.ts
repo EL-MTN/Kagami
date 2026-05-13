@@ -44,7 +44,7 @@ digestRouter.get("/digest", async (req, res) => {
 
   const personIds = new Set<string>();
   for (const f of [...overdue, ...upcoming]) {
-    const pid = f.personId as unknown as Types.ObjectId;
+    const pid = f.personId;
     if (pid) personIds.add(pid.toHexString());
   }
   const persons = (await Person.find({

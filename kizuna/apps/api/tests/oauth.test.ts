@@ -102,7 +102,7 @@ describe("GET /oauth/google/callback", () => {
     ]);
     // Refresh token is encrypted at rest.
     expect(stored!.refreshToken).not.toBe("1//refresh-fake");
-    const decrypted = decrypt(stored!.refreshToken as string, h.encryptionKey);
+    const decrypted = decrypt(stored!.refreshToken, h.encryptionKey);
     expect(decrypted).toBe("1//refresh-fake");
   });
 

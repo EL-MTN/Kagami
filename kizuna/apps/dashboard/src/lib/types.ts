@@ -68,12 +68,15 @@ export type Interaction = {
   updatedAt: string;
 };
 
+export type FollowupDirection = "i_owe" | "they_owe";
+export type FollowupStatus = "open" | "done" | "snoozed" | "dismissed";
+
 export type Followup = {
   id: string;
   personId: string;
-  direction: "i_owe" | "they_owe";
+  direction: FollowupDirection;
   dueAt: string | null;
-  status: "open" | "done" | "snoozed" | "dismissed";
+  status: FollowupStatus;
   reason: string;
   sourceInteractionId: string | null;
   source: string;
@@ -81,6 +84,29 @@ export type Followup = {
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type DigestPerson = {
+  id: string;
+  displayName: string;
+  primaryEmail: string | null;
+};
+
+export type DigestFollowup = Followup & { person: DigestPerson | null };
+
+export type Digest = {
+  window: string;
+  generatedAt: string;
+  windowStart: string;
+  windowEnd: string;
+  overdue: DigestFollowup[];
+  upcoming: DigestFollowup[];
+};
+
+export type FollowupUpdateBody = {
+  status: FollowupStatus;
+  dueAt?: string;
+  reason?: string;
 };
 
 export type ListPeopleQuery = {
@@ -113,17 +139,19 @@ export type ListInteractionsQuery = {
   status?: "active" | "cancelled" | "any";
   source?: string;
   includeTombstoned?: boolean;
+  sort?: "_id:-1" | "occurredAt:-1";
 };
 
 export type ListFollowupsQuery = {
   limit?: number;
   cursor?: string;
   personId?: string;
-  direction?: "i_owe" | "they_owe";
-  status?: "open" | "done" | "snoozed" | "dismissed";
+  direction?: FollowupDirection;
+  status?: FollowupStatus;
   dueBefore?: string;
   dueAfter?: string;
   includeTombstoned?: boolean;
+  sort?: "_id:-1" | "duePriority:1";
 };
 
 export type OAuthStatus =

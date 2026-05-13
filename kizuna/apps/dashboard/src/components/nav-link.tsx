@@ -2,16 +2,27 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Sun, Users, Network, RefreshCw, AlertTriangle, Skull } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckSquare,
+  MessageSquare,
+  Network,
+  RefreshCw,
+  Skull,
+  Sun,
+  Users,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const iconMap = {
-  Sun,
-  Users,
+  AlertTriangle,
+  CheckSquare,
+  MessageSquare,
   Network,
   RefreshCw,
-  AlertTriangle,
   Skull,
+  Sun,
+  Users,
 } as const;
 
 export type IconName = keyof typeof iconMap;
