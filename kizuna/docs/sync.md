@@ -48,6 +48,7 @@ startIngestScheduler({ config }) → { stop() }
 - Otherwise: `setInterval(tick, intervalSec * 1000)`. Each tick runs Gmail then Calendar sequentially; failures are logged but not rethrown so the next tick still fires.
 - A `running = true` flag guards against overlapping ticks (if a tick takes longer than the interval, the next is skipped with `logger.warn('ingest tick skipped')`).
 - **No tick on startup.** First tick is one full interval after boot; this avoids surprise sync runs on `tsx watch` reloads.
+- Real Gmail and Calendar clients wrap every Google `fetch` in `AbortSignal.timeout(30_000)`. A timeout is recorded as `gmail_request_timeout` or `gcal_request_timeout` in `SyncState.lastError` and the run does not advance its cursor.
 
 ## Gmail worker (`runGmailSync`)
 
@@ -74,7 +75,7 @@ Gmail's history API is "since this point in time," not "every change since." Tha
 
 Per ID:
 
-1. `client.getMessage(id, format: 'full')`. If 401 mid-batch → throw `OAuthError('invalid_grant')` so the outer try-catch can pause the worker (we don't want to keep hammering with a stale token).
+1. `client.getMessage(id, format: 'full')`. If 401 mid-batch → throw `OAuthError('invalid_grant')` so the outer try-catch can pause the worker (we don't want to keep hammering with a stale token). If the request hits the 30-second Google timeout, throw it to the outer sync failure path so `SyncState` keeps the old cursor instead of skipping the message.
 2. `parseGmailMessage(raw)` — pure parser. Headers → `From / To / Cc / Bcc / Subject / Date / List-Unsubscribe`. Body → prefer `text/plain`; fall back to `text/html` stripped (`<style>`/`<script>` removed, block tags → newlines, common HTML entities decoded). Attachments → flat list of `{ name, mimeType, size, ref }` where `ref` is Gmail's per-message `attachmentId`. `occurredAt` is the parsed `Date` header, falling back to `internalDate`, falling back to `now`.
 3. **Newsletter filter.** If the message has a `List-Unsubscribe` header, OR the sender's domain is in `NEWSLETTER_DOMAIN_BLOCKLIST` → `result.skippedNewsletter++; continue`. Newsletters are noise in a relationship CRM.
 4. **Skip-self on group threads.** If the count of non-`USER_EMAILS` recipients in `to + cc` is `>= 2`, drop the user's own addresses. Otherwise keep all recipients (a one-on-one with yourself stays linked). The `from` role is preserved either way, so outbound detection (sender ∈ `USER_EMAILS`) still works downstream.
@@ -103,6 +104,7 @@ Per ID:
   - The user re-authorizes via `/oauth/google/start` → `/callback`, which calls `SyncState.updateMany({ pausedAt: { $ne: null } }, { pausedAt: null, lastError: null })`; or
   - The caller passes `force: true` to `POST /sync/gmail/run`, which clears `pausedAt` and runs once.
 - On any other error → write `lastError` + bump `errorCount` (without setting `pausedAt`). Next tick retries.
+- On Google request timeout → write `gmail_request_timeout` to `lastError` + bump `errorCount` (without setting `pausedAt`). Next tick retries from the previous cursor.
 - A successful run clears `lastError` and writes `lastRunAt`. `errorCount` is monotonic — it isn't cleared on success today.
 
 ## Calendar worker (`runCalendarSync`)
@@ -168,7 +170,7 @@ try {
 }
 ```
 
-Pause + resume semantics are identical to Gmail.
+Pause + resume semantics are identical to Gmail. Google request timeouts write `gcal_request_timeout` to `lastError` + bump `errorCount` without advancing the sync token, so the next tick retries from the previous cursor.
 
 ## `upsertPerson` (`apps/api/src/ingest/upsert-person.ts`)
 

@@ -465,6 +465,36 @@ describe("runGmailSync — invalid_grant", () => {
   });
 });
 
+describe("runGmailSync — request timeout", () => {
+  it("records a stable timeout code and does not advance the cursor", async () => {
+    const client = new FakeGmailClient();
+    client.profileHistoryId = "5000";
+    client.add(
+      buildPlainMessage({
+        id: "msg-1",
+        from: "a@b.com",
+        to: "me@example.com",
+        subject: "x",
+        body: "x",
+      }),
+    );
+    client.failTimeoutAtMessageId = "msg-1";
+
+    const r = await runGmailSync({
+      config: makeConfig(),
+      client,
+    });
+
+    expect(r.status).toBe("error");
+    expect(r.message).toBe("gmail_request_timeout");
+    expect(r.historyIdAfter).toBeNull();
+    const state = await SyncState.findOne({ provider: "gmail" }).lean();
+    expect(state?.historyId).toBeNull();
+    expect(state?.lastError).toBe("gmail_request_timeout");
+    expect(state?.errorCount).toBe(1);
+  });
+});
+
 describe("GET /sync/gmail/state", () => {
   it("returns a default state when no doc exists", async () => {
     const res = await request(h.app).get("/sync/gmail/state");

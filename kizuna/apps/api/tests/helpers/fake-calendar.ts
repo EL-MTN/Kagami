@@ -6,6 +6,7 @@ import {
   type ListEventsResp,
 } from "../../src/ingest/calendar-client.js";
 import type { CalendarEvent } from "../../src/ingest/parse-event.js";
+import { GoogleRequestTimeoutError } from "../../src/ingest/google-timeout.js";
 
 export class FakeCalendarClient implements CalendarClient {
   // Each call to listEvents shifts the next "snapshot" off this queue, allowing
@@ -32,6 +33,10 @@ export class FakeCalendarClient implements CalendarClient {
 
   throw401Once(): void {
     this.throwNext.push(new CalendarHttpError(401, '{"error":"invalid_grant"}'));
+  }
+
+  throwTimeoutOnce(): void {
+    this.throwNext.push(new GoogleRequestTimeoutError("gcal"));
   }
 
   async listEvents(params: ListEventsParams): Promise<ListEventsResp> {

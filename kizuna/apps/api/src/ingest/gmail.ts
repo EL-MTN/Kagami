@@ -6,6 +6,7 @@ import { logger } from "../lib/logger.js";
 import { OAuthError } from "../lib/google-auth.js";
 import type { GmailClient } from "./gmail-client.js";
 import { GmailHttpError } from "./gmail-client.js";
+import { GoogleRequestTimeoutError } from "./google-timeout.js";
 import {
   parseGmailMessage,
   senderDomain,
@@ -75,6 +76,16 @@ async function recordSuccessfulRun(historyIdAfter: string | null): Promise<void>
   await SyncState.updateOne({ provider: "gmail" }, { $set: update });
 }
 
+async function recordFailedRun(message: string): Promise<void> {
+  await SyncState.updateOne(
+    { provider: "gmail" },
+    {
+      $set: { lastError: message, lastRunAt: new Date() },
+      $inc: { errorCount: 1 },
+    },
+  );
+}
+
 async function processMessageIds(
   ids: string[],
   client: GmailClient,
@@ -89,6 +100,7 @@ async function processMessageIds(
       raw = await client.getMessage(id);
       result.fetched++;
     } catch (err) {
+      if (err instanceof GoogleRequestTimeoutError) throw err;
       result.errors++;
       logger.warn({ err, id }, "gmail: failed to fetch message");
       if (err instanceof GmailHttpError && err.status === 401) {
@@ -312,14 +324,13 @@ export async function runGmailSync(args: {
         message: "gmail returned 401 — re-grant required",
       };
     }
+    if (err instanceof GoogleRequestTimeoutError) {
+      await recordFailedRun(err.code);
+      logger.error({ err, code: err.code }, "gmail sync timed out");
+      return { ...result, status: "error", message: err.code };
+    }
     const message = err instanceof Error ? err.message : String(err);
-    await SyncState.updateOne(
-      { provider: "gmail" },
-      {
-        $set: { lastError: message, lastRunAt: new Date() },
-        $inc: { errorCount: 1 },
-      },
-    );
+    await recordFailedRun(message);
     logger.error({ err }, "gmail sync failed");
     return { ...result, status: "error", message };
   }

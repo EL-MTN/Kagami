@@ -5,6 +5,7 @@ import { upsertInteractionBySourceRef } from "../db/recordInteraction.js";
 import { OAuthError } from "../lib/google-auth.js";
 import { logger } from "../lib/logger.js";
 import { CalendarHttpError, SyncTokenExpired, type CalendarClient } from "./calendar-client.js";
+import { GoogleRequestTimeoutError } from "./google-timeout.js";
 import {
   parseCalendarEvent,
   type CalendarEvent,
@@ -62,6 +63,16 @@ async function recordRun(syncTokenAfter: string | null): Promise<void> {
   };
   if (syncTokenAfter !== null) update.syncToken = syncTokenAfter;
   await SyncState.updateOne({ provider: "gcal" }, { $set: update });
+}
+
+async function recordFailedRun(message: string): Promise<void> {
+  await SyncState.updateOne(
+    { provider: "gcal" },
+    {
+      $set: { lastError: message, lastRunAt: new Date() },
+      $inc: { errorCount: 1 },
+    },
+  );
 }
 
 async function clearSyncToken(): Promise<void> {
@@ -265,14 +276,13 @@ export async function runCalendarSync(args: {
         message: "calendar returned 401 — re-grant required",
       };
     }
+    if (err instanceof GoogleRequestTimeoutError) {
+      await recordFailedRun(err.code);
+      logger.error({ err, code: err.code }, "gcal sync timed out");
+      return { ...result, status: "error", message: err.code };
+    }
     const message = err instanceof Error ? err.message : String(err);
-    await SyncState.updateOne(
-      { provider: "gcal" },
-      {
-        $set: { lastError: message, lastRunAt: new Date() },
-        $inc: { errorCount: 1 },
-      },
-    );
+    await recordFailedRun(message);
     logger.error({ err }, "gcal sync failed");
     return { ...result, status: "error", message };
   }
