@@ -1,4 +1,9 @@
 import type { GmailMessage } from "./parse-message.js";
+import {
+  GOOGLE_REQUEST_TIMEOUT_MS,
+  GoogleRequestTimeoutError,
+  isAbortSignalTimeout,
+} from "./google-timeout.js";
 
 const BASE = "https://gmail.googleapis.com/gmail/v1";
 
@@ -64,9 +69,16 @@ export function makeGmailClient(getAccessToken: () => Promise<string>): GmailCli
       sp.set(k, String(v));
     }
     const url = `${BASE}${path}${sp.size ? `?${sp.toString()}` : ""}`;
-    const res = await fetch(url, {
-      headers: { authorization: `Bearer ${token}` },
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(GOOGLE_REQUEST_TIMEOUT_MS),
+      });
+    } catch (err) {
+      if (isAbortSignalTimeout(err)) throw new GoogleRequestTimeoutError("gmail");
+      throw err;
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new GmailHttpError(res.status, text);

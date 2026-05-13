@@ -7,6 +7,7 @@ import type {
 } from "../../src/ingest/gmail-client.js";
 import { GmailHttpError } from "../../src/ingest/gmail-client.js";
 import type { GmailMessage } from "../../src/ingest/parse-message.js";
+import { GoogleRequestTimeoutError } from "../../src/ingest/google-timeout.js";
 
 export class FakeGmailClient implements GmailClient {
   readonly messages = new Map<string, GmailMessage>();
@@ -14,6 +15,7 @@ export class FakeGmailClient implements GmailClient {
   email = "me@example.com";
   historyEvents: GmailHistoryRecord[] = [];
   fail401AtMessageId: string | null = null;
+  failTimeoutAtMessageId: string | null = null;
 
   add(msg: GmailMessage): void {
     this.messages.set(msg.id, msg);
@@ -43,6 +45,9 @@ export class FakeGmailClient implements GmailClient {
   async getMessage(id: string): Promise<GmailMessage> {
     if (this.fail401AtMessageId === id) {
       throw new GmailHttpError(401, '{"error":"invalid_grant"}');
+    }
+    if (this.failTimeoutAtMessageId === id) {
+      throw new GoogleRequestTimeoutError("gmail");
     }
     const m = this.messages.get(id);
     if (!m) throw new GmailHttpError(404, "not found");

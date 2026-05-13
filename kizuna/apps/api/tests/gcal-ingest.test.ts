@@ -359,3 +359,23 @@ describe("runCalendarSync — invalid_grant", () => {
     expect(forced.status).toBe("ok");
   });
 });
+
+describe("runCalendarSync — request timeout", () => {
+  it("records a stable timeout code and does not advance the sync token", async () => {
+    const client = new FakeCalendarClient();
+    client.throwTimeoutOnce();
+
+    const r = await runCalendarSync({
+      config: makeConfig(),
+      client,
+    });
+
+    expect(r.status).toBe("error");
+    expect(r.message).toBe("gcal_request_timeout");
+    expect(r.syncTokenAfter).toBeNull();
+    const state = await SyncState.findOne({ provider: "gcal" }).lean();
+    expect(state?.syncToken).toBeNull();
+    expect(state?.lastError).toBe("gcal_request_timeout");
+    expect(state?.errorCount).toBe(1);
+  });
+});

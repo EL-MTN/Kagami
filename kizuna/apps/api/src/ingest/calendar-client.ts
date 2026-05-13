@@ -1,4 +1,9 @@
 import type { CalendarEvent } from "./parse-event.js";
+import {
+  GOOGLE_REQUEST_TIMEOUT_MS,
+  GoogleRequestTimeoutError,
+  isAbortSignalTimeout,
+} from "./google-timeout.js";
 
 const BASE = "https://www.googleapis.com/calendar/v3";
 
@@ -51,9 +56,16 @@ export function makeCalendarClient(getAccessToken: () => Promise<string>): Calen
       }
       if (params.pageToken) sp.set("pageToken", params.pageToken);
       const url = `${BASE}/calendars/primary/events?${sp.toString()}`;
-      const res = await fetch(url, {
-        headers: { authorization: `Bearer ${token}` },
-      });
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          headers: { authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(GOOGLE_REQUEST_TIMEOUT_MS),
+        });
+      } catch (err) {
+        if (isAbortSignalTimeout(err)) throw new GoogleRequestTimeoutError("gcal");
+        throw err;
+      }
       if (res.status === 410) throw new SyncTokenExpired();
       if (!res.ok) {
         const body = await res.text().catch(() => "");
