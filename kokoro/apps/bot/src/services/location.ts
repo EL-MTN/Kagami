@@ -1,6 +1,6 @@
 import { config, logger, haversineMeters } from "@kokoro/shared";
 import { storeLocation, getLatestLocation, getLocationVisitCount } from "@kokoro/db";
-import { appendFact, KiokuClientError } from "@kokoro/memory";
+import { appendFactWithRetryQueue } from "@kokoro/memory";
 import { reverseGeocode } from "./geocoding";
 
 export interface LocationEvent {
@@ -90,11 +90,16 @@ async function learnPlace(
     if (visitCount < config.PLACE_LEARNING_VISITS) return;
 
     const text = `User frequently visits ${placeName} (${placeCategory}).`;
-    const result = await appendFact({ text, source_session: "location-learning" });
+    const result = await appendFactWithRetryQueue({ text, source_session: "location-learning" });
     if (result.status === "added") {
       logger.info(
         { chatId, placeName, visitCount, factId: result.id },
         "Stored place-learning fact",
+      );
+    } else if (result.status === "queued") {
+      logger.warn(
+        { chatId, placeName, visitCount, reason: result.reason },
+        "Queued place-learning fact",
       );
     } else {
       logger.debug(
@@ -103,7 +108,7 @@ async function learnPlace(
       );
     }
   } catch (err) {
-    const reason = err instanceof KiokuClientError ? err.message : (err as Error).message;
+    const reason = err instanceof Error ? err.message : "place learning failed";
     logger.warn({ err: reason, chatId, placeName }, "Place learning failed");
   }
 }

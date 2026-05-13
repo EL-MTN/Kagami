@@ -6,7 +6,7 @@ import {
   cleanupOldLocations,
 } from "@kokoro/db";
 import { logger } from "@kokoro/shared";
-import { sweepPendingIngests, sweepStaleActiveSessions } from "@kokoro/memory";
+import { sweepPendingFacts, sweepPendingIngests, sweepStaleActiveSessions } from "@kokoro/memory";
 
 const CLEANUP_INTERVAL = 24 * 60 * 60_000; // 24 hours
 const KIOKU_SWEEP_INTERVAL = 5 * 60_000; // 5 minutes
@@ -32,6 +32,11 @@ async function runKiokuSweep(): Promise<void> {
     await sweepPendingIngests();
   } catch (error) {
     logger.error({ err: error }, "Kioku pending-ingest sweep failed");
+  }
+  try {
+    await sweepPendingFacts();
+  } catch (error) {
+    logger.error({ err: error }, "Kioku pending-fact sweep failed");
   }
 }
 

@@ -18,7 +18,7 @@ kokoro/                          # subtree of Kagami workspace (npm workspaces +
 │   │   │   ├── context/          # image generation (generator.ts, types.ts)
 │   │   │   ├── platform/         # registry.ts + telegram/ + imessage/ (multi-adapter)
 │   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, web-search, routine-executor, watcher-executor, location, geocoding, gated-actions, confirmation-events
-│   │   │   ├── scheduler/        # proactive, reminders, routines, watchers, maintenance (cleanup + Kioku ingest sweeper)
+│   │   │   ├── scheduler/        # proactive, reminders, routines, watchers, maintenance (cleanup + Kioku sweepers)
 │   │   │   ├── stt/              # speech-to-text (cloud Whisper / local whisper.cpp)
 │   │   │   └── tts/              # text-to-speech generation
 │   │   └── context/              # soul.md (personality), instructions/*.md (operational), reference images, settings, image-prefix (data)
@@ -26,7 +26,7 @@ kokoro/                          # subtree of Kagami workspace (npm workspaces +
 ├── packages/
 │   ├── shared/                   # config, logger, markdown, types
 │   ├── db/                       # MongoDB connection, models, GridFS
-│   ├── memory/                   # Kioku HTTP client + transcript glue + sweeper
+│   ├── memory/                   # Kioku HTTP client + transcript/fact glue + sweepers
 │   ├── kizuna/                   # Kizuna read-only CRM client + compact projections
 │   └── test-utils/               # Vitest harness (withTestDb, fakeAdapter, MSW)
 ├── scripts/                      # auth
@@ -127,10 +127,10 @@ KIZUNA_URL
 │  (reminders, conv'ns,    │
 │   routine + watcher logs,│
 │   location history)      │
-│ Kioku ingest sweeper     │
+│ Kioku sweepers           │
 │  (5 min tick: stale-     │
-│   active + pending       │
-│   ingest retries)        │
+│   active, pending ingest │
+│   + queued fact retries) │
 └──────────────────────────┘
 
 ┌──────────────────────────┐
@@ -224,7 +224,7 @@ KIZUNA_URL
 10. generateText({ model, system, messages, tools, stopWhen: stepCountIs(5), temperature: 0.7 })
        │   └─ LLM may call tools (searchMemory, rememberFact, sendPhoto, sendEmail, etc.)
        │       searchMemory → @kokoro/memory.recall() → POST Kioku /recall
-       │       rememberFact → @kokoro/memory.appendFact() → POST Kioku /facts
+       │       rememberFact → @kokoro/memory.appendFactWithRetryQueue() → POST Kioku /facts
        │       CRM tools → @kokoro/kizuna → GET Kizuna /* read-only endpoints
        │
 11. extractResponseText(steps) + collectToolCalls(steps)
@@ -237,7 +237,7 @@ KIZUNA_URL
 14. resetTimer(chatId) — reschedule proactive message
 ```
 
-See [memory.md](memory.md) for the Kioku read/write paths in full, including the sweeper that backstops fire-and-forget ingest failures.
+See [memory.md](memory.md) for the Kioku read/write paths in full, including the sweepers that backstop fire-and-forget ingest failures and queued one-off fact writes.
 
 ## Proactive Scheduler
 
@@ -252,21 +252,21 @@ The scheduler sends unprompted messages to maintain engagement:
 
 When firing, the scheduler uses `getOrCreateSession` to get the active session, assembles a proactive system prompt with sessionId, and injects a synthetic nudge if no recent user message exists.
 
-Daily cleanup and the Kioku ingest sweeper used to live here, but have been extracted into the **Maintenance Scheduler** (`apps/bot/src/scheduler/maintenance.ts`):
+Daily cleanup and the Kioku sweepers used to live here, but have been extracted into the **Maintenance Scheduler** (`apps/bot/src/scheduler/maintenance.ts`):
 
-- **Kioku ingest sweeper**: every 5 minutes, drives any `closed && ingestStatus: "pending"` conversations to `done` (retrying through Kioku outages) and closes `active` sessions idle past the threshold so they become eligible for ingest. See [memory.md](memory.md).
+- **Kioku sweepers**: every 5 minutes, drive any `closed && ingestStatus: "pending"` conversations to `done`, close `active` sessions idle past the threshold so they become eligible for ingest, and retry queued one-off facts from `rememberFact` or location learning. See [memory.md](memory.md).
 - **Daily cleanup**: removes fired reminders (>30 days), closed conversations (>90 days), old routine logs (>90 days), old watcher logs (>90 days), and old location history (>90 days).
 
 ## Package Boundaries
 
-| Package             | Purpose                                              | Key Exports                                                                                                                                                                                                                                                       |
-| ------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@kokoro/shared`    | Config, logging, markdown, platform types            | `config`, `validateConfig`, `logger`, `parseMarkdown`, `haversineMeters`, `IncomingMessage`, `PlatformAdapter`, `computeNextRunAt`, `validateCronAndDefaults`                                                                                                     |
-| `@kokoro/db`        | MongoDB connection, all models, GridFS               | `connectDB`, `disconnectDB`, `Conversation`, `Reminder`, `SchedulerState`, `TokenUsage`, `Routine`, `RoutineLog`, `Watcher`, `WatcherLog`, `LocationHistory`, `PendingConfirmation`, `readImage`/`writeImage`, `readAudio`/`writeAudio`, all model CRUD functions |
-| `@kokoro/memory`    | Kioku HTTP client + conversation→transcript glue     | `recall`, `appendFact`, `getFactById`, `getFactCount`, `hasFactsForSession`, `ingestSession`, `buildTranscript`, `ingestClosedSession`, `sweepPendingIngests`, `sweepStaleActiveSessions`, `KiokuClientError`                                                     |
-| `@kokoro/kizuna`    | Kizuna read-only CRM client + compact projections    | `findPeople`, `getPerson`, `getPersonContext`, `recentInteractions`, `listMyFollowups`, `KizunaClientError`, `PersonSummary`, `InteractionSummary`, `FollowupSummary`                                                                                             |
-| `@kokoro/bot`       | Telegram + iMessage bot, AI layer, tools, schedulers | App entry point — not imported by other packages                                                                                                                                                                                                                  |
-| `@kokoro/dashboard` | Next.js dashboard (read + write CRUD)                | Overview, conversations, reminders, routines, watchers, confirmations, usage pages                                                                                                                                                                                |
+| Package             | Purpose                                              | Key Exports                                                                                                                                                                                                                                                                      |
+| ------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@kokoro/shared`    | Config, logging, markdown, platform types            | `config`, `validateConfig`, `logger`, `parseMarkdown`, `haversineMeters`, `IncomingMessage`, `PlatformAdapter`, `computeNextRunAt`, `validateCronAndDefaults`                                                                                                                    |
+| `@kokoro/db`        | MongoDB connection, all models, GridFS               | `connectDB`, `disconnectDB`, `Conversation`, `PendingFact`, `Reminder`, `SchedulerState`, `TokenUsage`, `Routine`, `RoutineLog`, `Watcher`, `WatcherLog`, `LocationHistory`, `PendingConfirmation`, `readImage`/`writeImage`, `readAudio`/`writeAudio`, all model CRUD functions |
+| `@kokoro/memory`    | Kioku HTTP client + conversation/fact retry glue     | `recall`, `appendFact`, `appendFactWithRetryQueue`, `getFactById`, `getFactCount`, `hasFactsForSession`, `ingestSession`, `buildTranscript`, `ingestClosedSession`, `sweepPendingIngests`, `sweepPendingFacts`, `sweepStaleActiveSessions`, `KiokuClientError`                   |
+| `@kokoro/kizuna`    | Kizuna read-only CRM client + compact projections    | `findPeople`, `getPerson`, `getPersonContext`, `recentInteractions`, `listMyFollowups`, `KizunaClientError`, `PersonSummary`, `InteractionSummary`, `FollowupSummary`                                                                                                            |
+| `@kokoro/bot`       | Telegram + iMessage bot, AI layer, tools, schedulers | App entry point — not imported by other packages                                                                                                                                                                                                                                 |
+| `@kokoro/dashboard` | Next.js dashboard (read + write CRUD)                | Overview, conversations, reminders, routines, watchers, confirmations, usage pages                                                                                                                                                                                               |
 
 ### Bot-Internal Modules
 
@@ -278,7 +278,7 @@ Daily cleanup and the Kioku ingest sweeper used to live here, but have been extr
 | `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup (Grammy long-polling)                                                                                                                |
 | `apps/bot/src/platform/imessage/` | BlueBubbles adapter + REST client + webhook server (opt-in, see docs/imessage.md)                                                                                 |
 | `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Web search (Brave), Routine executor, Watcher executor, Geocoding, Location, Gated-action dispatcher, Confirmation events |
-| `apps/bot/src/scheduler/`         | Proactive, reminder, routine, watcher, maintenance (cleanup + Kioku sweeper)                                                                                      |
+| `apps/bot/src/scheduler/`         | Proactive, reminder, routine, watcher, maintenance (cleanup + Kioku sweepers)                                                                                     |
 | `apps/bot/src/context/`           | Image reference loading + generation                                                                                                                              |
 | `apps/bot/src/stt/`               | Speech-to-text (Whisper-compatible API, cloud or local whisper.cpp); see docs/voice.md                                                                            |
 | `apps/bot/src/tts/`               | Text-to-speech generation for outbound voice notes                                                                                                                |
@@ -295,7 +295,7 @@ Daily cleanup and the Kioku ingest sweeper used to live here, but have been extr
 8. Start reminder scheduler (polls every 60s, fires pending reminders)
 9. Start routine scheduler (reset stale locks, polls every 60s, executes due routines)
 10. Start watcher scheduler (reset stale locks, archive expired, polls every 60s, runs due detection ticks)
-11. Start maintenance scheduler (startup + daily cleanup; startup + 5-min Kioku ingest sweep)
+11. Start maintenance scheduler (startup + daily cleanup; startup + 5-min Kioku ingest/fact sweeps)
 
 Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, stop routine scheduler, stop watcher scheduler, stop maintenance scheduler, stop BlueBubbles webhook (if running), shutdown browser, disconnect DB.
 
@@ -307,7 +307,7 @@ Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop p
 - **Relationship context delegated to Kizuna** — `@kokoro/kizuna` is a GET-only HTTP client for compact CRM projections. It uses `KIZUNA_URL` (default `https://api.kizuna.localhost`) and is gated by `KIZUNA_ENABLED` (default `true`). The bot tools fail open with sanitized degraded results if Kizuna is disabled or unreachable.
 - **On-demand retrieval, not eager loading** — the system prompt carries zero facts. The LLM calls `searchMemory` when it needs context. Better retrieval (cosine + BM25 + entity boost) replaces the old tier-and-merge compression strategy.
 - **Append-only facts** — atomic facts are write-once. Corrections happen by appending newer facts with later `event_date`; the answerer prompt resolves contradictions newest-wins. No UPDATE / DELETE / soft-archival.
-- **Sweeper as correctness layer for ingest** — session-close ingest fires fire-and-forget at four call sites for latency, but a 5-minute sweeper backstops failures: any `closed && ingestStatus: "pending"` conversation gets retried until Kioku confirms.
+- **Sweepers as correctness layer for Kioku writes** — session-close ingest fires fire-and-forget at four call sites for latency, but a 5-minute sweeper backstops failures: any `closed && ingestStatus: "pending"` conversation gets retried until Kioku confirms. One-off `rememberFact` and learned-place writes use `appendFactWithRetryQueue()`, which queues failed appends in `PendingFact` for the same maintenance tick to retry.
 - **Config stays unified** — single config module in `@kokoro/shared`. Base parse always succeeds (defaults for everything). `validateConfig()` must be called explicitly by apps that need LLM/embedding keys (the bot). The dashboard only needs `MONGODB_URI`.
 - **Tool-augmented LLM** — the model reads/writes its own memory via `searchMemory` / `rememberFact` tools, not hardcoded logic
 - **MongoDB stores deterministic state only** — sessions, reminders, confirmations, routines, watchers, location history. Long-term memory lives in Kioku's vault.

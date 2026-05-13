@@ -12,14 +12,16 @@ vi.mock("@kokoro/shared", async (orig) => ({
   },
 }));
 
-const { mockRecall, mockAppendFact } = vi.hoisted(() => ({
+const { mockRecall, mockAppendFact, mockAppendFactWithRetryQueue } = vi.hoisted(() => ({
   mockRecall: vi.fn(),
   mockAppendFact: vi.fn(),
+  mockAppendFactWithRetryQueue: vi.fn(),
 }));
 vi.mock("@kokoro/memory", async (orig) => ({
   ...(await orig<typeof import("@kokoro/memory")>()),
   recall: mockRecall,
   appendFact: mockAppendFact,
+  appendFactWithRetryQueue: mockAppendFactWithRetryQueue,
 }));
 
 import { createSearchMemoryTool, createRememberFactTool } from "../../../src/ai/tools/memory";
@@ -32,6 +34,7 @@ interface ExecutableTool {
 beforeEach(() => {
   mockRecall.mockReset();
   mockAppendFact.mockReset();
+  mockAppendFactWithRetryQueue.mockReset();
 });
 
 describe("searchMemory", () => {
@@ -87,7 +90,7 @@ describe("searchMemory", () => {
 
 describe("rememberFact", () => {
   it("forwards text + eventDate and tags the source as rememberFact", async () => {
-    mockAppendFact.mockResolvedValue({ id: "new-id", status: "added" });
+    mockAppendFactWithRetryQueue.mockResolvedValue({ id: "new-id", status: "added" });
 
     const tool = createRememberFactTool() as unknown as ExecutableTool;
     const result = await tool.execute(
@@ -95,7 +98,7 @@ describe("rememberFact", () => {
       undefined,
     );
 
-    expect(mockAppendFact).toHaveBeenCalledWith({
+    expect(mockAppendFactWithRetryQueue).toHaveBeenCalledWith({
       text: "User just got a cat named Mochi.",
       event_date: "2026-04-20",
       source_session: "rememberFact",
@@ -108,7 +111,7 @@ describe("rememberFact", () => {
   });
 
   it("surfaces the duplicate result on idempotent re-add", async () => {
-    mockAppendFact.mockResolvedValue({
+    mockAppendFactWithRetryQueue.mockResolvedValue({
       id: "old-id",
       status: "duplicate",
       reason: "hash",
@@ -124,8 +127,25 @@ describe("rememberFact", () => {
     });
   });
 
+  it("reports queued writes as successful durable work", async () => {
+    mockAppendFactWithRetryQueue.mockResolvedValue({
+      status: "queued",
+      queued: true,
+      reason: "Kioku POST /facts timed out",
+    });
+
+    const tool = createRememberFactTool() as unknown as ExecutableTool;
+    const result = await tool.execute({ text: "User likes ramen." }, undefined);
+
+    expect(result).toMatchObject({
+      success: true,
+      status: "queued",
+      queued: true,
+    });
+  });
+
   it("returns a structured error on Kioku failure", async () => {
-    mockAppendFact.mockRejectedValue(new Error("network down"));
+    mockAppendFactWithRetryQueue.mockRejectedValue(new Error("network down"));
     const tool = createRememberFactTool() as unknown as ExecutableTool;
     const result = await tool.execute({ text: "x" }, undefined);
     expect(result).toMatchObject({ success: false });
