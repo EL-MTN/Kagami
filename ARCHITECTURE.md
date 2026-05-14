@@ -42,7 +42,7 @@ Dashboard and API HTTP entry points are served as HTTPS named URLs by [Portless]
 | Kizuna → Kioku/Kokoro | none                    | exposes API; never initiates outbound calls to siblings                                                                                                                                                                                                                         |
 | Kioku → anything      | none (pull-only)        | exposes API; never initiates outbound to siblings                                                                                                                                                                                                                               |
 
-There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open at the client (`KiokuClientError` is caught by the AI tool layer; chat continues degraded). Closed-session transcript ingest is retried by Kokoro's 5-min sweeper; one-off `rememberFact` and location writes fail open but are not queued for retry today. The Kokoro → Kizuna edge is also fail-open at the CRM tool layer (without retries). Reads (`findPeople`, `getPersonContext`, `recentInteractions`, `listMyFollowups`) call Kizuna directly; writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are listed in `GATED_TOOL_NAMES` and must be wrapped in `requestConfirmation` so they only fire after the user taps Approve. `dev-all.sh` boots selected apps together under Turbo.
+There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open at the client (`KiokuClientError` is caught by the AI tool layer; chat continues degraded). Closed-session transcript ingest, `rememberFact`, and location writes all fail open at the client; on failure they're queued to MongoDB (`PendingFact` for one-off writes, the existing session-ingest queue for transcripts) and flushed by Kokoro's 5-min sweeper. The Kokoro → Kizuna edge is also fail-open at the CRM tool layer (without retries). Reads (`findPeople`, `getPersonContext`, `recentInteractions`, `listMyFollowups`) call Kizuna directly; writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are listed in `GATED_TOOL_NAMES` and must be wrapped in `requestConfirmation` so they only fire after the user taps Approve. `dev-all.sh` boots selected apps together under Turbo.
 
 ## Shared conventions
 
@@ -52,7 +52,7 @@ All three projects converge on the same stack. Tooling lives in `shared/packages
 - **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs cover `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, and `shared/packages/*`. One root `package.json`, one root `turbo.json`, one hoisted `node_modules`.
 - **Apps split**: `apps/api` (or `apps/bot`) + `apps/dashboard`
 - **Shared tooling packages**: `@kagami/eslint-config` (`./base`, `./next`) and `@kagami/tsconfig` (`./base.json`, `./library.json`, `./server.json`, `./nextjs.json`) at `shared/packages/`. Per-app `tsconfig.json` files extend a variant and add overrides where projects diverge — e.g. Kokoro/Kizuna add `verbatimModuleSyntax: true`, Kioku adds `esModuleInterop` + `allowImportingTsExtensions`, Kizuna/api adds `noImplicitOverride`.
-- **Per-project internal packages**: Kokoro has `kokoro/packages/{shared,db,memory,kizuna,test-utils}`. Kioku and Kizuna have empty `packages/` slots reserved for future project-only libs.
+- **Per-project internal packages**: Kokoro has `kokoro/packages/{shared,db,memory,kizuna,test-utils}`. Kioku and Kizuna have no `packages/` directory today; their workspace globs (`kioku/packages/*`, `kizuna/packages/*` in `package.json`) are placeholders for future project-only libs.
 - **Local dev hosting**: [Portless](https://github.com/vercel-labs/portless) (Vercel Labs) for stable HTTPS named `*.localhost` URLs — see below
 - **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku)
 - **Logging**: Pino, built via the workspace-shared `@kagami/logger` factory. Provides stable `service`, `component`, and `env` bindings, the common secret-redaction list, and the `pino-pretty` transport policy (`env !== "production"`). Each service's `logger.ts` is a thin wrapper that calls the factory with its own service/component name.
@@ -94,7 +94,7 @@ The same convention extends to inter-service config: Kizuna's dashboard reaches 
 
 ```
 apps/api          Express HTTP API + MCP transport (entry: src/server.ts)
-apps/dashboard    Next.js 15 inspector UI (https://kioku.localhost)
+apps/dashboard    Next.js 16 inspector UI (https://kioku.localhost)
 ```
 
 **Endpoints.** Both apps run under Portless: API at `https://api.kioku.localhost`, dashboard at `https://kioku.localhost`. The API server reads `PORT` (injected by Portless), falling back to `7777` only when run standalone. The dashboard reaches the API via `KIOKU_API_URL` (default `https://api.kioku.localhost`).
@@ -104,15 +104,16 @@ apps/dashboard    Next.js 15 inspector UI (https://kioku.localhost)
 | ------ | ------------------- | ------------------------------------------------------ |
 | GET | `/health` | liveness |
 | GET | `/version` | name + version |
+| GET | `/meta/categories` | enumerate fact categories used by the ingest pipeline |
 | POST | `/facts` | append single fact (md5 + cosine dedup) |
-| POST | `/facts/bulk` | append up to 500 facts verbatim |
+| POST | `/facts/bulk` | append up to 500 facts verbatim (rate-limited per IP) |
 | GET | `/facts` | list with filters (limit, offset, date range, scope) |
 | GET | `/facts/count` | total fact count |
 | GET | `/facts/:id` | fetch one |
 | GET | `/facts/:id/history`| audit log for fact |
 | POST | `/recall` | hybrid retrieval (cosine + BM25 + entity boost), no LLM |
 | POST | `/query` | answer a question using top-K facts |
-| POST | `/sessions` | ingest raw transcript, extract + embed facts |
+| POST | `/sessions` | ingest raw transcript, extract + embed facts (rate-limited per IP) |
 
 An MCP transport at `/mcp` exposes the same operations as 7 tools (`recall`, `query`, `append_fact`, `append_facts`, `ingest_session`, `fact_count`, `fact_history`).
 
@@ -132,7 +133,7 @@ An MCP transport at `/mcp` exposes the same operations as 7 tools (`recall`, `qu
 
 ```
 apps/bot          Grammy-based Telegram bot (entry: src/index.ts)
-apps/dashboard    Next.js 15 dashboard (https://kokoro.localhost)
+apps/dashboard    Next.js 16 dashboard (https://kokoro.localhost)
 packages/shared   Zod config, logger, platform types
 packages/db       Mongoose models, GridFS for images
 packages/memory   Kioku HTTP client + transcript glue
@@ -144,8 +145,8 @@ packages/test-utils
 
 **Dashboard API.** Next.js route handlers under `/api/`:
 
-- `routines/` — scheduled prompts (CRUD, import/export YAML, run, logs)
-- `watchers/` — stateful detection jobs (CRUD, import/export, run, logs)
+- `routines/` — scheduled prompts (CRUD, import/export JSON, run, logs)
+- `watchers/` — stateful detection jobs (CRUD, import/export JSON, run, logs)
 - `images/[key]` — GridFS image fetch
 
 **Kioku client.** All calls live in `packages/memory/src/index.ts`. Base URL from `KIOKU_URL` (default `https://api.kioku.localhost`; use `http://localhost:7777` only for standalone Kioku runs outside Portless):
@@ -158,7 +159,7 @@ packages/test-utils
 | GET | `/facts/count` | health/stats | 10 s |
 | POST | `/sessions` | full transcript ingest (LLM extraction) | 180 s |
 
-Failure mode is **fail-open** via `KiokuClientError`: chat continues degraded. Closed-session transcript ingest has durable retry through `apps/bot/src/scheduler/maintenance.ts`, which runs a 5-minute sweeper (`sweepPendingIngests`, `sweepStaleActiveSessions`). One-off `rememberFact` and location writes are not queued for retry today.
+Failure mode is **fail-open** via `KiokuClientError`: chat continues degraded. The 5-minute sweeper in `apps/bot/src/scheduler/maintenance.ts` provides durable retry for all writes: closed-session transcript ingest (`sweepPendingIngests`, `sweepStaleActiveSessions`) and one-off fact writes (`sweepPendingFacts`). `rememberFact` and location updates go through `appendFactWithRetryQueue`, which enqueues failed appends to the `PendingFact` collection for the sweeper to flush.
 
 **Kizuna client.** CRM calls live in `packages/kizuna/src/` and are exposed to the LLM through `apps/bot/src/ai/tools/crm.ts`. Base URL comes from `KIZUNA_URL` (default `https://api.kizuna.localhost`) and the tool palette is gated by `KIZUNA_ENABLED` (default `true`):
 
@@ -176,11 +177,11 @@ Failure mode is **fail-open** via `KiokuClientError`: chat continues degraded. C
 
 Reads are called directly; writes are listed in `GATED_TOOL_NAMES` and must be wrapped in `requestConfirmation` (Telegram tap-to-approve, iMessage YES/NO). Failure mode is **fail-open** via `KizunaClientError`: read tools return sanitized degraded results and chat continues; the gated dispatcher surfaces failures back to the user via the prompt edit and acknowledgment turn. There is no auth header; Kizuna is treated as a single-user localhost service.
 
-**Storage.** MongoDB models: `Conversation`, `Routine`, `Watcher`, `Reminder`, `PendingConfirmation`, `SchedulerState`, `TokenUsage`, `LocationHistory`. GridFS for images.
+**Storage.** MongoDB models: `Conversation`, `Routine`, `Watcher`, `Reminder`, `PendingConfirmation`, `PendingFact`, `SchedulerState`, `TokenUsage`, `LocationHistory`. GridFS for images.
 
-**External services.** Anthropic / xAI / OpenAI / Google (LLMs and embeddings) via Vercel AI SDK; ElevenLabs TTS; Whisper STT (local or OpenAI); Stagehand / Browserbase for browser automation; Google OAuth (Gmail, Calendar, Maps); Brave Search.
+**External services.** Anthropic / xAI / OpenAI (LLMs) and Google AI SDK (image generation only) via Vercel AI SDK; ElevenLabs TTS; Whisper STT (local or OpenAI); Stagehand / Browserbase for browser automation; Google OAuth (Gmail, Calendar, Maps); Brave Search. Embeddings are not computed by Kokoro — they're delegated to Kioku.
 
-**Auth model.** Single-user-per-deployment; Telegram user IDs gated via `ALLOWED_USER_IDS`. Google access uses a long-lived refresh token from env (not DB).
+**Auth model.** Single-user-per-deployment; Telegram user IDs are gated via `ALLOWED_USER_IDS` when set — note that an empty/unset `ALLOWED_USER_IDS` disables gating (the middleware lets every chat through), so a real deployment must populate it. Google access uses a long-lived refresh token from env (not DB).
 
 **Coupling notes.** Heavily coupled to Kioku (file references in `packages/memory/`, `apps/bot/src/ai/tools/memory.ts`, `apps/bot/src/services/location.ts`, `apps/bot/src/scheduler/maintenance.ts`). Coupled to Kizuna through `packages/kizuna/` and `apps/bot/src/ai/tools/crm.ts` — reads call Kizuna directly; writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are dispatched from `apps/bot/src/services/gated-actions.ts` only after user approval.
 
@@ -194,24 +195,25 @@ Reads are called directly; writes are listed in `GATED_TOOL_NAMES` and must be w
 
 ```
 apps/api          Express API (entry: src/main.ts)
-apps/dashboard    Next.js 15 app (App Router, single (app) route group)
-packages/         reserved for future Kizuna-only libs
+apps/dashboard    Next.js 16 app (App Router; pages live flat under src/app/{today,contexts,errors,followups,interactions,people,sync,tombstones})
+packages/         (no directory today — workspace glob is a placeholder for future Kizuna-only libs)
 ```
 
 **Endpoints.** Both apps run under Portless: API at `https://api.kizuna.localhost`, dashboard at `https://kizuna.localhost`. Portless injects each process's `PORT` and proxies the named HTTPS URLs to those ephemeral ports; the API's `3000` fallback only matters when running it standalone outside Portless. The checked-in `.env.example` uses `GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback`, so the redirect lands on the Portless HTTPS origin.
 
 **HTTP API surface.** Open at single-user localhost — no bearer auth on resource routes, no auth on `/oauth/google/{start,status}`. The OAuth callback is still CSRF-protected by a signed state token (process-local HMAC secret).
 
-| Group         | Endpoints                                                    |
-| ------------- | ------------------------------------------------------------ |
-| People        | `GET/POST /people`, `PATCH/DELETE /people/:id`               |
-| Interactions  | `GET/POST /interactions`, `DELETE /interactions/:id`         |
-| Followups     | `GET/POST /followups`, `PATCH/DELETE /followups/:id`         |
-| Organizations | `GET/POST /organizations`, `PATCH/DELETE /organizations/:id` |
-| Contexts      | `GET /contexts` (distinct tags + counts)                     |
-| Digest        | `GET /digest?window=P7D`                                     |
-| Sync          | `GET/POST /sync/{gmail,gcal}/{state,run}`                    |
-| OAuth         | `/oauth/google/{start,callback,status}`                      |
+| Group         | Endpoints                                                                          |
+| ------------- | ---------------------------------------------------------------------------------- |
+| Health        | `GET /health`                                                                      |
+| People        | `GET/POST /people`, `GET/PATCH/DELETE /people/:id`, `GET /people/:id/interactions` |
+| Interactions  | `GET/POST /interactions`, `DELETE /interactions/:id`                               |
+| Followups     | `GET/POST /followups`, `PATCH/DELETE /followups/:id`                               |
+| Organizations | `GET/POST /organizations`, `GET/PATCH/DELETE /organizations/:id`                   |
+| Contexts      | `GET /contexts` (distinct tags + counts)                                           |
+| Digest        | `GET /digest?window=P7D`                                                           |
+| Sync          | `GET /sync/{gmail,gcal}/state`, `POST /sync/{gmail,gcal}/run`                      |
+| OAuth         | `/oauth/google/{start,callback,status}`                                            |
 
 **Storage.** Mongoose models: `Person`, `Interaction`, `Followup`, `Organization`, `OAuthToken` (AES-256-GCM-encrypted refresh tokens), `SyncState`. Text indexes on people/interactions; unique sourceRef per Gmail/Calendar id.
 
