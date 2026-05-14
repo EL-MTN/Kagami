@@ -10,7 +10,9 @@ This file is the project guide. Cross-service facts live in the workspace root: 
 
 ## Status
 
-**Phase 0 — scaffold.** The API exposes only `/health` and `/version`. There is no ingest endpoint, no Mongo wiring, no dashboard surfaces beyond a placeholder. Phases 1–7 (ingest, dashboard surfaces, tracing, error fingerprinting, rollout, derived metrics, retention) follow.
+**Phase 1 — ingest live.** The API accepts batched logs at `POST /v1/logs` (constant-time token check via `x-kansoku-auth` against `KANSOKU_INGEST_TOKEN`), validates them with Zod, normalizes pino's envelope, and writes to a MongoDB time-series collection (`logs`, 30-day TTL). `GET /v1/logs?service=…&level=…&since=…&until=…&limit=…` is the spot-check query endpoint. Dashboard surfaces (`/tail`, `/search`) land in Phase 2.
+
+Kioku is wired end-to-end: `kioku/apps/api/src/logger.ts` reads `KANSOKU_URL` + `KANSOKU_INGEST_TOKEN` and installs the `@kagami/logger` kansoku stream when both are set. Kokoro and Kizuna are wired in Phase 5.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full plan.
 
@@ -22,10 +24,19 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │   ├── api/            # Express HTTP server (entry: src/server.ts)
 │   │   ├── src/
 │   │   │   ├── routes/
-│   │   │   │   └── meta.ts      # /health, /version
-│   │   │   ├── server.ts
+│   │   │   │   ├── meta.ts      # /health, /version
+│   │   │   │   ├── ingest.ts    # POST /v1/logs (HMAC token, Zod, async insert)
+│   │   │   │   └── query.ts     # GET /v1/logs (service/level/since/until/limit)
+│   │   │   ├── storage/
+│   │   │   │   ├── mongo.ts     # lazy MongoClient singleton
+│   │   │   │   ├── indexes.ts   # time-series + btree indexes, 30-day TTL
+│   │   │   │   └── logs.ts      # StoredLog type, insertLogs, queryLogs
+│   │   │   ├── lib/
+│   │   │   │   ├── auth.ts      # constant-time x-kansoku-auth check
+│   │   │   │   └── envelope.ts  # Zod schema + pino → StoredLog normalizer
+│   │   │   ├── server.ts        # createApp() + main() boot
 │   │   │   └── logger.ts        # @kagami/logger wrapper
-│   │   ├── tests/               # vitest suite (placeholder for Phase 1+)
+│   │   ├── tests/               # vitest + mongodb-memory-server harness
 │   │   ├── tsconfig.json        # extends @kagami/tsconfig/server.json
 │   │   ├── eslint.config.js
 │   │   └── package.json

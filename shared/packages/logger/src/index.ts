@@ -1,6 +1,9 @@
 import { hostname } from "node:os";
 import pino from "pino";
+import pretty from "pino-pretty";
 import type { LoggerOptions } from "pino";
+import { createKansokuStream } from "./kansoku-stream.js";
+import type { KansokuStreamOptions } from "./kansoku-stream.js";
 
 export const DEFAULT_REDACT_PATHS = [
   "authorization",
@@ -25,6 +28,13 @@ export const DEFAULT_REDACT_PATHS = [
   "*.secret",
   "*.accessToken",
   "*.refreshToken",
+  // Base64 image payloads: scrubbed before they can leave the process. Belt
+  // for the centralized logger's mouth — covers Kokoro's existing shape plus
+  // common nesting one level deep.
+  "imageData",
+  "*.imageData",
+  "message.imageData",
+  "messages[*].imageData",
 ];
 
 export interface ServiceBindings {
@@ -51,31 +61,58 @@ export function buildLoggerBase(bindings: ServiceBindings): LoggerBaseBindings {
 export interface CreateLoggerOptions extends ServiceBindings {
   level?: string;
   formatters?: LoggerOptions["formatters"];
+  /**
+   * When provided, every log line is fanned out (alongside stdout) to the
+   * Kansoku observability service via a batched HTTP shipper. The shipper is
+   * fail-open: network errors are swallowed and retried with backoff; nothing
+   * here can block or throw into the caller.
+   */
+  kansoku?: KansokuStreamOptions;
 }
 
 export function createLogger(opts: CreateLoggerOptions): pino.Logger {
-  const { service, component, env, level = "info", formatters } = opts;
+  const { service, component, env, level = "info", formatters, kansoku } = opts;
 
-  return pino({
+  const pinoOptions: LoggerOptions = {
     level,
     base: buildLoggerBase({ service, component, env }),
     redact: {
       paths: DEFAULT_REDACT_PATHS,
-      censor: "[redacted]",
+      censor: (value, path) => {
+        const tail = path[path.length - 1];
+        if (tail === "imageData" && typeof value === "string") {
+          return `[base64 omitted, ~${value.length}b]`;
+        }
+        return "[redacted]";
+      },
     },
     ...(formatters ? { formatters } : {}),
-    transport:
-      env !== "production"
-        ? {
-            target: "pino-pretty",
-            options: {
-              colorize: true,
-              translateTime: "HH:MM:ss.l",
-              ignore: "pid,hostname",
-            },
-          }
-        : undefined,
-  });
+  };
+
+  // Console rendering: pretty in dev, raw JSON in production. Run as in-process
+  // streams (not pino worker-thread transports) so multistream can compose them
+  // with the Kansoku shipper without bridging worker boundaries.
+  const consoleStream: NodeJS.WritableStream =
+    env !== "production"
+      ? pretty({ colorize: true, translateTime: "HH:MM:ss.l", ignore: "pid,hostname" })
+      : process.stdout;
+
+  if (!kansoku) {
+    return pino(pinoOptions, consoleStream);
+  }
+
+  const kansokuStream = createKansokuStream(kansoku);
+  // Cast `level` to pino.Level: pino's StreamEntry types the field as its
+  // narrow union ("trace" | "debug" | …) but the LoggerOptions level field
+  // happily accepts any string. We pass-through whatever the caller set;
+  // pino itself decides whether to honor it at write time.
+  const streamLevel = level as pino.Level;
+  const streams: pino.StreamEntry[] = [
+    { level: streamLevel, stream: consoleStream },
+    { level: streamLevel, stream: kansokuStream },
+  ];
+  return pino(pinoOptions, pino.multistream(streams));
 }
 
 export type { Logger } from "pino";
+export type { KansokuStreamOptions } from "./kansoku-stream.js";
