@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { LogBatch, toStoredLog } from "../lib/envelope.js";
 import { requireIngestToken } from "../lib/auth.js";
+import { publishLogs } from "../lib/log-events.js";
 import { insertLogs } from "../storage/logs.js";
 import { logger } from "../logger.js";
 
@@ -18,12 +19,14 @@ export function createIngestRouter(token: string | undefined): Router {
         logger.warn({ dropped, service: docs[0]?.meta.service }, "shipper reported buffer drops");
       }
 
-      // Fire-and-forget write: ack the shipper immediately so its socket
-      // closes before Mongo round-trips. The shipper's local buffer already
-      // absorbed network latency; making it wait on a write here would
+      // Broadcast first (synchronous, in-process — every connected SSE tail
+      // subscriber sees the log immediately). Then fire-and-forget the Mongo
+      // write so the shipper's socket closes fast: its local buffer already
+      // absorbed network latency, and making it wait on a write would
       // back-pressure the producer needlessly. On Mongo failure we log the
       // miss but the events are already lost to the shipper (it's moved on),
       // so there's no retry to coordinate.
+      publishLogs(docs);
       void insertLogs(docs).catch((err) => {
         logger.error(
           { err: (err as Error).message, count: docs.length },

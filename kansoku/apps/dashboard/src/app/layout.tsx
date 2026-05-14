@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans, JetBrains_Mono } from "next/font/google";
+import { Sidebar } from "@/components/sidebar";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -22,8 +23,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${dmSans.variable} ${jetbrainsMono.variable}`}>
-      <body className="min-h-screen">
-        <main className="mx-auto max-w-6xl px-8 py-12">{children}</main>
+      <body className="flex min-h-screen">
+        <Sidebar />
+        <main className="relative flex-1 overflow-auto">
+          <div className="mx-auto max-w-6xl px-8 py-10">{children}</div>
+        </main>
       </body>
     </html>
   );

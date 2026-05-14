@@ -92,21 +92,44 @@ Phase 1 uses a shared HMAC token (`KANSOKU_INGEST_TOKEN`) carried as a request h
 
 ## Dashboard surfaces
 
-| Page          | Purpose                                                      | Backed by        |
-| ------------- | ------------------------------------------------------------ | ---------------- |
-| `/tail`       | Live stream, filter by service / component / level           | SSE `/v1/tail`   |
-| `/search`     | Historical log search, time-range + structured-field filters | `/v1/logs?q=…`   |
-| `/traces/:id` | Single-trace waterfall, log timeline                         | `/v1/traces/:id` |
-| `/errors`     | Grouped by fingerprint, sortable by `lastSeen` / `count`     | `/v1/errors`     |
-| `/services`   | Per-service log volume sparklines, error rate, last-seen     | aggregations     |
+| Page          | Purpose                                                   | Backed by                             | Status  |
+| ------------- | --------------------------------------------------------- | ------------------------------------- | ------- |
+| `/`           | Overview cards + status                                   | `/health`, `/version`                 | live    |
+| `/tail`       | Live stream, filter by service / level, pause/clear       | SSE `/v1/tail` (+ ring-buffer replay) | live    |
+| `/search`     | Historical log search, time-range + service/level filters | `/v1/logs?service&level&since&until`  | live    |
+| `/traces/:id` | Single-trace waterfall, log timeline                      | `/v1/traces/:id`                      | Phase 3 |
+| `/errors`     | Grouped by fingerprint, sortable by `lastSeen` / `count`  | `/v1/errors`                          | Phase 4 |
+| `/services`   | Per-service log volume sparklines, error rate, last-seen  | aggregations                          | Phase 6 |
+
+### Live-tail wire format (Phase 2)
+
+SSE stream from `GET /v1/tail?service=&level=&replay=`. Each `data:` line is
+a `StoredLog` JSON object (same shape as the `GET /v1/logs` results).
+Query params:
+
+- `service` — exact match on `meta.service`. Optional.
+- `level` — comma-separated list, e.g. `warn,error,fatal`. Defaults to all.
+- `replay` — how many recent matching events to replay from the in-process
+  ring buffer on connect (0–200, default 50). The ring holds the last 500
+  ingested events across all services.
+
+A keep-alive comment (`: heartbeat <ts>\n\n`) every 30 s prevents idle
+proxies from collapsing the connection. The handler is single-user
+localhost; no auth on the tail/query endpoints (cf. siblings).
+
+### CORS
+
+`/v1/*` echoes any `*.localhost` origin in `Access-Control-Allow-Origin` and
+handles preflights for the dashboard. The token-authed ingest path is
+unaffected — its callers are server-to-server, not browser-originating.
 
 ## Phased delivery
 
 | Phase | Scope                                                                                                   | Status      |
 | ----- | ------------------------------------------------------------------------------------------------------- | ----------- |
 | 0     | Scaffold (`kansoku/{apps,packages,docs}`, Portless URLs, workspace globs, `/health`)                    | done        |
-| 1     | Mongo time-series setup, `/v1/logs` ingest, Zod envelope, kansoku-stream shipper, wire Kioku end-to-end | **this PR** |
-| 2     | Dashboard `/tail` (SSE) and `/search`                                                                   |             |
+| 1     | Mongo time-series setup, `/v1/logs` ingest, Zod envelope, kansoku-stream shipper, wire Kioku end-to-end | done        |
+| 2     | Dashboard `/tail` (SSE) and `/search`                                                                   | **this PR** |
 | 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                    |             |
 | 4     | Error fingerprinting + `/errors` page                                                                   |             |
 | 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                          |             |

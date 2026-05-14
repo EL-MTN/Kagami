@@ -10,9 +10,15 @@ This file is the project guide. Cross-service facts live in the workspace root: 
 
 ## Status
 
-**Phase 1 — ingest live.** The API accepts batched logs at `POST /v1/logs` (constant-time token check via `x-kansoku-auth` against `KANSOKU_INGEST_TOKEN`), validates them with Zod, normalizes pino's envelope, and writes to a MongoDB time-series collection (`logs`, 30-day TTL). `GET /v1/logs?service=…&level=…&since=…&until=…&limit=…` is the spot-check query endpoint. Dashboard surfaces (`/tail`, `/search`) land in Phase 2.
+**Phase 2 — dashboard live.** Ingest at `POST /v1/logs` and search at `GET /v1/logs` are live. The dashboard ships three surfaces:
 
-Kioku is wired end-to-end: `kioku/apps/api/src/logger.ts` reads `KANSOKU_URL` + `KANSOKU_INGEST_TOKEN` and installs the `@kagami/logger` kansoku stream when both are set. Kokoro and Kizuna are wired in Phase 5.
+- `/` — overview cards (API + version + retention status), feature links.
+- `/tail` — live SSE stream from `GET /v1/tail` with per-service / per-level filters, pause/resume, clear, ring-buffer replay (last ~50 matching events on connect), and a 30 s heartbeat to keep idle sockets alive.
+- `/search` — server-side filter form posting query params (`service`, `level`, `since`, `until`, `limit`); results render newest-first with timestamp / level / service / message columns.
+
+CORS on `/v1/*` echoes any `*.localhost` origin so the browser-side EventSource at `kansoku.localhost` can reach `api.kansoku.localhost`.
+
+Kioku is the only sibling wired today (Phase 1). Kokoro and Kizuna roll out in Phase 5. Trace context (Phase 3) and error fingerprinting (Phase 4) follow.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full plan.
 
@@ -26,14 +32,17 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │   │   │   ├── routes/
 │   │   │   │   ├── meta.ts      # /health, /version
 │   │   │   │   ├── ingest.ts    # POST /v1/logs (HMAC token, Zod, async insert)
-│   │   │   │   └── query.ts     # GET /v1/logs (service/level/since/until/limit)
+│   │   │   │   ├── query.ts     # GET /v1/logs (service/level/since/until/limit)
+│   │   │   │   └── tail.ts      # GET /v1/tail (SSE with filter + replay)
 │   │   │   ├── storage/
 │   │   │   │   ├── mongo.ts     # lazy MongoClient singleton
 │   │   │   │   ├── indexes.ts   # time-series + btree indexes, 30-day TTL
 │   │   │   │   └── logs.ts      # StoredLog type, insertLogs, queryLogs
 │   │   │   ├── lib/
 │   │   │   │   ├── auth.ts      # constant-time x-kansoku-auth check
-│   │   │   │   └── envelope.ts  # Zod schema + pino → StoredLog normalizer
+│   │   │   │   ├── envelope.ts  # Zod schema + pino → StoredLog normalizer
+│   │   │   │   ├── cors.ts      # *.localhost echo for the dashboard
+│   │   │   │   └── log-events.ts # in-process broadcaster + 500-entry ring
 │   │   │   ├── server.ts        # createApp() + main() boot
 │   │   │   └── logger.ts        # @kagami/logger wrapper
 │   │   ├── tests/               # vitest + mongodb-memory-server harness
@@ -41,10 +50,17 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │   │   ├── eslint.config.js
 │   │   └── package.json
 │   └── dashboard/      # Next.js 16 inspector at https://kansoku.localhost
-│       ├── src/app/
-│       │   ├── layout.tsx
-│       │   ├── page.tsx
-│       │   └── globals.css
+│       ├── src/
+│       │   ├── app/
+│       │   │   ├── layout.tsx           # sidebar shell
+│       │   │   ├── page.tsx             # overview
+│       │   │   ├── tail/                # live SSE stream UI
+│       │   │   │   ├── page.tsx
+│       │   │   │   └── tail-client.tsx
+│       │   │   ├── search/page.tsx      # historical filter form
+│       │   │   └── globals.css
+│       │   ├── components/              # sidebar, nav-link, log-row, level-badge, shell
+│       │   └── lib/                     # api, format, utils (cn)
 │       ├── tsconfig.json        # extends @kagami/tsconfig/nextjs.json
 │       ├── eslint.config.mjs
 │       └── package.json

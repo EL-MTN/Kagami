@@ -4,9 +4,11 @@ import express, { type ErrorRequestHandler } from "express";
 import { pinoHttp } from "pino-http";
 import { ZodError } from "zod";
 import { logger } from "./logger.js";
+import { corsForDashboard } from "./lib/cors.js";
 import { metaRouter } from "./routes/meta.js";
 import { createIngestRouter } from "./routes/ingest.js";
 import { queryRouter } from "./routes/query.js";
+import { tailRouter } from "./routes/tail.js";
 import { ensureIndexes } from "./storage/indexes.js";
 import { closeMongo } from "./storage/mongo.js";
 
@@ -22,8 +24,10 @@ export function createApp(opts: { ingestToken: string | undefined }): express.Ex
   app.use(pinoHttp({ logger }));
 
   app.use("/", metaRouter);
+  app.use("/v1", corsForDashboard);
   app.use("/v1", createIngestRouter(opts.ingestToken));
   app.use("/v1", queryRouter);
+  app.use("/v1", tailRouter);
 
   const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     if (err instanceof ZodError) {
