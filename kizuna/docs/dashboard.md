@@ -8,17 +8,21 @@ Read-only inspector for Kizuna's CRM data, plus the OAuth grant and ingest contr
 apps/dashboard/src/app/
 ├── layout.tsx                       # root html, font CSS variables
 ├── globals.css                      # design tokens (Mashiro Daylight)
-└── (app)/                           # all routes (no login)
-    ├── layout.tsx                   # sidebar + main content
-    ├── page.tsx                     # /             — Today
-    ├── ui.tsx                       # Card, Badge, ChannelBadge, ErrorBlock, PersonLink, Mono, …
-    ├── people/
-    │   ├── page.tsx                 # /people       — list + filter form
-    │   └── [id]/page.tsx            # /people/:id   — detail + per-person interactions + followups
-    ├── contexts/page.tsx            # /contexts     — distinct tags + tag-scoped detail
-    ├── sync/page.tsx                # /sync         — OAuth status + Gmail/Calendar ingest control
-    ├── errors/page.tsx              # /errors       — placeholder; ingest error log is a roadmap item
-    └── tombstones/page.tsx          # /tombstones   — soft-deleted People / Interactions / Followups
+├── ui.tsx                           # Card, Badge, ChannelBadge, ErrorBlock, PersonLink, Mono, …
+├── page.tsx                         # /             — redirect to /today
+├── today/page.tsx                   # /today        — digest-backed morning overview
+├── followups/page.tsx               # /followups    — list + status/direction filters + resolve / delete
+├── interactions/
+│   ├── page.tsx                     # /interactions — list + channel filter + person picker
+│   ├── filters.tsx                  #               — client-side filter bar (debounced person search-as-you-type)
+│   └── actions.ts                   #               — server action: searchPeopleAction
+├── people/
+│   ├── page.tsx                     # /people       — list + filter form
+│   └── [id]/page.tsx                # /people/:id   — detail + per-person interactions + followups
+├── contexts/page.tsx                # /contexts     — distinct tags + tag-scoped detail
+├── sync/page.tsx                    # /sync         — OAuth status + Gmail/Calendar ingest control
+├── errors/page.tsx                  # /errors       — placeholder; ingest error log is a roadmap item
+└── tombstones/page.tsx              # /tombstones   — soft-deleted People / Interactions / Followups
 ```
 
 The sidebar (`src/components/sidebar.tsx`) is the canonical link list:
@@ -26,6 +30,8 @@ The sidebar (`src/components/sidebar.tsx`) is the canonical link list:
 ```
 絆 Kizuna · Personal CRM
    Today
+   Followups
+   Interactions
    People
    Contexts
    Sync
@@ -35,11 +41,14 @@ The sidebar (`src/components/sidebar.tsx`) is the canonical link list:
 
 ## Data flow
 
-Every page is a **server component** with `export const dynamic = 'force-dynamic'`. There is no client-side data fetching, no SWR, no React Query — every render hits the API fresh. Mutations are server actions:
+Every page is a **server component** with `export const dynamic = 'force-dynamic'`. There is no SWR / React Query — every render hits the API fresh. Mutations are server actions:
 
-- `src/app/(app)/sync/page.tsx` → `runGmailSyncAction`, `runGcalSyncAction` (POST `/sync/.../run` then `revalidatePath('/sync')`).
+- `src/app/sync/page.tsx` → `runGmailSyncAction`, `runGcalSyncAction` (POST `/sync/.../run` then `revalidatePath('/sync')`).
+- `src/app/followups/page.tsx` → `resolveFollowupAction` (PATCH `/followups/:id` with `{ status: "done" }`) and `deleteFollowupAction` (DELETE `/followups/:id`). Both revalidate `/followups` and `/today`.
 
-There are no POST/PATCH/DELETE for People / Interactions / Followups in the dashboard — the API has them, but the dashboard is intentionally read-only. The roadmap is to keep mutation in the concierge agent and use the dashboard for inspection only.
+The Interactions page also uses a small client component (`src/app/interactions/filters.tsx`) for the channel select + debounced person search-as-you-type. The picker calls `searchPeopleAction` (in `actions.ts`) as a server action; selection navigates via `router.push` to update the URL's `personId` param.
+
+People / Interactions remain read-only from the dashboard — the API supports POST/PATCH/DELETE for them, but creation/edit stays in the concierge agent. Followups are the one exception: the dashboard can resolve and tombstone them.
 
 ## Library (`apps/dashboard/src/lib/`)
 
@@ -61,6 +70,9 @@ api.getPerson(id)
 api.getPersonInteractions(id, q)
 api.listInteractions(q)
 api.listFollowups(q)
+api.updateFollowup(id, body)
+api.deleteFollowup(id)
+api.getDigest(window?)
 api.listOrganizations(q)
 api.getOrganization(id)
 api.listContexts(q)
@@ -97,7 +109,7 @@ src/components/
     └── table.tsx
 ```
 
-`src/app/(app)/ui.tsx` re-exports the primitives plus app-specific compositions:
+`src/app/ui.tsx` re-exports the primitives plus app-specific compositions:
 
 - `Card`, `CardHeader`, `Empty`
 - `Badge`, `ChannelBadge`, `StatusBadge`, `DirectionBadge` — domain-specific tone-mapped wrappers around `<Badge variant=...>`
@@ -156,7 +168,7 @@ Avoid `text-muted-foreground/30..70` etc.
 - Shimmer skeletons (`.skeleton`)
 - `.kicker` utility for small-caps section headers (`text-[10px] uppercase tracking-[0.18em] text-muted-foreground`) — preferred over re-stating the classes per-section
 
-### Channel badge mapping (`src/app/(app)/ui.tsx::ChannelBadge`)
+### Channel badge mapping (`src/app/ui.tsx::ChannelBadge`)
 
 | Channel     | Tone  |
 | ----------- | ----- |
@@ -179,12 +191,13 @@ Followup direction (`DirectionBadge`):
 The dashboard hits the same REST endpoints documented in [api.md](api.md):
 
 - `GET /people`, `/people/:id`, `/people/:id/interactions`
-- `GET /interactions`, `/followups`, `/organizations`, `/contexts`
+- `GET /interactions`, `/followups`, `/organizations`, `/contexts`, `/digest`
+- `PATCH /followups/:id`, `DELETE /followups/:id` (resolve + tombstone from `/followups`)
 - `GET /oauth/google/status`
 - `GET /sync/{gmail,gcal}/state`
 - `POST /sync/{gmail,gcal}/run` (force optional)
 
-The dashboard does not write CRM data — there's no `POST /people` UI today.
+The dashboard does not write People / Interactions / Organizations / Contexts — those mutations stay in the concierge agent. Followup `PATCH`/`DELETE` are the only CRM writes the dashboard performs.
 
 ## Configuration
 

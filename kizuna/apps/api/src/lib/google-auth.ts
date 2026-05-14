@@ -96,7 +96,7 @@ export async function getAccessToken(config: Config): Promise<string> {
       "KIZUNA_OAUTH_ENCRYPTION_KEY missing — cannot decrypt refresh token",
     );
   }
-  const refresh = decrypt(doc.refreshToken as string, config.KIZUNA_OAUTH_ENCRYPTION_KEY);
+  const refresh = decrypt(doc.refreshToken, config.KIZUNA_OAUTH_ENCRYPTION_KEY);
   const client = makeClient(config);
   client.setCredentials({ refresh_token: refresh });
   try {

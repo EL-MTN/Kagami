@@ -1,6 +1,8 @@
 import type {
   ContextRow,
+  Digest,
   Followup,
+  FollowupUpdateBody,
   Interaction,
   ListContextsQuery,
   ListFollowupsQuery,
@@ -68,6 +70,17 @@ export const api = {
   listInteractions: (q?: ListInteractionsQuery) =>
     kz<ListResp<Interaction>>(`/interactions${qs(q)}`),
   listFollowups: (q?: ListFollowupsQuery) => kz<ListResp<Followup>>(`/followups${qs(q)}`),
+  updateFollowup: (id: string, body: FollowupUpdateBody) =>
+    kz<Followup>(`/followups/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  deleteFollowup: (id: string) =>
+    kz<Followup>(`/followups/${id}`, {
+      method: "DELETE",
+    }),
+  getDigest: (window?: string) => kz<Digest>(`/digest${qs(window ? { window } : undefined)}`),
   listOrganizations: (q?: ListOrganizationsQuery) =>
     kz<ListResp<Organization>>(`/organizations${qs(q)}`),
   getOrganization: (id: string) => kz<Organization>(`/organizations/${id}`),
