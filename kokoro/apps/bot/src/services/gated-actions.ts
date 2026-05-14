@@ -3,6 +3,12 @@ import { sendEmail } from "./gmail";
 import { updateEvent, deleteEvent } from "./google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser, withBrowserLock } from "./browser";
 import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
+import {
+  createFollowupInputSchema,
+  logInteractionInputSchema,
+  resolveFollowupInputSchema,
+  updatePersonInputSchema,
+} from "../ai/tools/crm";
 import { logger } from "@kokoro/shared";
 
 /**
@@ -58,70 +64,18 @@ const browseAgentArgs = z.object({
   goal: z.string().min(1),
 });
 
-const objectIdString = z.string().regex(/^[a-f0-9]{24}$/i);
-const isoDatetime = z.string().datetime({ offset: true });
-const participantRole = z.enum(["from", "to", "cc", "attendee", "subject"]);
-const interactionChannel = z.enum(["email", "calendar", "call", "in_person", "message", "manual"]);
-
-// Length caps mirror the tool-layer schemas in `apps/bot/src/ai/tools/crm.ts`
-// — Kizuna's API does not enforce them, so the dispatcher is the only stop
-// between the LLM and the database.
-const logInteractionArgs = z.object({
-  occurredAt: isoDatetime,
-  channel: interactionChannel,
-  title: z.string().min(1).max(200),
-  body: z.string().max(8000).optional(),
-  participants: z
-    .array(z.object({ personId: objectIdString, role: participantRole }))
-    .min(1)
-    .max(50),
-  context: z.array(z.string().min(1).max(80)).max(20).optional(),
-  location: z.string().max(400).optional(),
-});
-
-const createFollowupArgs = z.object({
-  personId: objectIdString,
-  direction: z.enum(["i_owe", "they_owe"]),
-  reason: z.string().min(1).max(400),
-  dueAt: isoDatetime.optional(),
-  sourceInteractionId: objectIdString.optional(),
-});
-
-const resolveFollowupArgs = z.object({
-  followupId: objectIdString,
-  status: z.enum(["open", "done", "snoozed", "dismissed"]),
-  dueAt: isoDatetime.optional(),
-  reason: z.string().min(1).max(400).optional(),
-});
-
-const updatePersonArgs = z
-  .object({
-    personId: objectIdString,
-    displayName: z.string().min(1).optional(),
-    primaryEmail: z.string().email().optional(),
-    primaryOrgId: objectIdString.optional(),
-    relationship: z.string().max(2000).optional(),
-    emails: z.array(z.string().email().max(254)).max(20).optional(),
-    phones: z.array(z.string().min(1).max(40)).max(20).optional(),
-    handles: z.record(z.string().min(1).max(40), z.string().min(1).max(80)).optional(),
-    tags: z.array(z.string().min(1).max(80)).max(30).optional(),
-    birthday: z
-      .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.string().regex(/^--\d{2}-\d{2}$/)])
-      .optional(),
-    notes: z.string().max(8000).optional(),
-  })
-  .refine((v) => Object.keys(v).some((k) => k !== "personId"), {
-    message: "updatePerson requires at least one field to change",
-  });
-
+// CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the
+// dispatcher's re-validator and the tool's `inputSchema` are guaranteed to
+// stay in sync (Kizuna's API does not enforce the LLM-facing caps, so the
+// dispatcher schema is the only stop between the LLM and the database).
 const GATED_ARG_SCHEMAS: Record<GatedToolName, z.ZodTypeAny> = {
   sendEmail: sendEmailArgs,
   manageCalendar: manageCalendarArgs,
   browseAgent: browseAgentArgs,
-  logInteraction: logInteractionArgs,
-  createFollowup: createFollowupArgs,
-  resolveFollowup: resolveFollowupArgs,
-  updatePerson: updatePersonArgs,
+  logInteraction: logInteractionInputSchema,
+  createFollowup: createFollowupInputSchema,
+  resolveFollowup: resolveFollowupInputSchema,
+  updatePerson: updatePersonInputSchema,
 };
 
 export interface DispatchResult {
@@ -243,7 +197,7 @@ export async function dispatchGatedAction(tool: string, rawArgs: unknown): Promi
       }
 
       case "logInteraction": {
-        const args = parsed.data as z.infer<typeof logInteractionArgs>;
+        const args = parsed.data as z.infer<typeof logInteractionInputSchema>;
         logger.info(
           { channel: args.channel, participants: args.participants.length },
           "Dispatching approved logInteraction",
@@ -257,7 +211,7 @@ export async function dispatchGatedAction(tool: string, rawArgs: unknown): Promi
       }
 
       case "createFollowup": {
-        const args = parsed.data as z.infer<typeof createFollowupArgs>;
+        const args = parsed.data as z.infer<typeof createFollowupInputSchema>;
         logger.info(
           { direction: args.direction, hasDue: Boolean(args.dueAt) },
           "Dispatching approved createFollowup",
@@ -271,7 +225,7 @@ export async function dispatchGatedAction(tool: string, rawArgs: unknown): Promi
       }
 
       case "resolveFollowup": {
-        const args = parsed.data as z.infer<typeof resolveFollowupArgs>;
+        const args = parsed.data as z.infer<typeof resolveFollowupInputSchema>;
         logger.info({ status: args.status }, "Dispatching approved resolveFollowup");
         const followup = await resolveFollowup(args);
         return {
@@ -282,7 +236,7 @@ export async function dispatchGatedAction(tool: string, rawArgs: unknown): Promi
       }
 
       case "updatePerson": {
-        const args = parsed.data as z.infer<typeof updatePersonArgs>;
+        const args = parsed.data as z.infer<typeof updatePersonInputSchema>;
         logger.info(
           { fields: Object.keys(args).filter((k) => k !== "personId") },
           "Dispatching approved updatePerson",

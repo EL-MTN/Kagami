@@ -4,7 +4,7 @@ Approval primitive for risky tool calls. Mashiro can ask Goshujin-sama to tap-ap
 
 ## When to use
 
-Gate any action you wouldn't want to misfire. Coverage today: `sendEmail`, mutating `manageCalendar` actions (`update`/`delete`), `browseAgent` (the autonomous browse mode), and the Kizuna CRM writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`). Architecture is designed for further expansion.
+Gate any action you wouldn't want to misfire. Coverage today: `sendEmail`, mutating `manageCalendar` actions (`update`/`delete`), `browseAgent` (the autonomous browse mode), and the Kizuna CRM writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`). For the CRM writes the gate is **code-enforced** — each tool's `execute` body refuses direct invocation, since the underlying Kizuna client has no incidental runtime barrier the way Gmail/Calendar (OAuth) and the browser (must be configured) do. The other gated tools today rely on prompt-only guidance plus those incidental barriers; architecture is designed for further expansion.
 
 | Use directly                                 | Wrap in `requestConfirmation`                          |
 | -------------------------------------------- | ------------------------------------------------------ |

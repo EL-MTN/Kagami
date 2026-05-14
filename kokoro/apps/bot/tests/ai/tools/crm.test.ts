@@ -91,45 +91,6 @@ beforeEach(() => {
 
 const PERSON_ID = "111111111111111111111111";
 const FOLLOWUP_ID = "333333333333333333333333";
-const INTERACTION_ID = "222222222222222222222222";
-
-function personSummary() {
-  return {
-    id: PERSON_ID,
-    displayName: "Sarah Chen",
-    primaryEmail: "sarah@example.com",
-    primaryOrgId: null,
-    tags: [],
-    lastInteractionAt: null,
-  };
-}
-
-function followupSummary() {
-  return {
-    id: FOLLOWUP_ID,
-    person: personSummary(),
-    direction: "i_owe",
-    dueAt: null,
-    status: "open",
-    reasonExcerpt: "Send the deck",
-    reasonTruncated: false,
-    sourceInteractionId: null,
-  };
-}
-
-function interactionSummary() {
-  return {
-    id: INTERACTION_ID,
-    occurredAt: "2026-05-13T12:00:00.000Z",
-    channel: "call",
-    title: "Catch up",
-    bodyExcerpt: null,
-    bodyTruncated: false,
-    participants: [{ personId: PERSON_ID, role: "subject" }],
-    context: [],
-    status: "active",
-  };
-}
 
 describe("findPeople CRM tool", () => {
   it("trims query, clamps limit, and returns count/truncation metadata", async () => {
@@ -247,35 +208,16 @@ describe("listMyFollowups CRM tool", () => {
   });
 });
 
+// CRM write tools enforce the confirmation gate at the code level: each
+// tool's `execute` returns a refusal envelope instead of calling the
+// Kizuna client. The dispatcher in `services/gated-actions.ts` calls the
+// client directly after approval, so the dispatch path is unaffected.
+//
+// These tests pin that contract from the LLM-facing side. The kizuna
+// package mocks must NEVER be called from these write paths.
+
 describe("logInteraction CRM tool", () => {
-  it("forwards the input to the client and returns the projected summary", async () => {
-    const summary = interactionSummary();
-    mockLogInteraction.mockResolvedValue(summary);
-
-    const tool = createLogInteractionTool() as unknown as ExecutableTool;
-    const input = {
-      occurredAt: "2026-05-13T12:00:00.000Z",
-      channel: "call",
-      title: "Catch up",
-      body: "Spoke for ~20 min",
-      participants: [{ personId: PERSON_ID, role: "subject" }],
-      context: ["work"],
-    };
-    const result = await tool.execute(input, undefined);
-
-    expect(mockLogInteraction).toHaveBeenCalledWith(input);
-    expect(result).toEqual({ success: true, data: summary });
-    expect(tool.description).toContain("MUST be wrapped in requestConfirmation");
-  });
-
-  it("marks Kizuna 500 failures as degraded so the tool envelope fails open", async () => {
-    mockLogInteraction.mockRejectedValue(
-      new MockError("http", "Kizuna request failed with status 500", {
-        status: 500,
-        routeTemplate: "/interactions",
-      }),
-    );
-
+  it("refuses direct invocation and instructs the LLM to wrap in requestConfirmation", async () => {
     const tool = createLogInteractionTool() as unknown as ExecutableTool;
     const result = await tool.execute(
       {
@@ -287,44 +229,17 @@ describe("logInteraction CRM tool", () => {
       undefined,
     );
 
-    expect(result).toEqual({
-      success: false,
-      reason: "Kizuna request failed with status 500",
-      degraded: true,
-    });
+    expect(mockLogInteraction).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.reason).toContain("approval-gated");
+    expect(result.reason).toContain("requestConfirmation");
+    expect(result.reason).toContain('"logInteraction"');
+    expect(tool.description).toContain("MUST be wrapped in requestConfirmation");
   });
 });
 
 describe("createFollowup CRM tool", () => {
-  it("forwards the input and returns the hydrated followup summary", async () => {
-    const followup = followupSummary();
-    mockCreateFollowup.mockResolvedValue(followup);
-
-    const tool = createCreateFollowupTool() as unknown as ExecutableTool;
-    const input = {
-      personId: PERSON_ID,
-      direction: "i_owe",
-      reason: "Send the deck",
-      dueAt: "2026-06-01T12:00:00.000Z",
-    };
-    const result = await tool.execute(input, undefined);
-
-    expect(mockCreateFollowup).toHaveBeenCalledWith(input);
-    expect(result).toEqual({ success: true, data: followup });
-    expect(tool.description).toContain("MUST be wrapped in requestConfirmation");
-  });
-
-  it("surfaces a 404 from the package as a non-degraded tool failure (e.g. POST /followups 404 on a missing personId)", async () => {
-    // The package's hydratePersonAfterWrite catches person-GET KizunaClientErrors
-    // and falls back to missingPersonSummary, so a 404 reaching the tool layer
-    // here represents the followups POST itself returning 404 (e.g. unknown personId).
-    mockCreateFollowup.mockRejectedValue(
-      new MockError("http", "Kizuna request failed with status 404", {
-        status: 404,
-        routeTemplate: "/followups",
-      }),
-    );
-
+  it("refuses direct invocation and instructs the LLM to wrap in requestConfirmation", async () => {
     const tool = createCreateFollowupTool() as unknown as ExecutableTool;
     const result = await tool.execute(
       {
@@ -335,43 +250,37 @@ describe("createFollowup CRM tool", () => {
       undefined,
     );
 
-    expect(result).toEqual({
-      success: false,
-      reason: "Kizuna request failed with status 404",
-    });
+    expect(mockCreateFollowup).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.reason).toContain('"createFollowup"');
+    expect(tool.description).toContain("MUST be wrapped in requestConfirmation");
   });
 });
 
 describe("resolveFollowup CRM tool", () => {
-  it("forwards the followup id and target status and returns the updated summary", async () => {
-    const followup = { ...followupSummary(), status: "done" };
-    mockResolveFollowup.mockResolvedValue(followup);
-
+  it("refuses direct invocation and instructs the LLM to wrap in requestConfirmation", async () => {
     const tool = createResolveFollowupTool() as unknown as ExecutableTool;
     const result = await tool.execute({ followupId: FOLLOWUP_ID, status: "done" }, undefined);
 
-    expect(mockResolveFollowup).toHaveBeenCalledWith({
-      followupId: FOLLOWUP_ID,
-      status: "done",
-    });
-    expect(result).toEqual({ success: true, data: followup });
+    expect(mockResolveFollowup).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.reason).toContain('"resolveFollowup"');
   });
 });
 
 describe("updatePerson CRM tool", () => {
-  it("forwards only the supplied fields and returns the projected summary", async () => {
-    const person = personSummary();
-    mockUpdatePerson.mockResolvedValue(person);
-
+  it("refuses direct invocation and instructs the LLM to wrap in requestConfirmation", async () => {
     const tool = createUpdatePersonTool() as unknown as ExecutableTool;
-    const input = {
-      personId: PERSON_ID,
-      tags: ["close-friend"],
-      notes: "lives in Brooklyn now",
-    };
-    const result = await tool.execute(input, undefined);
+    const result = await tool.execute(
+      {
+        personId: PERSON_ID,
+        tags: ["close-friend"],
+      },
+      undefined,
+    );
 
-    expect(mockUpdatePerson).toHaveBeenCalledWith(input);
-    expect(result).toEqual({ success: true, data: person });
+    expect(mockUpdatePerson).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.reason).toContain('"updatePerson"');
   });
 });

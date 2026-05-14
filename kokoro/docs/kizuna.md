@@ -42,6 +42,8 @@ Write tools (always wrapped in `requestConfirmation`; see [confirmations.md](con
 - `resolveFollowup({ followupId, status, dueAt?, reason? })` → `PATCH /followups/:id`.
 - `updatePerson({ personId, displayName?, primaryEmail?, primaryOrgId?, relationship?, emails?, phones?, handles?, tags?, birthday?, notes? })` → `PATCH /people/:id`.
 
+The confirmation gate is **code-enforced** for these four tools: each write tool's `execute` body returns a refusal envelope instead of calling Kizuna, telling the LLM to retry through `requestConfirmation`. The gated dispatcher in `apps/bot/src/services/gated-actions.ts` invokes the `@kokoro/kizuna` client function directly after the user approves, so the dispatch path is unaffected. Input schemas live in `apps/bot/src/ai/tools/crm.ts` and are imported by the dispatcher so the tool and re-validator stay in sync.
+
 The read tools are included in `allTools`, `watcherTools`, and `routineToolsUnderWatcher` when `KIZUNA_ENABLED` is true. The write tools are included in `allTools` only — `watcherTools` and `routineToolsUnderWatcher` stay read-only by construction. All tools return sanitized degraded envelopes on disabled config, transport failures, timeouts, non-404 HTTP failures, and schema mismatches so conversation generation can continue.
 
 ## Testing
