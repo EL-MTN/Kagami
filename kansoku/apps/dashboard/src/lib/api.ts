@@ -94,4 +94,54 @@ export async function listErrors(
   return api(`/v1/errors${suffix}`);
 }
 
+export interface ServiceSummary {
+  service: string;
+  count: number;
+  errorCount: number;
+  warnCount: number;
+  lastSeen: string | null;
+  components: string[];
+}
+
+export interface ServiceSummaryResponse {
+  since: string;
+  services: ServiceSummary[];
+}
+
+export async function listServices(
+  params: { windowHours?: number } = {},
+): Promise<ServiceSummaryResponse> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) qs.set(k, String(v));
+  }
+  const suffix = qs.toString() ? `?${qs}` : "";
+  return api(`/v1/services${suffix}`);
+}
+
+export interface ServiceTimelineBucket {
+  ts: string;
+  count: number;
+  errorCount: number;
+}
+
+export interface ServiceTimelineResponse {
+  service: string;
+  since: string;
+  granularity: "minute" | "hour" | "day";
+  buckets: ServiceTimelineBucket[];
+}
+
+export async function getServiceTimeline(
+  service: string,
+  params: { windowHours?: number; granularity?: "minute" | "hour" | "day" } = {},
+): Promise<ServiceTimelineResponse> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) qs.set(k, String(v));
+  }
+  const suffix = qs.toString() ? `?${qs}` : "";
+  return api(`/v1/services/${encodeURIComponent(service)}/timeline${suffix}`);
+}
+
 export const KANSOKU_BASE = BASE;

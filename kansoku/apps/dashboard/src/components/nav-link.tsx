@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, AlertTriangle, Radio, Search, type LucideIcon } from "lucide-react";
+import { Activity, AlertTriangle, Layers, Radio, Search, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const iconMap = {
   Activity,
   AlertTriangle,
+  Layers,
   Radio,
   Search,
 } as const;

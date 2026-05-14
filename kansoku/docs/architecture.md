@@ -68,6 +68,34 @@ Each batch is `application/json` — an array of pino log objects. The schema
 Recognized special keys: `msg`, `pid`, `hostname`, `traceId`, `spanId`.
 Everything else lands under `fields` on the stored doc.
 
+### Derived metrics (Phase 6)
+
+Service-level metrics are computed on read by aggregating over the existing
+`logs` time-series collection — no second ingestion pipeline. The Phase 1
+index `{ "meta.service": 1, ts: -1 }` covers both queries; at Kagami's
+personal scale (10–100 logs/sec peak) running them on every dashboard
+fetch is cheaper than maintaining derived materialized rollups.
+
+`GET /v1/services?windowHours=24` returns one row per service over the
+window: total log count, error count (`level: error|fatal`), warn count,
+last-seen timestamp, distinct components observed.
+
+`GET /v1/services/:service/timeline?windowHours=24&granularity=hour`
+returns sparse buckets `{ ts, count, errorCount }` for that service. The
+route auto-picks a granularity when one isn't supplied: `minute` for ≤2 h,
+`day` for ≥7 d, `hour` otherwise.
+
+The dashboard `/services` page renders one card per service with three
+quick-read stats (logs, errors, error %), a volume sparkline tinted red
+when the window has any errors, an error-rate sparkline when relevant,
+and a `last seen` chip. Each card links into `/search?service=<svc>` so
+inspection is one click away. Window selection (1h / 6h / 24h / 7d) is a
+querystring switch — no client state.
+
+An explicit `metric(name, value, tags?)` push API is intentionally
+deferred until log-derived isn't enough. Counters and `durationMs`
+percentiles already live in the existing log corpus.
+
 ### Error fingerprinting (Phase 4)
 
 On every accepted batch, the ingest path runs each `level: error|fatal` doc
@@ -117,14 +145,14 @@ Phase 1 uses a shared HMAC token (`KANSOKU_INGEST_TOKEN`) carried as a request h
 
 ## Dashboard surfaces
 
-| Page          | Purpose                                                   | Backed by                             | Status  |
-| ------------- | --------------------------------------------------------- | ------------------------------------- | ------- |
-| `/`           | Overview cards + status                                   | `/health`, `/version`                 | live    |
-| `/tail`       | Live stream, filter by service / level, pause/clear       | SSE `/v1/tail` (+ ring-buffer replay) | live    |
-| `/search`     | Historical log search, time-range + service/level filters | `/v1/logs?service&level&since&until`  | live    |
-| `/traces/:id` | Single-trace waterfall, log timeline                      | `/v1/traces/:id`                      | live    |
-| `/errors`     | Grouped by fingerprint, sortable by `lastSeen` / `count`  | `/v1/errors`                          | live    |
-| `/services`   | Per-service log volume sparklines, error rate, last-seen  | aggregations                          | Phase 6 |
+| Page          | Purpose                                                   | Backed by                             | Status |
+| ------------- | --------------------------------------------------------- | ------------------------------------- | ------ |
+| `/`           | Overview cards + status                                   | `/health`, `/version`                 | live   |
+| `/tail`       | Live stream, filter by service / level, pause/clear       | SSE `/v1/tail` (+ ring-buffer replay) | live   |
+| `/search`     | Historical log search, time-range + service/level filters | `/v1/logs?service&level&since&until`  | live   |
+| `/traces/:id` | Single-trace waterfall, log timeline                      | `/v1/traces/:id`                      | live   |
+| `/errors`     | Grouped by fingerprint, sortable by `lastSeen` / `count`  | `/v1/errors`                          | live   |
+| `/services`   | Per-service log volume sparklines, error rate, last-seen  | aggregations                          | live   |
 
 ### Live-tail wire format (Phase 2)
 
@@ -195,8 +223,8 @@ across all three services.
 | 2     | Dashboard `/tail` (SSE) and `/search`                                                                   | done        |
 | 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                    | done        |
 | 4     | Error fingerprinting + `/errors` page                                                                   | done        |
-| 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                          | **this PR** |
-| 6     | Derived metrics + `/services` dashboard                                                                 |             |
+| 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                          | done        |
+| 6     | Derived metrics + `/services` dashboard                                                                 | **this PR** |
 | 7     | TTL policies, retention dial-in, optional alert webhook on new errors                                   |             |
 
 ## Open questions

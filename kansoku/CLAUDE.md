@@ -10,6 +10,12 @@ This file is the project guide. Cross-service facts live in the workspace root: 
 
 ## Status
 
+**Phase 6 — derived metrics live.** On top of Phases 0–5:
+
+- `GET /v1/services?windowHours=N` returns one row per service with `count`, `errorCount`, `warnCount`, `lastSeen`, distinct `components` — computed by `$group` over the existing `logs` index. No second ingestion pipeline.
+- `GET /v1/services/:service/timeline?windowHours=N&granularity=…` returns sparse `{ ts, count, errorCount }` buckets. Granularity auto-picks `minute`/`hour`/`day` based on the window.
+- Dashboard `/services` joins the sidebar with a per-service grid: log count, error count, error %, volume sparkline, optional error-rate sparkline, last-seen relative time. Window selection (1h / 6h / 24h / 7d) is a querystring switch. Each card links straight into `/search?service=<svc>`.
+
 **Phase 5 — full workspace rollout.** On top of Phases 0–4:
 
 - **Kokoro** — `@kokoro/shared`'s logger picks up `KANSOKU_URL` / `KANSOKU_INGEST_TOKEN` from config and installs the Kansoku shipper. The old module-level `imageData` formatter is gone (now redundant: `@kagami/logger` redacts `imageData` paths with a base64-aware censor). Grammy middleware at the top of `createBot` wraps every Telegram update in `runWithTrace`; the BlueBubbles webhook does the same per inbound request (honoring an incoming `traceparent` when present). The Kioku client (`@kokoro/memory`) and the Kizuna client (`@kokoro/kizuna`) both call `tracedFetch` so the active span propagates onto the wire.
@@ -32,12 +38,14 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │   │   │   │   ├── ingest.ts    # POST /v1/logs (HMAC token, Zod, async insert)
 │   │   │   │   ├── query.ts     # GET /v1/logs + GET /v1/traces/:id
 │   │   │   │   ├── tail.ts      # GET /v1/tail (SSE with filter + replay)
-│   │   │   │   └── errors.ts    # GET /v1/errors (fingerprinted error registry)
+│   │   │   │   ├── errors.ts    # GET /v1/errors (fingerprinted error registry)
+│   │   │   │   └── services.ts  # GET /v1/services (+ /:service/timeline) — derived metrics
 │   │   │   ├── storage/
 │   │   │   │   ├── mongo.ts     # lazy MongoClient singleton
 │   │   │   │   ├── indexes.ts   # time-series + btree indexes, 30-day TTL
 │   │   │   │   ├── logs.ts      # StoredLog type, insertLogs, queryLogs, queryTrace
-│   │   │   │   └── errors.ts    # ErrorRecord type, recordErrors, listErrors
+│   │   │   │   ├── errors.ts    # ErrorRecord type, recordErrors, listErrors
+│   │   │   │   └── metrics.ts   # serviceSummary + serviceTimeline aggregations
 │   │   │   ├── lib/
 │   │   │   │   ├── auth.ts      # constant-time x-kansoku-auth check
 │   │   │   │   ├── envelope.ts  # Zod schema + pino → StoredLog normalizer
@@ -61,6 +69,7 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │       │   │   ├── search/page.tsx      # historical filter form
 │       │   │   ├── traces/[id]/page.tsx # waterfall + flat log timeline
 │       │   │   ├── errors/page.tsx      # fingerprinted error groups
+│       │   │   ├── services/page.tsx    # per-service volume + error-rate cards
 │       │   │   └── globals.css
 │       │   ├── components/              # sidebar, nav-link, log-row, level-badge, shell
 │       │   └── lib/                     # api, format, utils (cn)

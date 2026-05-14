@@ -11,6 +11,7 @@ import { createIngestRouter } from "./routes/ingest.js";
 import { queryRouter } from "./routes/query.js";
 import { tailRouter } from "./routes/tail.js";
 import { errorsRouter } from "./routes/errors.js";
+import { servicesRouter } from "./routes/services.js";
 import { ensureIndexes } from "./storage/indexes.js";
 import { closeMongo } from "./storage/mongo.js";
 
@@ -34,6 +35,7 @@ export function createApp(opts: { ingestToken: string | undefined }): express.Ex
   app.use("/v1", queryRouter);
   app.use("/v1", tailRouter);
   app.use("/v1", errorsRouter);
+  app.use("/v1", servicesRouter);
 
   const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     if (err instanceof ZodError) {
