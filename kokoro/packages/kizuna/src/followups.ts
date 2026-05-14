@@ -79,7 +79,10 @@ export async function createFollowup(input: CreateFollowupInput): Promise<Follow
       FollowupWireSchema,
       signal,
     );
-    const person = await hydratePersonForFollowup(wire, signal);
+    // The write already landed — never let hydration failure (timeout,
+    // transport, etc.) throw past this point, or the caller will see a
+    // failure for a write that succeeded and may retry it.
+    const person = await hydratePersonAfterWrite(wire, signal);
     return followupSummary(wire, person);
   });
 }
@@ -97,12 +100,13 @@ export async function resolveFollowup(input: ResolveFollowupInput): Promise<Foll
       FollowupWireSchema,
       signal,
     );
-    const person = await hydratePersonForFollowup(wire, signal);
+    // The patch already landed — same reasoning as createFollowup above.
+    const person = await hydratePersonAfterWrite(wire, signal);
     return followupSummary(wire, person);
   });
 }
 
-async function hydratePersonForFollowup(
+async function hydratePersonAfterWrite(
   wire: FollowupWire,
   signal: AbortSignal,
 ): Promise<PersonSummary> {
@@ -110,10 +114,10 @@ async function hydratePersonForFollowup(
     const person = await getPersonWithSignal(wire.personId, signal);
     return personSummary(person);
   } catch (err) {
-    if (err instanceof KizunaClientError && err.status === 404) {
+    if (err instanceof KizunaClientError) {
       logger.warn(
         { kind: err.kind, routeTemplate: err.routeTemplate, status: err.status },
-        "kizuna followup person missing",
+        "kizuna followup person hydration failed after write — falling back to placeholder",
       );
       return missingPersonSummary(wire.personId);
     }

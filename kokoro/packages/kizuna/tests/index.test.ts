@@ -407,6 +407,26 @@ describe("createFollowup", () => {
     expect(result.direction).toBe("i_owe");
     expect(result.reasonExcerpt).toBe("Send the deck");
   });
+
+  it("falls back to the missing-person placeholder when the post-write hydration GET fails (so a successful write never surfaces as a thrown error)", async () => {
+    server.use(
+      http.post(`${KIZUNA_BASE}/followups`, () =>
+        HttpResponse.json(followup({ reason: "Send the deck" }), { status: 201 }),
+      ),
+      http.get(`${KIZUNA_BASE}/people/111111111111111111111111`, () =>
+        HttpResponse.json({ error: { code: "internal" } }, { status: 500 }),
+      ),
+    );
+
+    const result = await createFollowup({
+      personId: "111111111111111111111111",
+      direction: "i_owe",
+      reason: "Send the deck",
+    });
+
+    expect(result.person.displayName).toBe("Unknown person");
+    expect(result.reasonExcerpt).toBe("Send the deck");
+  });
 });
 
 describe("resolveFollowup", () => {

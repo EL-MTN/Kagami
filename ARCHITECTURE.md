@@ -25,7 +25,7 @@ Kagami ("mirror") is a personal-AI workspace housing three TypeScript projects i
 
       ┌──────────────────────────────┐
       │            Kizuna            │  personal CRM
-      │  api.kizuna.localhost (API)  │  read-only CRM API for Kokoro
+      │  api.kizuna.localhost (API)  │  CRM API for Kokoro (read + confirmation-gated writes)
       │  kizuna.localhost (Next.js)  │
       │  MongoDB                     │
       └──────────────────────────────┘
@@ -35,14 +35,14 @@ Dashboard and API HTTP entry points are served as HTTPS named URLs by [Portless]
 
 ## How they relate
 
-| Edge                  | Direction               | Mechanism                                                                                        |
-| --------------------- | ----------------------- | ------------------------------------------------------------------------------------------------ |
-| Kokoro → Kioku        | runtime HTTP dependency | REST to `KIOKU_URL`, which defaults to the Portless API host `https://api.kioku.localhost`.      |
-| Kokoro → Kizuna       | runtime HTTP dependency | REST to `KIZUNA_URL`, which defaults to `https://api.kizuna.localhost`, for read-only CRM tools. |
-| Kizuna → Kioku/Kokoro | none                    | exposes API; never initiates outbound calls to siblings                                          |
-| Kioku → anything      | none (pull-only)        | exposes API; never initiates outbound to siblings                                                |
+| Edge                  | Direction               | Mechanism                                                                                                                                                                                                                                                                       |
+| --------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kokoro → Kioku        | runtime HTTP dependency | REST to `KIOKU_URL`, which defaults to the Portless API host `https://api.kioku.localhost`.                                                                                                                                                                                     |
+| Kokoro → Kizuna       | runtime HTTP dependency | REST to `KIZUNA_URL`, which defaults to `https://api.kizuna.localhost`, for CRM tools — reads call directly; writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) must be wrapped in `requestConfirmation` and only fire after the user taps Approve. |
+| Kizuna → Kioku/Kokoro | none                    | exposes API; never initiates outbound calls to siblings                                                                                                                                                                                                                         |
+| Kioku → anything      | none (pull-only)        | exposes API; never initiates outbound to siblings                                                                                                                                                                                                                               |
 
-There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open at the client (`KiokuClientError` is caught by the AI tool layer; chat continues degraded). Closed-session transcript ingest is retried by Kokoro's 5-min sweeper; one-off `rememberFact` and location writes fail open but are not queued for retry today. The Kokoro → Kizuna edge is also fail-open at the CRM tool layer, but read-only and without retries. `dev-all.sh` boots selected apps together under Turbo.
+There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open at the client (`KiokuClientError` is caught by the AI tool layer; chat continues degraded). Closed-session transcript ingest is retried by Kokoro's 5-min sweeper; one-off `rememberFact` and location writes fail open but are not queued for retry today. The Kokoro → Kizuna edge is also fail-open at the CRM tool layer (without retries). Reads (`findPeople`, `getPersonContext`, `recentInteractions`, `listMyFollowups`) call Kizuna directly; writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are listed in `GATED_TOOL_NAMES` and must be wrapped in `requestConfirmation` so they only fire after the user taps Approve. `dev-all.sh` boots selected apps together under Turbo.
 
 ## Shared conventions
 
@@ -126,7 +126,7 @@ An MCP transport at `/mcp` exposes the same operations as 7 tools (`recall`, `qu
 
 ## Kokoro — Telegram AI agent
 
-**Role.** A personal conversational AI agent fronted by Telegram (with optional iMessage via BlueBubbles). Maintains personality from a `soul.md` file and supports tool-calling, scheduled routines, and stateful watchers. Persistent memory is delegated to Kioku; read-only relationship context is delegated to Kizuna.
+**Role.** A personal conversational AI agent fronted by Telegram (with optional iMessage via BlueBubbles). Maintains personality from a `soul.md` file and supports tool-calling, scheduled routines, and stateful watchers. Persistent memory is delegated to Kioku; relationship context is delegated to Kizuna (reads are direct, writes are confirmation-gated).
 
 **Layout.**
 
@@ -136,7 +136,7 @@ apps/dashboard    Next.js 15 dashboard (https://kokoro.localhost)
 packages/shared   Zod config, logger, platform types
 packages/db       Mongoose models, GridFS for images
 packages/memory   Kioku HTTP client + transcript glue
-packages/kizuna   Kizuna read-only CRM client + compact projections
+packages/kizuna   Kizuna CRM client (read + confirmation-gated writes) + compact projections
 packages/test-utils
 ```
 
@@ -160,17 +160,21 @@ packages/test-utils
 
 Failure mode is **fail-open** via `KiokuClientError`: chat continues degraded. Closed-session transcript ingest has durable retry through `apps/bot/src/scheduler/maintenance.ts`, which runs a 5-minute sweeper (`sweepPendingIngests`, `sweepStaleActiveSessions`). One-off `rememberFact` and location writes are not queued for retry today.
 
-**Kizuna client.** Read-only CRM calls live in `packages/kizuna/src/` and are exposed to the LLM through `apps/bot/src/ai/tools/crm.ts`. Base URL comes from `KIZUNA_URL` (default `https://api.kizuna.localhost`) and the tool palette is gated by `KIZUNA_ENABLED` (default `true`):
+**Kizuna client.** CRM calls live in `packages/kizuna/src/` and are exposed to the LLM through `apps/bot/src/ai/tools/crm.ts`. Base URL comes from `KIZUNA_URL` (default `https://api.kizuna.localhost`) and the tool palette is gated by `KIZUNA_ENABLED` (default `true`):
 
-| Method | Path                                            | Used for                                   | Timeout                   |
-| ------ | ----------------------------------------------- | ------------------------------------------ | ------------------------- |
-| GET    | `/people?identityQuery=...`                     | bot tool: identity-focused people search   | shared 10 s call deadline |
-| GET    | `/people/:id`                                   | bot tool: person profile context           | shared 10 s call deadline |
-| GET    | `/interactions?personId=...&sort=occurredAt:-1` | bot tool: recent interactions              | shared 10 s call deadline |
-| GET    | `/people/:id/interactions?sort=occurredAt:-1`   | person-context hydration                   | shared 10 s call deadline |
-| GET    | `/followups?sort=duePriority:1`                 | bot tool: followups, with person hydration | shared 10 s call deadline |
+| Method | Path                                            | Used for                                         | Timeout                   |
+| ------ | ----------------------------------------------- | ------------------------------------------------ | ------------------------- |
+| GET    | `/people?identityQuery=...`                     | bot tool: identity-focused people search         | shared 10 s call deadline |
+| GET    | `/people/:id`                                   | bot tool: person profile context                 | shared 10 s call deadline |
+| GET    | `/interactions?personId=...&sort=occurredAt:-1` | bot tool: recent interactions                    | shared 10 s call deadline |
+| GET    | `/people/:id/interactions?sort=occurredAt:-1`   | person-context hydration                         | shared 10 s call deadline |
+| GET    | `/followups?sort=duePriority:1`                 | bot tool: followups, with person hydration       | shared 10 s call deadline |
+| POST   | `/interactions`                                 | bot tool: `logInteraction` (confirmation-gated)  | shared 10 s call deadline |
+| POST   | `/followups`                                    | bot tool: `createFollowup` (confirmation-gated)  | shared 10 s call deadline |
+| PATCH  | `/followups/:id`                                | bot tool: `resolveFollowup` (confirmation-gated) | shared 10 s call deadline |
+| PATCH  | `/people/:id`                                   | bot tool: `updatePerson` (confirmation-gated)    | shared 10 s call deadline |
 
-Failure mode is **fail-open** via `KizunaClientError`: CRM tools return sanitized degraded results and chat continues. There is no auth header; Kizuna is treated as a single-user localhost service.
+Reads are called directly; writes are listed in `GATED_TOOL_NAMES` and must be wrapped in `requestConfirmation` (Telegram tap-to-approve, iMessage YES/NO). Failure mode is **fail-open** via `KizunaClientError`: read tools return sanitized degraded results and chat continues; the gated dispatcher surfaces failures back to the user via the prompt edit and acknowledgment turn. There is no auth header; Kizuna is treated as a single-user localhost service.
 
 **Storage.** MongoDB models: `Conversation`, `Routine`, `Watcher`, `Reminder`, `PendingConfirmation`, `SchedulerState`, `TokenUsage`, `LocationHistory`. GridFS for images.
 
@@ -178,13 +182,13 @@ Failure mode is **fail-open** via `KizunaClientError`: CRM tools return sanitize
 
 **Auth model.** Single-user-per-deployment; Telegram user IDs gated via `ALLOWED_USER_IDS`. Google access uses a long-lived refresh token from env (not DB).
 
-**Coupling notes.** Heavily coupled to Kioku (file references in `packages/memory/`, `apps/bot/src/ai/tools/memory.ts`, `apps/bot/src/services/location.ts`, `apps/bot/src/scheduler/maintenance.ts`). Read-only coupled to Kizuna through `packages/kizuna/` and `apps/bot/src/ai/tools/crm.ts`.
+**Coupling notes.** Heavily coupled to Kioku (file references in `packages/memory/`, `apps/bot/src/ai/tools/memory.ts`, `apps/bot/src/services/location.ts`, `apps/bot/src/scheduler/maintenance.ts`). Coupled to Kizuna through `packages/kizuna/` and `apps/bot/src/ai/tools/crm.ts` — reads call Kizuna directly; writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are dispatched from `apps/bot/src/services/gated-actions.ts` only after user approval.
 
 ---
 
 ## Kizuna — personal CRM
 
-**Role.** Tracks people, organizations, interactions, and follow-ups. Auto-ingests from Google Gmail and Calendar to populate the relationship graph. The API is consumed by the dashboard and by Kokoro's read-only CRM tools.
+**Role.** Tracks people, organizations, interactions, and follow-ups. Auto-ingests from Google Gmail and Calendar to populate the relationship graph. The API is consumed by the dashboard and by Kokoro's CRM tools (reads call directly; writes go through Kokoro's confirmation primitive).
 
 **Layout.**
 
@@ -239,6 +243,6 @@ There is no ordering between the three projects — see "How they relate" above.
 
 ## Observed gaps and likely future edges
 
-- **Kokoro → Kizuna writes** are still a likely future edge. Read-only CRM lookup exists today; logging Telegram/iMessage interactions or creating followups from Kokoro would require a separate write-path design.
+- **Kokoro → Kizuna writes** are now live behind the confirmation primitive (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`). Remaining write candidates — bulk imports, organization edits, ingest replays from Kokoro — are still gaps.
 - **Kizuna ↔ Kioku** would let Kizuna's interaction timeline feed Kioku's fact store, but again no code path exists today.
 - Kioku and Kizuna both implement Google OAuth independently; a shared token store is a candidate for consolidation but is not implemented.

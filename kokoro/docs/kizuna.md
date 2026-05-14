@@ -48,8 +48,9 @@ The read tools are included in `allTools`, `watcherTools`, and `routineToolsUnde
 
 Package tests live in `packages/kizuna/tests/` and use MSW to assert:
 
-- GET-only requests and no auth header.
-- URL mapping for `identityQuery`, `occurredAfter`, `occurredAt:-1`, and `duePriority:1`.
+- No auth header on any request.
+- URL mapping for `identityQuery`, `occurredAfter`, `occurredAt:-1`, and `duePriority:1` (reads).
+- Method + body shape for `POST /interactions`, `POST /followups`, `PATCH /followups/:id`, and `PATCH /people/:id` (writes).
 - Compact projections and excerpt truncation.
 - Followup hydration de-duplication, order preservation, and missing-person fallback.
 - `KizunaClientError` classification and redaction.

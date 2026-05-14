@@ -63,11 +63,14 @@ const isoDatetime = z.string().datetime({ offset: true });
 const participantRole = z.enum(["from", "to", "cc", "attendee", "subject"]);
 const interactionChannel = z.enum(["email", "calendar", "call", "in_person", "message", "manual"]);
 
+// Length caps mirror the tool-layer schemas in `apps/bot/src/ai/tools/crm.ts`
+// — Kizuna's API does not enforce them, so the dispatcher is the only stop
+// between the LLM and the database.
 const logInteractionArgs = z.object({
   occurredAt: isoDatetime,
   channel: interactionChannel,
-  title: z.string().min(1),
-  body: z.string().optional(),
+  title: z.string().min(1).max(200),
+  body: z.string().max(8000).optional(),
   participants: z.array(z.object({ personId: objectIdString, role: participantRole })).min(1),
   context: z.array(z.string()).optional(),
   location: z.string().optional(),
@@ -76,7 +79,7 @@ const logInteractionArgs = z.object({
 const createFollowupArgs = z.object({
   personId: objectIdString,
   direction: z.enum(["i_owe", "they_owe"]),
-  reason: z.string().min(1),
+  reason: z.string().min(1).max(400),
   dueAt: isoDatetime.optional(),
   sourceInteractionId: objectIdString.optional(),
 });
@@ -85,7 +88,7 @@ const resolveFollowupArgs = z.object({
   followupId: objectIdString,
   status: z.enum(["open", "done", "snoozed", "dismissed"]),
   dueAt: isoDatetime.optional(),
-  reason: z.string().min(1).optional(),
+  reason: z.string().min(1).max(400).optional(),
 });
 
 const updatePersonArgs = z
@@ -94,7 +97,7 @@ const updatePersonArgs = z
     displayName: z.string().min(1).optional(),
     primaryEmail: z.string().email().optional(),
     primaryOrgId: objectIdString.optional(),
-    relationship: z.string().optional(),
+    relationship: z.string().max(2000).optional(),
     emails: z.array(z.string().email()).optional(),
     phones: z.array(z.string()).optional(),
     handles: z.record(z.string(), z.string()).optional(),
@@ -102,7 +105,7 @@ const updatePersonArgs = z
     birthday: z
       .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.string().regex(/^--\d{2}-\d{2}$/)])
       .optional(),
-    notes: z.string().optional(),
+    notes: z.string().max(8000).optional(),
   })
   .refine((v) => Object.keys(v).some((k) => k !== "personId"), {
     message: "updatePerson requires at least one field to change",

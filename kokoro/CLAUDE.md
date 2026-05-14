@@ -18,7 +18,7 @@ kokoro/
 │   ├── shared/       # config, logger, markdown, types
 │   ├── db/           # MongoDB connection, models, GridFS
 │   ├── memory/       # Kioku HTTP client + transcript glue + sweeper
-│   ├── kizuna/       # Kizuna read-only CRM client + compact projections
+│   ├── kizuna/       # Kizuna CRM client (read + confirmation-gated writes) + compact projections
 │   └── test-utils/   # Vitest harness (withTestDb, fakeAdapter, MSW)
 ├── scripts/          # Auth scripts
 ├── vitest.config.ts  # multi-project vitest config (one per package)
@@ -65,7 +65,7 @@ The dashboard dev server runs under [Portless](https://github.com/vercel-labs/po
        ↑
 @kokoro/memory  ← Kioku client + conversation→transcript glue + session-close ingest
        ↑
-@kokoro/kizuna  ← Kizuna read-only CRM client + compact LLM-facing projections
+@kokoro/kizuna  ← Kizuna CRM client (reads + confirmation-gated writes) + compact LLM-facing projections
        ↑
 @kokoro/bot     ← AI layer, tools, platform adapter, schedulers
 @kokoro/dashboard ← Next.js (routine management, observability)
@@ -98,7 +98,7 @@ See `/docs` for:
 - [telegram.md](docs/telegram.md) — platform adapter, bot handlers, rate limiting
 - [ai-layer.md](docs/ai-layer.md) — LLM integration, tools, image generation, context assembly
 - [memory.md](docs/memory.md) — Kioku integration: read/write paths, session-close ingest, sweeper, conversation lifecycle
-- [kizuna.md](docs/kizuna.md) — Kizuna CRM client, compact projections, read-only tool wiring
+- [kizuna.md](docs/kizuna.md) — Kizuna CRM client, compact projections, read + confirmation-gated write tool wiring
 - [watchers.md](docs/watchers.md) — scheduled detection jobs (read-only, stateful, trigger-only notifications)
 - [confirmations.md](docs/confirmations.md) — approval primitive for gated tool calls (tap-to-approve actions)
 - [imessage.md](docs/imessage.md) — iMessage adapter via BlueBubbles (multi-platform setup, webhook, YES/NO confirmation UX)
