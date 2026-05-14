@@ -52,13 +52,15 @@ The Kagami root is the single git repo. The three project subtrees were imported
 ```
 Kokoro ──HTTP──► Kioku            Kokoro reads/writes facts via REST.
                                   KIOKU_URL defaults to https://api.kioku.localhost.
-Kokoro ──HTTP──► Kizuna           Kokoro reads CRM context via read-only REST tools.
+Kokoro ──HTTP──► Kizuna           Kokoro reads CRM context directly; writes
+                                  (logInteraction/createFollowup/resolveFollowup/
+                                  updatePerson) are confirmation-gated.
                                   KIZUNA_URL defaults to https://api.kizuna.localhost.
 Kizuna ────X──── Kioku/Kokoro     No outbound code references to sibling services.
 Kioku  ────X──── anything         Pull-only by design; never initiates outbound to siblings.
 ```
 
-`dev-all.sh` boots all three in parallel — there is no startup ordering between them. Kokoro's Kioku client is fail-open (`KiokuClientError` is caught at the AI tool layer; chat continues degraded), and any pending writes are retried by Kokoro's 5-min sweeper. Kokoro's Kizuna CRM tools are also fail-open, but read-only.
+`dev-all.sh` boots all three in parallel — there is no startup ordering between them. Kokoro's Kioku client is fail-open (`KiokuClientError` is caught at the AI tool layer; chat continues degraded), and any pending writes are retried by Kokoro's 5-min sweeper. Kokoro's Kizuna CRM read tools are also fail-open at the tool layer; write tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) only fire from Kokoro's gated dispatcher after the user taps Approve.
 
 See `ARCHITECTURE.md` for the full edge table, endpoint surface, and per-project env-var cheat sheet.
 

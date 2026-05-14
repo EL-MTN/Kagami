@@ -2,6 +2,13 @@ import { z } from "zod";
 import { sendEmail } from "./gmail";
 import { updateEvent, deleteEvent } from "./google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser, withBrowserLock } from "./browser";
+import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
+import {
+  createFollowupInputSchema,
+  logInteractionInputSchema,
+  resolveFollowupInputSchema,
+  updatePersonInputSchema,
+} from "../ai/tools/crm";
 import { logger } from "@kokoro/shared";
 
 /**
@@ -14,7 +21,15 @@ import { logger } from "@kokoro/shared";
  *   2. add a Zod schema entry in `GATED_ARG_SCHEMAS`
  *   3. add a case in `dispatchGatedAction`
  */
-export const GATED_TOOL_NAMES = ["sendEmail", "manageCalendar", "browseAgent"] as const;
+export const GATED_TOOL_NAMES = [
+  "sendEmail",
+  "manageCalendar",
+  "browseAgent",
+  "logInteraction",
+  "createFollowup",
+  "resolveFollowup",
+  "updatePerson",
+] as const;
 export type GatedToolName = (typeof GATED_TOOL_NAMES)[number];
 
 export function isGatedTool(name: string): name is GatedToolName {
@@ -49,10 +64,18 @@ const browseAgentArgs = z.object({
   goal: z.string().min(1),
 });
 
+// CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the
+// dispatcher's re-validator and the tool's `inputSchema` are guaranteed to
+// stay in sync (Kizuna's API does not enforce the LLM-facing caps, so the
+// dispatcher schema is the only stop between the LLM and the database).
 const GATED_ARG_SCHEMAS: Record<GatedToolName, z.ZodTypeAny> = {
   sendEmail: sendEmailArgs,
   manageCalendar: manageCalendarArgs,
   browseAgent: browseAgentArgs,
+  logInteraction: logInteractionInputSchema,
+  createFollowup: createFollowupInputSchema,
+  resolveFollowup: resolveFollowupInputSchema,
+  updatePerson: updatePersonInputSchema,
 };
 
 export interface DispatchResult {
@@ -171,6 +194,59 @@ export async function dispatchGatedAction(tool: string, rawArgs: unknown): Promi
           // override the default 2-min circuit breaker.
           { timeoutMs: 10 * 60 * 1000, label: "browseAgent" },
         );
+      }
+
+      case "logInteraction": {
+        const args = parsed.data as z.infer<typeof logInteractionInputSchema>;
+        logger.info(
+          { channel: args.channel, participants: args.participants.length },
+          "Dispatching approved logInteraction",
+        );
+        const interaction = await logInteraction(args);
+        return {
+          success: true,
+          summary: `interaction logged: ${args.title}`,
+          detail: { interaction },
+        };
+      }
+
+      case "createFollowup": {
+        const args = parsed.data as z.infer<typeof createFollowupInputSchema>;
+        logger.info(
+          { direction: args.direction, hasDue: Boolean(args.dueAt) },
+          "Dispatching approved createFollowup",
+        );
+        const followup = await createFollowup(args);
+        return {
+          success: true,
+          summary: `followup created for ${followup.person.displayName}`,
+          detail: { followup },
+        };
+      }
+
+      case "resolveFollowup": {
+        const args = parsed.data as z.infer<typeof resolveFollowupInputSchema>;
+        logger.info({ status: args.status }, "Dispatching approved resolveFollowup");
+        const followup = await resolveFollowup(args);
+        return {
+          success: true,
+          summary: `followup ${args.status}`,
+          detail: { followup },
+        };
+      }
+
+      case "updatePerson": {
+        const args = parsed.data as z.infer<typeof updatePersonInputSchema>;
+        logger.info(
+          { fields: Object.keys(args).filter((k) => k !== "personId") },
+          "Dispatching approved updatePerson",
+        );
+        const person = await updatePerson(args);
+        return {
+          success: true,
+          summary: `updated ${person.displayName}`,
+          detail: { person },
+        };
       }
     }
   } catch (error) {

@@ -31,10 +31,17 @@ vi.mock("../../src/services/browser", () => ({
   resetBrowser: vi.fn(),
   withBrowserLock: vi.fn(<T>(fn: () => Promise<T>) => fn()),
 }));
+vi.mock("@kokoro/kizuna", () => ({
+  logInteraction: vi.fn(),
+  createFollowup: vi.fn(),
+  resolveFollowup: vi.fn(),
+  updatePerson: vi.fn(),
+}));
 
 import { sendEmail } from "../../src/services/gmail";
 import { updateEvent, deleteEvent } from "../../src/services/google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser } from "../../src/services/browser";
+import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
 import {
   dispatchGatedAction,
   isGatedTool,
@@ -48,6 +55,10 @@ beforeEach(() => {
   vi.mocked(acquireBrowser).mockReset();
   vi.mocked(releaseBrowser).mockReset();
   vi.mocked(resetBrowser).mockReset();
+  vi.mocked(logInteraction).mockReset();
+  vi.mocked(createFollowup).mockReset();
+  vi.mocked(resolveFollowup).mockReset();
+  vi.mocked(updatePerson).mockReset();
 });
 
 afterEach(() => {
@@ -67,10 +78,18 @@ describe("isGatedTool", () => {
     expect(isGatedTool("")).toBe(false);
   });
 
-  it("currently gates exactly sendEmail / manageCalendar / browseAgent", () => {
+  it("currently gates the Google + browser + Kizuna write tools", () => {
     // Pinned to surface intent — adding a new gated tool should update this list
     // alongside the GATED_TOOL_NAMES literal and the dispatcher switch.
-    expect([...GATED_TOOL_NAMES].sort()).toEqual(["browseAgent", "manageCalendar", "sendEmail"]);
+    expect([...GATED_TOOL_NAMES].sort()).toEqual([
+      "browseAgent",
+      "createFollowup",
+      "logInteraction",
+      "manageCalendar",
+      "resolveFollowup",
+      "sendEmail",
+      "updatePerson",
+    ]);
   });
 });
 
@@ -302,5 +321,156 @@ describe("dispatchGatedAction — browseAgent", () => {
     expect(result.summary).toBe("failed: could not start browser");
     expect(vi.mocked(releaseBrowser)).not.toHaveBeenCalled();
     expect(vi.mocked(resetBrowser)).not.toHaveBeenCalled();
+  });
+});
+
+describe("dispatchGatedAction — CRM writes", () => {
+  const PERSON_ID = "111111111111111111111111";
+  const FOLLOWUP_ID = "333333333333333333333333";
+
+  it("logInteraction routes to @kokoro/kizuna's logInteraction and summarizes by title", async () => {
+    vi.mocked(logInteraction).mockResolvedValue({
+      id: "222222222222222222222222",
+      occurredAt: "2026-05-13T12:00:00.000Z",
+      channel: "call",
+      title: "Catch up",
+      bodyExcerpt: null,
+      bodyTruncated: false,
+      participants: [{ personId: PERSON_ID, role: "subject" }],
+      context: [],
+      status: "active",
+    });
+
+    const result = await dispatchGatedAction("logInteraction", {
+      occurredAt: "2026-05-13T12:00:00.000Z",
+      channel: "call",
+      title: "Catch up",
+      participants: [{ personId: PERSON_ID, role: "subject" }],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe("interaction logged: Catch up");
+    expect(vi.mocked(logInteraction)).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects logInteraction with empty participants", async () => {
+    const result = await dispatchGatedAction("logInteraction", {
+      occurredAt: "2026-05-13T12:00:00.000Z",
+      channel: "call",
+      title: "Catch up",
+      participants: [],
+    });
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_args");
+    expect(vi.mocked(logInteraction)).not.toHaveBeenCalled();
+  });
+
+  it("createFollowup routes to the client and summarizes by the hydrated person's name", async () => {
+    vi.mocked(createFollowup).mockResolvedValue({
+      id: FOLLOWUP_ID,
+      person: {
+        id: PERSON_ID,
+        displayName: "Sarah Chen",
+        primaryEmail: null,
+        primaryOrgId: null,
+        tags: [],
+        lastInteractionAt: null,
+      },
+      direction: "i_owe",
+      dueAt: null,
+      status: "open",
+      reasonExcerpt: "Send the deck",
+      reasonTruncated: false,
+      sourceInteractionId: null,
+    });
+
+    const result = await dispatchGatedAction("createFollowup", {
+      personId: PERSON_ID,
+      direction: "i_owe",
+      reason: "Send the deck",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe("followup created for Sarah Chen");
+  });
+
+  it("rejects createFollowup with a malformed personId", async () => {
+    const result = await dispatchGatedAction("createFollowup", {
+      personId: "not-an-objectid",
+      direction: "i_owe",
+      reason: "x",
+    });
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_args");
+  });
+
+  it("resolveFollowup forwards the target status and summarizes by it", async () => {
+    vi.mocked(resolveFollowup).mockResolvedValue({
+      id: FOLLOWUP_ID,
+      person: {
+        id: PERSON_ID,
+        displayName: "Sarah Chen",
+        primaryEmail: null,
+        primaryOrgId: null,
+        tags: [],
+        lastInteractionAt: null,
+      },
+      direction: "i_owe",
+      dueAt: null,
+      status: "done",
+      reasonExcerpt: "Send the deck",
+      reasonTruncated: false,
+      sourceInteractionId: null,
+    });
+
+    const result = await dispatchGatedAction("resolveFollowup", {
+      followupId: FOLLOWUP_ID,
+      status: "done",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe("followup done");
+    expect(vi.mocked(resolveFollowup)).toHaveBeenCalledWith({
+      followupId: FOLLOWUP_ID,
+      status: "done",
+    });
+  });
+
+  it("updatePerson requires at least one field beyond personId", async () => {
+    const result = await dispatchGatedAction("updatePerson", { personId: PERSON_ID });
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_args");
+    expect(vi.mocked(updatePerson)).not.toHaveBeenCalled();
+  });
+
+  it("updatePerson routes to the client and summarizes by displayName", async () => {
+    vi.mocked(updatePerson).mockResolvedValue({
+      id: PERSON_ID,
+      displayName: "Sarah Chen",
+      primaryEmail: null,
+      primaryOrgId: null,
+      tags: ["close-friend"],
+      lastInteractionAt: null,
+    });
+
+    const result = await dispatchGatedAction("updatePerson", {
+      personId: PERSON_ID,
+      tags: ["close-friend"],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe("updated Sarah Chen");
+  });
+
+  it("propagates client errors as a failed dispatch", async () => {
+    vi.mocked(logInteraction).mockRejectedValue(new Error("kizuna 500"));
+    const result = await dispatchGatedAction("logInteraction", {
+      occurredAt: "2026-05-13T12:00:00.000Z",
+      channel: "call",
+      title: "Catch up",
+      participants: [{ personId: PERSON_ID, role: "subject" }],
+    });
+    expect(result.success).toBe(false);
+    expect(result.summary).toBe("failed: kizuna 500");
   });
 });

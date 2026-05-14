@@ -11,7 +11,7 @@ import {
 import { createManageWatchersTool, reportWatcherResult } from "./watchers";
 import { createRequestConfirmationTool, createCancelConfirmationTool } from "./confirmations";
 import { createSearchMemoryTool, createRememberFactTool } from "./memory";
-import { createCrmTools } from "./crm";
+import { createCrmTools, createCrmWriteTools } from "./crm";
 import { MAX_ROUTINE_DEPTH } from "../../services/routine-executor";
 import { config } from "@kokoro/shared";
 import type { ToolSet } from "ai";
@@ -77,10 +77,11 @@ export function allTools(ctx: ToolContext) {
 
   // Approval-gated wrappers. Registered when any gated underlying tool is
   // available — sendEmail/manageCalendar require Google OAuth, browseAgent
-  // requires the browser. The wrapper's enum is the same in both cases; the
-  // dispatcher fails at runtime if a tool is selected whose backing service
-  // isn't configured. Behavioral guidance steers the LLM correctly.
-  if (config.GOOGLE_OAUTH_CLIENT_ID || config.BROWSER_ENABLED) {
+  // requires the browser, CRM writes require KIZUNA_ENABLED. The wrapper's
+  // enum is the same in all cases; the dispatcher fails at runtime if a
+  // tool is selected whose backing service isn't configured. Behavioral
+  // guidance steers the LLM correctly.
+  if (config.GOOGLE_OAUTH_CLIENT_ID || config.BROWSER_ENABLED || config.KIZUNA_ENABLED) {
     tools.requestConfirmation = createRequestConfirmationTool(ctx.chatId, ctx.adapter);
     tools.cancelConfirmation = createCancelConfirmationTool(ctx.chatId, ctx.adapter, ctx.userId);
   }
@@ -94,6 +95,7 @@ export function allTools(ctx: ToolContext) {
 
   if (config.KIZUNA_ENABLED) {
     Object.assign(tools, createCrmTools());
+    Object.assign(tools, createCrmWriteTools());
   }
 
   // Only provide useRoutine when below max depth (prevents infinite recursion)
