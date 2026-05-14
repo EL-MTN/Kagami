@@ -179,10 +179,12 @@ oldest-first. The dashboard's `/traces/[id]` page groups by `spanId`, walks
 parent-child links into a tree, and renders a waterfall (offset + duration
 proportional to the total trace window) above a flat log timeline.
 
-Phase 3 wires the middleware into Kioku and Kansoku itself; Kokoro and
-Kizuna get it during the Phase 5 rollout sweep, at which point Kokoro's
-`fetch` calls to Kioku/Kizuna are swapped for `tracedFetch` so a Telegram
-message can be followed end-to-end across services.
+Phase 3 wires the middleware into Kioku and Kansoku itself; Phase 5
+extends it to Kokoro (Grammy middleware per Telegram update, the same
+trace wrap on the BlueBubbles webhook) and Kizuna (Express middleware in
+`createApp`). Kokoro's Kioku and Kizuna HTTP clients now use `tracedFetch`
+from `@kokoro/shared`, so a Telegram message can be followed end-to-end
+across all three services.
 
 ## Phased delivery
 
@@ -192,8 +194,8 @@ message can be followed end-to-end across services.
 | 1     | Mongo time-series setup, `/v1/logs` ingest, Zod envelope, kansoku-stream shipper, wire Kioku end-to-end | done        |
 | 2     | Dashboard `/tail` (SSE) and `/search`                                                                   | done        |
 | 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                    | done        |
-| 4     | Error fingerprinting + `/errors` page                                                                   | **this PR** |
-| 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                          |             |
+| 4     | Error fingerprinting + `/errors` page                                                                   | done        |
+| 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                          | **this PR** |
 | 6     | Derived metrics + `/services` dashboard                                                                 |             |
 | 7     | TTL policies, retention dial-in, optional alert webhook on new errors                                   |             |
 

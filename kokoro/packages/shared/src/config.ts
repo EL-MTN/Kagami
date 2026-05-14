@@ -36,6 +36,11 @@ const baseSchema = z.object({
   KIZUNA_URL: z.string().url().default("https://api.kizuna.localhost"),
   KIZUNA_ENABLED: optionalEnabledFlag,
 
+  // Kansoku observability — opt-in via env. Both must be set together; either
+  // missing leaves the logger stdout-only. The shipper itself is fail-open.
+  KANSOKU_URL: z.string().url().optional(),
+  KANSOKU_INGEST_TOKEN: z.string().optional(),
+
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   GOOGLE_OAUTH_REFRESH_TOKEN: z.string().optional(),

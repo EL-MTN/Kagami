@@ -1,5 +1,5 @@
 import { Bot } from "grammy";
-import { config, logger } from "@kokoro/shared";
+import { config, logger, newTraceContext, runWithTrace } from "@kokoro/shared";
 import {
   clearConversation,
   getPendingConfirmation,
@@ -49,6 +49,13 @@ export function createBot(token: string): Bot {
   const bot = new Bot(token);
   const adapter = new TelegramAdapter(bot);
   _adapter = adapter;
+
+  // Trace context first: every Telegram update becomes the root of its own
+  // trace, so logs from handleMessage, AI tools, Kioku/Kizuna fetches, and
+  // schedulers triggered inside the same update share a traceId.
+  bot.use(async (_ctx, next) => {
+    await runWithTrace(newTraceContext(), () => next());
+  });
 
   // Allowlist middleware
   bot.use(async (ctx, next) => {

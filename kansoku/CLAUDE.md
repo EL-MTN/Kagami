@@ -10,14 +10,13 @@ This file is the project guide. Cross-service facts live in the workspace root: 
 
 ## Status
 
-**Phase 4 — error fingerprinting live.** On top of Phases 0–3:
+**Phase 5 — full workspace rollout.** On top of Phases 0–4:
 
-- Every `error`/`fatal` log line hits `fingerprintErrorLog` (`apps/api/src/lib/fingerprint.ts`). The signature is a sha1 of `service ␟ error.name ␟ normalized(message) ␟ first non-internal stack frame`; the normalizer replaces ISO timestamps, UUIDs, Mongo ObjectIds, and long numeric runs with placeholders so the same failure with varying IDs collapses to one fingerprint.
-- The ingest path upserts each fingerprint into a regular `errors` collection (keyed by fingerprint, indexed by `lastSeen` and `(service, lastSeen)`). `$setOnInsert` keeps the first sample untouched, `$set` updates `lastSeen`, `$inc` bumps `count`, `$push` appends `traceId` (slice-capped at 20). Failure is fail-open and never wedges the bulk log write.
-- `GET /v1/errors?service=&limit=` returns the registry sorted by `lastSeen` desc.
-- Dashboard `/errors` lists each group with name + message, service/component, count, relative first/last-seen, and an arrow link to the most recent trace.
+- **Kokoro** — `@kokoro/shared`'s logger picks up `KANSOKU_URL` / `KANSOKU_INGEST_TOKEN` from config and installs the Kansoku shipper. The old module-level `imageData` formatter is gone (now redundant: `@kagami/logger` redacts `imageData` paths with a base64-aware censor). Grammy middleware at the top of `createBot` wraps every Telegram update in `runWithTrace`; the BlueBubbles webhook does the same per inbound request (honoring an incoming `traceparent` when present). The Kioku client (`@kokoro/memory`) and the Kizuna client (`@kokoro/kizuna`) both call `tracedFetch` so the active span propagates onto the wire.
+- **Kizuna** — `kizuna/apps/api/src/lib/logger.ts` opts into the shipper via env. `createApp` mounts `traceMiddleware` before any route, so every log emitted under a request — including the Kokoro-originated CRM calls — carries the right `traceId` / `spanId`.
+- **`@kokoro/shared` re-exports** `tracedFetch`, `runWithTrace`, `newTraceContext`, `parseTraceparent`, and `getTraceContext` so sibling Kokoro packages don't need their own `@kagami/logger` dep.
 
-Kokoro and Kizuna get the trace middleware (and Kokoro's HTTP clients get swapped to `tracedFetch`) in Phase 5.
+End-to-end follow-along: a Telegram message now generates a root trace in Kokoro that Kioku and Kizuna join via `traceparent`. Every log line on every hop carries the same `traceId`, viewable on the dashboard's `/traces/[id]` waterfall.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full plan.
 
