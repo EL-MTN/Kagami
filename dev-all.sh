@@ -34,7 +34,7 @@ if [[ ! -f "$ROOT/package.json" ]]; then
 fi
 
 # Canonical component list (also defines display order in the URL banner).
-ALL="kioku:api kioku:dashboard kokoro:bot kokoro:dashboard kizuna:api kizuna:dashboard"
+ALL="kioku:api kioku:dashboard kokoro:bot kokoro:dashboard kizuna:api kizuna:dashboard kansoku:api kansoku:dashboard"
 
 pkg_for() {
   case "$1" in
@@ -44,6 +44,8 @@ pkg_for() {
     kokoro:dashboard)  echo @kokoro/dashboard ;;
     kizuna:api)        echo @kizuna/api ;;
     kizuna:dashboard)  echo @kizuna/dashboard ;;
+    kansoku:api)       echo @kansoku/api ;;
+    kansoku:dashboard) echo @kansoku/dashboard ;;
     *) return 1 ;;
   esac
 }
@@ -55,16 +57,19 @@ url_for() {
     kokoro:dashboard)  echo "https://kokoro.localhost" ;;
     kizuna:api)        echo "https://api.kizuna.localhost" ;;
     kizuna:dashboard)  echo "https://kizuna.localhost" ;;
+    kansoku:api)       echo "https://api.kansoku.localhost" ;;
+    kansoku:dashboard) echo "https://kansoku.localhost" ;;
     *) echo "" ;;
   esac
 }
 
 expand() {
   case "$1" in
-    kioku)  echo "kioku:api kioku:dashboard" ;;
-    kokoro) echo "kokoro:bot kokoro:dashboard" ;;
-    kizuna) echo "kizuna:api kizuna:dashboard" ;;
-    *)      echo "$1" ;;
+    kioku)   echo "kioku:api kioku:dashboard" ;;
+    kokoro)  echo "kokoro:bot kokoro:dashboard" ;;
+    kizuna)  echo "kizuna:api kizuna:dashboard" ;;
+    kansoku) echo "kansoku:api kansoku:dashboard" ;;
+    *)       echo "$1" ;;
   esac
 }
 

@@ -1,13 +1,13 @@
 # Kagami — Architecture Overview
 
-Kagami ("mirror") is a personal-AI workspace housing three TypeScript projects in a single nested monorepo, developed and run together via `dev-all.sh`. The names are Japanese: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind). The workspace is one git repo; project subtrees were imported via `git subtree add` so per-project history is preserved in `git log`.
+Kagami ("mirror") is a personal-AI workspace housing four TypeScript projects in a single nested monorepo, developed and run together via `dev-all.sh`. The names are Japanese: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind), and **Kansoku** (観測, observation). The workspace is one git repo; project subtrees were imported via `git subtree add` so per-project history is preserved in `git log`.
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                          Kagami (root)                         │
-│                                                                │
-│   dev-all.sh  →  Kioku, Kokoro, Kizuna (all parallel)          │
-└────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                              Kagami (root)                           │
+│                                                                      │
+│   dev-all.sh  →  Kioku, Kokoro, Kizuna, Kansoku (all parallel)       │
+└──────────────────────────────────────────────────────────────────────┘
 
       ┌──────────────────────────────┐
       │            Kioku             │  long-term memory store
@@ -29,18 +29,27 @@ Kagami ("mirror") is a personal-AI workspace housing three TypeScript projects i
       │  kizuna.localhost (Next.js)  │
       │  MongoDB                     │
       └──────────────────────────────┘
+
+      ┌──────────────────────────────┐
+      │           Kansoku            │  observability service (logs, traces, errors, metrics)
+      │  api.kansoku.localhost (API) │◄──── HTTP push from all sibling services (fail-open shipper)
+      │  kansoku.localhost (Next.js) │
+      │  MongoDB                     │
+      └──────────────────────────────┘
 ```
 
 Dashboard and API HTTP entry points are served as HTTPS named URLs by [Portless](https://github.com/vercel-labs/portless) — see "Local hosting via Portless" below.
 
 ## How they relate
 
-| Edge                  | Direction               | Mechanism                                                                                                                                                                                                                                                                       |
-| --------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Kokoro → Kioku        | runtime HTTP dependency | REST to `KIOKU_URL`, which defaults to the Portless API host `https://api.kioku.localhost`.                                                                                                                                                                                     |
-| Kokoro → Kizuna       | runtime HTTP dependency | REST to `KIZUNA_URL`, which defaults to `https://api.kizuna.localhost`, for CRM tools — reads call directly; writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) must be wrapped in `requestConfirmation` and only fire after the user taps Approve. |
-| Kizuna → Kioku/Kokoro | none                    | exposes API; never initiates outbound calls to siblings                                                                                                                                                                                                                         |
-| Kioku → anything      | none (pull-only)        | exposes API; never initiates outbound to siblings                                                                                                                                                                                                                               |
+| Edge                  | Direction                          | Mechanism                                                                                                                                                                                                                                                                       |
+| --------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kokoro → Kioku        | runtime HTTP dependency            | REST to `KIOKU_URL`, which defaults to the Portless API host `https://api.kioku.localhost`.                                                                                                                                                                                     |
+| Kokoro → Kizuna       | runtime HTTP dependency            | REST to `KIZUNA_URL`, which defaults to `https://api.kizuna.localhost`, for CRM tools — reads call directly; writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) must be wrapped in `requestConfirmation` and only fire after the user taps Approve. |
+| Kizuna → Kioku/Kokoro | none                               | exposes API; never initiates outbound calls to siblings                                                                                                                                                                                                                         |
+| Kioku → anything      | none (pull-only)                   | exposes API; never initiates outbound to siblings                                                                                                                                                                                                                               |
+| {Kioku, Kokoro, Kizuna} → Kansoku | observability push (Phase 1+; **fail-open**) | Pino transport in `@kagami/logger` batches log/error/metric events and POSTs to `KANSOKU_URL` (defaults to `https://api.kansoku.localhost`) with a shared `KANSOKU_INGEST_TOKEN`. The shipper buffers locally and drops on overflow rather than blocking the caller. Currently scaffolded only — ingest endpoint and shipper land in Phase 1. |
+| Kansoku → anything    | none (push-only-in)                | exposes ingest + query APIs; never initiates outbound to siblings. Failure of Kansoku must never cascade.                                                                                                                                                                       |
 
 There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open at the client (`KiokuClientError` is caught by the AI tool layer; chat continues degraded). Closed-session transcript ingest, `rememberFact`, and location writes all fail open at the client; on failure they're queued to MongoDB (`PendingFact` for one-off writes, the existing session-ingest queue for transcripts) and flushed by Kokoro's 5-min sweeper. The Kokoro → Kizuna edge is also fail-open at the CRM tool layer (without retries). Reads (`findPeople`, `getPersonContext`, `recentInteractions`, `listMyFollowups`) call Kizuna directly; writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are listed in `GATED_TOOL_NAMES` and must be wrapped in `requestConfirmation` so they only fire after the user taps Approve. `dev-all.sh` boots selected apps together under Turbo.
 
@@ -49,13 +58,13 @@ There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open 
 All three projects converge on the same stack. Tooling lives in `shared/packages/`; domain code stays per-project.
 
 - **Language**: TypeScript (strict, ESM), Node ≥ 22
-- **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs cover `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, and `shared/packages/*`. One root `package.json`, one root `turbo.json`, one hoisted `node_modules`.
+- **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs cover `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, `kansoku/{apps,packages}/*`, and `shared/packages/*`. One root `package.json`, one root `turbo.json`, one hoisted `node_modules`.
 - **Apps split**: `apps/api` (or `apps/bot`) + `apps/dashboard`
 - **Shared tooling packages**: `@kagami/eslint-config` (`./base`, `./next`) and `@kagami/tsconfig` (`./base.json`, `./library.json`, `./server.json`, `./nextjs.json`) at `shared/packages/`. Per-app `tsconfig.json` files extend a variant and add overrides where projects diverge — e.g. Kokoro/Kizuna add `verbatimModuleSyntax: true`, Kioku adds `esModuleInterop` + `allowImportingTsExtensions`, Kizuna/api adds `noImplicitOverride`.
-- **Per-project internal packages**: Kokoro has `kokoro/packages/{shared,db,memory,kizuna,test-utils}`. Kioku and Kizuna have no `packages/` directory today; their workspace globs (`kioku/packages/*`, `kizuna/packages/*` in `package.json`) are placeholders for future project-only libs.
+- **Per-project internal packages**: Kokoro has `kokoro/packages/{shared,db,memory,kizuna,test-utils}`. Kioku, Kizuna, and Kansoku have no `packages/` directory today; their workspace globs (`kioku/packages/*`, `kizuna/packages/*`, `kansoku/packages/*` in `package.json`) are placeholders for future project-only libs.
 - **Local dev hosting**: [Portless](https://github.com/vercel-labs/portless) (Vercel Labs) for stable HTTPS named `*.localhost` URLs — see below
 - **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku)
-- **Logging**: Pino, built via the workspace-shared `@kagami/logger` factory. Provides stable `service`, `component`, and `env` bindings, the common secret-redaction list, and the `pino-pretty` transport policy (`env !== "production"`). Each service's `logger.ts` is a thin wrapper that calls the factory with its own service/component name.
+- **Logging**: Pino, built via the workspace-shared `@kagami/logger` factory. Provides stable `service`, `component`, and `env` bindings, the common secret-redaction list, and the `pino-pretty` transport policy (`env !== "production"`). Each service's `logger.ts` is a thin wrapper that calls the factory with its own service/component name. From Phase 1 onward, the factory also installs the Kansoku transport so every log line ships (fail-open) to the workspace's observability service alongside stdout.
 - **Validation**: Zod 4 schemas at boundaries (uniform across all three projects).
 
 ### Local hosting via Portless
@@ -64,14 +73,16 @@ All three projects converge on the same stack. Tooling lives in `shared/packages
 
 Apps register their name either via a top-level `portless.json` (Kioku, Kizuna) or a `portless` field in `package.json` (Kokoro):
 
-| Project | Component | Portless URL                   | Source of registration                                 |
-| ------- | --------- | ------------------------------ | ------------------------------------------------------ |
-| Kioku   | dashboard | `https://kioku.localhost`      | `portless.json` → `apps/dashboard`                     |
-| Kioku   | API       | `https://api.kioku.localhost`  | `portless.json` → `apps/api`                           |
-| Kizuna  | dashboard | `https://kizuna.localhost`     | `portless.json` → `apps/dashboard`                     |
-| Kizuna  | API       | `https://api.kizuna.localhost` | `portless.json` → `apps/api`                           |
-| Kokoro  | dashboard | `https://kokoro.localhost`     | `apps/dashboard/package.json` → `"portless": "kokoro"` |
-| Kokoro  | bot       | (no browser URL)               | `apps/bot/package.json` → `"portless": "bot.kokoro"`   |
+| Project | Component | Portless URL                    | Source of registration                                 |
+| ------- | --------- | ------------------------------- | ------------------------------------------------------ |
+| Kioku   | dashboard | `https://kioku.localhost`       | `portless.json` → `apps/dashboard`                     |
+| Kioku   | API       | `https://api.kioku.localhost`   | `portless.json` → `apps/api`                           |
+| Kizuna  | dashboard | `https://kizuna.localhost`      | `portless.json` → `apps/dashboard`                     |
+| Kizuna  | API       | `https://api.kizuna.localhost`  | `portless.json` → `apps/api`                           |
+| Kokoro  | dashboard | `https://kokoro.localhost`      | `apps/dashboard/package.json` → `"portless": "kokoro"` |
+| Kokoro  | bot       | (no browser URL)                | `apps/bot/package.json` → `"portless": "bot.kokoro"`   |
+| Kansoku | dashboard | `https://kansoku.localhost`     | `portless.json` → `apps/dashboard`                     |
+| Kansoku | API       | `https://api.kansoku.localhost` | `portless.json` → `apps/api`                           |
 
 Each app server honors Portless's injected `PORT`, falling back to its own numeric default only when run standalone. For example, in `kioku/apps/api/src/server.ts`:
 
@@ -225,7 +236,37 @@ packages/         (no directory today — workspace glob is a placeholder for fu
 
 ---
 
-## Running the three together
+## Kansoku — observability service
+
+**Role.** Centralized observability for the workspace: structured logs, distributed traces, fingerprinted errors, and metrics. Every sibling service pushes events via a fail-open Pino transport added to `@kagami/logger`; the dashboard surfaces live tail, search, single-trace waterfalls, and grouped errors. **Push-only-in** — Kansoku never initiates outbound calls to siblings.
+
+**Layout.**
+
+```
+apps/api          Express API (entry: src/server.ts) — Phase 0 exposes /health and /version only
+apps/dashboard    Next.js 16 app
+packages/         (no directory today — workspace glob is a placeholder for future Kansoku-only libs)
+```
+
+**Endpoints (current).** Both apps run under Portless: API at `https://api.kansoku.localhost`, dashboard at `https://kansoku.localhost`. Standalone fallback port is `7779`.
+
+| Group       | Endpoints                                                |
+| ----------- | -------------------------------------------------------- |
+| Health/meta | `GET /health`, `GET /version`                            |
+
+**Planned endpoints (Phase 1+).** `POST /v1/logs`, `POST /v1/metrics`, `POST /v1/errors` (ingest, HMAC-authed via `KANSOKU_INGEST_TOKEN`); `GET /v1/logs`, `GET /v1/traces/:id`, `GET /v1/errors` (query); `GET /v1/tail` (SSE).
+
+**Storage.** MongoDB time-series collections (`logs`, `metrics`, optional `spans`) with `timeField: ts`, `metaField: { service, component, env, level }`; a regular `errors` collection keyed by fingerprint. Retention: 30 days for time-series, indefinite for the errors registry.
+
+**Auth model.** Single-user localhost; the OS user is the trust boundary. Ingest endpoints (Phase 1+) require a shared HMAC token in the `x-kansoku-auth` header. Query endpoints and the dashboard are unauthenticated.
+
+**Coupling notes.** Kansoku has zero outbound references to siblings. Inbound coupling is the inverse of Kioku's posture: every other service pushes to Kansoku via the shared `@kagami/logger` transport. Failure of Kansoku must never cascade — shippers buffer in-memory (~5 minutes) and drop oldest on overflow rather than blocking the caller.
+
+See `kansoku/docs/architecture.md` for the full ingest path, data model, dashboard surfaces, and phased delivery plan.
+
+---
+
+## Running the projects together
 
 `dev-all.sh` at the repo root:
 
@@ -233,7 +274,7 @@ packages/         (no directory today — workspace glob is a placeholder for fu
 2. Hands off via `exec` to `turbo run dev` with one `--filter` per active app.
 3. Uses Turbo's TUI when stdout is a TTY (per-task panes, scrollback, single Ctrl-C); falls back to streamed `[prefix]` output when piped or redirected.
 
-There is no ordering between the three projects — see "How they relate" above. Selective flags: `--only <target>...` and `--no <target>...`, where `<target>` is a project (`kioku`, `kokoro`, `kizuna`) or a single component (`kokoro:bot`, `kioku:dashboard`, ...). `--stream` forces streamed output even on a TTY.
+There is no ordering between the projects — see "How they relate" above. Selective flags: `--only <target>...` and `--no <target>...`, where `<target>` is a project (`kioku`, `kokoro`, `kizuna`, `kansoku`) or a single component (`kokoro:bot`, `kioku:dashboard`, `kansoku:api`, ...). `--stream` forces streamed output even on a TTY.
 
 ## Configuration cheat sheet
 
@@ -242,6 +283,7 @@ There is no ordering between the three projects — see "How they relate" above.
 | Kioku   | `KIOKU_MONGO_URI`, `LLM_*`, `EMBEDDING_*`, `KIOKU_API_URL` (dashboard → API; default `https://api.kioku.localhost`); port handled by Portless (`PORT`/`KIOKU_HOST` only for standalone runs)                                                |
 | Kokoro  | `TELEGRAM_BOT_TOKEN`, `MONGODB_URI`, `KIOKU_URL` (→ `https://api.kioku.localhost`), `KIZUNA_URL` (→ `https://api.kizuna.localhost`), `KIZUNA_ENABLED`, `LLM_PROVIDER`/`LLM_MODEL`, provider API keys, `GOOGLE_OAUTH_*`                      |
 | Kizuna  | `MONGO_URI`, `USER_EMAILS`, `KIZUNA_API_URL` (→ `https://api.kizuna.localhost`), `GOOGLE_OAUTH_*` (redirect URI → `https://api.kizuna.localhost/oauth/google/callback`), `KIZUNA_OAUTH_ENCRYPTION_KEY`, `KIZUNA_HOST` (standalone fallback) |
+| Kansoku | `KANSOKU_MONGO_URI`, `KANSOKU_MONGO_DB` (Phase 1+), `KANSOKU_INGEST_TOKEN` (shared HMAC for sibling shippers), `KANSOKU_API_URL` (dashboard → API; default `https://api.kansoku.localhost`); `PORT`/`KANSOKU_HOST` only for standalone runs |
 
 ## Observed gaps and likely future edges
 
