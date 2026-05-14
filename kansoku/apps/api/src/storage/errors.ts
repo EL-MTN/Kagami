@@ -1,6 +1,7 @@
 import type { Collection, Filter } from "mongodb";
 import { getDb } from "./mongo.js";
 import { fingerprintErrorLog } from "../lib/fingerprint.js";
+import { notifyNewError } from "../lib/alerts.js";
 import type { StoredLog } from "./logs.js";
 
 export interface ErrorRecord {
@@ -36,7 +37,7 @@ async function getErrorsCollection(): Promise<Collection<ErrorRecord>> {
  */
 export async function recordErrors(docs: StoredLog[]): Promise<void> {
   const coll = await getErrorsCollection();
-  const ops: Promise<unknown>[] = [];
+  const ops: Promise<void>[] = [];
 
   for (const doc of docs) {
     if (!ERROR_LEVELS.has(doc.meta.level)) continue;
@@ -63,7 +64,25 @@ export async function recordErrors(docs: StoredLog[]): Promise<void> {
       update.$push = { recentTraceIds: { $each: [doc.traceId], $slice: -RECENT_TRACE_CAP } };
     }
 
-    ops.push(coll.updateOne({ _id: fp.fingerprint }, update, { upsert: true }));
+    // Capture upsertedCount so a brand-new fingerprint fires the alert
+    // webhook. Existing rows return upsertedCount: 0, so we don't alert on
+    // re-occurrences — Phase 7's webhook is strictly for new-error signal.
+    ops.push(
+      (async () => {
+        const result = await coll.updateOne({ _id: fp.fingerprint }, update, { upsert: true });
+        if (result.upsertedCount > 0) {
+          await notifyNewError({
+            fingerprint: fp.fingerprint,
+            service: doc.meta.service,
+            component: doc.meta.component,
+            name: fp.name,
+            message: fp.message,
+            firstSeen: doc.ts,
+            traceId: doc.traceId,
+          });
+        }
+      })(),
+    );
   }
 
   await Promise.all(ops);

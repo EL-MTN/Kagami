@@ -10,6 +10,11 @@ This file is the project guide. Cross-service facts live in the workspace root: 
 
 ## Status
 
+**Phase 7 — retention dial-in + new-error alerts live.** On top of Phases 0–6:
+
+- `KANSOKU_LOGS_TTL_DAYS` (default 30, capped 365) tunes the `logs` time-series TTL. `ensureIndexes` reconciles via `collMod` on every startup — bump the env, restart, done.
+- `KANSOKU_ALERT_WEBHOOK_URL` fires a small JSON POST when a brand-new error fingerprint shows up (`upsertedCount > 0` on the errors registry upsert). Discord/Slack-shaped payload: `{ kind, fingerprint, service, component, name?, message, firstSeen, traceId? }`. Fail-open, 5 s timeout, never wedges ingest. Re-occurrences of an existing fingerprint don't re-alert.
+
 **Phase 6 — derived metrics live.** On top of Phases 0–5:
 
 - `GET /v1/services?windowHours=N` returns one row per service with `count`, `errorCount`, `warnCount`, `lastSeen`, distinct `components` — computed by `$group` over the existing `logs` index. No second ingestion pipeline.
@@ -51,7 +56,8 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │   │   │   │   ├── envelope.ts  # Zod schema + pino → StoredLog normalizer
 │   │   │   │   ├── cors.ts      # *.localhost echo for the dashboard
 │   │   │   │   ├── log-events.ts # in-process broadcaster + 500-entry ring
-│   │   │   │   └── fingerprint.ts # error signature builder + normalizer
+│   │   │   │   ├── fingerprint.ts # error signature builder + normalizer
+│   │   │   │   └── alerts.ts    # fail-open webhook for new error fingerprints
 │   │   │   ├── server.ts        # createApp() + main() boot
 │   │   │   └── logger.ts        # @kagami/logger wrapper
 │   │   ├── tests/               # vitest + mongodb-memory-server harness

@@ -2,40 +2,82 @@ import type { Db } from "mongodb";
 import { getDb } from "./mongo.js";
 import { logger } from "../logger.js";
 
-// 30 days. Documented retention from kansoku/docs/architecture.md.
-export const LOGS_TTL_SECONDS = 30 * 24 * 60 * 60;
+const SECONDS_PER_DAY = 24 * 60 * 60;
+const DEFAULT_LOGS_TTL_DAYS = 30;
+
+/** Resolve the configured TTL in seconds. Bounded by a sane floor + ceiling. */
+function resolveLogsTtlSeconds(): number {
+  const raw = process.env.KANSOKU_LOGS_TTL_DAYS;
+  const days = raw === undefined || raw === "" ? DEFAULT_LOGS_TTL_DAYS : Number.parseInt(raw, 10);
+  if (!Number.isFinite(days) || days < 1) {
+    logger.warn(
+      { provided: raw, fallback: DEFAULT_LOGS_TTL_DAYS },
+      "KANSOKU_LOGS_TTL_DAYS unparseable; using default",
+    );
+    return DEFAULT_LOGS_TTL_DAYS * SECONDS_PER_DAY;
+  }
+  // Cap at 365 days — anything longer is presumably a typo (and time-series
+  // bucket compaction degrades with very long retention).
+  const capped = Math.min(days, 365);
+  return capped * SECONDS_PER_DAY;
+}
 
 // `createCollection` throws `NamespaceExists` (code 48) when the collection
-// already exists. We treat that as success — the time-series options can't be
-// changed in place, so a recreate would require a drop, which we won't do
-// silently. If someone needs to change `granularity`, they drop the
-// collection manually and restart.
+// already exists. We treat that as success and then run `collMod` to
+// reconcile `expireAfterSeconds` with the current env — that's the one
+// time-series option Mongo lets us change in place. Other options
+// (timeField, metaField, granularity) require a manual drop + recreate.
 const NAMESPACE_EXISTS = 48;
 
 interface MongoCodeError {
   code?: number;
 }
 
-async function ensureTimeSeriesCollection(db: Db, name: string): Promise<void> {
+async function ensureTimeSeriesCollection(
+  db: Db,
+  name: string,
+  expireAfterSeconds: number,
+): Promise<void> {
   try {
     await db.createCollection(name, {
       timeseries: { timeField: "ts", metaField: "meta", granularity: "seconds" },
-      expireAfterSeconds: LOGS_TTL_SECONDS,
+      expireAfterSeconds,
     });
     logger.info(
-      { collection: name, ttlSeconds: LOGS_TTL_SECONDS },
+      { collection: name, ttlSeconds: expireAfterSeconds },
       "created time-series collection",
     );
+    return;
   } catch (err) {
     const code = (err as MongoCodeError).code;
     if (code !== NAMESPACE_EXISTS) throw err;
+  }
+
+  // Collection already exists — reconcile the TTL with `collMod`. Idempotent
+  // when expireAfterSeconds already matches. Some Mongo deployments (e.g.
+  // older mongodb-memory-server builds) reject `collMod` on time-series
+  // collections with code 167 — treat that as best-effort and continue.
+  try {
+    await db.command({ collMod: name, expireAfterSeconds });
+    logger.info({ collection: name, ttlSeconds: expireAfterSeconds }, "reconciled time-series TTL");
+  } catch (err) {
+    const code = (err as MongoCodeError).code;
+    if (code === 167) {
+      logger.warn(
+        { collection: name, err: (err as Error).message },
+        "server rejected collMod on time-series; existing TTL kept",
+      );
+      return;
+    }
+    throw err;
   }
 }
 
 export async function ensureIndexes(): Promise<void> {
   const db = await getDb();
+  const logsTtlSeconds = resolveLogsTtlSeconds();
 
-  await ensureTimeSeriesCollection(db, "logs");
+  await ensureTimeSeriesCollection(db, "logs", logsTtlSeconds);
 
   const logs = db.collection("logs");
 

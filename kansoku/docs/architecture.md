@@ -68,6 +68,37 @@ Each batch is `application/json` — an array of pino log objects. The schema
 Recognized special keys: `msg`, `pid`, `hostname`, `traceId`, `spanId`.
 Everything else lands under `fields` on the stored doc.
 
+### Retention + alerts (Phase 7)
+
+The `logs` time-series TTL is configurable via `KANSOKU_LOGS_TTL_DAYS`
+(default 30, capped at 365). On startup, `ensureIndexes` creates the
+collection at that TTL on first boot and reconciles via `collMod` on
+subsequent boots — so dialing retention up or down is just an env edit and
+a restart. Other time-series options (`timeField`, `metaField`,
+`granularity`) still require a manual drop + recreate.
+
+A brand-new error fingerprint optionally fires a webhook configured via
+`KANSOKU_ALERT_WEBHOOK_URL`. The hook is fail-open at every step (5 s
+abort, errors swallowed) so an alerting outage can't wedge ingest, and
+only fires on `upsertedCount > 0` — re-occurrences of an existing error
+don't re-alert. Payload:
+
+```json
+{
+  "kind": "kansoku.error.new",
+  "fingerprint": "<16-hex>",
+  "service": "kioku-api",
+  "component": "api",
+  "name": "TypeError",
+  "message": "Cannot read properties of undefined…",
+  "firstSeen": "2026-05-14T12:00:00.000Z",
+  "traceId": "<32-hex>"
+}
+```
+
+That shape works directly with Discord/Slack-style hooks, and a generic
+endpoint can map it onward.
+
 ### Derived metrics (Phase 6)
 
 Service-level metrics are computed on read by aggregating over the existing
@@ -224,8 +255,8 @@ across all three services.
 | 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                    | done        |
 | 4     | Error fingerprinting + `/errors` page                                                                   | done        |
 | 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                          | done        |
-| 6     | Derived metrics + `/services` dashboard                                                                 | **this PR** |
-| 7     | TTL policies, retention dial-in, optional alert webhook on new errors                                   |             |
+| 6     | Derived metrics + `/services` dashboard                                                                 | done        |
+| 7     | TTL policies, retention dial-in, optional alert webhook on new errors                                   | **this PR** |
 
 ## Open questions
 
