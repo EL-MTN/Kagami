@@ -23,7 +23,7 @@ kizuna/
 │   │   └── scripts/        # import-vcards.ts (vCard → POST /people)
 │   └── dashboard/          # Next.js 15 App Router (https://kizuna.localhost)
 │       ├── app/
-│       │   └── (app)/      # all routes — Today, People, Contexts, Sync, Errors, Tombstones (no login)
+│       │   └── (app)/      # all routes — Today, Followups, Interactions, People, Contexts, Sync, Errors, Tombstones (no login)
 │       ├── components/     # sidebar, nav-link, shell/, ui/ (shadcn-shaped)
 │       └── lib/            # api client, types, format
 ├── packages/               # reserved for future Kizuna-only libs (currently empty)
