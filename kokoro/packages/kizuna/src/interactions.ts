@@ -72,31 +72,26 @@ export async function listInteractionsForPerson(
 }
 
 export async function logInteraction(input: LogInteractionInput): Promise<InteractionSummary> {
-  return withKizunaDeadline((signal) => logInteractionWithSignal(input, signal));
-}
-
-export async function logInteractionWithSignal(
-  input: LogInteractionInput,
-  signal: AbortSignal,
-): Promise<InteractionSummary> {
-  const body: Record<string, unknown> = {
-    occurredAt: input.occurredAt,
-    channel: input.channel,
-    title: input.title,
-    participants: input.participants,
-  };
-  if (input.body !== undefined) body.body = input.body;
-  if (input.context !== undefined) body.context = input.context;
-  if (input.location !== undefined) body.location = input.location;
-  const wire = await sendJson(
-    "POST",
-    "/interactions",
-    "/interactions",
-    body,
-    InteractionWireSchema,
-    signal,
-  );
-  return interactionSummary(wire);
+  return withKizunaDeadline(async (signal) => {
+    const body: Record<string, unknown> = {
+      occurredAt: input.occurredAt,
+      channel: input.channel,
+      title: input.title,
+      participants: input.participants,
+    };
+    if (input.body !== undefined) body.body = input.body;
+    if (input.context !== undefined) body.context = input.context;
+    if (input.location !== undefined) body.location = input.location;
+    const wire = await sendJson(
+      "POST",
+      "/interactions",
+      "/interactions",
+      body,
+      InteractionWireSchema,
+      signal,
+    );
+    return interactionSummary(wire);
+  });
 }
 
 export function buildRecentInteractionsPath(input: RecentInteractionsInput) {

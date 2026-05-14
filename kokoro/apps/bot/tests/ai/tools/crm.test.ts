@@ -314,11 +314,14 @@ describe("createFollowup CRM tool", () => {
     expect(tool.description).toContain("MUST be wrapped in requestConfirmation");
   });
 
-  it("treats a 404 from the hydration path as a non-degraded failure", async () => {
+  it("surfaces a 404 from the package as a non-degraded tool failure (e.g. POST /followups 404 on a missing personId)", async () => {
+    // The package's hydratePersonAfterWrite catches person-GET KizunaClientErrors
+    // and falls back to missingPersonSummary, so a 404 reaching the tool layer
+    // here represents the followups POST itself returning 404 (e.g. unknown personId).
     mockCreateFollowup.mockRejectedValue(
       new MockError("http", "Kizuna request failed with status 404", {
         status: 404,
-        routeTemplate: "/people/:id",
+        routeTemplate: "/followups",
       }),
     );
 

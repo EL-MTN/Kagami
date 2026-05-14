@@ -124,7 +124,7 @@ describe("allTools — feature flags", () => {
     expect(names).toContain("cancelConfirmation");
   });
 
-  it("omits CRM tools only when parsed KIZUNA_ENABLED is false", () => {
+  it("omits CRM read AND write tools when parsed KIZUNA_ENABLED is false", () => {
     mockConfig.KIZUNA_ENABLED = false;
 
     const all = Object.keys(allTools(baseCtx));
@@ -135,6 +135,13 @@ describe("allTools — feature flags", () => {
       expect(names).not.toContain("getPersonContext");
       expect(names).not.toContain("recentInteractions");
       expect(names).not.toContain("listMyFollowups");
+      // Write tools must never leak out either, even in `allTools` — they
+      // depend on KIZUNA_ENABLED too, so if someone moves the registration
+      // outside the guard this assertion catches the regression.
+      expect(names).not.toContain("logInteraction");
+      expect(names).not.toContain("createFollowup");
+      expect(names).not.toContain("resolveFollowup");
+      expect(names).not.toContain("updatePerson");
     }
   });
 

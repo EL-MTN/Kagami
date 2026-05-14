@@ -270,10 +270,11 @@ export function createLogInteractionTool() {
           "Each personId is a PersonSummary.id. role is from/to/cc/attendee/subject from Goshujin-sama's perspective.",
         ),
       context: z
-        .array(z.string())
+        .array(z.string().min(1).max(80))
+        .max(20)
         .optional()
         .describe("Optional context tags (e.g. 'work', 'side-project')."),
-      location: z.string().optional().describe("Optional location string."),
+      location: z.string().max(400).optional().describe("Optional location string."),
     }),
     execute: async (input): Promise<CrmToolResult<InteractionSummary>> => {
       try {
@@ -363,13 +364,13 @@ export function createUpdatePersonTool() {
         primaryEmail: z.string().email().optional(),
         primaryOrgId: objectId.optional(),
         relationship: z.string().max(2000).optional().describe("Free-form relationship narrative."),
-        emails: z.array(z.string().email()).optional(),
-        phones: z.array(z.string()).optional(),
+        emails: z.array(z.string().email().max(254)).max(20).optional(),
+        phones: z.array(z.string().min(1).max(40)).max(20).optional(),
         handles: z
-          .record(z.string(), z.string())
+          .record(z.string().min(1).max(40), z.string().min(1).max(80))
           .optional()
           .describe("Map of provider → handle, e.g. { telegram: '@sarah' }."),
-        tags: z.array(z.string()).optional(),
+        tags: z.array(z.string().min(1).max(80)).max(30).optional(),
         birthday: birthday.optional().describe("YYYY-MM-DD or --MM-DD (no year known)."),
         notes: z.string().max(8000).optional(),
       })

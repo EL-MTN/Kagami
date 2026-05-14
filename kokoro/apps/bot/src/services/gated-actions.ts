@@ -71,9 +71,12 @@ const logInteractionArgs = z.object({
   channel: interactionChannel,
   title: z.string().min(1).max(200),
   body: z.string().max(8000).optional(),
-  participants: z.array(z.object({ personId: objectIdString, role: participantRole })).min(1),
-  context: z.array(z.string()).optional(),
-  location: z.string().optional(),
+  participants: z
+    .array(z.object({ personId: objectIdString, role: participantRole }))
+    .min(1)
+    .max(50),
+  context: z.array(z.string().min(1).max(80)).max(20).optional(),
+  location: z.string().max(400).optional(),
 });
 
 const createFollowupArgs = z.object({
@@ -98,10 +101,10 @@ const updatePersonArgs = z
     primaryEmail: z.string().email().optional(),
     primaryOrgId: objectIdString.optional(),
     relationship: z.string().max(2000).optional(),
-    emails: z.array(z.string().email()).optional(),
-    phones: z.array(z.string()).optional(),
-    handles: z.record(z.string(), z.string()).optional(),
-    tags: z.array(z.string()).optional(),
+    emails: z.array(z.string().email().max(254)).max(20).optional(),
+    phones: z.array(z.string().min(1).max(40)).max(20).optional(),
+    handles: z.record(z.string().min(1).max(40), z.string().min(1).max(80)).optional(),
+    tags: z.array(z.string().min(1).max(80)).max(30).optional(),
     birthday: z
       .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.string().regex(/^--\d{2}-\d{2}$/)])
       .optional(),

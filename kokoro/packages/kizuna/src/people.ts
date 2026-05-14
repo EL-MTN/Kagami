@@ -61,27 +61,22 @@ export async function getPersonContext(input: { personId: string }): Promise<Per
 }
 
 export async function updatePerson(input: UpdatePersonInput): Promise<PersonSummary> {
-  return withKizunaDeadline((signal) => updatePersonWithSignal(input, signal));
-}
-
-export async function updatePersonWithSignal(
-  input: UpdatePersonInput,
-  signal: AbortSignal,
-): Promise<PersonSummary> {
-  const { personId, ...rest } = input;
-  const body: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(rest)) {
-    if (value !== undefined) body[key] = value;
-  }
-  const wire = await sendJson(
-    "PATCH",
-    `/people/${encodeURIComponent(personId)}`,
-    "/people/:id",
-    body,
-    PersonWireSchema,
-    signal,
-  );
-  return personSummary(wire);
+  return withKizunaDeadline(async (signal) => {
+    const { personId, ...rest } = input;
+    const body: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(rest)) {
+      if (value !== undefined) body[key] = value;
+    }
+    const wire = await sendJson(
+      "PATCH",
+      `/people/${encodeURIComponent(personId)}`,
+      "/people/:id",
+      body,
+      PersonWireSchema,
+      signal,
+    );
+    return personSummary(wire);
+  });
 }
 
 async function findPeopleWithSignal(
