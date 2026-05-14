@@ -1,7 +1,9 @@
 import { NavLink, type IconName } from "./nav-link";
 
 const links: { href: string; label: string; iconName: IconName }[] = [
-  { href: "/", label: "Today", iconName: "Sun" },
+  { href: "/today", label: "Today", iconName: "Sun" },
+  { href: "/followups", label: "Followups", iconName: "CheckSquare" },
+  { href: "/interactions", label: "Interactions", iconName: "MessageSquare" },
   { href: "/people", label: "People", iconName: "Users" },
   { href: "/contexts", label: "Contexts", iconName: "Network" },
   { href: "/sync", label: "Sync", iconName: "RefreshCw" },
