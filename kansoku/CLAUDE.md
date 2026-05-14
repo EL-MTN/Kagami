@@ -10,13 +10,14 @@ This file is the project guide. Cross-service facts live in the workspace root: 
 
 ## Status
 
-**Phase 3 — distributed tracing live.** On top of Phases 0–2:
+**Phase 4 — error fingerprinting live.** On top of Phases 0–3:
 
-- `@kagami/logger` ships a W3C trace-context module: `runWithTrace`, `getTraceContext`, `parseTraceparent` / `formatTraceparent`, `childSpan`, plus an Express `traceMiddleware()` and a `tracedFetch` for outbound propagation. `createLogger` now installs a pino mixin that reads the ALS context and tags every log line with `traceId` / `spanId` automatically — callers don't thread anything.
-- Kansoku and Kioku both mount `traceMiddleware()` before `pinoHttp`. Incoming `traceparent` headers open child spans; absence mints a fresh trace.
-- `GET /v1/traces/:id` returns every log sharing that traceId. The dashboard renders `/traces/[id]` with a waterfall above a flat log timeline; log rows on `/tail` and `/search` link to it.
+- Every `error`/`fatal` log line hits `fingerprintErrorLog` (`apps/api/src/lib/fingerprint.ts`). The signature is a sha1 of `service ␟ error.name ␟ normalized(message) ␟ first non-internal stack frame`; the normalizer replaces ISO timestamps, UUIDs, Mongo ObjectIds, and long numeric runs with placeholders so the same failure with varying IDs collapses to one fingerprint.
+- The ingest path upserts each fingerprint into a regular `errors` collection (keyed by fingerprint, indexed by `lastSeen` and `(service, lastSeen)`). `$setOnInsert` keeps the first sample untouched, `$set` updates `lastSeen`, `$inc` bumps `count`, `$push` appends `traceId` (slice-capped at 20). Failure is fail-open and never wedges the bulk log write.
+- `GET /v1/errors?service=&limit=` returns the registry sorted by `lastSeen` desc.
+- Dashboard `/errors` lists each group with name + message, service/component, count, relative first/last-seen, and an arrow link to the most recent trace.
 
-Kokoro and Kizuna get the middleware (and Kokoro's HTTP clients get swapped to `tracedFetch`) in Phase 5. Error fingerprinting follows in Phase 4.
+Kokoro and Kizuna get the trace middleware (and Kokoro's HTTP clients get swapped to `tracedFetch`) in Phase 5.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full plan.
 
@@ -30,17 +31,20 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │   │   │   ├── routes/
 │   │   │   │   ├── meta.ts      # /health, /version
 │   │   │   │   ├── ingest.ts    # POST /v1/logs (HMAC token, Zod, async insert)
-│   │   │   │   ├── query.ts     # GET /v1/logs (service/level/since/until/limit)
-│   │   │   │   └── tail.ts      # GET /v1/tail (SSE with filter + replay)
+│   │   │   │   ├── query.ts     # GET /v1/logs + GET /v1/traces/:id
+│   │   │   │   ├── tail.ts      # GET /v1/tail (SSE with filter + replay)
+│   │   │   │   └── errors.ts    # GET /v1/errors (fingerprinted error registry)
 │   │   │   ├── storage/
 │   │   │   │   ├── mongo.ts     # lazy MongoClient singleton
 │   │   │   │   ├── indexes.ts   # time-series + btree indexes, 30-day TTL
-│   │   │   │   └── logs.ts      # StoredLog type, insertLogs, queryLogs
+│   │   │   │   ├── logs.ts      # StoredLog type, insertLogs, queryLogs, queryTrace
+│   │   │   │   └── errors.ts    # ErrorRecord type, recordErrors, listErrors
 │   │   │   ├── lib/
 │   │   │   │   ├── auth.ts      # constant-time x-kansoku-auth check
 │   │   │   │   ├── envelope.ts  # Zod schema + pino → StoredLog normalizer
 │   │   │   │   ├── cors.ts      # *.localhost echo for the dashboard
-│   │   │   │   └── log-events.ts # in-process broadcaster + 500-entry ring
+│   │   │   │   ├── log-events.ts # in-process broadcaster + 500-entry ring
+│   │   │   │   └── fingerprint.ts # error signature builder + normalizer
 │   │   │   ├── server.ts        # createApp() + main() boot
 │   │   │   └── logger.ts        # @kagami/logger wrapper
 │   │   ├── tests/               # vitest + mongodb-memory-server harness
@@ -56,6 +60,8 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │       │   │   │   ├── page.tsx
 │       │   │   │   └── tail-client.tsx
 │       │   │   ├── search/page.tsx      # historical filter form
+│       │   │   ├── traces/[id]/page.tsx # waterfall + flat log timeline
+│       │   │   ├── errors/page.tsx      # fingerprinted error groups
 │       │   │   └── globals.css
 │       │   ├── components/              # sidebar, nav-link, log-row, level-badge, shell
 │       │   └── lib/                     # api, format, utils (cn)

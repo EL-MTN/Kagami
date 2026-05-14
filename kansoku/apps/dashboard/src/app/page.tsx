@@ -62,7 +62,7 @@ export default async function OverviewPage() {
         <StatusCard icon={Database} label="Retention" status="ok" value="30 days · time-series" />
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2">
+      <section className="grid gap-3 sm:grid-cols-3">
         <FeatureCard
           href="/tail"
           title="Live tail"
@@ -72,6 +72,11 @@ export default async function OverviewPage() {
           href="/search"
           title="Search"
           description="Query the persisted log store by service, level, and time range."
+        />
+        <FeatureCard
+          href="/errors"
+          title="Errors"
+          description="Distinct error fingerprints with counts, first/last seen, and trace links."
         />
       </section>
 

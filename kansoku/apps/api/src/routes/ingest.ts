@@ -3,6 +3,7 @@ import { LogBatch, toStoredLog } from "../lib/envelope.js";
 import { requireIngestToken } from "../lib/auth.js";
 import { publishLogs } from "../lib/log-events.js";
 import { insertLogs } from "../storage/logs.js";
+import { recordErrors } from "../storage/errors.js";
 import { logger } from "../logger.js";
 
 export function createIngestRouter(token: string | undefined): Router {
@@ -31,6 +32,14 @@ export function createIngestRouter(token: string | undefined): Router {
         logger.error(
           { err: (err as Error).message, count: docs.length },
           "kansoku ingest write failed",
+        );
+      });
+      // Fingerprint upserts run in parallel with the bulk log write. Same
+      // fail-open posture — a failed errors write must never wedge ingest.
+      void recordErrors(docs).catch((err) => {
+        logger.error(
+          { err: (err as Error).message, count: docs.length },
+          "kansoku error fingerprint write failed",
         );
       });
 

@@ -38,14 +38,18 @@ export function parseTraceparent(header: string | undefined | null): TraceContex
   if (!header) return undefined;
   const m = TRACEPARENT_RE.exec(header.trim());
   if (!m) return undefined;
-  const traceId = m[1].toLowerCase();
-  const spanId = m[2].toLowerCase();
+  // Destructure so the values are typed `string` under `noUncheckedIndexedAccess`.
+  // The regex has three required capture groups; the guard is defensive only.
+  const [, traceIdRaw, spanIdRaw, flagsRaw] = m;
+  if (!traceIdRaw || !spanIdRaw || !flagsRaw) return undefined;
+  const traceId = traceIdRaw.toLowerCase();
+  const spanId = spanIdRaw.toLowerCase();
   // W3C: all-zero IDs are invalid.
   if (/^0+$/.test(traceId) || /^0+$/.test(spanId)) return undefined;
   return {
     traceId,
     spanId,
-    sampled: (parseInt(m[3], 16) & 1) === 1,
+    sampled: (parseInt(flagsRaw, 16) & 1) === 1,
   };
 }
 

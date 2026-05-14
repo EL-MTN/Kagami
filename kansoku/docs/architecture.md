@@ -68,12 +68,37 @@ Each batch is `application/json` — an array of pino log objects. The schema
 Recognized special keys: `msg`, `pid`, `hostname`, `traceId`, `spanId`.
 Everything else lands under `fields` on the stored doc.
 
-### Error / level upsert (Phase 4)
+### Error fingerprinting (Phase 4)
 
-Phase 1 does **not** maintain the `errors` collection yet — that's Phase 4
-once we have the fingerprinting helper and the dashboard surface to display
-it. The `level: "error"` documents go into `logs` like everything else and
-remain searchable via `GET /v1/logs?level=error`.
+On every accepted batch, the ingest path runs each `level: error|fatal` doc
+through `fingerprintErrorLog` (`apps/api/src/lib/fingerprint.ts`) and upserts
+the result into a regular (non-time-series) `errors` collection keyed by
+fingerprint. The hash inputs are:
+
+- `meta.service` — so the same code path in different services stays distinct
+- error `name` if present (from a structured `err`/`error`/`cause` object)
+- the error `message`, run through a normalizer that replaces ISO
+  timestamps, UUIDs, Mongo ObjectIds, and long numeric runs with placeholders
+  so the same failure with varying IDs collapses to one fingerprint
+- first non-internal stack frame when a `stack` field is present
+
+Each upsert:
+
+- `$setOnInsert` — `service`, `component`, `name`, `message`, `sampleMsg`,
+  `sampleStack`, `firstSeen` (the original sample is kept verbatim, not
+  overwritten by later churn)
+- `$set { lastSeen }`, `$inc { count: 1 }`
+- `$push { recentTraceIds: { $each: [traceId], $slice: -20 } }` so the
+  dashboard can drill straight into the most recent trace
+
+`GET /v1/errors?service=&limit=` returns the registry sorted by `lastSeen`
+desc. The dashboard `/errors` page renders each group with name + message,
+service/component, count, first/last-seen relative times, and an arrow link
+to the latest trace.
+
+Logs themselves still go into the time-series `logs` collection unchanged —
+fingerprinting writes are additive (and fail-open: a failed errors write
+must never wedge the bulk log write).
 
 ### Fail modes
 
@@ -98,7 +123,7 @@ Phase 1 uses a shared HMAC token (`KANSOKU_INGEST_TOKEN`) carried as a request h
 | `/tail`       | Live stream, filter by service / level, pause/clear       | SSE `/v1/tail` (+ ring-buffer replay) | live    |
 | `/search`     | Historical log search, time-range + service/level filters | `/v1/logs?service&level&since&until`  | live    |
 | `/traces/:id` | Single-trace waterfall, log timeline                      | `/v1/traces/:id`                      | live    |
-| `/errors`     | Grouped by fingerprint, sortable by `lastSeen` / `count`  | `/v1/errors`                          | Phase 4 |
+| `/errors`     | Grouped by fingerprint, sortable by `lastSeen` / `count`  | `/v1/errors`                          | live    |
 | `/services`   | Per-service log volume sparklines, error rate, last-seen  | aggregations                          | Phase 6 |
 
 ### Live-tail wire format (Phase 2)
@@ -166,8 +191,8 @@ message can be followed end-to-end across services.
 | 0     | Scaffold (`kansoku/{apps,packages,docs}`, Portless URLs, workspace globs, `/health`)                    | done        |
 | 1     | Mongo time-series setup, `/v1/logs` ingest, Zod envelope, kansoku-stream shipper, wire Kioku end-to-end | done        |
 | 2     | Dashboard `/tail` (SSE) and `/search`                                                                   | done        |
-| 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                    | **this PR** |
-| 4     | Error fingerprinting + `/errors` page                                                                   |             |
+| 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                    | done        |
+| 4     | Error fingerprinting + `/errors` page                                                                   | **this PR** |
 | 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                          |             |
 | 6     | Derived metrics + `/services` dashboard                                                                 |             |
 | 7     | TTL policies, retention dial-in, optional alert webhook on new errors                                   |             |

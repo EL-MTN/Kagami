@@ -49,4 +49,10 @@ export async function ensureIndexes(): Promise<void> {
 
   // Level fan-out (e.g. error stream across services).
   await logs.createIndex({ "meta.level": 1, ts: -1 }, { name: "logs_level_ts" });
+
+  // Error registry (Phase 4). `_id` is the fingerprint, so the primary key
+  // already covers lookups; the secondary indexes drive the dashboard list.
+  const errors = db.collection("errors");
+  await errors.createIndex({ lastSeen: -1 }, { name: "errors_last_seen" });
+  await errors.createIndex({ service: 1, lastSeen: -1 }, { name: "errors_service_last_seen" });
 }

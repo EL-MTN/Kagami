@@ -5,6 +5,7 @@ const links: { href: string; label: string; iconName: IconName }[] = [
   { href: "/", label: "Overview", iconName: "Activity" },
   { href: "/tail", label: "Live tail", iconName: "Radio" },
   { href: "/search", label: "Search", iconName: "Search" },
+  { href: "/errors", label: "Errors", iconName: "AlertTriangle" },
 ];
 
 export async function Sidebar() {

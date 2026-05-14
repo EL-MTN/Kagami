@@ -65,4 +65,33 @@ export async function getTrace(id: string): Promise<TraceResponse> {
   return api(`/v1/traces/${encodeURIComponent(id)}`);
 }
 
+export interface ErrorRecord {
+  _id: string;
+  service: string;
+  component: string;
+  name?: string;
+  message: string;
+  sampleMsg?: string;
+  sampleStack?: string;
+  firstSeen: string;
+  lastSeen: string;
+  count: number;
+  recentTraceIds: string[];
+}
+
+export interface ErrorsResponse {
+  errors: ErrorRecord[];
+}
+
+export async function listErrors(
+  params: { service?: string; limit?: number } = {},
+): Promise<ErrorsResponse> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "") qs.set(k, String(v));
+  }
+  const suffix = qs.toString() ? `?${qs}` : "";
+  return api(`/v1/errors${suffix}`);
+}
+
 export const KANSOKU_BASE = BASE;
