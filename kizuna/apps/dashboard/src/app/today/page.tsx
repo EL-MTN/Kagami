@@ -16,9 +16,10 @@ export const dynamic = "force-dynamic";
 
 const TZ = "America/New_York";
 
-// Compute midnight in TZ for "today's calendar events" range.
-function startOfDayInTZ(): Date {
-  const now = new Date();
+// Returns the UTC ms at which the wall-clock parts of `date` in TZ would land
+// if interpreted as if they were UTC. The difference (this minus date.getTime())
+// is the TZ offset at that exact instant.
+function tzWallAsUtcMs(date: Date): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: TZ,
     year: "numeric",
@@ -28,31 +29,38 @@ function startOfDayInTZ(): Date {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-  }).formatToParts(now);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
-  const wallNow = Date.UTC(
-    Number(get("year")),
-    Number(get("month")) - 1,
-    Number(get("day")),
-    Number(get("hour")),
-    Number(get("minute")),
-    Number(get("second")),
-  );
-  const offsetMs = wallNow - now.getTime();
-  const midnightWall = Date.UTC(
-    Number(get("year")),
-    Number(get("month")) - 1,
-    Number(get("day")),
-    0,
-    0,
-    0,
-  );
-  return new Date(midnightWall - offsetMs);
+  }).formatToParts(date);
+  const g = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? "0");
+  return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute"), g("second"));
+}
+
+// Returns the UTC instant of 00:00 on (year, month, day) in TZ. month is 1-12.
+// Computes the offset at the midnight probe itself (not "now"), so DST
+// transition days don't shift the result by an hour. Day overflow is fine:
+// Date.UTC(2026, 11, 32) normalizes to 2027-01-01.
+function startOfDayInTZ(year: number, month: number, day: number): Date {
+  const probeMs = Date.UTC(year, month - 1, day, 0, 0, 0);
+  const offsetMs = tzWallAsUtcMs(new Date(probeMs)) - probeMs;
+  return new Date(probeMs - offsetMs);
 }
 
 async function fetchData() {
-  const start = startOfDayInTZ();
-  const endOfDay = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  const now = new Date();
+  const todayParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const get = (t: string) => Number(todayParts.find((p) => p.type === t)?.value ?? "0");
+  const Y = get("year");
+  const M = get("month");
+  const D = get("day");
+
+  const start = startOfDayInTZ(Y, M, D);
+  // Tomorrow's midnight in TZ — avoids the `start + 24h` bug on DST transition
+  // days, where the local day is 23 or 25 hours long.
+  const endOfDay = startOfDayInTZ(Y, M, D + 1);
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const [digest, calendarToday, recent] = await Promise.all([
     api.getDigest("PT24H"),

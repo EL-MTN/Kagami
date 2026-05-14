@@ -16,7 +16,6 @@ interface FiltersProps {
 
 export function Filters({ initialChannel, initialPerson, basePath }: FiltersProps) {
   const router = useRouter();
-  const [channel, setChannel] = useState<string>(initialChannel);
   const [pickerQuery, setPickerQuery] = useState<string>("");
   const [pickerResults, setPickerResults] = useState<PersonPickerResult[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -52,9 +51,13 @@ export function Filters({ initialChannel, initialPerson, basePath }: FiltersProp
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
+  // Single source of truth is the URL. Reading directly from props instead of
+  // mirroring into useState avoids a desync where the select retains its old
+  // value after back/forward navigation (RSC re-renders with new props but
+  // useState's initial argument is ignored on subsequent renders).
   const navigate = (next: { channel?: string | null; personId?: string | null }) => {
     const params = new URLSearchParams();
-    const effectiveChannel = next.channel !== undefined ? next.channel : channel;
+    const effectiveChannel = next.channel !== undefined ? next.channel : initialChannel;
     const effectivePerson =
       next.personId !== undefined ? next.personId : (initialPerson?.id ?? null);
     if (effectiveChannel) params.set("channel", effectiveChannel);
@@ -67,9 +70,8 @@ export function Filters({ initialChannel, initialPerson, basePath }: FiltersProp
     <div ref={containerRef} className="flex flex-wrap items-center gap-2">
       <label className="text-xs text-muted-foreground">Channel</label>
       <select
-        value={channel}
+        value={initialChannel}
         onChange={(e) => {
-          setChannel(e.target.value);
           navigate({ channel: e.target.value === "" ? null : e.target.value });
         }}
         className="h-9 rounded-md border border-border bg-card px-2 text-sm transition-colors focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/40"
