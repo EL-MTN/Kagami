@@ -17,6 +17,10 @@ const {
   mockGetPersonContext,
   mockRecentInteractions,
   mockListMyFollowups,
+  mockLogInteraction,
+  mockCreateFollowup,
+  mockResolveFollowup,
+  mockUpdatePerson,
   MockError,
 } = vi.hoisted(() => {
   class MockError extends Error {
@@ -38,6 +42,10 @@ const {
     mockGetPersonContext: vi.fn(),
     mockRecentInteractions: vi.fn(),
     mockListMyFollowups: vi.fn(),
+    mockLogInteraction: vi.fn(),
+    mockCreateFollowup: vi.fn(),
+    mockResolveFollowup: vi.fn(),
+    mockUpdatePerson: vi.fn(),
     MockError,
   };
 });
@@ -47,14 +55,22 @@ vi.mock("@kokoro/kizuna", () => ({
   getPersonContext: mockGetPersonContext,
   recentInteractions: mockRecentInteractions,
   listMyFollowups: mockListMyFollowups,
+  logInteraction: mockLogInteraction,
+  createFollowup: mockCreateFollowup,
+  resolveFollowup: mockResolveFollowup,
+  updatePerson: mockUpdatePerson,
   KizunaClientError: MockError,
 }));
 
 import {
+  createCreateFollowupTool,
   createFindPeopleTool,
   createGetPersonContextTool,
   createListMyFollowupsTool,
+  createLogInteractionTool,
   createRecentInteractionsTool,
+  createResolveFollowupTool,
+  createUpdatePersonTool,
 } from "../../../src/ai/tools/crm";
 
 interface ExecutableTool {
@@ -67,7 +83,14 @@ beforeEach(() => {
   mockGetPersonContext.mockReset();
   mockRecentInteractions.mockReset();
   mockListMyFollowups.mockReset();
+  mockLogInteraction.mockReset();
+  mockCreateFollowup.mockReset();
+  mockResolveFollowup.mockReset();
+  mockUpdatePerson.mockReset();
 });
+
+const PERSON_ID = "111111111111111111111111";
+const FOLLOWUP_ID = "333333333333333333333333";
 
 describe("findPeople CRM tool", () => {
   it("trims query, clamps limit, and returns count/truncation metadata", async () => {
@@ -182,5 +205,82 @@ describe("listMyFollowups CRM tool", () => {
     });
     expect(tool.description).toContain("i_owe means Eric owes the person");
     expect(result).toMatchObject({ success: true, count: 0, data: [] });
+  });
+});
+
+// CRM write tools enforce the confirmation gate at the code level: each
+// tool's `execute` returns a refusal envelope instead of calling the
+// Kizuna client. The dispatcher in `services/gated-actions.ts` calls the
+// client directly after approval, so the dispatch path is unaffected.
+//
+// These tests pin that contract from the LLM-facing side. The kizuna
+// package mocks must NEVER be called from these write paths.
+
+describe("logInteraction CRM tool", () => {
+  it("refuses direct invocation and instructs the LLM to wrap in requestConfirmation", async () => {
+    const tool = createLogInteractionTool() as unknown as ExecutableTool;
+    const result = await tool.execute(
+      {
+        occurredAt: "2026-05-13T12:00:00.000Z",
+        channel: "call",
+        title: "Catch up",
+        participants: [{ personId: PERSON_ID, role: "subject" }],
+      },
+      undefined,
+    );
+
+    expect(mockLogInteraction).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.reason).toContain("approval-gated");
+    expect(result.reason).toContain("requestConfirmation");
+    expect(result.reason).toContain('"logInteraction"');
+    expect(tool.description).toContain("MUST be wrapped in requestConfirmation");
+  });
+});
+
+describe("createFollowup CRM tool", () => {
+  it("refuses direct invocation and instructs the LLM to wrap in requestConfirmation", async () => {
+    const tool = createCreateFollowupTool() as unknown as ExecutableTool;
+    const result = await tool.execute(
+      {
+        personId: PERSON_ID,
+        direction: "i_owe",
+        reason: "Send the deck",
+      },
+      undefined,
+    );
+
+    expect(mockCreateFollowup).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.reason).toContain('"createFollowup"');
+    expect(tool.description).toContain("MUST be wrapped in requestConfirmation");
+  });
+});
+
+describe("resolveFollowup CRM tool", () => {
+  it("refuses direct invocation and instructs the LLM to wrap in requestConfirmation", async () => {
+    const tool = createResolveFollowupTool() as unknown as ExecutableTool;
+    const result = await tool.execute({ followupId: FOLLOWUP_ID, status: "done" }, undefined);
+
+    expect(mockResolveFollowup).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.reason).toContain('"resolveFollowup"');
+  });
+});
+
+describe("updatePerson CRM tool", () => {
+  it("refuses direct invocation and instructs the LLM to wrap in requestConfirmation", async () => {
+    const tool = createUpdatePersonTool() as unknown as ExecutableTool;
+    const result = await tool.execute(
+      {
+        personId: PERSON_ID,
+        tags: ["close-friend"],
+      },
+      undefined,
+    );
+
+    expect(mockUpdatePerson).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.reason).toContain('"updatePerson"');
   });
 });

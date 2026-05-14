@@ -118,6 +118,42 @@ export async function getJson<T>(
   }
 }
 
+export async function sendJson<T>(
+  method: "POST" | "PATCH" | "DELETE",
+  pathAndQuery: string,
+  routeTemplate: string,
+  body: unknown,
+  schema: z.ZodType<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  if (!config.KIZUNA_ENABLED) {
+    throw new KizunaClientError("disabled", "Kizuna integration disabled");
+  }
+
+  try {
+    const res = await fetch(`${baseUrl()}${pathAndQuery}`, {
+      method,
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
+    });
+    if (!res.ok) {
+      throw new KizunaClientError("http", `Kizuna request failed with status ${res.status}`, {
+        status: res.status,
+        routeTemplate,
+        pathAndQuery,
+        body: await parseErrorBody(res),
+      });
+    }
+    return schema.parse(await res.json());
+  } catch (err) {
+    throw classifyFetchError(err, pathAndQuery, routeTemplate);
+  }
+}
+
 export function appendParam(params: URLSearchParams, key: string, value: string | undefined) {
   if (value !== undefined) params.set(key, value);
 }

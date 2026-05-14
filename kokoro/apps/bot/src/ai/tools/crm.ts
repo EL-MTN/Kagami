@@ -225,11 +225,170 @@ export function createListMyFollowupsTool() {
   });
 }
 
+// ─── Write tools ─────────────────────────────────────────────────────────────
+//
+// CRM write tools are CODE-ENFORCED to flow through requestConfirmation:
+// each tool's `execute` body returns a refusal envelope instructing the LLM
+// to retry through the wrapper. The gated dispatcher in
+// `services/gated-actions.ts` calls the underlying `@kokoro/kizuna` client
+// function directly, so dispatch is unaffected.
+//
+// This is stricter than the older gated tools (sendEmail/manageCalendar/
+// browseAgent) which rely on prompt-only guidance plus incidental runtime
+// barriers (OAuth tokens, configured browser). CRM writes have no such
+// incidental barrier — KIZUNA_ENABLED defaults to true — so the gate is
+// promoted to a hard code-level check.
+//
+// Schemas are exported and re-used by the gated dispatcher's argument
+// re-validator so the two layers can never drift apart again.
+
+const writeGateGuidance =
+  "MUST be wrapped in requestConfirmation — calling this tool directly will be refused. Use requestConfirmation({ summary, action: { tool, args } }) instead.";
+
+const participantRole = z.enum(["from", "to", "cc", "attendee", "subject"]);
+const interactionChannel = z.enum(["email", "calendar", "call", "in_person", "message", "manual"]);
+const followupStatus = z.enum(["open", "done", "snoozed", "dismissed"]);
+const followupDirection = z.enum(["i_owe", "they_owe"]);
+const birthday = z.union([
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be YYYY-MM-DD or --MM-DD"),
+  z.string().regex(/^--\d{2}-\d{2}$/, "must be YYYY-MM-DD or --MM-DD"),
+]);
+
+export const logInteractionInputSchema = z.object({
+  occurredAt: isoDatetime.describe("ISO 8601 timestamp the interaction happened at."),
+  channel: interactionChannel.describe(
+    "Channel for this interaction. Gmail/calendar ingest already auto-logs email/calendar entries, so concierge writes are almost always call/in_person/message/manual.",
+  ),
+  title: z.string().min(1).max(200).describe("Short title shown on Kizuna's timeline."),
+  body: z
+    .string()
+    .max(8000)
+    .optional()
+    .describe("Optional longer narrative — what was discussed, decisions, follow-ups noted."),
+  participants: z
+    .array(z.object({ personId: objectId, role: participantRole }))
+    .min(1)
+    .max(50)
+    .describe(
+      "Each personId is a PersonSummary.id. role is from/to/cc/attendee/subject from Goshujin-sama's perspective.",
+    ),
+  context: z
+    .array(z.string().min(1).max(80))
+    .max(20)
+    .optional()
+    .describe("Optional context tags (e.g. 'work', 'side-project')."),
+  location: z.string().max(400).optional().describe("Optional location string."),
+});
+
+export const createFollowupInputSchema = z.object({
+  personId: objectId.describe("PersonSummary.id from a CRM tool."),
+  direction: followupDirection.describe(
+    "i_owe = Eric owes the person; they_owe = the person owes Eric.",
+  ),
+  reason: z.string().min(1).max(400).describe("Short reason — what's owed."),
+  dueAt: isoDatetime
+    .optional()
+    .describe("Optional ISO 8601 due date. Omit for an open-ended followup."),
+  sourceInteractionId: objectId
+    .optional()
+    .describe("Optional InteractionSummary.id this followup stems from."),
+});
+
+export const resolveFollowupInputSchema = z.object({
+  followupId: objectId.describe("FollowupSummary.id from listMyFollowups or getPersonContext."),
+  status: followupStatus.describe(
+    "Target status — done when complete, snoozed/dismissed to clear without completion, open to reopen.",
+  ),
+  dueAt: isoDatetime.optional().describe("Optional new ISO 8601 due date — useful when snoozing."),
+  reason: z.string().min(1).max(400).optional().describe("Optional updated reason text."),
+});
+
+export const updatePersonInputSchema = z
+  .object({
+    personId: objectId.describe("PersonSummary.id from a CRM tool."),
+    displayName: z.string().min(1).optional(),
+    primaryEmail: z.string().email().optional(),
+    primaryOrgId: objectId.optional(),
+    relationship: z.string().max(2000).optional().describe("Free-form relationship narrative."),
+    emails: z.array(z.string().email().max(254)).max(20).optional(),
+    phones: z.array(z.string().min(1).max(40)).max(20).optional(),
+    handles: z
+      .record(z.string().min(1).max(40), z.string().min(1).max(80))
+      .optional()
+      .describe("Map of provider → handle, e.g. { telegram: '@sarah' }."),
+    tags: z.array(z.string().min(1).max(80)).max(30).optional(),
+    birthday: birthday.optional().describe("YYYY-MM-DD or --MM-DD (no year known)."),
+    notes: z.string().max(8000).optional(),
+  })
+  .refine((v) => Object.keys(v).some((k) => k !== "personId"), {
+    message: "updatePerson requires at least one field to change",
+  });
+
+function refuseDirectInvocation<T>(toolName: string): CrmToolResult<T> {
+  logger.warn(
+    { tool: toolName },
+    "Tool: CRM write invoked directly — refusing; must flow through requestConfirmation",
+  );
+  return {
+    success: false,
+    reason: `${toolName} is approval-gated. Wrap it in requestConfirmation({ summary, action: { tool: "${toolName}", args } }) — direct invocation is refused.`,
+  };
+}
+
+export function createLogInteractionTool() {
+  return tool({
+    description: `Log a Kizuna interaction with one or more people (call, in_person meeting, manual message log, etc). ${writeGateGuidance} ${opaqueIdGuidance}`,
+    inputSchema: logInteractionInputSchema,
+    execute: (): Promise<CrmToolResult<InteractionSummary>> => {
+      return Promise.resolve(refuseDirectInvocation<InteractionSummary>("logInteraction"));
+    },
+  });
+}
+
+export function createCreateFollowupTool() {
+  return tool({
+    description: `Create a Kizuna followup. direction is Eric-relative: i_owe means Eric owes the person, they_owe means the person owes Eric. ${writeGateGuidance} ${opaqueIdGuidance}`,
+    inputSchema: createFollowupInputSchema,
+    execute: (): Promise<CrmToolResult<FollowupSummary>> => {
+      return Promise.resolve(refuseDirectInvocation<FollowupSummary>("createFollowup"));
+    },
+  });
+}
+
+export function createResolveFollowupTool() {
+  return tool({
+    description: `Resolve (or re-open) a Kizuna followup — set status to done/snoozed/dismissed. Reuse the same tool to reopen by passing status=open. ${writeGateGuidance} ${opaqueIdGuidance}`,
+    inputSchema: resolveFollowupInputSchema,
+    execute: (): Promise<CrmToolResult<FollowupSummary>> => {
+      return Promise.resolve(refuseDirectInvocation<FollowupSummary>("resolveFollowup"));
+    },
+  });
+}
+
+export function createUpdatePersonTool() {
+  return tool({
+    description: `Update a Kizuna person profile. Only the fields you pass are changed; omit unchanged fields. ${writeGateGuidance} ${opaqueIdGuidance}`,
+    inputSchema: updatePersonInputSchema,
+    execute: (): Promise<CrmToolResult<PersonSummary>> => {
+      return Promise.resolve(refuseDirectInvocation<PersonSummary>("updatePerson"));
+    },
+  });
+}
+
 export function createCrmTools() {
   return {
     findPeople: createFindPeopleTool(),
     getPersonContext: createGetPersonContextTool(),
     recentInteractions: createRecentInteractionsTool(),
     listMyFollowups: createListMyFollowupsTool(),
+  };
+}
+
+export function createCrmWriteTools() {
+  return {
+    logInteraction: createLogInteractionTool(),
+    createFollowup: createCreateFollowupTool(),
+    resolveFollowup: createResolveFollowupTool(),
+    updatePerson: createUpdatePersonTool(),
   };
 }

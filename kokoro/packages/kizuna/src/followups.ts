@@ -1,8 +1,16 @@
 import { logger } from "@kokoro/shared";
-import { KizunaClientError, getJson, appendParam, clampLimit, withKizunaDeadline } from "./client";
+import {
+  KizunaClientError,
+  getJson,
+  sendJson,
+  appendParam,
+  clampLimit,
+  withKizunaDeadline,
+} from "./client";
 import { getPersonWithSignal } from "./people";
 import { followupSummary, missingPersonSummary, personSummary } from "./projections";
 import {
+  FollowupWireSchema,
   FollowupsEnvelopeSchema,
   type FollowupSummary,
   type FollowupWire,
@@ -14,6 +22,21 @@ export type ListFollowupsInput = {
   direction?: "i_owe" | "they_owe";
   status?: "open" | "done" | "snoozed" | "dismissed";
   limit?: number;
+};
+
+export type CreateFollowupInput = {
+  personId: string;
+  direction: "i_owe" | "they_owe";
+  reason: string;
+  dueAt?: string;
+  sourceInteractionId?: string;
+};
+
+export type ResolveFollowupInput = {
+  followupId: string;
+  status: "open" | "done" | "snoozed" | "dismissed";
+  dueAt?: string;
+  reason?: string;
 };
 
 export async function listFollowups(
@@ -35,6 +58,71 @@ export async function listMyFollowups(
       ...(followups.nextCursor ? { nextCursor: followups.nextCursor } : {}),
     };
   });
+}
+
+export async function createFollowup(input: CreateFollowupInput): Promise<FollowupSummary> {
+  return withKizunaDeadline(async (signal) => {
+    const body: Record<string, unknown> = {
+      personId: input.personId,
+      direction: input.direction,
+      reason: input.reason,
+    };
+    if (input.dueAt !== undefined) body.dueAt = input.dueAt;
+    if (input.sourceInteractionId !== undefined) {
+      body.sourceInteractionId = input.sourceInteractionId;
+    }
+    const wire = await sendJson(
+      "POST",
+      "/followups",
+      "/followups",
+      body,
+      FollowupWireSchema,
+      signal,
+    );
+    // The write already landed — never let hydration failure (timeout,
+    // transport, etc.) throw past this point, or the caller will see a
+    // failure for a write that succeeded and may retry it.
+    const person = await hydratePersonAfterWrite(wire, signal);
+    return followupSummary(wire, person);
+  });
+}
+
+export async function resolveFollowup(input: ResolveFollowupInput): Promise<FollowupSummary> {
+  return withKizunaDeadline(async (signal) => {
+    const body: Record<string, unknown> = { status: input.status };
+    if (input.dueAt !== undefined) body.dueAt = input.dueAt;
+    if (input.reason !== undefined) body.reason = input.reason;
+    const wire = await sendJson(
+      "PATCH",
+      `/followups/${encodeURIComponent(input.followupId)}`,
+      "/followups/:id",
+      body,
+      FollowupWireSchema,
+      signal,
+    );
+    // The patch already landed — same reasoning as createFollowup above.
+    const person = await hydratePersonAfterWrite(wire, signal);
+    return followupSummary(wire, person);
+  });
+}
+
+async function hydratePersonAfterWrite(
+  wire: FollowupWire,
+  signal: AbortSignal,
+): Promise<PersonSummary> {
+  try {
+    const person = await getPersonWithSignal(wire.personId, signal);
+    return personSummary(person);
+  } catch (err) {
+    if (err instanceof KizunaClientError) {
+      logger.warn(
+        { kind: err.kind, routeTemplate: err.routeTemplate, status: err.status },
+        "kizuna followup person hydration failed after write — falling back to placeholder",
+      );
+      return missingPersonSummary(wire.personId);
+    }
+    throw err;
+  }
 }
 
 export async function listFollowupsForPerson(
