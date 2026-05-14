@@ -97,7 +97,7 @@ Phase 1 uses a shared HMAC token (`KANSOKU_INGEST_TOKEN`) carried as a request h
 | `/`           | Overview cards + status                                   | `/health`, `/version`                 | live    |
 | `/tail`       | Live stream, filter by service / level, pause/clear       | SSE `/v1/tail` (+ ring-buffer replay) | live    |
 | `/search`     | Historical log search, time-range + service/level filters | `/v1/logs?service&level&since&until`  | live    |
-| `/traces/:id` | Single-trace waterfall, log timeline                      | `/v1/traces/:id`                      | Phase 3 |
+| `/traces/:id` | Single-trace waterfall, log timeline                      | `/v1/traces/:id`                      | live    |
 | `/errors`     | Grouped by fingerprint, sortable by `lastSeen` / `count`  | `/v1/errors`                          | Phase 4 |
 | `/services`   | Per-service log volume sparklines, error rate, last-seen  | aggregations                          | Phase 6 |
 
@@ -123,14 +123,50 @@ localhost; no auth on the tail/query endpoints (cf. siblings).
 handles preflights for the dashboard. The token-authed ingest path is
 unaffected — its callers are server-to-server, not browser-originating.
 
+### Distributed tracing (Phase 3)
+
+W3C [Trace Context](https://www.w3.org/TR/trace-context/) is the wire format.
+A trace is identified by a 32-hex `traceId`; each unit of work within the
+trace is a `spanId` (16 hex). Spans link to their `parentSpanId`.
+
+Three pieces live in `@kagami/logger`:
+
+- **`@kagami/logger/trace`** — `AsyncLocalStorage`-backed context store with
+  `runWithTrace`, `getTraceContext`, ID generators, and `parseTraceparent` /
+  `formatTraceparent` helpers.
+- **`@kagami/logger/express-trace`** — middleware that reads the incoming
+  `traceparent`, opens a child span if present (or mints a fresh trace
+  otherwise), echoes the result on the response, and runs the rest of the
+  request inside the ALS scope.
+- **`@kagami/logger/traced-fetch`** — `tracedFetch(input, init)` reads the
+  active context and stamps it on the outgoing request as `traceparent`. With
+  no active context it's identical to `fetch`.
+
+`createLogger` installs a pino `mixin` that reads the ALS context on every
+log call and emits `traceId` / `spanId` / `parentSpanId`. No callers have to
+thread context manually — every log line inside a traced request gets
+enriched automatically. The shipper's envelope already accepts these fields,
+and the server-side normalizer keeps them as top-level keys on `StoredLog`
+for fast indexed lookup (`{ traceId: 1 }` sparse index).
+
+`GET /v1/traces/:id` returns every log line sharing the given traceId,
+oldest-first. The dashboard's `/traces/[id]` page groups by `spanId`, walks
+parent-child links into a tree, and renders a waterfall (offset + duration
+proportional to the total trace window) above a flat log timeline.
+
+Phase 3 wires the middleware into Kioku and Kansoku itself; Kokoro and
+Kizuna get it during the Phase 5 rollout sweep, at which point Kokoro's
+`fetch` calls to Kioku/Kizuna are swapped for `tracedFetch` so a Telegram
+message can be followed end-to-end across services.
+
 ## Phased delivery
 
 | Phase | Scope                                                                                                   | Status      |
 | ----- | ------------------------------------------------------------------------------------------------------- | ----------- |
 | 0     | Scaffold (`kansoku/{apps,packages,docs}`, Portless URLs, workspace globs, `/health`)                    | done        |
 | 1     | Mongo time-series setup, `/v1/logs` ingest, Zod envelope, kansoku-stream shipper, wire Kioku end-to-end | done        |
-| 2     | Dashboard `/tail` (SSE) and `/search`                                                                   | **this PR** |
-| 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                    |             |
+| 2     | Dashboard `/tail` (SSE) and `/search`                                                                   | done        |
+| 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                    | **this PR** |
 | 4     | Error fingerprinting + `/errors` page                                                                   |             |
 | 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                          |             |
 | 6     | Derived metrics + `/services` dashboard                                                                 |             |

@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import express, { type ErrorRequestHandler } from "express";
 import { pinoHttp } from "pino-http";
 import { ZodError } from "zod";
+import { traceMiddleware } from "@kagami/logger/express-trace";
 import { logger } from "./logger.js";
 import { corsForDashboard } from "./lib/cors.js";
 import { metaRouter } from "./routes/meta.js";
@@ -21,6 +22,9 @@ export function createApp(opts: { ingestToken: string | undefined }): express.Ex
   const app = express();
   app.set("trust proxy", "loopback");
   app.use(express.json({ limit: "4mb" }));
+  // Trace context first so pino-http's `request completed` line — and every
+  // downstream log inside the request — carries traceId/spanId.
+  app.use(traceMiddleware());
   app.use(pinoHttp({ logger }));
 
   app.use("/", metaRouter);

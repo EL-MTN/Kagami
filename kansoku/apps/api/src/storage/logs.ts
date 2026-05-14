@@ -12,6 +12,7 @@ export interface StoredLog {
   msg?: string;
   traceId?: string;
   spanId?: string;
+  parentSpanId?: string;
   fields?: Record<string, unknown>;
 }
 
@@ -50,4 +51,10 @@ export async function queryLogs(opts: QueryLogsOptions = {}): Promise<StoredLog[
     .sort({ ts: -1 })
     .limit(Math.min(opts.limit ?? 100, 1000))
     .toArray();
+}
+
+/** All log lines that share a traceId, ordered oldest-first for waterfall rendering. */
+export async function queryTrace(traceId: string): Promise<StoredLog[]> {
+  const coll = await getLogsCollection();
+  return coll.find({ traceId }).sort({ ts: 1 }).limit(5000).toArray();
 }

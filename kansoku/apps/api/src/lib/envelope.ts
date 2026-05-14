@@ -17,6 +17,7 @@ export const LogEnvelope = z
     hostname: z.string().optional(),
     traceId: z.string().optional(),
     spanId: z.string().optional(),
+    parentSpanId: z.string().optional(),
   })
   .passthrough();
 
@@ -46,6 +47,7 @@ const KNOWN_KEYS = new Set([
   "hostname",
   "traceId",
   "spanId",
+  "parentSpanId",
 ]);
 
 export function toStoredLog(envelope: LogEnvelopeInput): StoredLog {
@@ -68,6 +70,7 @@ export function toStoredLog(envelope: LogEnvelopeInput): StoredLog {
   if (envelope.msg !== undefined) stored.msg = envelope.msg;
   if (envelope.traceId !== undefined) stored.traceId = envelope.traceId;
   if (envelope.spanId !== undefined) stored.spanId = envelope.spanId;
+  if (envelope.parentSpanId !== undefined) stored.parentSpanId = envelope.parentSpanId;
   if (Object.keys(fields).length > 0) stored.fields = fields;
   return stored;
 }

@@ -11,6 +11,7 @@ export interface StoredLog {
   msg?: string;
   traceId?: string;
   spanId?: string;
+  parentSpanId?: string;
   fields?: Record<string, unknown>;
 }
 
@@ -53,6 +54,15 @@ export async function searchLogs(params: SearchLogsParams = {}): Promise<LogsRes
   }
   const suffix = qs.toString() ? `?${qs}` : "";
   return api(`/v1/logs${suffix}`);
+}
+
+export interface TraceResponse {
+  traceId: string;
+  logs: StoredLog[];
+}
+
+export async function getTrace(id: string): Promise<TraceResponse> {
+  return api(`/v1/traces/${encodeURIComponent(id)}`);
 }
 
 export const KANSOKU_BASE = BASE;

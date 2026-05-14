@@ -14,7 +14,6 @@ export default async function setup(): Promise<() => Promise<void>> {
     // build) that download fails. Don't take down every test — suites that
     // need Mongo will throw at setupTestMongo when SHARED_MONGO_URI_ENV is
     // unset, but non-Mongo suites (e.g. SSE tail) still run.
-    // eslint-disable-next-line no-console
     console.warn(
       `[kansoku tests] could not start mongodb-memory-server: ${(err as Error).message}. ` +
         `Mongo-backed suites will be skipped.`,

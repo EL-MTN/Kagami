@@ -2,6 +2,7 @@ import "dotenv/config";
 import express, { type ErrorRequestHandler } from "express";
 import { pinoHttp } from "pino-http";
 import { ZodError } from "zod";
+import { traceMiddleware } from "@kagami/logger/express-trace";
 import { logger } from "./logger.js";
 import { metaRouter } from "./routes/meta.js";
 import { factsRouter } from "./routes/facts.js";
@@ -25,6 +26,11 @@ app.set("trust proxy", "loopback");
 
 // Transcripts can be sizeable; bump beyond the 100kb default.
 app.use(express.json({ limit: "10mb" }));
+// Trace context first so every log inside a request — including pino-http's
+// completion log — carries traceId/spanId. When this Kioku request was
+// triggered by Kokoro via tracedFetch, the incoming `traceparent` is
+// preserved as the parent of the span we open here.
+app.use(traceMiddleware());
 app.use(pinoHttp({ logger }));
 
 app.use("/", metaRouter);

@@ -4,6 +4,7 @@ import pretty from "pino-pretty";
 import type { LoggerOptions } from "pino";
 import { createKansokuStream } from "./kansoku-stream.js";
 import type { KansokuStreamOptions } from "./kansoku-stream.js";
+import { getTraceContext } from "./trace.js";
 
 export const DEFAULT_REDACT_PATHS = [
   "authorization",
@@ -86,6 +87,17 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
         return "[redacted]";
       },
     },
+    // Mixin runs on every log call and merges its return value into the
+    // emitted record. Reading from AsyncLocalStorage means every log line
+    // inside a traced request auto-includes traceId/spanId without callers
+    // having to thread context manually.
+    mixin: () => {
+      const ctx = getTraceContext();
+      if (!ctx) return {};
+      return ctx.parentSpanId
+        ? { traceId: ctx.traceId, spanId: ctx.spanId, parentSpanId: ctx.parentSpanId }
+        : { traceId: ctx.traceId, spanId: ctx.spanId };
+    },
     ...(formatters ? { formatters } : {}),
   };
 
@@ -116,3 +128,14 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
 
 export type { Logger } from "pino";
 export type { KansokuStreamOptions } from "./kansoku-stream.js";
+export type { TraceContext } from "./trace.js";
+export {
+  childSpan,
+  formatTraceparent,
+  generateSpanId,
+  generateTraceId,
+  getTraceContext,
+  newTraceContext,
+  parseTraceparent,
+  runWithTrace,
+} from "./trace.js";

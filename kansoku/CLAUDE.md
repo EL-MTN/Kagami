@@ -10,15 +10,13 @@ This file is the project guide. Cross-service facts live in the workspace root: 
 
 ## Status
 
-**Phase 2 — dashboard live.** Ingest at `POST /v1/logs` and search at `GET /v1/logs` are live. The dashboard ships three surfaces:
+**Phase 3 — distributed tracing live.** On top of Phases 0–2:
 
-- `/` — overview cards (API + version + retention status), feature links.
-- `/tail` — live SSE stream from `GET /v1/tail` with per-service / per-level filters, pause/resume, clear, ring-buffer replay (last ~50 matching events on connect), and a 30 s heartbeat to keep idle sockets alive.
-- `/search` — server-side filter form posting query params (`service`, `level`, `since`, `until`, `limit`); results render newest-first with timestamp / level / service / message columns.
+- `@kagami/logger` ships a W3C trace-context module: `runWithTrace`, `getTraceContext`, `parseTraceparent` / `formatTraceparent`, `childSpan`, plus an Express `traceMiddleware()` and a `tracedFetch` for outbound propagation. `createLogger` now installs a pino mixin that reads the ALS context and tags every log line with `traceId` / `spanId` automatically — callers don't thread anything.
+- Kansoku and Kioku both mount `traceMiddleware()` before `pinoHttp`. Incoming `traceparent` headers open child spans; absence mints a fresh trace.
+- `GET /v1/traces/:id` returns every log sharing that traceId. The dashboard renders `/traces/[id]` with a waterfall above a flat log timeline; log rows on `/tail` and `/search` link to it.
 
-CORS on `/v1/*` echoes any `*.localhost` origin so the browser-side EventSource at `kansoku.localhost` can reach `api.kansoku.localhost`.
-
-Kioku is the only sibling wired today (Phase 1). Kokoro and Kizuna roll out in Phase 5. Trace context (Phase 3) and error fingerprinting (Phase 4) follow.
+Kokoro and Kizuna get the middleware (and Kokoro's HTTP clients get swapped to `tracedFetch`) in Phase 5. Error fingerprinting follows in Phase 4.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full plan.
 
