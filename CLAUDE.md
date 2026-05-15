@@ -68,8 +68,11 @@ Kioku  ────X──── anything         Pull-only by design; never ini
 {Kioku,Kokoro,Kizuna} ──HTTP──► Kansoku
                                   Observability push from @kagami/logger transport,
                                   fail-open. KANSOKU_URL defaults to
-                                  https://api.kansoku.localhost. Phase 1+; the
-                                  service is scaffolded only today.
+                                  https://api.kansoku.localhost. Live ingest, live
+                                  tail (SSE), historical search, distributed
+                                  tracing, fingerprinted errors, derived metrics,
+                                  optional new-error webhook — see
+                                  kansoku/docs/architecture.md.
 Kansoku ────X──── anything        Push-only-in. Never initiates outbound to siblings.
 ```
 

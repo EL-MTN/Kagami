@@ -47,7 +47,7 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │   │   │   │   └── services.ts  # GET /v1/services (+ /:service/timeline) — derived metrics
 │   │   │   ├── storage/
 │   │   │   │   ├── mongo.ts     # lazy MongoClient singleton
-│   │   │   │   ├── indexes.ts   # time-series + btree indexes, 30-day TTL
+│   │   │   │   ├── indexes.ts   # time-series + btree indexes; configurable TTL (default 30 days)
 │   │   │   │   ├── logs.ts      # StoredLog type, insertLogs, queryLogs, queryTrace
 │   │   │   │   ├── errors.ts    # ErrorRecord type, recordErrors, listErrors
 │   │   │   │   └── metrics.ts   # serviceSummary + serviceTimeline aggregations
@@ -142,3 +142,6 @@ After any code change, update the relevant doc in `/docs` to reflect the change.
 See `/docs` for:
 
 - [architecture.md](docs/architecture.md) — system overview, ingest path, data model, dashboard surfaces, phased delivery plan
+- [dashboard.md](docs/dashboard.md) — Next.js page map, SSE wire format, caching, a11y conventions
+- [configuration.md](docs/configuration.md) — full env-var reference, token rotation, retention behavior
+- [testing.md](docs/testing.md) — vitest + mongodb-memory-server harness, per-suite coverage table

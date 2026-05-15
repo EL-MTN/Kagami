@@ -55,7 +55,7 @@ There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open 
 
 ## Shared conventions
 
-All three projects converge on the same stack. Tooling lives in `shared/packages/`; domain code stays per-project.
+All four projects converge on the same stack. Tooling lives in `shared/packages/`; domain code stays per-project.
 
 - **Language**: TypeScript (strict, ESM), Node ≥ 22
 - **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs cover `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, `kansoku/{apps,packages}/*`, and `shared/packages/*`. One root `package.json`, one root `turbo.json`, one hoisted `node_modules`.
@@ -65,7 +65,7 @@ All three projects converge on the same stack. Tooling lives in `shared/packages
 - **Local dev hosting**: [Portless](https://github.com/vercel-labs/portless) (Vercel Labs) for stable HTTPS named `*.localhost` URLs — see below
 - **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku)
 - **Logging**: Pino, built via the workspace-shared `@kagami/logger` factory. Provides stable `service`, `component`, and `env` bindings, the common secret-redaction list, and the `pino-pretty` transport policy (`env !== "production"`). Each service's `logger.ts` is a thin wrapper that calls the factory with its own service/component name. From Phase 1 onward, the factory also installs the Kansoku transport so every log line ships (fail-open) to the workspace's observability service alongside stdout.
-- **Validation**: Zod 4 schemas at boundaries (uniform across all three projects).
+- **Validation**: Zod 4 schemas at boundaries (uniform across all four projects).
 
 ### Local hosting via Portless
 
@@ -243,24 +243,25 @@ packages/         (no directory today — workspace glob is a placeholder for fu
 **Layout.**
 
 ```
-apps/api          Express API (entry: src/server.ts) — Phase 0 exposes /health and /version only
-apps/dashboard    Next.js 16 app
+apps/api          Express API (entry: src/server.ts) — full surface: meta, ingest, query, tail (SSE), errors, services
+apps/dashboard    Next.js 16 app — overview / tail / search / traces / errors / services
 packages/         (no directory today — workspace glob is a placeholder for future Kansoku-only libs)
 ```
 
-**Endpoints (current).** Both apps run under Portless: API at `https://api.kansoku.localhost`, dashboard at `https://kansoku.localhost`. Standalone fallback port is `7779`.
+**Endpoints.** Both apps run under Portless: API at `https://api.kansoku.localhost`, dashboard at `https://kansoku.localhost`. Standalone fallback port is `7779`.
 
-| Group       | Endpoints                     |
-| ----------- | ----------------------------- |
-| Health/meta | `GET /health`, `GET /version` |
+| Group       | Endpoints                                                                                                        |
+| ----------- | ---------------------------------------------------------------------------------------------------------------- |
+| Health/meta | `GET /health` (liveness), `GET /ready` (Mongo ping), `GET /version`                                              |
+| Ingest      | `POST /v1/logs` (HMAC-token-authed via `KANSOKU_INGEST_TOKEN`)                                                   |
+| Query       | `GET /v1/logs`, `GET /v1/traces/:id`, `GET /v1/errors`, `GET /v1/services`, `GET /v1/services/:service/timeline` |
+| Live tail   | `GET /v1/tail` (SSE)                                                                                             |
 
-**Planned endpoints (Phase 1+).** `POST /v1/logs`, `POST /v1/metrics`, `POST /v1/errors` (ingest, HMAC-authed via `KANSOKU_INGEST_TOKEN`); `GET /v1/logs`, `GET /v1/traces/:id`, `GET /v1/errors` (query); `GET /v1/tail` (SSE).
+**Storage.** MongoDB time-series `logs` collection with `timeField: ts`, `metaField: { service, component, env, level }`; a regular `errors` collection keyed by fingerprint. Retention: configurable via `KANSOKU_LOGS_TTL_DAYS` (default 30, capped at 365 days) for the time-series collection; the errors registry keeps forever. A second `metrics` time-series collection is reserved for Phase 6+'s explicit metric push API, but is not yet created — derived metrics today aggregate over `logs`.
 
-**Storage.** MongoDB time-series collections (`logs`, `metrics`, optional `spans`) with `timeField: ts`, `metaField: { service, component, env, level }`; a regular `errors` collection keyed by fingerprint. Retention: 30 days for time-series, indefinite for the errors registry.
+**Auth model.** Single-user localhost; the OS user is the trust boundary. The ingest endpoint requires a shared HMAC token in the `x-kansoku-auth` header (constant-time byte-length comparison). Read endpoints (query, tail, errors, services) are unauthenticated.
 
-**Auth model.** Single-user localhost; the OS user is the trust boundary. Ingest endpoints (Phase 1+) require a shared HMAC token in the `x-kansoku-auth` header. Query endpoints and the dashboard are unauthenticated.
-
-**Coupling notes.** Kansoku has zero outbound references to siblings. Inbound coupling is the inverse of Kioku's posture: every other service pushes to Kansoku via the shared `@kagami/logger` transport. Failure of Kansoku must never cascade — shippers buffer in-memory (~5 minutes) and drop oldest on overflow rather than blocking the caller.
+**Coupling notes.** Kansoku has zero outbound references to siblings — except an optional fail-open `POST` to `KANSOKU_ALERT_WEBHOOK_URL` when a brand-new error fingerprint shows up (typically Discord / Slack-shaped). Inbound coupling is the inverse of Kioku's posture: every other service pushes to Kansoku via the shared `@kagami/logger` transport. Failure of Kansoku must never cascade — shippers buffer in-memory (~5 minutes) and drop oldest on overflow rather than blocking the caller.
 
 See `kansoku/docs/architecture.md` for the full ingest path, data model, dashboard surfaces, and phased delivery plan.
 
@@ -278,12 +279,12 @@ There is no ordering between the projects — see "How they relate" above. Selec
 
 ## Configuration cheat sheet
 
-| Project | Critical env vars                                                                                                                                                                                                                           |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Kioku   | `KIOKU_MONGO_URI`, `LLM_*`, `EMBEDDING_*`, `KIOKU_API_URL` (dashboard → API; default `https://api.kioku.localhost`); port handled by Portless (`PORT`/`KIOKU_HOST` only for standalone runs)                                                |
-| Kokoro  | `TELEGRAM_BOT_TOKEN`, `MONGODB_URI`, `KIOKU_URL` (→ `https://api.kioku.localhost`), `KIZUNA_URL` (→ `https://api.kizuna.localhost`), `KIZUNA_ENABLED`, `LLM_PROVIDER`/`LLM_MODEL`, provider API keys, `GOOGLE_OAUTH_*`                      |
-| Kizuna  | `MONGO_URI`, `USER_EMAILS`, `KIZUNA_API_URL` (→ `https://api.kizuna.localhost`), `GOOGLE_OAUTH_*` (redirect URI → `https://api.kizuna.localhost/oauth/google/callback`), `KIZUNA_OAUTH_ENCRYPTION_KEY`, `KIZUNA_HOST` (standalone fallback) |
-| Kansoku | `KANSOKU_MONGO_URI`, `KANSOKU_MONGO_DB` (Phase 1+), `KANSOKU_INGEST_TOKEN` (shared HMAC for sibling shippers), `KANSOKU_API_URL` (dashboard → API; default `https://api.kansoku.localhost`); `PORT`/`KANSOKU_HOST` only for standalone runs |
+| Project | Critical env vars                                                                                                                                                                                                                                                                                                                                             |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kioku   | `KIOKU_MONGO_URI`, `LLM_*`, `EMBEDDING_*`, `KIOKU_API_URL` (dashboard → API; default `https://api.kioku.localhost`); port handled by Portless (`PORT`/`KIOKU_HOST` only for standalone runs)                                                                                                                                                                  |
+| Kokoro  | `TELEGRAM_BOT_TOKEN`, `MONGODB_URI`, `KIOKU_URL` (→ `https://api.kioku.localhost`), `KIZUNA_URL` (→ `https://api.kizuna.localhost`), `KIZUNA_ENABLED`, `LLM_PROVIDER`/`LLM_MODEL`, provider API keys, `GOOGLE_OAUTH_*`                                                                                                                                        |
+| Kizuna  | `MONGO_URI`, `USER_EMAILS`, `KIZUNA_API_URL` (→ `https://api.kizuna.localhost`), `GOOGLE_OAUTH_*` (redirect URI → `https://api.kizuna.localhost/oauth/google/callback`), `KIZUNA_OAUTH_ENCRYPTION_KEY`, `KIZUNA_HOST` (standalone fallback)                                                                                                                   |
+| Kansoku | `KANSOKU_MONGO_URI`, `KANSOKU_MONGO_DB`, `KANSOKU_INGEST_TOKEN` (shared HMAC for sibling shippers), `KANSOKU_API_URL` (dashboard → API; default `https://api.kansoku.localhost`), `KANSOKU_LOGS_TTL_DAYS` (time-series TTL; default 30, capped 365), `KANSOKU_ALERT_WEBHOOK_URL` (optional new-error webhook); `PORT`/`KANSOKU_HOST` only for standalone runs |
 
 ## Observed gaps and likely future edges
 
