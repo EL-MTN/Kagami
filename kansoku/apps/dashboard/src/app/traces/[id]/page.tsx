@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { EmptyState, PageHeader } from "@/components/shell";
 import { LevelBadge } from "@/components/level-badge";
+import { LogRow } from "@/components/log-row";
 import { getTrace, type StoredLog } from "@/lib/api";
-import { formatDateTime, formatTimestamp } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -261,22 +262,7 @@ export default async function TracePage({ params }: TracePageProps) {
         <h3 className="kicker">Log timeline</h3>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           {logsToRender.map((log, i) => (
-            <div
-              key={`${log.ts}-${log.spanId ?? "none"}-${i}`}
-              className="grid grid-cols-[100px_70px_140px_120px_1fr] items-baseline gap-3 border-b border-border px-3 py-2 font-mono text-[12px] tabular-nums last:border-b-0"
-            >
-              <span className="text-faint" title={new Date(log.ts).toISOString()}>
-                {formatTimestamp(log.ts)}
-              </span>
-              <LevelBadge level={log.meta.level} />
-              <span className="truncate text-muted-foreground">{log.meta.service}</span>
-              <span className="truncate text-faint" title={log.spanId}>
-                {log.spanId ? log.spanId.slice(0, 8) : "—"}
-              </span>
-              <span className="break-all text-foreground">
-                {log.msg ?? <span className="text-faint">—</span>}
-              </span>
-            </div>
+            <LogRow key={`${log.ts}-${log.spanId ?? "none"}-${i}`} log={log} showSpanId />
           ))}
           {logsHidden > 0 && (
             <div className="border-t border-border bg-muted/30 px-3 py-2 text-center text-[11px] tabular-nums text-faint">
