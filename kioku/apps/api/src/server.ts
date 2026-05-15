@@ -32,10 +32,6 @@ app.set("trust proxy", "loopback");
 // triggered by Kokoro via tracedFetch, the incoming `traceparent` is
 // preserved as the parent of the span we open here.
 app.use(traceMiddleware());
-// Default pino-http dumps the full req/res (every header) at info on every
-// request — including `/health` probes. That's the dominant noise source
-// shipped to Kansoku. Trim to method/url/id + statusCode, level by outcome
-// (5xx→error, 4xx→warn, else info), and skip the health probe entirely.
 app.use(
   pinoHttp({
     logger,

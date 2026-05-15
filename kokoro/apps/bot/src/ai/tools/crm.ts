@@ -64,8 +64,6 @@ function logFailure(toolName: string, err: unknown) {
     );
     return;
   }
-  // Non-KizunaClientError = an unexpected crash in the CRM tool. Previously
-  // only the tool name was logged, so the stack was lost.
   logger.error({ err, tool: toolName }, `Tool: ${toolName} crashed`);
 }
 

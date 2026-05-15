@@ -32,8 +32,6 @@ async function loadDir(dirPath: string): Promise<RefImage[]> {
   try {
     files = await fs.readdir(dirPath);
   } catch (err) {
-    // A misconfigured CONTEXT_PATH or missing reference dir previously
-    // yielded an empty personality with zero log.
     logger.debug({ err, dirPath }, "reference image dir unreadable — skipping");
     return [];
   }

@@ -54,8 +54,6 @@ async function loadOrInitState() {
 }
 
 async function pauseWith(message: string): Promise<void> {
-  // Going paused stops Gmail ingest entirely until a manual re-grant —
-  // this must be loud, not silent state mutation.
   logger.error({ provider: "gmail", reason: message }, "gmail ingest paused — re-grant required");
   await SyncState.updateOne(
     { provider: "gmail" },

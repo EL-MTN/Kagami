@@ -121,9 +121,6 @@ export async function query(question: string, deps: QueryDeps = {}): Promise<Que
   try {
     facts = await ranker(question, k, { filters: deps.filters });
   } catch (err) {
-    // Ranker failure silently degrades to "(No relevant memories found)",
-    // which is indistinguishable from a genuinely empty vault — make the
-    // degradation visible with the question + scope filters.
     logger.error({ err, question, filters: deps.filters, k }, "fact ranker failed");
   }
 
@@ -148,8 +145,6 @@ export async function query(question: string, deps: QueryDeps = {}): Promise<Que
       citations,
     };
   } catch (err) {
-    // Answerer LLM failure was returned to the caller but never logged —
-    // an answerer/model outage was invisible in logs.
     logger.error({ err, question, factCount: facts.length }, "answerer generateText failed");
     return {
       answer: `(no answer — query failed: ${(err as Error).message})`,

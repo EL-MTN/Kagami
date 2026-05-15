@@ -16,9 +16,6 @@ export type Scheduler = {
  * Manual triggers via POST /sync/{gmail,gcal}/run remain available
  * regardless of the scheduler.
  */
-// Idle ticks (nothing fetched, no errors, still ok) are pure steady-state
-// noise — demote to debug. Surface info only when something actually
-// happened or the sync isn't healthy; escalate to warn on per-run errors.
 function logTick(
   provider: "gmail" | "gcal",
   status: string,

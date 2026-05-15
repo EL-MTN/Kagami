@@ -36,10 +36,6 @@ function fail(text: string) {
   return { content: [{ type: "text" as const, text }], isError: true };
 }
 
-// MCP is Kokoro's primary path into Kioku. Tool catches used to swallow the
-// error (only the caller saw `String(e)`), so recall/query/append/ingest
-// failures over MCP were invisible in logs. Log with the tool name + stack
-// before returning the client-facing failure.
 function failLogged(tool: string, e: unknown) {
   logger.error({ err: e, tool }, "mcp tool failed");
   return fail(String(e));

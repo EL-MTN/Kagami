@@ -36,10 +36,6 @@ function envelope(code: string, message: string, details?: unknown) {
 
 export function makeErrorHandler(): ErrorRequestHandler {
   return (err, req, res, _next) => {
-    // Every branch used to map an error to a response WITHOUT logging, so
-    // 5xx (incl. errors.internal()), repeated 400s, and Mongoose schema
-    // violations were invisible. Log every error with request context;
-    // 5xx/unhandled at error with stack, expected 4xx at warn.
     const ctx = { method: req.method, route: req.originalUrl };
 
     if (err instanceof HttpError) {
@@ -76,8 +72,6 @@ export function makeErrorHandler(): ErrorRequestHandler {
       return;
     }
     if (err instanceof mongoose.Error.StrictModeError) {
-      // A schema-contract violation is usually a real bug — keep the
-      // message so it's diagnosable, not just a bare 400.
       logger.warn(
         { ...ctx, status: 400, code: "bad_request", message: err.message },
         "request rejected (strict mode)",

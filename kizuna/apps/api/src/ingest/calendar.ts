@@ -45,8 +45,6 @@ async function loadOrInitState() {
 }
 
 async function pauseWith(message: string): Promise<void> {
-  // Going paused stops Calendar ingest entirely until a manual re-grant —
-  // this must be loud, not silent state mutation.
   logger.error({ provider: "gcal", reason: message }, "gcal ingest paused — re-grant required");
   await SyncState.updateOne(
     { provider: "gcal" },

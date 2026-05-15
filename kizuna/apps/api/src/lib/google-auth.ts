@@ -110,9 +110,6 @@ export async function getAccessToken(config: Config): Promise<string> {
     return res.token;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Token-refresh failure is a top-tier incident (ingest + all Google
-    // calls stop) and was previously only visible if some caller logged
-    // the rewrapped OAuthError. Log it at the auth layer.
     if (msg.includes("invalid_grant")) {
       logger.error({ err }, "google token refresh rejected — re-grant required");
       throw new OAuthError("invalid_grant", "Google rejected the refresh token; re-grant required");
