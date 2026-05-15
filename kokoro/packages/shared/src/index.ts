@@ -11,9 +11,12 @@ export type { CronValidationError } from "./routine-validation";
 // boundary instead of needing their own @kagami/logger dep.
 export { tracedFetch } from "@kagami/logger/traced-fetch";
 export {
+  childSpan,
+  formatTraceparent,
   getTraceContext,
   newTraceContext,
   parseTraceparent,
   runWithTrace,
+  withRootTrace,
 } from "@kagami/logger/trace";
 export type { TraceContext } from "@kagami/logger/trace";

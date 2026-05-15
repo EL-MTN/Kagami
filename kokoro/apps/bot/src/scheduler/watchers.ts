@@ -4,7 +4,7 @@ import {
   getDueWatchers,
   resetStaleRunningWatcherLogs,
 } from "@kokoro/db";
-import { logger } from "@kokoro/shared";
+import { logger, withRootTrace } from "@kokoro/shared";
 import type { IWatcher } from "@kokoro/db";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { AdapterRegistry, platformForChatId } from "../platform/registry";
@@ -96,20 +96,21 @@ async function startupRecovery(registry: AdapterRegistry): Promise<void> {
 export function startWatcherScheduler(registry: AdapterRegistry): () => void {
   void startupRecovery(registry);
 
-  interval = setInterval(() => {
-    void (async () => {
+  interval = setInterval(
+    withRootTrace(async () => {
       try {
         await archiveExpiredWatchers();
       } catch (error) {
         logger.error({ err: error }, "Failed to archive expired watchers");
       }
       await runDueWatchers(registry);
-    })();
-  }, POLL_INTERVAL_MS);
+    }),
+    POLL_INTERVAL_MS,
+  );
   interval.unref();
 
   manualInterval = setInterval(
-    () => void runPendingManualRequest(registry),
+    withRootTrace(() => runPendingManualRequest(registry)),
     MANUAL_POLL_INTERVAL_MS,
   );
   manualInterval.unref();

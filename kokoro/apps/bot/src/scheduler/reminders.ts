@@ -1,5 +1,5 @@
 import { getPendingReminders, markReminderFired } from "@kokoro/db";
-import { logger } from "@kokoro/shared";
+import { logger, withRootTrace } from "@kokoro/shared";
 import { AdapterRegistry, platformForChatId } from "../platform/registry";
 
 const POLL_INTERVAL_MS = 60_000; // 1 minute
@@ -40,7 +40,12 @@ export function startReminderScheduler(registry: AdapterRegistry): () => void {
   // Startup recovery: immediately fire any reminders that were due while down
   void firePendingReminders(registry);
 
-  interval = setInterval(() => void firePendingReminders(registry), POLL_INTERVAL_MS);
+  // Each poll runs in its own root trace so its logs + any Kioku/Kizuna
+  // calls it makes share one traceId.
+  interval = setInterval(
+    withRootTrace(() => firePendingReminders(registry)),
+    POLL_INTERVAL_MS,
+  );
   interval.unref();
 
   logger.info("Reminder scheduler started");

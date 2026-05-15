@@ -1,6 +1,13 @@
 import http from "node:http";
 import crypto from "node:crypto";
-import { logger, config, newTraceContext, parseTraceparent, runWithTrace } from "@kokoro/shared";
+import {
+  logger,
+  config,
+  childSpan,
+  newTraceContext,
+  parseTraceparent,
+  runWithTrace,
+} from "@kokoro/shared";
 import { attachResultText, listPendingConfirmations, resolvePendingConfirmation } from "@kokoro/db";
 import { handleMessage } from "../../ai/generate";
 import { dispatchGatedAction } from "../../services/gated-actions";
@@ -202,9 +209,12 @@ export function startBlueBubblesWebhook(opts: StartWebhookOptions): () => void {
     // Establish a trace context per inbound webhook so every log line through
     // handleMessage / AI tools / Kioku / Kizuna shares the same traceId.
     // BlueBubbles itself doesn't propagate W3C trace context, but any caller
-    // that does (curl with `--header "traceparent: …"`) will be honored.
+    // that does (curl with `--header "traceparent: …"`) will be honored —
+    // we open a *child* span on the incoming trace so the webhook's spanId
+    // is distinct from the caller's and parentSpanId is populated, matching
+    // the Express trace middleware's behavior.
     const incoming = parseTraceparent(req.headers["traceparent"] as string | undefined);
-    const ctx = incoming ?? newTraceContext();
+    const ctx = incoming ? childSpan(incoming) : newTraceContext();
     void runWithTrace(ctx, async () => {
       try {
         if (req.method === "GET" && req.url?.startsWith("/healthz")) {

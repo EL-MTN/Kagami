@@ -138,4 +138,5 @@ export {
   newTraceContext,
   parseTraceparent,
   runWithTrace,
+  withRootTrace,
 } from "./trace.js";

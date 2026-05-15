@@ -1,5 +1,5 @@
 import { getDueRoutines, claimPendingManualRun, resetStaleRunningRoutineLogs } from "@kokoro/db";
-import { logger } from "@kokoro/shared";
+import { logger, withRootTrace } from "@kokoro/shared";
 import type { IRoutine } from "@kokoro/db";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { AdapterRegistry, platformForChatId } from "../platform/registry";
@@ -104,11 +104,16 @@ export function startRoutineScheduler(registry: AdapterRegistry): () => void {
   // Startup recovery: await stale reset before first poll
   void startupRecovery(registry);
 
-  interval = setInterval(() => void runDueRoutines(registry), POLL_INTERVAL_MS);
+  // Each tick is its own root trace so cron-fire logs / manual-fire logs
+  // and any downstream Kioku/Kizuna calls share a single traceId per fire.
+  interval = setInterval(
+    withRootTrace(() => runDueRoutines(registry)),
+    POLL_INTERVAL_MS,
+  );
   interval.unref();
 
   manualInterval = setInterval(
-    () => void runPendingManualRequest(registry),
+    withRootTrace(() => runPendingManualRequest(registry)),
     MANUAL_POLL_INTERVAL_MS,
   );
   manualInterval.unref();

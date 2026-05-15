@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, Trash2 } from "lucide-react";
 import { LogRow } from "@/components/log-row";
 import { EmptyState } from "@/components/shell";
@@ -11,10 +11,11 @@ interface TailClientProps {
   apiBase: string;
 }
 
-type ConnectionState = "connecting" | "open" | "closed";
+type ConnectionState = "connecting" | "open" | "closed" | "muted";
 
 const LEVEL_OPTIONS = ["trace", "debug", "info", "warn", "error", "fatal"] as const;
 const MAX_RENDERED = 1000;
+const REPLAY_ON_CONNECT = 100;
 
 export function TailClient({ apiBase }: TailClientProps) {
   const [service, setService] = useState("");
@@ -25,20 +26,43 @@ export function TailClient({ apiBase }: TailClientProps) {
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
 
+  // Serialize the level set into a stable key so the effect deps don't churn
+  // on every `new Set(...)` produced by `toggleLevel`. Without this, toggling
+  // a level closes the SSE socket and re-opens (with a fresh 100-event
+  // replay) on every click. The empty string encodes "no levels selected"
+  // (a deliberate mute signal — never serialize all-levels to the wire).
+  const levelKey = useMemo(() => [...levels].sort().join(","), [levels]);
+  const allLevelsSelected = levels.size === LEVEL_OPTIONS.length;
+
   useEffect(() => {
+    // Deselecting every level is a deliberate "show nothing" signal — open
+    // no stream and render the muted state. (Previously this silently
+    // omitted the `level=` param, which the server interpreted as "all
+    // levels", inverting the user's intent.)
+    if (levelKey === "") {
+      setConnection("muted");
+      return;
+    }
+
     const params = new URLSearchParams();
     if (service) params.set("service", service);
-    if (levels.size > 0 && levels.size < LEVEL_OPTIONS.length) {
-      params.set("level", [...levels].join(","));
+    if (!allLevelsSelected) {
+      params.set("level", levelKey);
     }
-    params.set("replay", "100");
+    params.set("replay", String(REPLAY_ON_CONNECT));
 
     const url = `${apiBase}/v1/tail?${params.toString()}`;
     setConnection("connecting");
     const es = new EventSource(url);
 
     es.onopen = () => setConnection("open");
-    es.onerror = () => setConnection("closed");
+    es.onerror = () => {
+      // EventSource auto-reconnects on transient drops; the spec exposes
+      // `readyState === CONNECTING` after a recoverable error. Map to
+      // "connecting" so the indicator stays amber during reconnect instead
+      // of flashing red while the browser is silently retrying.
+      setConnection(es.readyState === EventSource.CLOSED ? "closed" : "connecting");
+    };
     es.onmessage = (ev: MessageEvent<string>) => {
       if (pausedRef.current) return;
       try {
@@ -56,7 +80,7 @@ export function TailClient({ apiBase }: TailClientProps) {
       es.close();
       setConnection("closed");
     };
-  }, [apiBase, service, levels]);
+  }, [apiBase, service, levelKey, allLevelsSelected]);
 
   const toggleLevel = useCallback((level: string) => {
     setLevels((prev) => {
@@ -90,6 +114,7 @@ export function TailClient({ apiBase }: TailClientProps) {
                   key={lvl}
                   type="button"
                   onClick={() => toggleLevel(lvl)}
+                  aria-pressed={on}
                   className={cn(
                     "rounded-md border px-2 py-1 font-mono text-[11px] transition-colors",
                     on
@@ -108,6 +133,8 @@ export function TailClient({ apiBase }: TailClientProps) {
           <button
             type="button"
             onClick={() => setPaused((p) => !p)}
+            aria-pressed={paused}
+            aria-label={paused ? "Resume live tail" : "Pause live tail"}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
               paused
@@ -121,6 +148,7 @@ export function TailClient({ apiBase }: TailClientProps) {
           <button
             type="button"
             onClick={() => setLogs([])}
+            aria-label="Clear visible log lines"
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             <Trash2 className="h-3 w-3" />
@@ -138,7 +166,9 @@ export function TailClient({ apiBase }: TailClientProps) {
                 ? "bg-[color:var(--color-positive)]"
                 : connection === "connecting"
                   ? "bg-[color:var(--color-caution)]"
-                  : "bg-[color:var(--color-critical)]",
+                  : connection === "muted"
+                    ? "bg-faint"
+                    : "bg-[color:var(--color-critical)]",
             )}
             style={
               connection === "open" ? { animation: "pulse 2s ease-in-out infinite" } : undefined
@@ -148,13 +178,17 @@ export function TailClient({ apiBase }: TailClientProps) {
             ? "streaming"
             : connection === "connecting"
               ? "connecting"
-              : "disconnected"}
+              : connection === "muted"
+                ? "muted · no levels selected"
+                : "disconnected"}
         </span>
         <span>{logs.length.toLocaleString()} lines</span>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        {logs.length === 0 ? (
+        {connection === "muted" ? (
+          <EmptyState>Select at least one level to stream.</EmptyState>
+        ) : logs.length === 0 ? (
           <EmptyState>Waiting for log events…</EmptyState>
         ) : (
           <div className="max-h-[70vh] overflow-y-auto">

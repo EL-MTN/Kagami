@@ -80,3 +80,18 @@ export function childSpan(ctx: TraceContext): TraceContext {
     sampled: ctx.sampled,
   };
 }
+
+/**
+ * Wrap a callback so each invocation runs inside its own fresh root trace.
+ * Useful for scheduler ticks / interval callbacks / cron jobs — anywhere a
+ * logically independent unit of work fires without an incoming `traceparent`
+ * to inherit from. Returns a void-returning function (the inner result is
+ * fire-and-forget) suitable for `setInterval` / `setTimeout`.
+ */
+export function withRootTrace<Args extends unknown[]>(
+  fn: (...args: Args) => unknown,
+): (...args: Args) => void {
+  return (...args: Args) => {
+    void runWithTrace(newTraceContext(), () => fn(...args));
+  };
+}

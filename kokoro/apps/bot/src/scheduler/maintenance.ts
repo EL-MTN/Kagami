@@ -5,7 +5,7 @@ import {
   cleanupOldWatcherLogs,
   cleanupOldLocations,
 } from "@kokoro/db";
-import { logger } from "@kokoro/shared";
+import { logger, withRootTrace } from "@kokoro/shared";
 import { sweepPendingFacts, sweepPendingIngests, sweepStaleActiveSessions } from "@kokoro/memory";
 
 const CLEANUP_INTERVAL = 24 * 60 * 60_000; // 24 hours
@@ -68,33 +68,48 @@ async function runDailyCleanup(): Promise<void> {
 }
 
 export function startMaintenanceScheduler(): () => void {
-  cleanupTimer = setInterval(() => {
-    runDailyCleanup().catch((error) => {
-      logger.error({ err: error }, "Cleanup interval failed");
-    });
-  }, CLEANUP_INTERVAL);
+  // Each tick gets its own root trace so logs from cleanup / sweep flows
+  // share one traceId per invocation and outgoing tracedFetch calls from
+  // a tick propagate that trace onto sibling services.
+  cleanupTimer = setInterval(
+    withRootTrace(() => {
+      runDailyCleanup().catch((error) => {
+        logger.error({ err: error }, "Cleanup interval failed");
+      });
+    }),
+    CLEANUP_INTERVAL,
+  );
 
-  setTimeout(() => {
-    runDailyCleanup().catch((error) => {
-      logger.error({ err: error }, "Startup cleanup failed");
-    });
-  }, STARTUP_CLEANUP_DELAY);
+  setTimeout(
+    withRootTrace(() => {
+      runDailyCleanup().catch((error) => {
+        logger.error({ err: error }, "Startup cleanup failed");
+      });
+    }),
+    STARTUP_CLEANUP_DELAY,
+  );
 
   // Kioku ingest sweeper backstops the per-call-site immediate trigger.
-  kiokuSweepTimer = setInterval(() => {
-    runKiokuSweep().catch((error) => {
-      logger.error({ err: error }, "Kioku sweep interval failed");
-    });
-  }, KIOKU_SWEEP_INTERVAL);
+  kiokuSweepTimer = setInterval(
+    withRootTrace(() => {
+      runKiokuSweep().catch((error) => {
+        logger.error({ err: error }, "Kioku sweep interval failed");
+      });
+    }),
+    KIOKU_SWEEP_INTERVAL,
+  );
 
   // Run once on startup (after a brief delay so the bot is fully up)
   // — covers the case where Kioku was unavailable when the previous
   // process closed sessions.
-  setTimeout(() => {
-    runKiokuSweep().catch((error) => {
-      logger.error({ err: error }, "Startup Kioku sweep failed");
-    });
-  }, STARTUP_SWEEP_DELAY);
+  setTimeout(
+    withRootTrace(() => {
+      runKiokuSweep().catch((error) => {
+        logger.error({ err: error }, "Startup Kioku sweep failed");
+      });
+    }),
+    STARTUP_SWEEP_DELAY,
+  );
 
   logger.info("Maintenance scheduler started");
 
