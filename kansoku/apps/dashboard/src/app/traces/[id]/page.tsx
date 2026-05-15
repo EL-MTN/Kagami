@@ -57,7 +57,18 @@ function buildSpans(logs: StoredLog[]): Span[] {
     if ((LEVEL_RANK[log.meta.level] ?? 0) > (LEVEL_RANK[span.worstLevel] ?? 0)) {
       span.worstLevel = log.meta.level;
     }
-    if (log.parentSpanId && !span.parentSpanId) span.parentSpanId = log.parentSpanId;
+    if (log.parentSpanId && !span.parentSpanId) {
+      span.parentSpanId = log.parentSpanId;
+    } else if (log.parentSpanId && span.parentSpanId && log.parentSpanId !== span.parentSpanId) {
+      // Two logs claim the same spanId but disagree on parent. Almost always
+      // a producer bug (forgot to re-bind context, log emitted during an
+      // unrelated async transition). First-write-wins is preserved; surface
+      // the disagreement in the browser console for the dashboard operator
+      // so it doesn't go silently.
+      console.warn(
+        `[trace ${spanId}] parentSpanId disagreement: kept ${span.parentSpanId}, saw ${log.parentSpanId}`,
+      );
+    }
     span.logs.push(log);
   }
 
@@ -125,10 +136,34 @@ export default async function TracePage({ params }: TracePageProps) {
   }
 
   const roots = buildSpans(logs);
-  const flat = flatten(roots);
-  const traceStartMs = Math.min(...flat.map((f) => f.span.startMs));
-  const traceEndMs = Math.max(...flat.map((f) => f.span.endMs));
+  const flatAll = flatten(roots);
+  // Use `reduce` instead of `Math.min(...flat.map())` — spread args have a
+  // V8-imposed cap (~65k) that we shouldn't approach, but the safer
+  // formulation costs nothing.
+  const traceStartMs = flatAll.reduce(
+    (acc, f) => (f.span.startMs < acc ? f.span.startMs : acc),
+    Number.POSITIVE_INFINITY,
+  );
+  const traceEndMs = flatAll.reduce(
+    (acc, f) => (f.span.endMs > acc ? f.span.endMs : acc),
+    Number.NEGATIVE_INFINITY,
+  );
   const totalMs = Math.max(traceEndMs - traceStartMs, 1);
+
+  // Cap rendered rows so a pathological trace can't jank the page. The
+  // remainder is summarized in a footer; users can drill into the time
+  // range with /search if needed.
+  const WATERFALL_RENDER_CAP = 500;
+  const LOG_TIMELINE_RENDER_CAP = 2000;
+  // Pull "ungrouped" synthetic-id spans out of the waterfall — they don't
+  // represent real spans, they're a holding bin for logs that lacked a
+  // spanId. Render them as a separate "Untraced logs" section below.
+  const untracedFlat = flatAll.filter((f) => f.span.spanId === "__none__");
+  const realFlat = flatAll.filter((f) => f.span.spanId !== "__none__");
+  const flatWaterfall = realFlat.slice(0, WATERFALL_RENDER_CAP);
+  const flatHidden = realFlat.length - flatWaterfall.length;
+  const logsToRender = logs.slice(0, LOG_TIMELINE_RENDER_CAP);
+  const logsHidden = logs.length - logsToRender.length;
 
   const services = new Set(logs.map((l) => l.meta.service));
 
@@ -149,7 +184,7 @@ export default async function TracePage({ params }: TracePageProps) {
               {logs.length} log{logs.length === 1 ? "" : "s"}
             </span>
             <span>
-              {flat.length} span{flat.length === 1 ? "" : "s"}
+              {flatAll.length} span{flatAll.length === 1 ? "" : "s"}
             </span>
             <span>
               {services.size} service{services.size === 1 ? "" : "s"}
@@ -162,7 +197,7 @@ export default async function TracePage({ params }: TracePageProps) {
       <section className="space-y-1">
         <h3 className="kicker mb-3">Waterfall</h3>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
-          {flat.map(({ span, depth }) => {
+          {flatWaterfall.map(({ span, depth }) => {
             const offsetPct = ((span.startMs - traceStartMs) / totalMs) * 100;
             const widthPct = Math.max(((span.endMs - span.startMs) / totalMs) * 100, 0.5);
             const duration = span.endMs - span.startMs;
@@ -200,15 +235,31 @@ export default async function TracePage({ params }: TracePageProps) {
               </div>
             );
           })}
+          {flatHidden > 0 && (
+            <div className="border-t border-border bg-muted/30 px-3 py-2 text-center text-[11px] tabular-nums text-faint">
+              + {flatHidden.toLocaleString()} more span{flatHidden === 1 ? "" : "s"} not shown · use
+              /search to inspect a narrower time range
+            </div>
+          )}
         </div>
       </section>
+
+      {untracedFlat.length > 0 && (
+        <section className="space-y-1">
+          <h3 className="kicker mb-3">Untraced logs in this trace</h3>
+          <p className="mb-3 text-[11px] text-faint">
+            {untracedFlat.length} log{untracedFlat.length === 1 ? "" : "s"} had no spanId — emitted
+            outside a traced scope and grouped together here.
+          </p>
+        </section>
+      )}
 
       <section className="space-y-3">
         <h3 className="kicker">Log timeline</h3>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
-          {logs.map((log, i) => (
+          {logsToRender.map((log, i) => (
             <div
-              key={`${log.spanId ?? "x"}-${i}`}
+              key={`${log.ts}-${log.spanId ?? "none"}-${i}`}
               className="grid grid-cols-[100px_70px_140px_120px_1fr] items-baseline gap-3 border-b border-border px-3 py-2 font-mono text-[12px] tabular-nums last:border-b-0"
             >
               <span className="text-faint" title={new Date(log.ts).toISOString()}>
@@ -219,11 +270,17 @@ export default async function TracePage({ params }: TracePageProps) {
               <span className="truncate text-faint" title={log.spanId}>
                 {log.spanId ? log.spanId.slice(0, 8) : "—"}
               </span>
-              <span className="break-words text-foreground">
+              <span className="break-all text-foreground">
                 {log.msg ?? <span className="text-faint">—</span>}
               </span>
             </div>
           ))}
+          {logsHidden > 0 && (
+            <div className="border-t border-border bg-muted/30 px-3 py-2 text-center text-[11px] tabular-nums text-faint">
+              + {logsHidden.toLocaleString()} more log line
+              {logsHidden === 1 ? "" : "s"} not shown
+            </div>
+          )}
         </div>
       </section>
     </div>

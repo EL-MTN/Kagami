@@ -20,7 +20,7 @@ export function LogRow({ log }: LogRowProps) {
       >
         {log.meta.service}
       </span>
-      <span className="break-words text-foreground">
+      <span className="min-w-0 break-all text-foreground">
         {log.msg ?? <span className="text-faint">—</span>}
       </span>
       {log.traceId ? (

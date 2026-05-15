@@ -1,3 +1,8 @@
+// Resolved server-side and threaded to client components via prop
+// (`TailClient`, etc). Browser EventSource calls hit this directly, so the
+// URL must be reachable from the user's browser, not just from the
+// dashboard's Next.js server runtime. The default Portless host satisfies
+// both; override only when both sides see the same hostname.
 const BASE = process.env.KANSOKU_API_URL ?? "https://api.kansoku.localhost";
 
 export interface StoredLog {
@@ -132,16 +137,39 @@ export interface ServiceTimelineResponse {
   buckets: ServiceTimelineBucket[];
 }
 
+// In-memory TTL cache for per-service timelines. The /services page fans out
+// one fetch per service on every render — without this, every visit fires N
+// aggregations against Mongo. 30 s is short enough that the sparklines feel
+// fresh and long enough to absorb back-to-back refreshes.
+const TIMELINE_CACHE_TTL_MS = 30_000;
+const timelineCache = new Map<string, { ts: number; data: ServiceTimelineResponse }>();
+
 export async function getServiceTimeline(
   service: string,
   params: { windowHours?: number; granularity?: "minute" | "hour" | "day" } = {},
 ): Promise<ServiceTimelineResponse> {
+  const cacheKey = `${service}|${params.windowHours ?? "auto"}|${params.granularity ?? "auto"}`;
+  const hit = timelineCache.get(cacheKey);
+  const now = Date.now();
+  if (hit && now - hit.ts < TIMELINE_CACHE_TTL_MS) return hit.data;
+
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined) qs.set(k, String(v));
   }
   const suffix = qs.toString() ? `?${qs}` : "";
-  return api(`/v1/services/${encodeURIComponent(service)}/timeline${suffix}`);
+  const data = await api<ServiceTimelineResponse>(
+    `/v1/services/${encodeURIComponent(service)}/timeline${suffix}`,
+  );
+  timelineCache.set(cacheKey, { ts: now, data });
+  // Cheap LRU-ish trim: when the cache gets large, drop entries past their
+  // TTL. Bounded by service-count × window-options, so this fires rarely.
+  if (timelineCache.size > 64) {
+    for (const [k, v] of timelineCache) {
+      if (now - v.ts >= TIMELINE_CACHE_TTL_MS) timelineCache.delete(k);
+    }
+  }
+  return data;
 }
 
 export const KANSOKU_BASE = BASE;

@@ -30,9 +30,23 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
 
   const hasFilter = Boolean(service || level || since || until);
 
+  // Pre-validate the date strings client-side so a typo ("yesterday")
+  // surfaces a friendlier error than the API's raw `kansoku /v1/logs →
+  // 400 Bad Request`. An empty string means "not set" — only flag
+  // non-empty, non-parseable inputs.
+  function validIso(s: string): boolean {
+    return s === "" || !Number.isNaN(Date.parse(s));
+  }
+  const sinceInvalid = !validIso(since);
+  const untilInvalid = !validIso(until);
+
   let logs: StoredLog[] = [];
   let error: string | undefined;
-  if (hasFilter) {
+  if (sinceInvalid || untilInvalid) {
+    error = `Invalid ISO timestamp: ${sinceInvalid ? "Since" : ""}${
+      sinceInvalid && untilInvalid ? ", " : ""
+    }${untilInvalid ? "Until" : ""}. Use e.g. 2026-05-14T00:00:00Z.`;
+  } else if (hasFilter) {
     try {
       const res = await searchLogs({
         service: service || undefined,

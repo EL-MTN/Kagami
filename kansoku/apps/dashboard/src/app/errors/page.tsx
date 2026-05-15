@@ -88,8 +88,11 @@ export default async function ErrorsPage({ searchParams }: ErrorsPageProps) {
 
 function ErrorRow({ record }: { record: ErrorRecord }) {
   const latestTrace = record.recentTraceIds.at(-1);
+  // Show the first 8 chars of the fingerprint with the full value in `title`.
+  // The full 16-char hash overflowed narrow viewports.
+  const fpShort = record._id.slice(0, 8);
   return (
-    <div className="grid grid-cols-[1fr_140px_90px_120px_72px] items-baseline gap-4 border-b border-border px-4 py-3 last:border-b-0">
+    <div className="flex flex-col gap-3 border-b border-border px-4 py-3 last:border-b-0 md:grid md:grid-cols-[1fr_140px_90px_120px_72px] md:items-baseline md:gap-4">
       <div className="min-w-0 space-y-1">
         <p className="truncate font-mono text-[13px] text-foreground" title={record.message}>
           {record.name ? (
@@ -103,23 +106,23 @@ function ErrorRow({ record }: { record: ErrorRecord }) {
           </p>
         ) : null}
         <p className="font-mono text-[10px] text-faint" title={record._id}>
-          fp · {record._id}
+          fp · {fpShort}…
         </p>
       </div>
       <div className="text-[11px] tabular-nums text-muted-foreground">
         <p>{record.service}</p>
         <p className="text-faint">{record.component}</p>
       </div>
-      <div className="text-right font-mono text-[12px] tabular-nums text-foreground">
+      <div className="font-mono text-[12px] tabular-nums text-foreground md:text-right">
         × {record.count.toLocaleString()}
       </div>
-      <div className="text-right text-[11px] tabular-nums text-muted-foreground">
+      <div className="text-[11px] tabular-nums text-muted-foreground md:text-right">
         <p title={formatDateTime(record.lastSeen)}>{formatRelative(record.lastSeen)}</p>
         <p className="text-faint" title={`first seen ${formatDateTime(record.firstSeen)}`}>
           first {formatRelative(record.firstSeen)}
         </p>
       </div>
-      <div className="justify-self-end">
+      <div className="md:justify-self-end">
         {latestTrace ? (
           <Link
             href={`/traces/${latestTrace}`}

@@ -62,12 +62,16 @@ export default async function ServicesPage({ searchParams }: ServicesPageProps) 
         }
       />
 
-      <form method="get" className="flex items-center gap-2 text-[11px] tabular-nums text-faint">
+      <nav
+        aria-label="Window"
+        className="flex items-center gap-2 text-[11px] tabular-nums text-faint"
+      >
         <span className="tracking-wider uppercase">Window</span>
         {WINDOW_OPTIONS.map((h) => (
           <Link
             key={h}
             href={`/services?windowHours=${h}`}
+            aria-current={h === windowHours ? "page" : undefined}
             className={cn(
               "rounded-md border px-2 py-0.5 font-mono transition-colors",
               h === windowHours
@@ -78,7 +82,7 @@ export default async function ServicesPage({ searchParams }: ServicesPageProps) 
             {h < 24 ? `${h}h` : `${h / 24}d`}
           </Link>
         ))}
-      </form>
+      </nav>
 
       {fetchError && (
         <div className="rounded-lg border border-[color:var(--color-critical)]/30 bg-[color:var(--color-critical)]/5 p-4 text-[12px] text-[color:var(--color-critical)]">
@@ -113,11 +117,18 @@ function ServiceCard({
   const counts = timeline.map((b) => b.count);
   const errorCounts = timeline.map((b) => b.errorCount);
   const errorRate = service.count > 0 ? service.errorCount / service.count : 0;
-  const errorPct = (errorRate * 100).toFixed(errorRate < 0.001 && service.errorCount === 0 ? 0 : 1);
+  // Show "0" when there are no errors; otherwise format to 2 decimals so a
+  // 1-error-in-100k rate doesn't truncate to 0.0%.
+  const errorPct = service.errorCount === 0 ? "0" : (errorRate * 100).toFixed(2);
+  // Tone thresholds: a single error in a high-volume bucket isn't a
+  // critical-paint reason. Use rate > 1% as the critical cutoff and rate
+  // > 0.1% (or any warn) as caution. Anything cleaner is positive.
+  const CRITICAL_RATE = 0.01;
+  const CAUTION_RATE = 0.001;
   const tone =
-    service.errorCount > 0
+    errorRate > CRITICAL_RATE
       ? "critical"
-      : service.warnCount > 0
+      : errorRate > CAUTION_RATE || service.warnCount > 0
         ? "caution"
         : service.count > 0
           ? "positive"
