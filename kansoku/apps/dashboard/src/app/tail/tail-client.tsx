@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, Trash2 } from "lucide-react";
 import { LogRow } from "@/components/log-row";
 import { EmptyState } from "@/components/shell";
@@ -25,6 +25,21 @@ export function TailClient({ apiBase }: TailClientProps) {
   const [logs, setLogs] = useState<StoredLog[]>([]);
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
+
+  // Terminal-style live tail: new logs append at the bottom, and the viewport
+  // sticks to the bottom while the user is reading current activity. Scrolling
+  // up to inspect older lines temporarily releases the stick so a new arrival
+  // doesn't yank focus away. A 24px slop lets fractional scroll positions
+  // (and rubber-banding on macOS) still count as "at the bottom".
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distFromBottom < 24;
+  }, []);
 
   // Serialize the level set into a stable key so the effect deps don't churn
   // on every `new Set(...)` produced by `toggleLevel`. Without this, toggling
@@ -81,6 +96,13 @@ export function TailClient({ apiBase }: TailClientProps) {
       setConnection("closed");
     };
   }, [apiBase, service, levelKey, allLevelsSelected]);
+
+  useLayoutEffect(() => {
+    if (!stickToBottomRef.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [logs]);
 
   const toggleLevel = useCallback((level: string) => {
     setLevels((prev) => {
@@ -171,7 +193,9 @@ export function TailClient({ apiBase }: TailClientProps) {
                     : "bg-[color:var(--color-critical)]",
             )}
             style={
-              connection === "open" ? { animation: "pulse 2s ease-in-out infinite" } : undefined
+              connection === "open"
+                ? { animation: "pulse-soft 2s ease-in-out infinite" }
+                : undefined
             }
           />
           {connection === "open"
@@ -191,7 +215,7 @@ export function TailClient({ apiBase }: TailClientProps) {
         ) : logs.length === 0 ? (
           <EmptyState>Waiting for log events…</EmptyState>
         ) : (
-          <div className="max-h-[70vh] overflow-y-auto">
+          <div ref={scrollRef} onScroll={handleScroll} className="max-h-[70vh] overflow-y-auto">
             {logs.map((log, i) => (
               <LogRow key={`${log.ts}-${i}`} log={log} />
             ))}
