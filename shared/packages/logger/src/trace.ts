@@ -4,7 +4,9 @@ import { randomBytes } from "node:crypto";
 /**
  * W3C trace context (https://www.w3.org/TR/trace-context/) carried through
  * the workspace. `traceId` is 32 hex chars; `spanId` is 16 hex. `sampled`
- * follows the W3C flags bit but we always sample at Kagami's personal scale.
+ * follows the W3C flags bit and defaults to true on fresh contexts — the
+ * `sampled: false` path is wired (`newTraceContext({ sampled: false })`)
+ * but no producer in Kagami uses it today.
  */
 export interface TraceContext {
   traceId: string;
@@ -13,6 +15,11 @@ export interface TraceContext {
   sampled: boolean;
 }
 
+// W3C §3.2.2.1 restricts producers to lowercase hex on the wire, but the
+// spec also tells receivers to be lenient. We accept uppercase (`/i`) and
+// normalize to lowercase via `.toLowerCase()` post-parse — keeping
+// interoperability with non-spec-strict producers without weakening our
+// own emit path (`formatTraceparent` always writes lowercase).
 const TRACEPARENT_RE = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/i;
 
 const storage = new AsyncLocalStorage<TraceContext>();

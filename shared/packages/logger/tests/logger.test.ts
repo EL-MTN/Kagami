@@ -58,6 +58,18 @@ describe("createLogger", () => {
     expect(logger.level).toBe("info");
   });
 
+  it("throws when called with a level that is not in pino's vocabulary", () => {
+    expect(() =>
+      createLogger({
+        service: "test-service",
+        component: "test-component",
+        env: "test",
+        level: "INFO",
+        kansoku: { url: "https://api.kansoku.localhost", token: "t" },
+      }),
+    ).toThrow(/invalid level/i);
+  });
+
   it("redacts common secret paths by default", () => {
     expect(DEFAULT_REDACT_PATHS).toEqual(
       expect.arrayContaining([

@@ -5,6 +5,10 @@
 // both; override only when both sides see the same hostname.
 const BASE = process.env.KANSOKU_API_URL ?? "https://api.kansoku.localhost";
 
+// Boundary type swap: the server keeps `ts` as a JS `Date`, but JSON
+// serialization stringifies it. Anything calling `new Date(log.ts)` on the
+// dashboard works as expected; don't accidentally re-type this as `Date`
+// without also adding a `JSON.parse` reviver.
 export interface StoredLog {
   ts: string;
   meta: {

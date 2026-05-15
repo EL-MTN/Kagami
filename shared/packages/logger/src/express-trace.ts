@@ -22,8 +22,6 @@ export function traceMiddleware(): RequestHandler {
     const incoming = parseTraceparent(req.header("traceparent"));
     const ctx = incoming ? childSpan(incoming) : newTraceContext();
     res.setHeader("traceparent", formatTraceparent(ctx));
-    runWithTrace(ctx, () => {
-      next();
-    });
+    runWithTrace(ctx, next);
   };
 }

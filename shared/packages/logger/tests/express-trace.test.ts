@@ -22,6 +22,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Force-close any keep-alive sockets so the close callback fires fast.
+  // Without this, Node's default http agent reuse can delay teardown
+  // until its idle-socket timeout, occasionally flaking vitest's
+  // "hanging process" report.
+  server.closeAllConnections?.();
   await new Promise<void>((resolve, reject) => {
     server.close((err) => (err ? reject(err) : resolve()));
   });

@@ -59,6 +59,14 @@ export function buildLoggerBase(bindings: ServiceBindings): LoggerBaseBindings {
   };
 }
 
+// Frozen sentinel for the no-trace-context mixin branch. Pino calls the
+// mixin on every log line; returning a fresh `{}` literal each time means a
+// hot service allocates one object per log. Sharing one frozen object is
+// safe — pino spreads it into the emitted record.
+const EMPTY_TRACE_FIELDS = Object.freeze({});
+
+const PINO_LEVELS = new Set<string>(["trace", "debug", "info", "warn", "error", "fatal", "silent"]);
+
 export interface CreateLoggerOptions extends ServiceBindings {
   level?: string;
   formatters?: LoggerOptions["formatters"];
@@ -81,8 +89,17 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
       paths: DEFAULT_REDACT_PATHS,
       censor: (value, path) => {
         const tail = path[path.length - 1];
-        if (tail === "imageData" && typeof value === "string") {
-          return `[base64 omitted, ~${value.length}b]`;
+        if (tail === "imageData") {
+          // Preserve the byte-size hint for any binary-ish shape we
+          // recognize — strings, Buffers, plain ArrayBuffers. Anything
+          // else falls through to a generic placeholder.
+          if (typeof value === "string") {
+            return `[base64 omitted, ~${value.length}b]`;
+          }
+          if (value instanceof Uint8Array) {
+            return `[binary omitted, ${value.byteLength}b]`;
+          }
+          return "[imageData omitted]";
         }
         return "[redacted]";
       },
@@ -90,10 +107,11 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
     // Mixin runs on every log call and merges its return value into the
     // emitted record. Reading from AsyncLocalStorage means every log line
     // inside a traced request auto-includes traceId/spanId without callers
-    // having to thread context manually.
+    // having to thread context manually. The no-context branch returns a
+    // shared frozen empty so a quiet service doesn't allocate per-call.
     mixin: () => {
       const ctx = getTraceContext();
-      if (!ctx) return {};
+      if (!ctx) return EMPTY_TRACE_FIELDS;
       return ctx.parentSpanId
         ? { traceId: ctx.traceId, spanId: ctx.spanId, parentSpanId: ctx.parentSpanId }
         : { traceId: ctx.traceId, spanId: ctx.spanId };
@@ -114,10 +132,15 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
   }
 
   const kansokuStream = createKansokuStream(kansoku);
-  // Cast `level` to pino.Level: pino's StreamEntry types the field as its
-  // narrow union ("trace" | "debug" | …) but the LoggerOptions level field
-  // happily accepts any string. We pass-through whatever the caller set;
-  // pino itself decides whether to honor it at write time.
+  // pino's StreamEntry types `level` as the narrow `pino.Level` union
+  // ("trace" | "debug" | …); LoggerOptions accepts any string. Validate
+  // against the known set so a typo (`"INFO"`, `"verbose"`) fails fast
+  // rather than silently routing all log lines to one or the other stream.
+  if (!PINO_LEVELS.has(level)) {
+    throw new Error(
+      `createLogger: invalid level "${level}". Allowed: ${[...PINO_LEVELS].join(", ")}`,
+    );
+  }
   const streamLevel = level as pino.Level;
   const streams: pino.StreamEntry[] = [
     { level: streamLevel, stream: consoleStream },
