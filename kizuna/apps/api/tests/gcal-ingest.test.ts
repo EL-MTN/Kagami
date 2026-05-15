@@ -12,7 +12,7 @@ let h: TestHarness;
 
 function makeConfig(): Config {
   return loadConfig({
-    MONGO_URI: h.uri,
+    MONGODB_URI: h.uri,
     USER_EMAILS: "me@example.com",
     KIZUNA_OAUTH_ENCRYPTION_KEY: h.encryptionKey,
     GOOGLE_OAUTH_CLIENT_ID: "test-client-id",

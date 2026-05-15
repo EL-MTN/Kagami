@@ -9,8 +9,11 @@ export function setupTestMongo(facet: string): void {
   if (!baseUri) {
     throw new Error(`${SHARED_MONGO_URI_ENV} not set — globalSetup must run first`);
   }
-  process.env.KIOKU_MONGO_URI = baseUri;
-  process.env.KIOKU_MONGO_DB = `kioku_${facet}_test_${randomBytes(6).toString("hex")}`;
+  // mongo.ts now reads the DB name from the URI's path. Splice the unique
+  // per-facet name into the path while preserving the host:port + query.
+  const u = new URL(baseUri);
+  u.pathname = `/kioku_${facet}_test_${randomBytes(6).toString("hex")}`;
+  process.env.MONGODB_URI = u.toString();
 }
 
 // Reset the module-level singleton so a worker that runs another test file

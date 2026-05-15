@@ -5,19 +5,24 @@ import { MongoClient, type Db } from "mongodb";
 // import-time side effects don't force a connection in code paths that
 // don't need one (tests, scripts that only read paths, etc.).
 
-const DEFAULT_URI = "mongodb://127.0.0.1:27017/?directConnection=true";
-const DEFAULT_DB = "kioku";
+const DEFAULT_URI = "mongodb://127.0.0.1:27017/kioku?directConnection=true";
+const FALLBACK_DB = "kioku";
 
 let client: MongoClient | null = null;
 let connectPromise: Promise<MongoClient> | null = null;
 let dbName: string | null = null;
 
 function getUri(): string {
-  return process.env.KIOKU_MONGO_URI ?? DEFAULT_URI;
+  return process.env.MONGODB_URI ?? DEFAULT_URI;
 }
 
-function getDbName(): string {
-  return process.env.KIOKU_MONGO_DB ?? DEFAULT_DB;
+// Read the database name from the URI's path. MongoClient.db() with no args
+// returns the URI's default DB (or "test" if none was specified) — we treat
+// "test" as "URI didn't specify" and fall back to the canonical service name
+// so a misconfigured URI doesn't silently write to the wrong database.
+function resolveDbName(c: MongoClient): string {
+  const fromUri = c.db().databaseName;
+  return fromUri && fromUri !== "test" ? fromUri : FALLBACK_DB;
 }
 
 async function getMongoClient(): Promise<MongoClient> {
@@ -44,7 +49,7 @@ async function getMongoClient(): Promise<MongoClient> {
 
 export async function getDb(): Promise<Db> {
   const c = await getMongoClient();
-  if (!dbName) dbName = getDbName();
+  if (!dbName) dbName = resolveDbName(c);
   return c.db(dbName);
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 
 const validEnv = {
-  MONGO_URI: "mongodb://127.0.0.1:27017/kizuna",
+  MONGODB_URI: "mongodb://127.0.0.1:27017/kizuna",
   USER_EMAILS: "me@example.com,you@example.com",
 };
 
@@ -70,7 +70,7 @@ describe("loadConfig", () => {
   });
 
   it("rejects a non-mongodb URI", () => {
-    expect(() => loadConfig({ ...validEnv, MONGO_URI: "http://nope" })).toThrow();
+    expect(() => loadConfig({ ...validEnv, MONGODB_URI: "http://nope" })).toThrow();
   });
 
   it("rejects malformed USER_EMAILS", () => {

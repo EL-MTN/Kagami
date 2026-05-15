@@ -380,7 +380,7 @@ export async function ensureIndexes(opts: EnsureIndexesOptions = {}): Promise<vo
     db = await getDb();
   } catch (err) {
     throw new Error(
-      `MongoDB connection failed (KIOKU_MONGO_URI=${process.env.KIOKU_MONGO_URI ?? "<default>"}). ` +
+      `MongoDB connection failed (MONGODB_URI=${process.env.MONGODB_URI ?? "<default>"}). ` +
         `Is the atlas-local container running? — ` +
         (err as Error).message,
       { cause: err },

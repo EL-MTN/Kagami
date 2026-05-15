@@ -21,11 +21,10 @@ The narrative session-summary collection (`session_summaries`) is owned by `apps
 Lazy singleton. The client is constructed on the first `getDb()` call so import-time side effects don't force a connection in tests or scripts that only need module-scope code.
 
 ```ts
-const DEFAULT_URI = "mongodb://127.0.0.1:27017/?directConnection=true";
-const DEFAULT_DB  = "kioku";
+const DEFAULT_URI = "mongodb://127.0.0.1:27017/kioku?directConnection=true";
+const FALLBACK_DB = "kioku"; // used only when the URI's path has no DB
 
-KIOKU_MONGO_URI   // overrides DEFAULT_URI
-KIOKU_MONGO_DB    // overrides DEFAULT_DB
+MONGODB_URI; // overrides DEFAULT_URI; DB name is read from the URI's path
 ```
 
 Two concurrent first-callers join the same in-flight `connect()` Promise instead of each opening their own client. On connection failure, the cached promise is cleared so the next caller can retry.
@@ -66,9 +65,9 @@ State lives entirely in Mongo — no filesystem-backed vault.
 
 #### Indexes (btree)
 
-| Name                  | Key                                                  | Purpose                                                                                              |
-| --------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `facts_user_created`  | `{ user_id: 1, run_id: 1, agent_id: 1, created_at: -1 }`   | Read-side compound for scope-bound listings.                                                          |
+| Name                 | Key                                                      | Purpose                                      |
+| -------------------- | -------------------------------------------------------- | -------------------------------------------- |
+| `facts_user_created` | `{ user_id: 1, run_id: 1, agent_id: 1, created_at: -1 }` | Read-side compound for scope-bound listings. |
 
 `ensureIndexes()` drops the legacy `facts_hash_unique` index if a deployment still has it from before dedup moved to the cosine layer (`append.ts` / `consolidate.ts`).
 
@@ -98,10 +97,10 @@ The `numDimensions` is probed at startup by calling `embedQuestion("probe")`. If
     "dynamic": false,
     "fields": {
       "text_lemmatized": { "type": "string", "analyzer": "lucene.whitespace" },
-      "user_id":         { "type": "token" },
-      "run_id":          { "type": "token" },
-      "agent_id":        { "type": "token" },
-      "category":        { "type": "token" }
+      "user_id": { "type": "token" },
+      "run_id": { "type": "token" },
+      "agent_id": { "type": "token" },
+      "category": { "type": "token" }
     }
   }
 }
@@ -137,10 +136,10 @@ Entities are **not scoped** by `(user_id, run_id, agent_id)` — they're global 
 
 #### Indexes
 
-| Name                          | Key             | Purpose                            |
-| ----------------------------- | --------------- | ---------------------------------- |
-| `entities_text_lower_unique`  | `{ text_lower: 1 }` (unique) | Case-insensitive upsert key |
-| `entities_vec`                | vectorSearch on `embedding`  | Query-side entity matching  |
+| Name                         | Key                          | Purpose                     |
+| ---------------------------- | ---------------------------- | --------------------------- |
+| `entities_text_lower_unique` | `{ text_lower: 1 }` (unique) | Case-insensitive upsert key |
+| `entities_vec`               | vectorSearch on `embedding`  | Query-side entity matching  |
 
 #### Writes
 
@@ -209,19 +208,19 @@ Writes use `updateOne(_id, { $setOnInsert: doc }, { upsert: true })` so a concur
 
 Modeled on mem0's history table. Every fact mutation leaves a row, capturing old + new text where applicable so a fact's evolution can be replayed.
 
-| Event   | Required fields                |
-| ------- | ------------------------------ |
-| `ADD`   | `new_text`                     |
-| `UPDATE`| `old_text`, `new_text`         |
-| `DELETE`| `old_text`                     |
+| Event    | Required fields        |
+| -------- | ---------------------- |
+| `ADD`    | `new_text`             |
+| `UPDATE` | `old_text`, `new_text` |
+| `DELETE` | `old_text`             |
 
 Today only `ADD` events are written (atomic facts are write-once). The `UPDATE` / `DELETE` shapes are reserved for future correction primitives.
 
 #### Index
 
-| Name                     | Key                                  | Purpose                                                                    |
-| ------------------------ | ------------------------------------ | -------------------------------------------------------------------------- |
-| `history_memory_created` | `{ memory_id: 1, created_at: -1 }`   | Per-fact journal lookup is one cheap range scan.                           |
+| Name                     | Key                                | Purpose                                          |
+| ------------------------ | ---------------------------------- | ------------------------------------------------ |
+| `history_memory_created` | `{ memory_id: 1, created_at: -1 }` | Per-fact journal lookup is one cheap range scan. |
 
 #### Reads / writes
 

@@ -142,7 +142,7 @@ There is **no per-request user identification** — every `USER_EMAILS` address 
 ### First-time setup (operator)
 
 1. `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` → `KIZUNA_OAUTH_ENCRYPTION_KEY`.
-2. Set `USER_EMAILS=you@example.com`, `MONGO_URI`, Google OAuth client creds. Restart the API.
+2. Set `USER_EMAILS=you@example.com`, `MONGODB_URI`, Google OAuth client creds. Restart the API.
 3. Visit `https://kizuna.localhost` — no login.
 4. Navigate to `/sync`, click "Connect Google" — `<a href={oauthStartUrl()}>` resolves to `${API_URL}/oauth/google/start`.
 5. Consent on Google. Land on `/oauth/google/callback?...&state=...`. Refresh token is encrypted + stored.

@@ -55,7 +55,7 @@ Per-item record includes the question, ground truth, Kioku's prediction, judge v
 
 ## Architecture
 
-- `scripts/longmemeval.ts` — orchestrator. Iterates items, spawns one worker subprocess per item with an isolated `KIOKU_MONGO_DB`, then runs the judge pass.
+- `scripts/longmemeval.ts` — orchestrator. Iterates items, spawns one worker subprocess per item with a per-item Mongo database spliced into `MONGODB_URI`, then runs the judge pass.
 - `scripts/longmemeval-worker.ts` — single-item worker. Parses each `haystack_session` into a `Transcript`, calls `consolidate()` to extract atomic facts into the per-item Mongo DB, then `query()`. Auto-skips ingest when the per-item DB already has facts (lets `--keep-vaults` cycle the query/judge layer cheaply).
 
 Per-item subprocesses give clean DB isolation without refactoring `mongo.ts` (which freezes the DB name at module load).

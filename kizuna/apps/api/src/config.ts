@@ -17,7 +17,7 @@ const optionalString = z.preprocess(blankAsUndefined, z.string().min(1).optional
 const optionalUrl = z.preprocess(blankAsUndefined, z.string().url().optional());
 
 const envSchema = z.object({
-  MONGO_URI: z.string().regex(/^mongodb(\+srv)?:\/\//, "MONGO_URI must be a mongodb:// URI"),
+  MONGODB_URI: z.string().regex(/^mongodb(\+srv)?:\/\//, "MONGODB_URI must be a mongodb:// URI"),
   USER_EMAILS: z
     .string()
     .min(1, "USER_EMAILS must list at least one address")
