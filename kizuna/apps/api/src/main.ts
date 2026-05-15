@@ -9,7 +9,7 @@ import { createApp } from "./server.js";
 async function main(): Promise<void> {
   const config = loadConfig();
 
-  const db = await connectDb(config.MONGO_URI);
+  const db = await connectDb(config.MONGODB_URI);
   const app = createApp({ db, config });
 
   const server = app.listen(config.PORT, config.KIZUNA_HOST, () => {

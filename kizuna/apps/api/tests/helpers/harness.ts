@@ -27,7 +27,7 @@ export async function startHarness(): Promise<TestHarness> {
   const encryptionKey = randomBytes(32).toString("base64");
 
   const config = loadConfig({
-    MONGO_URI: uri,
+    MONGODB_URI: uri,
     USER_EMAILS: "test@example.com",
     GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
     GOOGLE_OAUTH_CLIENT_SECRET: "test-client-secret",
@@ -35,7 +35,7 @@ export async function startHarness(): Promise<TestHarness> {
     KIZUNA_OAUTH_ENCRYPTION_KEY: encryptionKey,
   });
 
-  const db = await connectDb(config.MONGO_URI);
+  const db = await connectDb(config.MONGODB_URI);
   const app = createApp({ db, config });
 
   return {

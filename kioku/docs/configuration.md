@@ -24,8 +24,8 @@ Explicit `LLM_URL` / `LLM_API_KEY` (and `EMBEDDING_*` counterparts) always win a
 KIOKU_TOP_K=50                                   # answerer top-K (default 50)
 
 # ── MongoDB (defaults to local atlas-local on 27017) ────
-# KIOKU_MONGO_URI=mongodb://127.0.0.1:27017/?directConnection=true
-# KIOKU_MONGO_DB=kioku
+# Include the DB name in the path; mongo.ts reads it from the URI.
+# MONGODB_URI=mongodb://127.0.0.1:27017/kioku?directConnection=true
 
 # ── Ingest rate limits (per IP, one-minute window) ──────
 # KIOKU_BULK_RATE_LIMIT_PER_MIN=10             # POST /facts/bulk

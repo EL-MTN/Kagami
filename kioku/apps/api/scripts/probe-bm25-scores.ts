@@ -171,6 +171,9 @@ function parseArgs(): CliArgs {
 
 function spawnWorker(itemPath: string, outPath: string, dbName: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    const base = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017/kioku?directConnection=true";
+    const u = new URL(base);
+    u.pathname = `/${dbName}`;
     const child = spawn("npx", ["tsx", path.resolve(__dirname, "probe-bm25-scores.ts")], {
       stdio: ["ignore", "inherit", "inherit"],
       env: {
@@ -178,7 +181,7 @@ function spawnWorker(itemPath: string, outPath: string, dbName: string): Promise
         KIOKU_PROBE_WORKER: "1",
         KIOKU_PROBE_ITEM: itemPath,
         KIOKU_PROBE_OUT: outPath,
-        KIOKU_MONGO_DB: dbName,
+        MONGODB_URI: u.toString(),
       },
     });
     child.on("error", reject);
@@ -239,7 +242,7 @@ async function orchestrate(): Promise<void> {
   const tmpRoot = path.join(benchRoot, "tmp-probe");
   await fs.mkdir(tmpRoot, { recursive: true });
 
-  const uri = process.env.KIOKU_MONGO_URI ?? "mongodb://127.0.0.1:27017/?directConnection=true";
+  const uri = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017/kioku?directConnection=true";
   const sharedClient = new MongoClient(uri);
   await sharedClient.connect();
 

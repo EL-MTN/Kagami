@@ -1,6 +1,6 @@
 // LongMemEval orchestrator. Iterates dataset items, spawns one worker
-// subprocess per item with an isolated KIOKU_MONGO_DB, then judges all
-// predictions and writes a results JSON.
+// subprocess per item with an isolated Mongo database (spliced into
+// MONGODB_URI), then judges all predictions and writes a results JSON.
 //
 // See bench/longmemeval/README.md for setup and usage.
 
@@ -301,12 +301,22 @@ async function main() {
   }
 }
 
+// Splice a per-item DB name into the configured MONGODB_URI's path while
+// preserving host, port, and query string. The worker's mongo.ts then
+// reads the DB name straight from the URI.
+function uriWithDb(dbName: string): string {
+  const base = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017/kioku?directConnection=true";
+  const u = new URL(base);
+  u.pathname = `/${dbName}`;
+  return u.toString();
+}
+
 function runWorker(itemFile: string, resultFile: string, mongoDbName: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const workerPath = path.join(projectRoot, "scripts/longmemeval-worker.ts");
     const child = spawn("npx", ["tsx", workerPath, "--item", itemFile, "--result", resultFile], {
       stdio: ["ignore", "inherit", "inherit"],
-      env: { ...process.env, KIOKU_MONGO_DB: mongoDbName },
+      env: { ...process.env, MONGODB_URI: uriWithDb(mongoDbName) },
     });
     child.on("error", reject);
     child.on("exit", (code) => {
@@ -320,7 +330,7 @@ function runWorker(itemFile: string, resultFile: string, mongoDbName: string): P
 // so dropDatabase calls don't reconnect each time.
 let sharedClient: MongoClient | null = null;
 async function dropMongoDb(name: string): Promise<void> {
-  const uri = process.env.KIOKU_MONGO_URI ?? "mongodb://127.0.0.1:27017/?directConnection=true";
+  const uri = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017/kioku?directConnection=true";
   if (!sharedClient) {
     sharedClient = new MongoClient(uri);
     await sharedClient.connect();

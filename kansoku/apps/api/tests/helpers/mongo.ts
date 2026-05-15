@@ -9,8 +9,11 @@ export function setupTestMongo(facet: string): void {
   if (!baseUri) {
     throw new Error(`${SHARED_MONGO_URI_ENV} not set — globalSetup must run first`);
   }
-  process.env.KANSOKU_MONGO_URI = baseUri;
-  process.env.KANSOKU_MONGO_DB = `kansoku_${facet}_test_${randomBytes(6).toString("hex")}`;
+  // mongo.ts now reads the DB name from the URI's path. Splice the unique
+  // per-facet name into the path while preserving the host:port + query.
+  const u = new URL(baseUri);
+  u.pathname = `/kansoku_${facet}_test_${randomBytes(6).toString("hex")}`;
+  process.env.MONGODB_URI = u.toString();
 }
 
 export async function teardownTestMongo(): Promise<void> {

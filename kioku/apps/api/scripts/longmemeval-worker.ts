@@ -6,8 +6,9 @@
 //   --result  path where the JSON result line will be written
 //
 // Inputs (env):
-//   KIOKU_MONGO_DB  per-item Mongo database (orchestrator sets this)
-//   MODEL           local LM Studio model id
+//   MONGODB_URI  per-item Mongo URI (orchestrator splices a unique DB name
+//                into the path before spawning each worker)
+//   MODEL        local LM Studio model id
 //
 // Output: writes a JSON file at --result with the prediction + timings.
 
@@ -55,13 +56,13 @@ function parseArgs(): { itemPath: string; resultPath: string } {
 
 async function main() {
   const { itemPath, resultPath } = parseArgs();
-  if (!process.env.KIOKU_MONGO_DB) {
-    throw new Error("KIOKU_MONGO_DB must be set (orchestrator sets it per item)");
+  if (!process.env.MONGODB_URI) {
+    throw new Error("MONGODB_URI must be set (orchestrator splices a per-item DB)");
   }
 
   const item = JSON.parse(await fs.readFile(itemPath, "utf8")) as LMEItem;
 
-  // Lazy-import after env is set so mongo.ts picks up KIOKU_MONGO_DB.
+  // Lazy-import after env is set so mongo.ts picks up MONGODB_URI.
   const { ensureIndexes } = await import("../src/storage/indexes.js");
   const { getDb, closeMongo } = await import("../src/storage/mongo.js");
   const { consolidate } = await import("../src/ingest/consolidate.js");

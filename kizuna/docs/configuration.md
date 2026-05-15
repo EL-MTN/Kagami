@@ -8,7 +8,7 @@ Validated by zod at boot via `loadConfig()` (`apps/api/src/config.ts`). On parse
 
 ```sh
 # Required
-MONGO_URI=mongodb://127.0.0.1:27017/kizuna
+MONGODB_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com               # comma-separated; lowercased; validated as email[]
 
 # Required to actually start the OAuth flow / decrypt stored refresh tokens
@@ -91,7 +91,7 @@ First run prompts once for sudo to install a local CA (HTTPS auto-trusted therea
 ### Single-machine dev with no Google ingest
 
 ```sh
-MONGO_URI=mongodb://127.0.0.1:27017/kizuna
+MONGODB_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com
 KIZUNA_INGEST_INTERVAL_SEC=0
 # Skip GOOGLE_OAUTH_* and KIZUNA_OAUTH_ENCRYPTION_KEY — start/callback will reject, but the rest of the resource API works.
@@ -102,7 +102,7 @@ You'll be able to use the concierge endpoints (`POST /people`, etc.) and the das
 ### Single-machine dev with Google ingest
 
 ```sh
-MONGO_URI=mongodb://127.0.0.1:27017/kizuna
+MONGODB_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com
 KIZUNA_OAUTH_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
 GOOGLE_OAUTH_CLIENT_ID=...
