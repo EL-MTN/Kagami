@@ -166,11 +166,19 @@ export async function getServiceTimeline(
     `/v1/services/${encodeURIComponent(service)}/timeline${suffix}`,
   );
   timelineCache.set(cacheKey, { ts: now, data });
-  // Cheap LRU-ish trim: when the cache gets large, drop entries past their
-  // TTL. Bounded by service-count × window-options, so this fires rarely.
+  // Cheap eviction: drop TTL-expired entries first, then if the cache is
+  // still over the bound, drop the oldest by insertion. Without the
+  // oldest-drop fallback the Map could grow unbounded when the realistic
+  // working set (services × windows × granularities ≈ 120) outstrips the
+  // TTL window and every entry is fresh.
   if (timelineCache.size > 64) {
     for (const [k, v] of timelineCache) {
       if (now - v.ts >= TIMELINE_CACHE_TTL_MS) timelineCache.delete(k);
+    }
+    while (timelineCache.size > 64) {
+      const oldestKey = timelineCache.keys().next().value;
+      if (oldestKey === undefined) break;
+      timelineCache.delete(oldestKey);
     }
   }
   return data;

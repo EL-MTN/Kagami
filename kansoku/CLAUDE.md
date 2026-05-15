@@ -118,7 +118,7 @@ Apps run under [Portless](https://github.com/vercel-labs/portless) at `https://k
 ```
 @kagami/eslint-config, @kagami/tsconfig, @kagami/logger (workspace-shared, in shared/packages/)
        ↑
-@kansoku/api          ← Express server, ingest endpoints (Phase 1+)
+@kansoku/api          ← Express server: ingest, query, tail (SSE), errors, services, alerts
 @kansoku/dashboard    ← Next.js inspector (talks to API over HTTP via KANSOKU_API_URL)
 ```
 

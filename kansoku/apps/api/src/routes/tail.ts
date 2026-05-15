@@ -77,44 +77,56 @@ tailRouter.get("/tail", (req, res) => {
     return;
   }
 
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.flushHeaders?.();
-
-  if (replay > 0) {
-    for (const doc of recentLogs(filter, replay)) {
-      seen.add(doc);
-      writeEvent(doc);
-    }
-  }
-  // Drain anything that arrived between subscribe and replay-flush,
-  // skipping duplicates already shipped via the replay snapshot.
-  for (const doc of pending) {
-    if (seen.has(doc)) continue;
-    writeEvent(doc);
-  }
-  pending.length = 0;
-  seen.clear();
-  live = true;
-
-  const heartbeat = setInterval(() => {
-    res.write(`: heartbeat ${Date.now()}\n\n`);
-  }, HEARTBEAT_INTERVAL_MS);
-  if (heartbeat.unref) heartbeat.unref();
-
+  // From this point on the subscriber slot is consumed. Wrap the rest of
+  // the handler in try/catch so any synchronous failure (header write,
+  // proxy already closed the socket, etc.) releases the slot. Without
+  // this, the cap would silently shrink one subscriber at a time on
+  // unlucky boots.
   let cleanedUp = false;
+  let heartbeat: NodeJS.Timeout | undefined;
   const cleanup = (): void => {
     if (cleanedUp) return;
     cleanedUp = true;
     unsubscribe();
-    clearInterval(heartbeat);
+    if (heartbeat) clearInterval(heartbeat);
   };
-  // Listen on both `req` and `res` for close — different Express/proxy
-  // combinations fire one or the other when the client disconnects mid-write.
-  req.on("close", cleanup);
-  req.on("error", cleanup);
-  res.on("close", cleanup);
-  res.on("error", cleanup);
+
+  try {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders?.();
+
+    if (replay > 0) {
+      for (const doc of recentLogs(filter, replay)) {
+        seen.add(doc);
+        writeEvent(doc);
+      }
+    }
+    // Drain anything that arrived between subscribe and replay-flush,
+    // skipping duplicates already shipped via the replay snapshot.
+    for (const doc of pending) {
+      if (seen.has(doc)) continue;
+      writeEvent(doc);
+    }
+    pending.length = 0;
+    seen.clear();
+    live = true;
+
+    heartbeat = setInterval(() => {
+      res.write(`: heartbeat ${Date.now()}\n\n`);
+    }, HEARTBEAT_INTERVAL_MS);
+    if (heartbeat.unref) heartbeat.unref();
+
+    // Listen on both `req` and `res` for close — different Express/proxy
+    // combinations fire one or the other when the client disconnects.
+    req.on("close", cleanup);
+    req.on("error", cleanup);
+    res.on("close", cleanup);
+    res.on("error", cleanup);
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
 });

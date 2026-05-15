@@ -50,13 +50,18 @@ export function createApp(opts: { ingestToken: string | undefined }): express.Ex
     const httpErr = err as { status?: number; statusCode?: number; expose?: boolean };
     const status = httpErr.status ?? httpErr.statusCode;
     if (typeof status === "number" && status >= 400 && status < 600) {
+      // Log the original message so operators can diagnose; do NOT echo it
+      // to the client — body-parser's JSON-parse message includes the
+      // offending byte position and a snippet of the request body, which
+      // is mild information disclosure on an otherwise unauthenticated
+      // 401-gated surface.
       req.log.warn({ err: (err as Error).message, status }, "request rejected");
       if (!res.headersSent) {
         const body =
           status === 413
             ? { error: "payload_too_large" }
             : status === 400
-              ? { error: "bad_request", message: (err as Error).message }
+              ? { error: "bad_request" }
               : { error: "request_failed", status };
         res.status(status).json(body);
       }

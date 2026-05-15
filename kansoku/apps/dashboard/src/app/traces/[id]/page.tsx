@@ -63,8 +63,9 @@ function buildSpans(logs: StoredLog[]): Span[] {
       // Two logs claim the same spanId but disagree on parent. Almost always
       // a producer bug (forgot to re-bind context, log emitted during an
       // unrelated async transition). First-write-wins is preserved; surface
-      // the disagreement in the browser console for the dashboard operator
-      // so it doesn't go silently.
+      // the disagreement on the Next.js *server* console (this is a server
+      // component) so the operator running `npm run kansoku:dev:dashboard`
+      // sees it without scraping logs.
       console.warn(
         `[trace ${spanId}] parentSpanId disagreement: kept ${span.parentSpanId}, saw ${log.parentSpanId}`,
       );
@@ -247,9 +248,11 @@ export default async function TracePage({ params }: TracePageProps) {
       {untracedFlat.length > 0 && (
         <section className="space-y-1">
           <h3 className="kicker mb-3">Untraced logs in this trace</h3>
-          <p className="mb-3 text-[11px] text-faint">
-            {untracedFlat.length} log{untracedFlat.length === 1 ? "" : "s"} had no spanId — emitted
-            outside a traced scope and grouped together here.
+          <p className="text-[11px] text-faint">
+            {untracedFlat.reduce((n, f) => n + f.span.logs.length, 0)} log
+            {untracedFlat.reduce((n, f) => n + f.span.logs.length, 0) === 1 ? "" : "s"} in this
+            trace were emitted without a spanId. They still appear in the log timeline below —
+            listed here so they're not lost in the waterfall.
           </p>
         </section>
       )}

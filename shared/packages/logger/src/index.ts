@@ -59,12 +59,6 @@ export function buildLoggerBase(bindings: ServiceBindings): LoggerBaseBindings {
   };
 }
 
-// Frozen sentinel for the no-trace-context mixin branch. Pino calls the
-// mixin on every log line; returning a fresh `{}` literal each time means a
-// hot service allocates one object per log. Sharing one frozen object is
-// safe — pino spreads it into the emitted record.
-const EMPTY_TRACE_FIELDS = Object.freeze({});
-
 const PINO_LEVELS = new Set<string>(["trace", "debug", "info", "warn", "error", "fatal", "silent"]);
 
 export interface CreateLoggerOptions extends ServiceBindings {
@@ -82,6 +76,16 @@ export interface CreateLoggerOptions extends ServiceBindings {
 export function createLogger(opts: CreateLoggerOptions): pino.Logger {
   const { service, component, env, level = "info", formatters, kansoku } = opts;
 
+  // Validate `level` against pino's known vocabulary before any pino object
+  // is created. A typo like "INFO" or "verbose" used to slip through
+  // pino's level resolution and silently route nothing (or everything) to
+  // one of the streams; now it fails fast with a clear message.
+  if (!PINO_LEVELS.has(level)) {
+    throw new Error(
+      `createLogger: invalid level "${level}". Allowed: ${[...PINO_LEVELS].join(", ")}`,
+    );
+  }
+
   const pinoOptions: LoggerOptions = {
     level,
     base: buildLoggerBase({ service, component, env }),
@@ -91,8 +95,9 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
         const tail = path[path.length - 1];
         if (tail === "imageData") {
           // Preserve the byte-size hint for any binary-ish shape we
-          // recognize — strings, Buffers, plain ArrayBuffers. Anything
-          // else falls through to a generic placeholder.
+          // recognize — strings or any typed-array view (which includes
+          // Node `Buffer` since Buffer extends Uint8Array). Anything else
+          // falls through to a generic placeholder.
           if (typeof value === "string") {
             return `[base64 omitted, ~${value.length}b]`;
           }
@@ -107,11 +112,14 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
     // Mixin runs on every log call and merges its return value into the
     // emitted record. Reading from AsyncLocalStorage means every log line
     // inside a traced request auto-includes traceId/spanId without callers
-    // having to thread context manually. The no-context branch returns a
-    // shared frozen empty so a quiet service doesn't allocate per-call.
+    // having to thread context manually. The return value is the target of
+    // pino's default `Object.assign(mixinObject, mergeObject)` strategy, so
+    // we MUST return a fresh extensible object every call — a shared/frozen
+    // sentinel would throw on any `logger.info({...}, "msg")` outside a
+    // trace context.
     mixin: () => {
       const ctx = getTraceContext();
-      if (!ctx) return EMPTY_TRACE_FIELDS;
+      if (!ctx) return {};
       return ctx.parentSpanId
         ? { traceId: ctx.traceId, spanId: ctx.spanId, parentSpanId: ctx.parentSpanId }
         : { traceId: ctx.traceId, spanId: ctx.spanId };
@@ -132,15 +140,8 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
   }
 
   const kansokuStream = createKansokuStream(kansoku);
-  // pino's StreamEntry types `level` as the narrow `pino.Level` union
-  // ("trace" | "debug" | …); LoggerOptions accepts any string. Validate
-  // against the known set so a typo (`"INFO"`, `"verbose"`) fails fast
-  // rather than silently routing all log lines to one or the other stream.
-  if (!PINO_LEVELS.has(level)) {
-    throw new Error(
-      `createLogger: invalid level "${level}". Allowed: ${[...PINO_LEVELS].join(", ")}`,
-    );
-  }
+  // `level` is already validated against PINO_LEVELS above; the cast is
+  // safe — pino's StreamEntry just wants its narrow `Level` union.
   const streamLevel = level as pino.Level;
   const streams: pino.StreamEntry[] = [
     { level: streamLevel, stream: consoleStream },

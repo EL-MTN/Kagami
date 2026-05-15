@@ -110,6 +110,11 @@ export function createKansokuStream(opts: KansokuStreamOptions): KansokuStream {
       backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
       // Park the retry in the shared `timer` slot so a concurrent
       // `scheduleFlush()` from `write()` won't race in a 250 ms flush.
+      // Clear any prior pending timer first — sequential failures could
+      // otherwise orphan an earlier retry handle (still `unref`'d so it
+      // won't keep the process alive, but it would fire a redundant
+      // `flush()` after `final()` already drained the stream).
+      if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
         void flush();

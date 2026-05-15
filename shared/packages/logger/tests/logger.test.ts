@@ -143,3 +143,34 @@ describe("trace mixin enrichment", () => {
     expect(lines[0]?.spanId).toBeUndefined();
   });
 });
+
+// Pino's default mixinMergeStrategy is `Object.assign(mixinObject, mergeObject)`
+// — the mixin's return value is the *target*. Returning a frozen sentinel
+// breaks `logger.info({ ... }, "msg")` calls outside a trace context with a
+// TypeError ("Cannot add property … object is not extensible"). This test
+// goes through the real `createLogger` factory (not a hand-built pino) so it
+// would catch a regression of that exact mistake.
+describe("createLogger end-to-end logs outside a trace context", () => {
+  it("does not throw on a logger.info({...}, msg) call outside any scope", () => {
+    const logger = createLogger({
+      service: "test-service",
+      component: "test-component",
+      env: "test",
+    });
+    expect(() => logger.info({ host: "127.0.0.1", port: 1234 }, "startup")).not.toThrow();
+  });
+
+  it("does not throw on a logger.error({err}, msg) call inside a trace scope either", () => {
+    const logger = createLogger({
+      service: "test-service",
+      component: "test-component",
+      env: "test",
+    });
+    const ctx = newTraceContext();
+    expect(() =>
+      runWithTrace(ctx, () => {
+        logger.error({ err: new Error("boom").message }, "ingest failed");
+      }),
+    ).not.toThrow();
+  });
+});

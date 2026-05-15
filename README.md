@@ -481,9 +481,10 @@ Layout:
 ```text
 kokoro/apps/bot          Grammy bot, AI layer, platform adapters, schedulers
 kokoro/apps/dashboard    Next.js dashboard for routines, watchers, conversations, usage
-kokoro/packages/shared   Config, logger, markdown, shared types
-kokoro/packages/db       Mongoose models and GridFS helpers
-kokoro/packages/memory   Kioku client, transcript glue, session ingest, sweeper
+kokoro/packages/shared      Config, logger, markdown, shared types
+kokoro/packages/db          Mongoose models and GridFS helpers
+kokoro/packages/memory      Kioku client (tracedFetch), transcript glue, session ingest, sweeper
+kokoro/packages/kizuna      Kizuna CRM client (tracedFetch) + compact LLM-facing projections
 kokoro/packages/test-utils
 kokoro/docs
 ```

@@ -25,7 +25,7 @@ Kagami/                       # one git repo, one workspace
 │
 ├── kokoro/                   # Telegram + iMessage AI agent
 │   ├── apps/                 # bot, dashboard
-│   ├── packages/             # shared, db, memory, test-utils
+│   ├── packages/             # shared, db, memory, kizuna, test-utils
 │   ├── scripts/              # auth scripts
 │   ├── docs/
 │   ├── CLAUDE.md
