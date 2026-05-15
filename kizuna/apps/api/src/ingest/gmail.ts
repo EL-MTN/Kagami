@@ -54,6 +54,9 @@ async function loadOrInitState() {
 }
 
 async function pauseWith(message: string): Promise<void> {
+  // Going paused stops Gmail ingest entirely until a manual re-grant —
+  // this must be loud, not silent state mutation.
+  logger.error({ provider: "gmail", reason: message }, "gmail ingest paused — re-grant required");
   await SyncState.updateOne(
     { provider: "gmail" },
     {
@@ -290,8 +293,8 @@ export async function runGmailSync(args: {
     };
   }
 
+  const startHistoryId = state.get("historyId") as string | null;
   try {
-    const startHistoryId = state.get("historyId") as string | null;
     const after = startHistoryId
       ? await incremental(startHistoryId, client, config, result)
       : await bootstrap(client, config, result);
@@ -324,14 +327,21 @@ export async function runGmailSync(args: {
         message: "gmail returned 401 — re-grant required",
       };
     }
+    const progress = {
+      provider: "gmail",
+      startHistoryId,
+      fetched: result.fetched,
+      inserted: result.inserted,
+      errors: result.errors,
+    };
     if (err instanceof GoogleRequestTimeoutError) {
       await recordFailedRun(err.code);
-      logger.error({ err, code: err.code }, "gmail sync timed out");
+      logger.error({ err, code: err.code, ...progress }, "gmail sync timed out");
       return { ...result, status: "error", message: err.code };
     }
     const message = err instanceof Error ? err.message : String(err);
     await recordFailedRun(message);
-    logger.error({ err }, "gmail sync failed");
+    logger.error({ err, ...progress }, "gmail sync failed");
     return { ...result, status: "error", message };
   }
 }

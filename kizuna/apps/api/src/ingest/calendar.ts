@@ -45,6 +45,9 @@ async function loadOrInitState() {
 }
 
 async function pauseWith(message: string): Promise<void> {
+  // Going paused stops Calendar ingest entirely until a manual re-grant —
+  // this must be loud, not silent state mutation.
+  logger.error({ provider: "gcal", reason: message }, "gcal ingest paused — re-grant required");
   await SyncState.updateOne(
     { provider: "gcal" },
     {
@@ -241,7 +244,10 @@ export async function runCalendarSync(args: {
         : await bootstrap(client, config, result);
     } catch (err) {
       if (err instanceof SyncTokenExpired) {
-        logger.warn("gcal: syncToken expired; clearing and re-bootstrapping");
+        logger.warn(
+          { provider: "gcal", fetchedBefore: result.fetched },
+          "gcal: syncToken expired; clearing and re-bootstrapping (full re-scan)",
+        );
         await clearSyncToken();
         result.resyncedFromBootstrap = true;
         after = await bootstrap(client, config, result);
@@ -278,14 +284,21 @@ export async function runCalendarSync(args: {
         message: "calendar returned 401 — re-grant required",
       };
     }
+    const progress = {
+      provider: "gcal",
+      startToken,
+      fetched: result.fetched,
+      upserted: result.upserted,
+      errors: result.errors,
+    };
     if (err instanceof GoogleRequestTimeoutError) {
       await recordFailedRun(err.code);
-      logger.error({ err, code: err.code }, "gcal sync timed out");
+      logger.error({ err, code: err.code, ...progress }, "gcal sync timed out");
       return { ...result, status: "error", message: err.code };
     }
     const message = err instanceof Error ? err.message : String(err);
     await recordFailedRun(message);
-    logger.error({ err }, "gcal sync failed");
+    logger.error({ err, ...progress }, "gcal sync failed");
     return { ...result, status: "error", message };
   }
 }
