@@ -15,10 +15,12 @@ export async function Sidebar() {
   return (
     <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-border bg-card">
       <div className="flex h-16 items-center gap-3 px-6">
-        <span className="text-3xl leading-none font-light text-foreground select-none">観</span>
+        <span className="font-display text-3xl leading-none text-foreground select-none">観</span>
         <div>
-          <h1 className="text-xl leading-none tracking-wide text-foreground">Kansoku</h1>
-          <p className="mt-1 text-[10px] tracking-[0.2em] text-faint uppercase">Observation</p>
+          <h1 className="font-display text-xl leading-none tracking-wide text-foreground">
+            Kansoku
+          </h1>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-faint">Observation</p>
         </div>
       </div>
 
