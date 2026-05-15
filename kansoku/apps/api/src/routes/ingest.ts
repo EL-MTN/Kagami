@@ -8,9 +8,13 @@ import { logger } from "../logger.js";
 
 export function createIngestRouter(token: string | undefined): Router {
   const router = Router();
-  router.use(requireIngestToken(token));
 
-  router.post("/logs", (req, res, next) => {
+  // Scope the auth gate to POST /logs only. Mounting it via `router.use`
+  // ran it for every request routed through this sub-router — and because
+  // server.ts mounts this router at `/v1` ahead of the query/tail/errors/
+  // services routers, an unset KANSOKU_INGEST_TOKEN took down the entire
+  // read surface (live tail, search, errors, services), not just ingest.
+  router.post("/logs", requireIngestToken(token), (req, res, next) => {
     try {
       const batch = LogBatch.parse(req.body);
       const docs = batch.map(toStoredLog);
