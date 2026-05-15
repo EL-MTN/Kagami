@@ -101,9 +101,11 @@ export async function ensureIndexes(): Promise<void> {
   // per-service search.
   await logs.createIndex({ "meta.service": 1, ts: -1 }, { name: "logs_service_ts" });
 
-  // Single-trace fetch. Sparse so we don't index logs without a traceId
-  // (everything pre-Phase 3).
-  await logs.createIndex({ traceId: 1 }, { name: "logs_trace_id", sparse: true });
+  // Single-trace fetch. Time-series collections don't support `sparse`
+  // (or `partialFilterExpression`) on indexes; post-Phase 3 every log
+  // carries a traceId from the trace middleware anyway, so a dense
+  // index is fine.
+  await logs.createIndex({ traceId: 1 }, { name: "logs_trace_id" });
 
   // Level fan-out (e.g. error stream across services).
   await logs.createIndex({ "meta.level": 1, ts: -1 }, { name: "logs_level_ts" });
