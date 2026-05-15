@@ -189,7 +189,10 @@ export async function consolidate(
       });
       batchEmb = r.embedding;
     } catch (error) {
-      logger.error({ error }, "ingest batch embed failed");
+      logger.error(
+        { err: error, sessionId, userId, runId, agentId, batch: batches },
+        "ingest batch embed failed",
+      );
       continue;
     }
 
@@ -231,7 +234,10 @@ export async function consolidate(
       });
       extraction = r.object;
     } catch (error) {
-      logger.error({ error }, "ingest extraction failed");
+      logger.error(
+        { err: error, sessionId, userId, runId, agentId, batch: batches },
+        "ingest extraction failed",
+      );
       continue;
     }
 
@@ -248,7 +254,10 @@ export async function consolidate(
       });
       embeddings = r.embeddings;
     } catch (error) {
-      logger.error({ error }, "ingest fact embed failed");
+      logger.error(
+        { err: error, sessionId, userId, runId, agentId, batch: batches },
+        "ingest fact embed failed",
+      );
       continue;
     }
 
@@ -292,7 +301,10 @@ export async function consolidate(
     try {
       await upsertEntitiesFromFacts(facts);
     } catch (error) {
-      logger.error({ error }, "ingest entity upsert failed");
+      logger.error(
+        { err: error, sessionId, userId, runId, agentId, batch: batches },
+        "ingest entity upsert failed",
+      );
     }
     for (const f of facts) {
       recentlyExtracted.push({

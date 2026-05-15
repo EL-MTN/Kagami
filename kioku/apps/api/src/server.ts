@@ -1,5 +1,7 @@
 import "dotenv/config";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import express, { type ErrorRequestHandler } from "express";
+import pino from "pino";
 import { pinoHttp } from "pino-http";
 import { ZodError } from "zod";
 import { traceMiddleware } from "@kagami/logger/express-trace";
@@ -30,7 +32,30 @@ app.set("trust proxy", "loopback");
 // triggered by Kokoro via tracedFetch, the incoming `traceparent` is
 // preserved as the parent of the span we open here.
 app.use(traceMiddleware());
-app.use(pinoHttp({ logger }));
+// Default pino-http dumps the full req/res (every header) at info on every
+// request — including `/health` probes. That's the dominant noise source
+// shipped to Kansoku. Trim to method/url/id + statusCode, level by outcome
+// (5xx→error, 4xx→warn, else info), and skip the health probe entirely.
+app.use(
+  pinoHttp({
+    logger,
+    autoLogging: { ignore: (req) => req.url === "/health" },
+    customLogLevel: (_req, res, err) => {
+      if (err || res.statusCode >= 500) return "error";
+      if (res.statusCode >= 400) return "warn";
+      return "info";
+    },
+    serializers: {
+      err: pino.stdSerializers.err,
+      req: (req: IncomingMessage & { id?: string | number }) => ({
+        method: req.method,
+        url: req.url,
+        id: req.id,
+      }),
+      res: (res: ServerResponse) => ({ statusCode: res.statusCode }),
+    },
+  }),
+);
 // Transcripts can be sizeable; bump beyond the 100kb default.
 app.use(express.json({ limit: "10mb" }));
 
@@ -46,7 +71,7 @@ const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     res.status(400).json({ error: "validation_error", issues: err.issues });
     return;
   }
-  req.log.error({ err: (err as Error).message }, "unhandled request error");
+  req.log.error({ err, method: req.method, url: req.originalUrl }, "unhandled request error");
   if (!res.headersSent) {
     res.status(500).json({ error: "internal_error" });
   }
@@ -54,12 +79,12 @@ const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
 app.use(errorHandler);
 
 async function main(): Promise<void> {
-  logger.info({ bm25Sigmoid: getBm25ParamConfig() }, "bm25 sigmoid params configured");
+  logger.debug({ bm25Sigmoid: getBm25ParamConfig() }, "bm25 sigmoid params configured");
 
   try {
     await ensureIndexes();
   } catch (err) {
-    logger.error({ err: (err as Error).message }, "kioku startup failed");
+    logger.error({ err }, "kioku startup failed");
     process.exit(1);
   }
 
