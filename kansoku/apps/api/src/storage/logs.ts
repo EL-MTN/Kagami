@@ -21,10 +21,47 @@ async function getLogsCollection(): Promise<Collection<StoredLog>> {
   return db.collection<StoredLog>("logs");
 }
 
-export async function insertLogs(docs: StoredLog[]): Promise<void> {
-  if (docs.length === 0) return;
+export interface InsertLogsResult {
+  insertedCount: number;
+  failedCount: number;
+  /** Up to 3 sample error messages for the dropped docs (driver-supplied). */
+  sampleErrors: string[];
+}
+
+interface MongoBulkWriteErrorShape {
+  result?: { insertedCount?: number };
+  writeErrors?: Array<{ errmsg?: string }>;
+}
+
+/**
+ * Bulk-insert with `ordered: false`, which lets the driver continue past
+ * per-doc validation errors. The bulk call still rejects with
+ * `MongoBulkWriteError`, but its `result.insertedCount` tells us how many
+ * actually landed. We surface that split in the return value so the
+ * caller can log accurately; full-batch failures (network, auth, etc.)
+ * still throw.
+ */
+export async function insertLogs(docs: StoredLog[]): Promise<InsertLogsResult> {
+  if (docs.length === 0) return { insertedCount: 0, failedCount: 0, sampleErrors: [] };
   const coll = await getLogsCollection();
-  await coll.insertMany(docs, { ordered: false });
+  try {
+    const result = await coll.insertMany(docs, { ordered: false });
+    return { insertedCount: result.insertedCount, failedCount: 0, sampleErrors: [] };
+  } catch (err) {
+    const bulk = err as MongoBulkWriteErrorShape;
+    const writeErrors = bulk.writeErrors ?? [];
+    if (writeErrors.length === 0) {
+      // Connection / auth / encoding failure — nothing landed.
+      throw err;
+    }
+    const insertedCount = bulk.result?.insertedCount ?? 0;
+    const sampleErrors = writeErrors.slice(0, 3).map((e) => e.errmsg ?? "(no errmsg)");
+    return {
+      insertedCount,
+      failedCount: docs.length - insertedCount,
+      sampleErrors,
+    };
+  }
 }
 
 export interface QueryLogsOptions {

@@ -24,14 +24,15 @@ const app = express();
 // the forwarded client for per-IP rate limits without trusting arbitrary peers.
 app.set("trust proxy", "loopback");
 
-// Transcripts can be sizeable; bump beyond the 100kb default.
-app.use(express.json({ limit: "10mb" }));
-// Trace context first so every log inside a request — including pino-http's
+// Trace context absolutely first so every log inside the request — including
+// body-parse errors (`PayloadTooLargeError`, malformed JSON) and pino-http's
 // completion log — carries traceId/spanId. When this Kioku request was
 // triggered by Kokoro via tracedFetch, the incoming `traceparent` is
 // preserved as the parent of the span we open here.
 app.use(traceMiddleware());
 app.use(pinoHttp({ logger }));
+// Transcripts can be sizeable; bump beyond the 100kb default.
+app.use(express.json({ limit: "10mb" }));
 
 app.use("/", metaRouter);
 app.use("/facts", factsRouter);

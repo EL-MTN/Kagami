@@ -16,7 +16,9 @@ export interface KansokuStreamOptions {
 }
 
 interface KansokuStreamInternals {
+  /** @internal — exposed for tests + diagnostics. */
   bufferSize(): number;
+  /** @internal — total events dropped due to overflow since process start. */
   droppedTotal(): number;
 }
 
@@ -40,14 +42,22 @@ export function createKansokuStream(opts: KansokuStreamOptions): KansokuStream {
   const ingestUrl = `${url.replace(/\/$/, "")}/v1/logs`;
 
   let buffer: string[] = [];
+  // `timer` is either the soft-flush timer (waiting batchIntervalMs after a
+  // small write) or the backoff-retry timer (waiting backoffMs after a
+  // failure) — never both. Sharing the slot keeps scheduleFlush's "is a
+  // flush already on the way?" guard correct and prevents a 250 ms soft
+  // flush from short-circuiting an in-flight exponential backoff.
   let timer: NodeJS.Timeout | null = null;
-  let inFlight = false;
+  // The active flush's promise (null when idle). `flush()` is idempotent
+  // while one is running — concurrent callers receive the same promise so
+  // `final()` can deterministically wait for it before the deadline fires.
+  let inFlightPromise: Promise<void> | null = null;
   let droppedSinceLastSuccess = 0;
   let droppedTotal = 0;
   let backoffMs = batchIntervalMs;
 
   const scheduleFlush = (): void => {
-    if (timer || inFlight) return;
+    if (timer || inFlightPromise) return;
     timer = setTimeout(() => {
       timer = null;
       void flush();
@@ -55,9 +65,21 @@ export function createKansokuStream(opts: KansokuStreamOptions): KansokuStream {
     if (timer.unref) timer.unref();
   };
 
-  const flush = async (): Promise<void> => {
-    if (inFlight || buffer.length === 0) return;
-    inFlight = true;
+  const flush = (): Promise<void> => {
+    if (inFlightPromise) return inFlightPromise;
+    if (buffer.length === 0) return Promise.resolve();
+    const p = doFlush();
+    inFlightPromise = p.finally(() => {
+      inFlightPromise = null;
+      // If the catch path already armed a backoff retry, leave that timer
+      // alone. Otherwise, if writes piled up while we were in flight,
+      // schedule a fresh soft flush.
+      if (!timer && buffer.length > 0) scheduleFlush();
+    });
+    return inFlightPromise;
+  };
+
+  const doFlush = async (): Promise<void> => {
     const batch = buffer;
     const dropCount = droppedSinceLastSuccess;
     buffer = [];
@@ -73,7 +95,10 @@ export function createKansokuStream(opts: KansokuStreamOptions): KansokuStream {
       if (!res.ok) throw new Error(`kansoku http ${res.status}`);
       backoffMs = batchIntervalMs;
     } catch {
-      // Requeue at the front to preserve order; trim to bufferLimit.
+      // Requeue at the front to preserve order; restore the previously
+      // captured drop count (new overflow during the in-flight period has
+      // already been added to `droppedSinceLastSuccess` by `write()`, so
+      // we add — not overwrite — to preserve both).
       buffer = [...batch, ...buffer];
       droppedSinceLastSuccess += dropCount;
       if (buffer.length > bufferLimit) {
@@ -83,11 +108,13 @@ export function createKansokuStream(opts: KansokuStreamOptions): KansokuStream {
         droppedTotal += overflow;
       }
       backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
-      const retry = setTimeout(() => void flush(), backoffMs);
-      if (retry.unref) retry.unref();
-    } finally {
-      inFlight = false;
-      if (buffer.length > 0 && !timer) scheduleFlush();
+      // Park the retry in the shared `timer` slot so a concurrent
+      // `scheduleFlush()` from `write()` won't race in a 250 ms flush.
+      timer = setTimeout(() => {
+        timer = null;
+        void flush();
+      }, backoffMs);
+      if (timer.unref) timer.unref();
     }
   };
 
@@ -111,18 +138,26 @@ export function createKansokuStream(opts: KansokuStreamOptions): KansokuStream {
       cb();
     },
     final(cb) {
-      // Best-effort drain on shutdown, capped so it can't block forever.
+      // Best-effort drain on shutdown, capped so a hung POST can't block
+      // shutdown forever. Wait for any in-flight flush, then attempt one
+      // more if the buffer is non-empty — all under a single 5 s deadline.
+      // `done` is the single-call gate; `cb` fires exactly once.
       let done = false;
       const finish = (): void => {
         if (done) return;
         done = true;
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
         cb();
       };
       const deadline = setTimeout(finish, 5_000);
       if (deadline.unref) deadline.unref();
       void (async () => {
         try {
-          await flush();
+          if (inFlightPromise) await inFlightPromise;
+          if (buffer.length > 0) await flush();
         } finally {
           clearTimeout(deadline);
           finish();

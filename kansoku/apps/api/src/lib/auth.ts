@@ -4,13 +4,15 @@ import type { RequestHandler } from "express";
 const AUTH_HEADER = "x-kansoku-auth";
 
 function tokensMatch(provided: string, expected: string): boolean {
-  // Constant-time compare. Reject early if lengths differ — timingSafeEqual
-  // throws on length mismatch, and the early-exit is itself information,
-  // but that's fine: the token length is fixed per Kagami install, so a
-  // would-be attacker already needs to know the length to test anything.
-  if (provided.length !== expected.length) return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(expected);
+  // Build buffers first so the comparison is byte-length-based. JS string
+  // `.length` counts UTF-16 code units, not bytes — a multibyte UTF-8 token
+  // of equal char length but different byte length would slip past a
+  // length check into `timingSafeEqual`, which throws on mismatched byte
+  // length and would surface as a 500 (with leaky semantics) instead of
+  // the intended 401.
+  const a = Buffer.from(provided, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  if (a.length !== b.length) return false;
   return timingSafeEqual(a, b);
 }
 

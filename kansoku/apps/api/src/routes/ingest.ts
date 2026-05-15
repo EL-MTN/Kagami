@@ -28,12 +28,26 @@ export function createIngestRouter(token: string | undefined): Router {
       // miss but the events are already lost to the shipper (it's moved on),
       // so there's no retry to coordinate.
       publishLogs(docs);
-      void insertLogs(docs).catch((err) => {
-        logger.error(
-          { err: (err as Error).message, count: docs.length },
-          "kansoku ingest write failed",
-        );
-      });
+      void insertLogs(docs).then(
+        (result) => {
+          if (result.failedCount > 0) {
+            logger.warn(
+              {
+                inserted: result.insertedCount,
+                failed: result.failedCount,
+                sampleErrors: result.sampleErrors,
+              },
+              "kansoku ingest partial write",
+            );
+          }
+        },
+        (err) => {
+          logger.error(
+            { err: (err as Error).message, count: docs.length },
+            "kansoku ingest write failed",
+          );
+        },
+      );
       // Fingerprint upserts run in parallel with the bulk log write. Same
       // fail-open posture — a failed errors write must never wedge ingest.
       void recordErrors(docs).catch((err) => {

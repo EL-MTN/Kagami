@@ -23,11 +23,12 @@ const HOST = process.env.KANSOKU_HOST ?? "127.0.0.1";
 export function createApp(opts: { ingestToken: string | undefined }): express.Express {
   const app = express();
   app.set("trust proxy", "loopback");
-  app.use(express.json({ limit: "4mb" }));
-  // Trace context first so pino-http's `request completed` line — and every
-  // downstream log inside the request — carries traceId/spanId.
+  // Trace context absolutely first so every log inside the request —
+  // including body-parse errors (PayloadTooLargeError, malformed JSON)
+  // and pino-http's completion log — carries traceId/spanId.
   app.use(traceMiddleware());
   app.use(pinoHttp({ logger }));
+  app.use(express.json({ limit: "4mb" }));
 
   app.use("/", metaRouter);
   app.use("/v1", corsForDashboard);
