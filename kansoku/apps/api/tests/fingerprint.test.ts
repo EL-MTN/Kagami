@@ -103,4 +103,56 @@ describe("fingerprintErrorLog", () => {
     const b = fingerprintErrorLog(log({ msg: "boom" }));
     expect(a?.fingerprint).toBe(b?.fingerprint);
   });
+
+  it("distinguishes errors with different cause chains", () => {
+    const a = fingerprintErrorLog(
+      log({
+        fields: {
+          err: {
+            name: "WrapperError",
+            message: "operation failed",
+            cause: { name: "ECONNREFUSED", message: "connection refused" },
+          },
+        },
+      }),
+    );
+    const b = fingerprintErrorLog(
+      log({
+        fields: {
+          err: {
+            name: "WrapperError",
+            message: "operation failed",
+            cause: { name: "ETIMEDOUT", message: "request timed out" },
+          },
+        },
+      }),
+    );
+    expect(a?.fingerprint).not.toBe(b?.fingerprint);
+  });
+
+  it("AggregateError-shaped errors include the first inner error in the signature", () => {
+    const a = fingerprintErrorLog(
+      log({
+        fields: {
+          err: {
+            name: "AggregateError",
+            message: "All promises rejected",
+            errors: [{ name: "TypeError", message: "boom A" }],
+          },
+        },
+      }),
+    );
+    const b = fingerprintErrorLog(
+      log({
+        fields: {
+          err: {
+            name: "AggregateError",
+            message: "All promises rejected",
+            errors: [{ name: "RangeError", message: "boom B" }],
+          },
+        },
+      }),
+    );
+    expect(a?.fingerprint).not.toBe(b?.fingerprint);
+  });
 });

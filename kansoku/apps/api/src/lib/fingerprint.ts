@@ -12,39 +12,29 @@ import type { StoredLog } from "../storage/logs.js";
  *   logger.error({ err: { name, message, stack } }, ...)  → fields.err object
  *   logger.error({ error: error }, ...)                   → fields.error
  *   logger.error("just a message")                        → top-level msg only
+ *
+ * We also walk `Error.cause` chains (bounded depth) and pick up the first
+ * inner error of an `AggregateError`, so a wrapper Error that rethrows with
+ * context doesn't collapse two distinct underlying failures into one bucket.
  */
 
 interface ErrorShape {
   name?: string;
   message?: string;
   topFrame?: string;
+  /** Joined "name:message" pairs walking the cause chain, oldest-first. */
+  causeChain?: string;
 }
 
 interface ErrorSource {
   name?: unknown;
   message?: unknown;
   stack?: unknown;
+  cause?: unknown;
+  errors?: unknown;
 }
 
-function pickErrorObject(fields: Record<string, unknown>): ErrorShape {
-  const candidate =
-    pickIfObject(fields.err) ?? pickIfObject(fields.error) ?? pickIfObject(fields.cause);
-  if (candidate) {
-    return {
-      name: typeof candidate.name === "string" ? candidate.name : undefined,
-      message: typeof candidate.message === "string" ? candidate.message : undefined,
-      topFrame: typeof candidate.stack === "string" ? firstStackFrame(candidate.stack) : undefined,
-    };
-  }
-
-  // String shapes — caller stuffed `error.message` directly.
-  const flatErr = fields.err ?? fields.error;
-  if (typeof flatErr === "string") {
-    return { message: flatErr };
-  }
-
-  return {};
-}
+const MAX_CAUSE_DEPTH = 3;
 
 function pickIfObject(v: unknown): ErrorSource | undefined {
   if (typeof v === "object" && v !== null) return v;
@@ -59,6 +49,54 @@ function firstStackFrame(stack: string): string | undefined {
     return trimmed;
   }
   return undefined;
+}
+
+function summarize(src: ErrorSource): string {
+  const name = typeof src.name === "string" ? src.name : "";
+  const message = typeof src.message === "string" ? src.message : "";
+  return `${name}:${message}`;
+}
+
+/**
+ * Walk `.cause` (bounded depth) and, for `AggregateError`-shaped objects,
+ * include the first inner error. Returns a normalized chain string used as
+ * an extra hash input — distinguishes two outer errors with the same
+ * message but different underlying causes.
+ */
+function buildCauseChain(src: ErrorSource): string {
+  const parts: string[] = [];
+  // First-inner of AggregateError-style { errors: [...] }.
+  if (Array.isArray(src.errors) && src.errors.length > 0) {
+    const inner = pickIfObject(src.errors[0]);
+    if (inner) parts.push(`agg(${summarize(inner)})`);
+  }
+  let current: ErrorSource | undefined = pickIfObject(src.cause);
+  for (let depth = 0; current && depth < MAX_CAUSE_DEPTH; depth += 1) {
+    parts.push(summarize(current));
+    current = pickIfObject(current.cause);
+  }
+  return parts.join(" -> ");
+}
+
+function pickErrorObject(fields: Record<string, unknown>): ErrorShape {
+  const candidate =
+    pickIfObject(fields.err) ?? pickIfObject(fields.error) ?? pickIfObject(fields.cause);
+  if (candidate) {
+    return {
+      name: typeof candidate.name === "string" ? candidate.name : undefined,
+      message: typeof candidate.message === "string" ? candidate.message : undefined,
+      topFrame: typeof candidate.stack === "string" ? firstStackFrame(candidate.stack) : undefined,
+      causeChain: buildCauseChain(candidate),
+    };
+  }
+
+  // String shapes — caller stuffed `error.message` directly.
+  const flatErr = fields.err ?? fields.error;
+  if (typeof flatErr === "string") {
+    return { message: flatErr };
+  }
+
+  return {};
 }
 
 // Replace volatile parts of the signature so the same underlying failure
@@ -107,7 +145,10 @@ export function fingerprintErrorLog(log: StoredLog): ErrorFingerprint | undefine
 
   const normMessage = normalizeForFingerprint(message);
   const normTop = extracted.topFrame ? normalizeForFingerprint(extracted.topFrame) : "";
-  const signature = [log.meta.service, extracted.name ?? "", normMessage, normTop].join("␟");
+  const normCause = extracted.causeChain ? normalizeForFingerprint(extracted.causeChain) : "";
+  const signature = [log.meta.service, extracted.name ?? "", normMessage, normTop, normCause].join(
+    "␟",
+  );
 
   return {
     fingerprint: createHash("sha1").update(signature).digest("hex").slice(0, 16),

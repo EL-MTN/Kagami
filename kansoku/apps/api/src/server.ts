@@ -43,6 +43,25 @@ export function createApp(opts: { ingestToken: string | undefined }): express.Ex
       res.status(400).json({ error: "validation_error", issues: err.issues });
       return;
     }
+    // Body-parser surfaces status-bearing errors for malformed JSON (400)
+    // and oversized payloads (413, `entity.too.large`). Honor those before
+    // falling through to 500 so misconfigured shippers get a meaningful
+    // response instead of a mystery server error.
+    const httpErr = err as { status?: number; statusCode?: number; expose?: boolean };
+    const status = httpErr.status ?? httpErr.statusCode;
+    if (typeof status === "number" && status >= 400 && status < 600) {
+      req.log.warn({ err: (err as Error).message, status }, "request rejected");
+      if (!res.headersSent) {
+        const body =
+          status === 413
+            ? { error: "payload_too_large" }
+            : status === 400
+              ? { error: "bad_request", message: (err as Error).message }
+              : { error: "request_failed", status };
+        res.status(status).json(body);
+      }
+      return;
+    }
     req.log.error({ err: (err as Error).message }, "unhandled request error");
     if (!res.headersSent) {
       res.status(500).json({ error: "internal_error" });

@@ -36,6 +36,11 @@ const LEVEL_NAMES: Record<number, string> = {
   60: "fatal",
 };
 
+// Keys we recognize and lift to typed slots on StoredLog. Anything else
+// passes through into `fields`. We also reserve a few storage-layer keys
+// (`ts`, `_id`, `meta`) so a shipper can't smuggle them into `fields` and
+// confuse search/query handlers that read them as if they were real
+// document attributes.
 const KNOWN_KEYS = new Set([
   "time",
   "level",
@@ -49,11 +54,15 @@ const KNOWN_KEYS = new Set([
   "spanId",
   "parentSpanId",
 ]);
+const RESERVED_STORAGE_KEYS = new Set(["ts", "_id", "meta", "fields"]);
 
 export function toStoredLog(envelope: LogEnvelopeInput): StoredLog {
   const fields: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(envelope)) {
-    if (!KNOWN_KEYS.has(k)) fields[k] = v;
+    if (KNOWN_KEYS.has(k)) continue;
+    // Drop reserved storage keys — they'd alias the time-series doc shape.
+    if (RESERVED_STORAGE_KEYS.has(k)) continue;
+    fields[k] = v;
   }
   if (envelope.pid !== undefined) fields.pid = envelope.pid;
   if (envelope.hostname !== undefined) fields.hostname = envelope.hostname;

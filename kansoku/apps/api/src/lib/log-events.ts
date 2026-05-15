@@ -8,9 +8,18 @@ import type { StoredLog } from "../storage/logs.js";
 // memory is ~50–100KB — trivial.
 const RING_SIZE = 500;
 
+// Hard cap on concurrent SSE subscribers. Each browser tab opens one; the
+// cap guards against runaway leaks from a misbehaving client or a load-test
+// hammering /v1/tail. Sized well above realistic personal-use; rejected
+// subscribers see a 503 instead of silently leaking listener refs.
+const MAX_SUBSCRIBERS = 64;
+
 const ring: StoredLog[] = [];
 const emitter = new EventEmitter();
-emitter.setMaxListeners(100);
+// Track our own count rather than leaning on EventEmitter's MaxListenersExceededWarning
+// — we want a hard rejection at the route level, not a silent warning log.
+emitter.setMaxListeners(MAX_SUBSCRIBERS + 4);
+let subscriberCount = 0;
 
 export function publishLog(doc: StoredLog): void {
   ring.push(doc);
@@ -33,7 +42,25 @@ export function recentLogs(filter: LogFilter = () => true, limit = 50): StoredLo
   return matched.reverse();
 }
 
-export function subscribeLogs(listener: (doc: StoredLog) => void): () => void {
+/**
+ * Subscribe to log events. Returns an unsubscribe function, or `null` when
+ * the subscriber cap is exhausted — caller should respond 503 instead of
+ * silently dropping the connection.
+ */
+export function subscribeLogs(listener: (doc: StoredLog) => void): (() => void) | null {
+  if (subscriberCount >= MAX_SUBSCRIBERS) return null;
+  subscriberCount += 1;
   emitter.on("log", listener);
-  return () => emitter.off("log", listener);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    subscriberCount -= 1;
+    emitter.off("log", listener);
+  };
+}
+
+/** Diagnostics — used by /health-ish surfaces and tests. */
+export function subscriberStats(): { count: number; max: number } {
+  return { count: subscriberCount, max: MAX_SUBSCRIBERS };
 }

@@ -17,7 +17,11 @@ export function createIngestRouter(token: string | undefined): Router {
 
       const dropped = Number(req.header("x-kansoku-dropped") ?? 0);
       if (Number.isFinite(dropped) && dropped > 0) {
-        logger.warn({ dropped, service: docs[0]?.meta.service }, "shipper reported buffer drops");
+        // The header is one count for the whole batch — surface the set of
+        // services represented so a multi-service shipper (or a fan-in
+        // forwarder) doesn't get attribution stuck on docs[0].
+        const services = Array.from(new Set(docs.map((d) => d.meta.service))).sort();
+        logger.warn({ dropped, services }, "shipper reported buffer drops");
       }
 
       // Broadcast first (synchronous, in-process — every connected SSE tail

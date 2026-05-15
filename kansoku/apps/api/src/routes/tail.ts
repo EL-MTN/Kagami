@@ -44,34 +44,77 @@ tailRouter.get("/tail", (req, res) => {
   }
   const parsed = result.data;
 
+  const filter = makeFilter(parsed);
+  const replay = parsed.replay ?? DEFAULT_REPLAY;
+
+  // Subscribe FIRST so no events fall into the gap between the replay
+  // snapshot and the live wire. The listener writes into a `pending` buffer
+  // until the replay flushes; then we drain `pending` (deduped against the
+  // replay set by reference identity — publishLog pushes the same object
+  // into both the ring and the emitter) and flip to live mode.
+  const pending: StoredLog[] = [];
+  let live = false;
+  const seen = new Set<StoredLog>();
+
+  const writeEvent = (doc: StoredLog): void => {
+    res.write(`data: ${JSON.stringify(doc)}\n\n`);
+  };
+
+  const unsubscribe = subscribeLogs((doc) => {
+    if (!filter(doc)) return;
+    if (live) {
+      writeEvent(doc);
+    } else {
+      pending.push(doc);
+    }
+  });
+
+  if (!unsubscribe) {
+    // Subscriber cap exhausted — reject with 503 rather than letting the
+    // EventEmitter silently leak references. The caller (browser
+    // EventSource) will auto-reconnect on backoff.
+    res.status(503).json({ error: "tail_capacity_exhausted" });
+    return;
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
 
-  const filter = makeFilter(parsed);
-  const replay = parsed.replay ?? DEFAULT_REPLAY;
   if (replay > 0) {
     for (const doc of recentLogs(filter, replay)) {
-      res.write(`data: ${JSON.stringify(doc)}\n\n`);
+      seen.add(doc);
+      writeEvent(doc);
     }
   }
-
-  const unsubscribe = subscribeLogs((doc) => {
-    if (!filter(doc)) return;
-    res.write(`data: ${JSON.stringify(doc)}\n\n`);
-  });
+  // Drain anything that arrived between subscribe and replay-flush,
+  // skipping duplicates already shipped via the replay snapshot.
+  for (const doc of pending) {
+    if (seen.has(doc)) continue;
+    writeEvent(doc);
+  }
+  pending.length = 0;
+  seen.clear();
+  live = true;
 
   const heartbeat = setInterval(() => {
     res.write(`: heartbeat ${Date.now()}\n\n`);
   }, HEARTBEAT_INTERVAL_MS);
   if (heartbeat.unref) heartbeat.unref();
 
+  let cleanedUp = false;
   const cleanup = (): void => {
+    if (cleanedUp) return;
+    cleanedUp = true;
     unsubscribe();
     clearInterval(heartbeat);
   };
+  // Listen on both `req` and `res` for close — different Express/proxy
+  // combinations fire one or the other when the client disconnects mid-write.
   req.on("close", cleanup);
   req.on("error", cleanup);
+  res.on("close", cleanup);
+  res.on("error", cleanup);
 });

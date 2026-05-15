@@ -5,14 +5,30 @@ import { logger } from "../logger.js";
 const SECONDS_PER_DAY = 24 * 60 * 60;
 const DEFAULT_LOGS_TTL_DAYS = 30;
 
-/** Resolve the configured TTL in seconds. Bounded by a sane floor + ceiling. */
+/**
+ * Resolve the configured TTL in seconds. Bounded by a sane floor + ceiling.
+ * Strict integer parsing — `"30days"` (which `parseInt` would silently
+ * accept as `30`) and similar typos are rejected so the user gets a clear
+ * fallback warning instead of mystery semantics.
+ */
 function resolveLogsTtlSeconds(): number {
   const raw = process.env.KANSOKU_LOGS_TTL_DAYS;
-  const days = raw === undefined || raw === "" ? DEFAULT_LOGS_TTL_DAYS : Number.parseInt(raw, 10);
-  if (!Number.isFinite(days) || days < 1) {
+  if (raw === undefined || raw.trim() === "") {
+    return DEFAULT_LOGS_TTL_DAYS * SECONDS_PER_DAY;
+  }
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
     logger.warn(
       { provided: raw, fallback: DEFAULT_LOGS_TTL_DAYS },
-      "KANSOKU_LOGS_TTL_DAYS unparseable; using default",
+      "KANSOKU_LOGS_TTL_DAYS not a positive integer; using default",
+    );
+    return DEFAULT_LOGS_TTL_DAYS * SECONDS_PER_DAY;
+  }
+  const days = Number.parseInt(trimmed, 10);
+  if (days < 1) {
+    logger.warn(
+      { provided: raw, fallback: DEFAULT_LOGS_TTL_DAYS },
+      "KANSOKU_LOGS_TTL_DAYS must be >= 1; using default",
     );
     return DEFAULT_LOGS_TTL_DAYS * SECONDS_PER_DAY;
   }

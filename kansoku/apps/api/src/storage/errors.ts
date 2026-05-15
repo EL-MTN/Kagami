@@ -2,6 +2,7 @@ import type { Collection, Filter } from "mongodb";
 import { getDb } from "./mongo.js";
 import { fingerprintErrorLog } from "../lib/fingerprint.js";
 import { notifyNewError } from "../lib/alerts.js";
+import { logger } from "../logger.js";
 import type { StoredLog } from "./logs.js";
 
 export interface ErrorRecord {
@@ -64,14 +65,17 @@ export async function recordErrors(docs: StoredLog[]): Promise<void> {
       update.$push = { recentTraceIds: { $each: [doc.traceId], $slice: -RECENT_TRACE_CAP } };
     }
 
-    // Capture upsertedCount so a brand-new fingerprint fires the alert
-    // webhook. Existing rows return upsertedCount: 0, so we don't alert on
-    // re-occurrences — Phase 7's webhook is strictly for new-error signal.
+    // Each upsert is its own task so one failing doc doesn't poison the
+    // batch (allSettled below). The alert webhook runs fire-and-forget so
+    // a slow / hung webhook can't stall the next batch.
     ops.push(
       (async () => {
         const result = await coll.updateOne({ _id: fp.fingerprint }, update, { upsert: true });
         if (result.upsertedCount > 0) {
-          await notifyNewError({
+          // Fire-and-forget — notifyNewError is itself fail-open with an
+          // internal 5 s timeout, but we still detach so a slow webhook
+          // can't make `recordErrors` block past Promise.allSettled.
+          void notifyNewError({
             fingerprint: fp.fingerprint,
             service: doc.meta.service,
             component: doc.meta.component,
@@ -85,7 +89,23 @@ export async function recordErrors(docs: StoredLog[]): Promise<void> {
     );
   }
 
-  await Promise.all(ops);
+  // allSettled so a single upsert failure (e.g. transient Mongo write
+  // error on one doc) doesn't poison the rest of the batch.
+  const results = await Promise.allSettled(ops);
+  const failures = results.filter((r) => r.status === "rejected");
+  if (failures.length > 0) {
+    logger.warn(
+      {
+        failed: failures.length,
+        total: ops.length,
+        sample:
+          (failures[0] as PromiseRejectedResult).reason instanceof Error
+            ? ((failures[0] as PromiseRejectedResult).reason as Error).message
+            : String((failures[0] as PromiseRejectedResult).reason),
+      },
+      "kansoku error registry: partial upsert failure",
+    );
+  }
 }
 
 export interface ListErrorsOptions {
