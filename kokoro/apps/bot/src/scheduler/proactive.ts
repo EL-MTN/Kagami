@@ -9,7 +9,7 @@ import {
   getNextProactiveAt,
   setNextProactiveAt,
 } from "@kokoro/db";
-import { config, logger } from "@kokoro/shared";
+import { config, logger, withRootTrace } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { extractResponseText, collectToolCalls, wasPhotoSent, sendSegmented } from "../ai/response";
 import { trackUsage } from "../ai/token-tracker";
@@ -78,13 +78,19 @@ function scheduleNext(chatId: string, userId: string, delayMs?: number): void {
     logger.error({ err: error, chatId }, "Failed to persist scheduler state");
   });
 
-  const timeout = setTimeout(() => {
-    timers.delete(chatId);
-    fireProactive(chatId, userId).catch((error) => {
-      logger.error({ err: error, chatId }, "Proactive fire failed");
-      scheduleNext(chatId, userId);
-    });
-  }, delay);
+  // Each per-chat fire is its own root trace — logs from the AI turn and
+  // any tools it calls (Kioku / Kizuna) share one traceId per proactive
+  // message.
+  const timeout = setTimeout(
+    withRootTrace(() => {
+      timers.delete(chatId);
+      fireProactive(chatId, userId).catch((error) => {
+        logger.error({ err: error, chatId }, "Proactive fire failed");
+        scheduleNext(chatId, userId);
+      });
+    }),
+    delay,
+  );
 
   timers.set(chatId, timeout);
   logger.debug({ chatId, nextIn: Math.round(delay / 60_000) + "m" }, "Proactive timer scheduled");

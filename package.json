@@ -13,6 +13,8 @@
     "kokoro/packages/*",
     "kizuna/apps/*",
     "kizuna/packages/*",
+    "kansoku/apps/*",
+    "kansoku/packages/*",
     "shared/packages/*"
   ],
   "scripts": {
@@ -27,6 +29,9 @@
     "kokoro:dev:dashboard": "turbo run dev --filter=@kokoro/dashboard",
     "kizuna:dev:api": "turbo run dev --filter=@kizuna/api",
     "kizuna:dev:dashboard": "turbo run dev --filter=@kizuna/dashboard",
+    "kansoku:dev": "turbo run dev --filter=\"@kansoku/*\"",
+    "kansoku:dev:api": "turbo run dev --filter=@kansoku/api",
+    "kansoku:dev:dashboard": "turbo run dev --filter=@kansoku/dashboard",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "lint": "turbo run lint",

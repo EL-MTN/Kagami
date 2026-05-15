@@ -13,7 +13,9 @@ shared ← db ← memory ← bot
 
 ```
 packages/memory/src/
-  index.ts         typed fetch wrapper around Kioku's REST API
+  index.ts         typed `tracedFetch` wrapper around Kioku's REST API
+                   (W3C `traceparent` is stamped on every outgoing call so
+                   Kioku's middleware threads them onto Kokoro's trace)
   transcript.ts    IConversation → Kioku transcript markdown
   ingest.ts        ingestClosedSession (fire-and-forget) + ingestClosedSessionAwaited
   sweeper.ts       sweepPendingIngests + sweepPendingFacts + sweepStaleActiveSessions

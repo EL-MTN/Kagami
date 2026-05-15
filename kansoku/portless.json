@@ -1,0 +1,6 @@
+{
+  "apps": {
+    "apps/dashboard": { "name": "kansoku" },
+    "apps/api": { "name": "api.kansoku" }
+  }
+}
