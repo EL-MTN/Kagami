@@ -29,7 +29,7 @@ function createListCalendarTool() {
     }),
     execute: async ({ daysAhead, maxResults }) => {
       try {
-        logger.info({ daysAhead, maxResults }, "Tool: listCalendarEvents");
+        logger.debug({ daysAhead, maxResults }, "Tool: listCalendarEvents");
         const events = await listUpcomingEvents(daysAhead, maxResults);
         return { success: true as const, count: events.length, events };
       } catch (error) {
@@ -76,7 +76,7 @@ export function createManageCalendarTool(options: ManageCalendarToolOptions = {}
       try {
         switch (action) {
           case "list": {
-            logger.info({ daysAhead, maxResults }, "Tool: manageCalendar (list)");
+            logger.debug({ daysAhead, maxResults }, "Tool: manageCalendar (list)");
             const events = await listUpcomingEvents(daysAhead, maxResults);
             return { success: true, count: events.length, events };
           }
@@ -88,7 +88,7 @@ export function createManageCalendarTool(options: ManageCalendarToolOptions = {}
                 reason: "summary, start, and end are required to create an event",
               };
             }
-            logger.info({ summary, start, end }, "Tool: manageCalendar (create)");
+            logger.debug({ summary, start, end }, "Tool: manageCalendar (create)");
             const event = await createEvent({ summary, description, start, end, location });
             return { success: true, event };
           }
@@ -97,7 +97,7 @@ export function createManageCalendarTool(options: ManageCalendarToolOptions = {}
             if (!eventId) {
               return { success: false, reason: "eventId is required for update" };
             }
-            logger.info({ eventId }, "Tool: manageCalendar (update)");
+            logger.debug({ eventId }, "Tool: manageCalendar (update)");
             const updated = await updateEvent(eventId, {
               summary,
               description,
@@ -112,7 +112,7 @@ export function createManageCalendarTool(options: ManageCalendarToolOptions = {}
             if (!eventId) {
               return { success: false, reason: "eventId is required for delete" };
             }
-            logger.info({ eventId }, "Tool: manageCalendar (delete)");
+            logger.debug({ eventId }, "Tool: manageCalendar (delete)");
             await deleteEvent(eventId);
             return { success: true, deleted: eventId };
           }
@@ -155,13 +155,13 @@ export function createManageRemindersTool(chatId: string) {
                 reason: "message and fireAt are required to create a reminder",
               };
             }
-            logger.info({ chatId, fireAt }, "Tool: manageReminders (create)");
+            logger.debug({ chatId, fireAt }, "Tool: manageReminders (create)");
             const reminder = await createReminder(chatId, message, new Date(fireAt));
             return { success: true, reminderId: reminder._id, message, fireAt };
           }
 
           case "list": {
-            logger.info({ chatId }, "Tool: manageReminders (list)");
+            logger.debug({ chatId }, "Tool: manageReminders (list)");
             const reminders = await listRemindersForChat(chatId);
             return {
               success: true,
@@ -178,7 +178,7 @@ export function createManageRemindersTool(chatId: string) {
             if (!reminderId) {
               return { success: false, reason: "reminderId is required for delete" };
             }
-            logger.info({ reminderId }, "Tool: manageReminders (delete)");
+            logger.debug({ reminderId }, "Tool: manageReminders (delete)");
             const deleted = await deleteReminder(reminderId);
             return deleted
               ? { success: true, deleted: reminderId }

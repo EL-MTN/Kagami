@@ -77,7 +77,10 @@ export function createRequestConfirmationTool(
           await setPromptMessageId(id, messageId);
         }
 
-        logger.info({ confirmationId: id, tool: action.tool, origin }, "Tool: requestConfirmation");
+        logger.debug(
+          { confirmationId: id, tool: action.tool, origin },
+          "Tool: requestConfirmation",
+        );
         return {
           pending: true,
           confirmationId: id,
@@ -161,7 +164,7 @@ export function createCancelConfirmationTool(
           resultText: reason,
         });
 
-        logger.info({ confirmationId, chatId, reason }, "Tool: cancelConfirmation");
+        logger.debug({ confirmationId, chatId, reason }, "Tool: cancelConfirmation");
         return { success: true, confirmationId };
       } catch (error) {
         logger.error({ err: error, confirmationId }, "Tool: cancelConfirmation failed");

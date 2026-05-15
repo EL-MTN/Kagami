@@ -92,7 +92,7 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
             switch (action) {
               case "search": {
                 if (!query) return { success: false, reason: "query is required for search" };
-                logger.info({ query }, `Tool: ${logPrefix} (search)`);
+                logger.debug({ query }, `Tool: ${logPrefix} (search)`);
                 const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
                 await page.goto(searchUrl);
                 const results = await stagehand.extract(
@@ -105,7 +105,7 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
               case "visit": {
                 if (!url) return { success: false, reason: "url is required for visit" };
                 const visitUrl = normalizeUrl(url);
-                logger.info({ url: visitUrl }, `Tool: ${logPrefix} (visit)`);
+                logger.debug({ url: visitUrl }, `Tool: ${logPrefix} (visit)`);
                 await page.goto(visitUrl, { waitUntil: "domcontentloaded" });
                 const pageText = await page.evaluate(() => document.body.innerText).catch(() => "");
                 const truncated = pageText.slice(0, 4000);
@@ -120,7 +120,7 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
               case "extract": {
                 if (!instruction)
                   return { success: false, reason: "instruction is required for extract" };
-                logger.info({ instruction }, `Tool: ${logPrefix} (extract)`);
+                logger.debug({ instruction }, `Tool: ${logPrefix} (extract)`);
                 const result = (await stagehand.extract(instruction)) as { extraction?: string };
                 return { success: true, extraction: result.extraction ?? "" };
               }
@@ -128,7 +128,7 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
               case "act": {
                 if (!instruction)
                   return { success: false, reason: "instruction is required for act" };
-                logger.info({ instruction }, `Tool: ${logPrefix} (act)`);
+                logger.debug({ instruction }, `Tool: ${logPrefix} (act)`);
                 await stagehand.act(instruction);
                 return { success: true, performed: instruction };
               }
@@ -143,7 +143,7 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
                 if (!chatId || !adapter) {
                   return { success: false, reason: "screenshot is not available in this context" };
                 }
-                logger.info(`Tool: ${logPrefix} (screenshot)`);
+                logger.debug(`Tool: ${logPrefix} (screenshot)`);
                 const buffer = await page.screenshot();
                 await adapter.sendPhotoBuffer(chatId, Buffer.from(buffer));
                 return { success: true, sent: true };
@@ -151,7 +151,7 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
 
               case "agent": {
                 if (!goal) return { success: false, reason: "goal is required for agent" };
-                logger.info({ goal }, `Tool: ${logPrefix} (agent)`);
+                logger.debug({ goal }, `Tool: ${logPrefix} (agent)`);
                 const agent = stagehand.agent();
                 const result = await agent.execute({
                   instruction: goal,
@@ -164,7 +164,7 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
               case "login": {
                 if (!url) return { success: false, reason: "url is required for login" };
                 const loginUrl = normalizeUrl(url);
-                logger.info({ url: loginUrl }, `Tool: ${logPrefix} (login)`);
+                logger.debug({ url: loginUrl }, `Tool: ${logPrefix} (login)`);
                 await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
                 const title = await page.evaluate(() => document.title).catch(() => "");
                 // Keep the browser alive while the user enters credentials —

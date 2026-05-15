@@ -54,6 +54,7 @@ function logFailure(toolName: string, err: unknown) {
   if (err instanceof KizunaClientError) {
     logger.warn(
       {
+        err,
         tool: toolName,
         kind: err.kind,
         routeTemplate: err.routeTemplate,
@@ -63,7 +64,9 @@ function logFailure(toolName: string, err: unknown) {
     );
     return;
   }
-  logger.warn({ tool: toolName }, `Tool: ${toolName} failed`);
+  // Non-KizunaClientError = an unexpected crash in the CRM tool. Previously
+  // only the tool name was logged, so the stack was lost.
+  logger.error({ err, tool: toolName }, `Tool: ${toolName} crashed`);
 }
 
 export function createFindPeopleTool() {
@@ -83,7 +86,7 @@ export function createFindPeopleTool() {
           query: trimmed,
           limit: clampLimit(limit, 10, 1, 20),
         });
-        logger.info(
+        logger.debug(
           { tool: "findPeople", count: result.items.length, truncated: Boolean(result.nextCursor) },
           "Tool: findPeople",
         );
@@ -110,7 +113,7 @@ export function createGetPersonContextTool() {
     execute: async ({ personId }): Promise<CrmToolResult<PersonContext>> => {
       try {
         const data = await getPersonContext({ personId });
-        logger.info(
+        logger.debug(
           {
             tool: "getPersonContext",
             interactionCount: data.recentInteractions.length,
@@ -156,7 +159,7 @@ export function createRecentInteractionsTool() {
           since,
           limit: clampLimit(limit, 20, 1, 50),
         });
-        logger.info(
+        logger.debug(
           {
             tool: "recentInteractions",
             count: result.items.length,
@@ -203,7 +206,7 @@ export function createListMyFollowupsTool() {
           status: status ?? "open",
           limit: clampLimit(limit, 50, 1, 50),
         });
-        logger.info(
+        logger.debug(
           {
             tool: "listMyFollowups",
             count: result.items.length,

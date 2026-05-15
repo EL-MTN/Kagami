@@ -228,7 +228,10 @@ export function createBot(token: string): Bot {
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
     } catch (error) {
-      logger.error({ err: error }, "Error handling photo message");
+      logger.error(
+        { err: error, userId: incoming.userId, chatId: incoming.chatId },
+        "Error handling photo message",
+      );
       await ctx.reply("sorry something went wrong, give me a sec 💭");
     }
   });
@@ -262,7 +265,10 @@ export function createBot(token: string): Bot {
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
     } catch (error) {
-      logger.error({ err: error }, "Error handling voice message");
+      logger.error(
+        { err: error, userId: incoming.userId, chatId: incoming.chatId },
+        "Error handling voice message",
+      );
       await ctx.reply("sorry something went wrong, give me a sec 💭");
     }
   });
@@ -291,7 +297,10 @@ export function createBot(token: string): Bot {
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
     } catch (error) {
-      logger.error({ err: error }, "Error handling audio message");
+      logger.error(
+        { err: error, userId: incoming.userId, chatId: incoming.chatId },
+        "Error handling audio message",
+      );
       await ctx.reply("sorry something went wrong, give me a sec 💭");
     }
   });
@@ -314,7 +323,10 @@ export function createBot(token: string): Bot {
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
     } catch (error) {
-      logger.error({ err: error }, "Error handling message");
+      logger.error(
+        { err: error, userId: incoming.userId, chatId: incoming.chatId },
+        "Error handling message",
+      );
       await ctx.reply("sorry something went wrong, give me a sec 💭");
     }
   });
@@ -360,7 +372,10 @@ export function createBot(token: string): Bot {
           triggerLocationProactive(incoming.chatId, incoming.userId);
         }
       } catch (error) {
-        logger.error({ err: error }, "Error handling location message");
+        logger.error(
+          { err: error, userId: incoming.userId, chatId: incoming.chatId },
+          "Error handling location message",
+        );
       }
     });
 
@@ -393,7 +408,10 @@ export function createBot(token: string): Bot {
           triggerLocationProactive(incoming.chatId, incoming.userId);
         }
       } catch (error) {
-        logger.error({ err: error }, "Error handling live location update");
+        logger.error(
+          { err: error, userId: incoming.userId, chatId: incoming.chatId },
+          "Error handling live location update",
+        );
       }
     });
   }

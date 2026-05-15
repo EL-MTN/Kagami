@@ -46,7 +46,7 @@ async function runDueWatchers(registry: AdapterRegistry): Promise<void> {
         });
       } catch (error) {
         logger.error(
-          { error, watcherId: watcher._id, name: watcher.name },
+          { err: error, watcherId: watcher._id, name: watcher.name },
           "Failed to execute watcher",
         );
       }
@@ -87,7 +87,7 @@ async function startupRecovery(registry: AdapterRegistry): Promise<void> {
     const archived = await archiveExpiredWatchers();
     if (archived > 0) logger.info({ count: archived }, "Archived expired watchers");
   } catch (error) {
-    logger.error({ err: error }, "Failed to archive expired watchers");
+    logger.error({ err: error }, "Failed to archive expired watchers (startup recovery)");
   }
 
   await runDueWatchers(registry);
@@ -101,7 +101,7 @@ export function startWatcherScheduler(registry: AdapterRegistry): () => void {
       try {
         await archiveExpiredWatchers();
       } catch (error) {
-        logger.error({ err: error }, "Failed to archive expired watchers");
+        logger.error({ err: error }, "Failed to archive expired watchers (scheduled poll)");
       }
       await runDueWatchers(registry);
     }),

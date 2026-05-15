@@ -22,13 +22,13 @@ export function createCheckEmailTool() {
     execute: async ({ maxResults, emailId }) => {
       try {
         if (emailId) {
-          logger.info({ emailId }, "Tool: checkEmail (single)");
+          logger.debug({ emailId }, "Tool: checkEmail (single)");
           const email = await getEmailById(emailId);
           if (!email) return { success: false, reason: "Email not found" };
           return { success: true, email };
         }
 
-        logger.info({ maxResults }, "Tool: checkEmail (list)");
+        logger.debug({ maxResults }, "Tool: checkEmail (list)");
         const emails = await listUnreadEmails(maxResults);
         return { success: true, count: emails.length, emails };
       } catch (error) {
@@ -60,7 +60,7 @@ export function createSendEmailTool() {
     }),
     execute: async ({ to, subject, body, threadId, inReplyTo }) => {
       try {
-        logger.info({ to, subject }, "Tool: sendEmail");
+        logger.debug({ to, subject }, "Tool: sendEmail");
         const options = threadId || inReplyTo ? { threadId, inReplyTo } : undefined;
         const result = await sendEmail(to, subject, body, options);
         return { success: true, id: result.id, threadId: result.threadId };
