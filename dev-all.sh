@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Boot Kioku, Kokoro, and Kizuna under Turbo's TUI multiplexer.
+# Boot Kioku, Kokoro, Kizuna, and Kansoku under Turbo's TUI multiplexer.
 # Prints the Portless URL table, then hands off to `turbo run dev`.
 # Ctrl-C stops everything (Turbo owns the process tree).
 #
@@ -9,8 +9,8 @@
 #   --stream             force streamed [prefix] output instead of TUI
 #   -h, --help           show this help
 #
-# A <target> is either a project ("kioku" / "kokoro" / "kizuna") or a single
-# component ("kioku:api", "kokoro:bot", "kokoro:dashboard", ...).
+# A <target> is either a project ("kioku" / "kokoro" / "kizuna" / "kansoku")
+# or a single component ("kioku:api", "kokoro:bot", "kansoku:dashboard", ...).
 #
 # Examples:
 #   ./dev-all.sh                             # everything
@@ -19,9 +19,12 @@
 #   ./dev-all.sh --only kioku:api            # just the Kioku API
 #   ./dev-all.sh --no kokoro:dashboard kizuna:dashboard --stream
 #
-# All three boot in parallel. Kokoro's Kioku client is fail-open: if Kioku
+# All four boot in parallel. Kokoro's Kioku client is fail-open: if Kioku
 # is slow or down, calls degrade in-place and a 5-min sweeper retries any
-# pending writes. Nothing else touches Kioku at startup.
+# pending writes. The Kansoku log shipper installed by `@kagami/logger`
+# is fail-open on every sibling — if Kansoku is unreachable, services
+# continue logging to stdout and the shipper buffers + drops oldest.
+# Nothing else touches Kioku at startup.
 
 set -euo pipefail
 
@@ -34,7 +37,7 @@ if [[ ! -f "$ROOT/package.json" ]]; then
 fi
 
 # Canonical component list (also defines display order in the URL banner).
-ALL="kioku:api kioku:dashboard kokoro:bot kokoro:dashboard kizuna:api kizuna:dashboard"
+ALL="kioku:api kioku:dashboard kokoro:bot kokoro:dashboard kizuna:api kizuna:dashboard kansoku:api kansoku:dashboard"
 
 pkg_for() {
   case "$1" in
@@ -44,6 +47,8 @@ pkg_for() {
     kokoro:dashboard)  echo @kokoro/dashboard ;;
     kizuna:api)        echo @kizuna/api ;;
     kizuna:dashboard)  echo @kizuna/dashboard ;;
+    kansoku:api)       echo @kansoku/api ;;
+    kansoku:dashboard) echo @kansoku/dashboard ;;
     *) return 1 ;;
   esac
 }
@@ -55,16 +60,19 @@ url_for() {
     kokoro:dashboard)  echo "https://kokoro.localhost" ;;
     kizuna:api)        echo "https://api.kizuna.localhost" ;;
     kizuna:dashboard)  echo "https://kizuna.localhost" ;;
+    kansoku:api)       echo "https://api.kansoku.localhost" ;;
+    kansoku:dashboard) echo "https://kansoku.localhost" ;;
     *) echo "" ;;
   esac
 }
 
 expand() {
   case "$1" in
-    kioku)  echo "kioku:api kioku:dashboard" ;;
-    kokoro) echo "kokoro:bot kokoro:dashboard" ;;
-    kizuna) echo "kizuna:api kizuna:dashboard" ;;
-    *)      echo "$1" ;;
+    kioku)   echo "kioku:api kioku:dashboard" ;;
+    kokoro)  echo "kokoro:bot kokoro:dashboard" ;;
+    kizuna)  echo "kizuna:api kizuna:dashboard" ;;
+    kansoku) echo "kansoku:api kansoku:dashboard" ;;
+    *)       echo "$1" ;;
   esac
 }
 

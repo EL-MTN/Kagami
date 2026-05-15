@@ -17,7 +17,7 @@ Kokoro sends no `Authorization` header to Kizuna. The integration matches Kizuna
 
 Source lives in `packages/kizuna/src/`:
 
-- `client.ts` — GET/POST/PATCH/DELETE fetch wrapper (`getJson` for reads, `sendJson` for writes), shared 10 s deadline helpers, sanitized `KizunaClientError`.
+- `client.ts` — GET/POST/PATCH/DELETE `tracedFetch` wrapper (`getJson` for reads, `sendJson` for writes), shared 10 s deadline helpers, sanitized `KizunaClientError`. Every outgoing call carries the active W3C `traceparent`, so a Telegram message can be followed end-to-end across Kokoro → Kizuna in the Kansoku trace waterfall.
 - `schemas.ts` — Kizuna wire schemas and compact LLM-facing types.
 - `projections.ts` — `PersonSummary`, `InteractionSummary`, `FollowupSummary`, excerpts, missing-person placeholder.
 - `people.ts` — `findPeople`, `getPerson`, `getPersonContext`, `updatePerson`.

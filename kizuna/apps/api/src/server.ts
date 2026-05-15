@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import { traceMiddleware } from "@kagami/logger/express-trace";
 import type { Config } from "./config.js";
 import type { DbHandle } from "./db/connect.js";
 import { errors, makeErrorHandler } from "./lib/errors.js";
@@ -21,6 +22,11 @@ export function createApp({ db, config }: ServerDeps): Express {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "1mb" }));
+  // Establish trace context before any route runs — pino mixin picks it up via
+  // ALS, so every log line emitted inside a request carries traceId/spanId,
+  // and outgoing tracedFetch calls (currently none in Kizuna) would propagate
+  // it. Kokoro's HTTP clients sending `traceparent` will be linked correctly.
+  app.use(traceMiddleware());
 
   app.use(healthRouter(db));
 

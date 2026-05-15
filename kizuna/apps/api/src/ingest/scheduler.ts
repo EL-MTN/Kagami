@@ -1,3 +1,4 @@
+import { withRootTrace } from "@kagami/logger/trace";
 import type { Config } from "../config.js";
 import { logger } from "../lib/logger.js";
 import { runCalendarSyncOnce } from "./calendar.js";
@@ -42,9 +43,12 @@ export function startIngestScheduler(args: { config: Config }): Scheduler {
     }
   };
 
-  const handle = setInterval(() => {
-    void tick();
-  }, intervalSec * 1000);
+  // Each ingest tick runs in its own root trace so its Gmail + Calendar
+  // sync logs share a traceId and the eventual Kansoku export carries it.
+  const handle = setInterval(
+    withRootTrace(() => tick()),
+    intervalSec * 1000,
+  );
   // Don't run on boot — first tick fires after the interval. Avoids surprise
   // sync runs on dev-server restarts (tsx watch).
   logger.info({ intervalSec }, "ingest scheduler started");

@@ -1,12 +1,14 @@
 # Kagami
 
-Kagami is a personal-AI workspace that brings three bounded TypeScript projects into one
+Kagami is a personal-AI workspace that brings four bounded TypeScript projects into one
 nested monorepo:
 
 - **Kioku**: long-term memory service with REST and MCP surfaces.
 - **Kokoro**: Telegram-first personal AI agent with tools, routines, watchers, and dashboards.
 - **Kizuna**: personal CRM for people, organizations, interactions, follow-ups, Gmail, and
   Calendar ingest.
+- **Kansoku**: observability service — structured logs, distributed traces, fingerprinted
+  errors, and derived metrics; fed by every sibling over HTTP.
 
 The root workspace owns dependency installation, shared tooling, and the Turborepo pipeline.
 Each project keeps its own apps, docs, and conventions under its subtree.
@@ -35,25 +37,29 @@ through `git log`.
 
 ```text
 Kagami
-|-- Kioku   memory API + dashboard
-|-- Kokoro  Telegram/iMessage AI agent + dashboard
-|-- Kizuna  CRM API + dashboard
-`-- shared  workspace ESLint and TypeScript config packages
+|-- Kioku    memory API + dashboard
+|-- Kokoro   Telegram/iMessage AI agent + dashboard
+|-- Kizuna   CRM API + dashboard
+|-- Kansoku  observability — ingest + dashboard
+`-- shared   workspace ESLint, TypeScript, and logger config packages
 ```
 
 Runtime coupling is intentionally narrow:
 
 ```text
-Kokoro -> Kioku   REST calls to KIOKU_URL for recall, fact writes, and session ingest
-Kokoro -> Kizuna  REST calls to KIZUNA_URL for read-only CRM lookup tools
-Kizuna -> Kioku   no outbound runtime dependency
-Kizuna -> Kokoro  no outbound runtime dependency
-Kioku  -> any     none; Kioku is pull-only by design
+Kokoro -> Kioku                       REST (`tracedFetch`) to KIOKU_URL for recall, writes, ingest
+Kokoro -> Kizuna                      REST (`tracedFetch`) to KIZUNA_URL for CRM lookups + gated writes
+Kizuna -> Kioku                       no outbound runtime dependency
+Kizuna -> Kokoro                      no outbound runtime dependency
+Kioku  -> any                         none; Kioku is pull-only by design
+{Kioku, Kokoro, Kizuna} -> Kansoku    HTTP push from @kagami/logger; fail-open shipper
+Kansoku -> any                        none; push-only-in by design
 ```
 
 `dev-all.sh` starts the selected apps together under Turbo. There is no service startup ordering;
 Kokoro's Kioku and Kizuna clients are designed to fail open when a sibling API is still coming up or
-temporarily unavailable.
+temporarily unavailable, and every sibling's Kansoku shipper is fail-open at the call site so an
+observability outage can't wedge a service.
 
 For the full cross-service map, endpoint surfaces, env var details, auth notes, and future-edge
 ideas, read [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -96,9 +102,17 @@ ideas, read [ARCHITECTURE.md](ARCHITECTURE.md).
 |   |-- docs/
 |   |-- CLAUDE.md
 |   `-- portless.json
+|-- kansoku/
+|   |-- apps/
+|   |   |-- api/
+|   |   `-- dashboard/
+|   |-- docs/
+|   |-- CLAUDE.md
+|   `-- portless.json
 `-- shared/
     `-- packages/
         |-- eslint-config/
+        |-- logger/
         `-- tsconfig/
 ```
 
@@ -141,6 +155,8 @@ cp kioku/apps/dashboard/.env.example kioku/apps/dashboard/.env
 cp kokoro/apps/bot/.env.example kokoro/apps/bot/.env
 cp kizuna/apps/api/.env.example kizuna/apps/api/.env
 cp kizuna/apps/dashboard/.env.example kizuna/apps/dashboard/.env
+cp kansoku/apps/api/.env.example kansoku/apps/api/.env
+cp kansoku/apps/dashboard/.env.example kansoku/apps/dashboard/.env
 ```
 
 Start the full workspace:
@@ -149,9 +165,9 @@ Start the full workspace:
 npm run dev
 ```
 
-`npm run dev` delegates to `./dev-all.sh`, which starts the selected Kioku, Kokoro, and Kizuna
-components together under Turbo's TUI. The default selection is every API, dashboard, and the Kokoro
-bot.
+`npm run dev` delegates to `./dev-all.sh`, which starts the selected Kioku, Kokoro, Kizuna, and
+Kansoku components together under Turbo's TUI. The default selection is every API, dashboard, and
+the Kokoro bot.
 
 Use `Ctrl-C` to stop all child processes.
 
@@ -161,24 +177,28 @@ For a narrower loop, start one project or component:
 npm run kioku:dev
 npm run kokoro:dev
 npm run kizuna:dev
+npm run kansoku:dev
 
 npm run kioku:dev:api
 npm run kokoro:dev:bot
 npm run kizuna:dev:dashboard
+npm run kansoku:dev:api
 ```
 
 ## Environment Files
 
 Environment files are app-local and ignored by git. Keep secrets out of committed files.
 
-| App              | Template                             | Runtime file                       | Notes                                               |
-| ---------------- | ------------------------------------ | ---------------------------------- | --------------------------------------------------- |
-| Kioku API        | `kioku/apps/api/.env.example`        | `kioku/apps/api/.env`              | Mongo, chat model, embedding model, provider keys   |
-| Kioku dashboard  | `kioku/apps/dashboard/.env.example`  | `kioku/apps/dashboard/.env`        | `KIOKU_API_URL`                                     |
-| Kokoro bot       | `kokoro/apps/bot/.env.example`       | `kokoro/apps/bot/.env`             | Telegram, Mongo, LLM, Kioku, Kizuna, optional tools |
-| Kokoro dashboard | none currently                       | `kokoro/apps/dashboard/.env.local` | Optional `MONGODB_URI` and `DASHBOARD_PASSWORD`     |
-| Kizuna API       | `kizuna/apps/api/.env.example`       | `kizuna/apps/api/.env`             | Mongo, Google OAuth, ingest scheduler               |
-| Kizuna dashboard | `kizuna/apps/dashboard/.env.example` | `kizuna/apps/dashboard/.env`       | API URL, user emails                                |
+| App               | Template                              | Runtime file                       | Notes                                                             |
+| ----------------- | ------------------------------------- | ---------------------------------- | ----------------------------------------------------------------- |
+| Kioku API         | `kioku/apps/api/.env.example`         | `kioku/apps/api/.env`              | Mongo, chat model, embedding model, provider keys                 |
+| Kioku dashboard   | `kioku/apps/dashboard/.env.example`   | `kioku/apps/dashboard/.env`        | `KIOKU_API_URL`                                                   |
+| Kokoro bot        | `kokoro/apps/bot/.env.example`        | `kokoro/apps/bot/.env`             | Telegram, Mongo, LLM, Kioku, Kizuna, optional tools               |
+| Kokoro dashboard  | none currently                        | `kokoro/apps/dashboard/.env.local` | Optional `MONGODB_URI` and `DASHBOARD_PASSWORD`                   |
+| Kizuna API        | `kizuna/apps/api/.env.example`        | `kizuna/apps/api/.env`             | Mongo, Google OAuth, ingest scheduler                             |
+| Kizuna dashboard  | `kizuna/apps/dashboard/.env.example`  | `kizuna/apps/dashboard/.env`       | API URL, user emails                                              |
+| Kansoku API       | `kansoku/apps/api/.env.example`       | `kansoku/apps/api/.env`            | Mongo, shared ingest token, log retention, optional alert webhook |
+| Kansoku dashboard | `kansoku/apps/dashboard/.env.example` | `kansoku/apps/dashboard/.env`      | `KANSOKU_API_URL`                                                 |
 
 ### Kioku
 
@@ -283,6 +303,29 @@ USER_EMAILS=you@example.com
 Set `KIZUNA_INGEST_INTERVAL_SEC=300` for a five-minute Gmail/Calendar ingest loop during local
 development. Keep it at `0` if you only want manual sync runs.
 
+### Kansoku
+
+Kansoku API config lives in `kansoku/apps/api/.env`. Minimum useful local fields:
+
+```bash
+KANSOKU_INGEST_TOKEN=generate_with_openssl_rand_hex_32
+# KANSOKU_LOGS_TTL_DAYS=30
+# KANSOKU_ALERT_WEBHOOK_URL=
+```
+
+Generate the shared ingest token once and copy the same value into every sibling's `.env`
+(`KANSOKU_INGEST_TOKEN` in each of `kioku/apps/api/.env`, `kokoro/apps/bot/.env`, and
+`kizuna/apps/api/.env`). When unset on the Kansoku side, `POST /v1/logs` returns 503 — fail-closed
+by default. On the sibling side, either of the two Kansoku env vars (URL + token) being missing
+leaves the logger stdout-only.
+
+The dashboard reads `KANSOKU_API_URL`, defaulting to `https://api.kansoku.localhost`. The
+live-tail page connects to that URL via browser-side `EventSource`, so the value must be
+reachable from both the Next.js server _and_ the user's browser.
+
+See [`kansoku/docs/configuration.md`](kansoku/docs/configuration.md) for the full env reference
+including retention behavior, alert webhook payload shape, and rotation steps.
+
 ## Local URLs
 
 HTTP apps run behind Portless. Prefer these URLs over numeric localhost ports.
@@ -295,6 +338,8 @@ HTTP apps run behind Portless. Prefer these URLs over numeric localhost ports.
 | Kokoro  | Bot       | No browser URL; it long-polls Telegram |
 | Kizuna  | Dashboard | `https://kizuna.localhost`             |
 | Kizuna  | API       | `https://api.kizuna.localhost`         |
+| Kansoku | Dashboard | `https://kansoku.localhost`            |
+| Kansoku | API       | `https://api.kansoku.localhost`        |
 
 Numeric fallback ports in app code are for standalone runs outside Portless. In normal local
 development, Portless injects `PORT` and proxies the named HTTPS URL to the app process.
@@ -346,6 +391,7 @@ Use filters when you want one project or package:
 npx turbo run typecheck --filter="@kioku/*"
 npx turbo run lint --filter="@kokoro/*"
 npx turbo run lint --filter="@kizuna/*"
+npx turbo run lint --filter="@kansoku/*"
 npx turbo run build --filter="@kizuna/dashboard"
 ```
 
@@ -435,9 +481,10 @@ Layout:
 ```text
 kokoro/apps/bot          Grammy bot, AI layer, platform adapters, schedulers
 kokoro/apps/dashboard    Next.js dashboard for routines, watchers, conversations, usage
-kokoro/packages/shared   Config, logger, markdown, shared types
-kokoro/packages/db       Mongoose models and GridFS helpers
-kokoro/packages/memory   Kioku client, transcript glue, session ingest, sweeper
+kokoro/packages/shared      Config, logger, markdown, shared types
+kokoro/packages/db          Mongoose models and GridFS helpers
+kokoro/packages/memory      Kioku client (tracedFetch), transcript glue, session ingest, sweeper
+kokoro/packages/kizuna      Kizuna CRM client (tracedFetch) + compact LLM-facing projections
 kokoro/packages/test-utils
 kokoro/docs
 ```
@@ -504,14 +551,59 @@ Key docs:
 - [kizuna/docs/data-model.md](kizuna/docs/data-model.md)
 - [kizuna/docs/sync.md](kizuna/docs/sync.md)
 
+### Kansoku
+
+Kansoku is the observability service: structured logs, distributed traces, fingerprinted errors,
+and derived metrics — fed by every sibling over HTTP.
+
+Primary responsibilities:
+
+- Accept batched log lines from `@kagami/logger`'s in-process shipper at `POST /v1/logs`.
+- Store them in a MongoDB time-series collection (`logs`) with a configurable TTL.
+- Group `error`/`fatal` lines by sha1 fingerprint into a regular `errors` registry, with a
+  bounded `recentTraceIds` list per fingerprint.
+- Expose live tail (SSE), historical search, single-trace waterfalls, error groups, and
+  per-service derived metrics via the dashboard.
+- Optionally POST a small JSON payload to `KANSOKU_ALERT_WEBHOOK_URL` when a brand-new error
+  fingerprint shows up.
+
+Layout:
+
+```text
+kansoku/apps/api        Express API: ingest, query, tail (SSE), errors, services
+kansoku/apps/dashboard  Next.js inspector at https://kansoku.localhost
+kansoku/docs            architecture, dashboard, configuration, testing
+```
+
+Important runtime notes:
+
+- API runs at `https://api.kansoku.localhost`.
+- Dashboard runs at `https://kansoku.localhost`.
+- Kansoku is **push-only-in** — it never initiates outbound calls to siblings (except the optional
+  alert webhook). Inbound calls are the inverse of Kioku's posture.
+- The shipper installed by `@kagami/logger` is **fail-open at every step**: when Kansoku is
+  unreachable, sibling services keep logging to stdout, batch into a bounded local ring buffer
+  (5000 events), and surface drop counts in the `x-kansoku-dropped` header on the next
+  successful POST.
+- W3C trace context propagates from Kokoro → Kioku and Kokoro → Kizuna via `tracedFetch`. Every
+  log line inside a traced request carries `traceId`/`spanId` automatically.
+
+Key docs:
+
+- [kansoku/docs/architecture.md](kansoku/docs/architecture.md)
+- [kansoku/docs/dashboard.md](kansoku/docs/dashboard.md)
+- [kansoku/docs/configuration.md](kansoku/docs/configuration.md)
+- [kansoku/docs/testing.md](kansoku/docs/testing.md)
+
 ## Shared Tooling
 
 Shared workspace packages live under `shared/packages/`.
 
-| Package                 | Exports                                                           | Purpose                                        |
-| ----------------------- | ----------------------------------------------------------------- | ---------------------------------------------- |
-| `@kagami/eslint-config` | `./base`, `./next`                                                | Flat ESLint presets for TypeScript and Next.js |
-| `@kagami/tsconfig`      | `./base.json`, `./library.json`, `./server.json`, `./nextjs.json` | Shared TypeScript bases                        |
+| Package                 | Exports                                                                                               | Purpose                                                                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `@kagami/eslint-config` | `./base`, `./next`                                                                                    | Flat ESLint presets for TypeScript and Next.js                                                                                           |
+| `@kagami/tsconfig`      | `./base.json`, `./library.json`, `./server.json`, `./nextjs.json`                                     | Shared TypeScript bases                                                                                                                  |
+| `@kagami/logger`        | `./` (createLogger + redact list), `./kansoku-stream`, `./trace`, `./express-trace`, `./traced-fetch` | Pino factory with shared bindings + redact list, fail-open Kansoku shipper, W3C trace context (ALS + `tracedFetch` + Express middleware) |
 
 Conventions across projects:
 
@@ -631,6 +723,8 @@ Also confirm `KIZUNA_OAUTH_ENCRYPTION_KEY` is a base64-encoded 32-byte value.
 - [kioku/CLAUDE.md](kioku/CLAUDE.md): Kioku developer guide
 - [kokoro/CLAUDE.md](kokoro/CLAUDE.md): Kokoro developer guide
 - [kizuna/CLAUDE.md](kizuna/CLAUDE.md): Kizuna developer guide
+- [kansoku/CLAUDE.md](kansoku/CLAUDE.md): Kansoku developer guide
 - [kioku/docs](kioku/docs): Kioku internals
 - [kokoro/docs](kokoro/docs): Kokoro internals
 - [kizuna/docs](kizuna/docs): Kizuna internals
+- [kansoku/docs](kansoku/docs): Kansoku internals

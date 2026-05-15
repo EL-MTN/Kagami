@@ -37,7 +37,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 └── docs/
 ```
 
-**Stack**: Kioku is a _subtree_ inside the Kagami nested monorepo. The Kagami workspace root owns `package.json`, `turbo.json`, and `package-lock.json`; npm workspaces and Turborepo span all three sibling projects. Tooling is shared via the workspace-level `@kagami/eslint-config` and `@kagami/tsconfig` packages (which live in `shared/packages/` at the Kagami root). Kioku has no project-internal TypeScript packages today — `kioku/packages/` is empty (or absent). Apps depend on each other only via HTTP (the dashboard calls the API at `KIOKU_API_URL`).
+**Stack**: Kioku is a _subtree_ inside the Kagami nested monorepo. The Kagami workspace root owns `package.json`, `turbo.json`, and `package-lock.json`; npm workspaces and Turborepo span all four sibling projects (Kioku, Kokoro, Kizuna, Kansoku). Tooling is shared via the workspace-level `@kagami/eslint-config`, `@kagami/tsconfig`, and `@kagami/logger` packages (which live in `shared/packages/` at the Kagami root). Kioku has no project-internal TypeScript packages today — `kioku/packages/` is empty (or absent). Apps depend on each other only via HTTP (the dashboard calls the API at `KIOKU_API_URL`).
 
 ## Commands
 
@@ -45,7 +45,7 @@ All commands run from the **Kagami workspace root** (`/Users/mastermind/Desktop/
 
 ```bash
 # From Kagami root:
-./dev-all.sh                  # boot all three (Kioku → Kokoro + Kizuna) with prefixed output
+./dev-all.sh                  # boot all four (Kioku, Kokoro, Kizuna, Kansoku) with prefixed output
 npm run kioku:dev             # both Kioku apps under Portless (https://kioku.localhost + https://api.kioku.localhost)
 npm run kioku:dev:api         # API only
 npm run kioku:dev:dashboard   # Dashboard only
@@ -82,7 +82,8 @@ Apps share no in-process code. The dashboard reaches the API only through `fetch
 - **TypeScript + ESM** — strict mode, ES2022 target, `NodeNext` module resolution for the API; bundler resolution for the dashboard. Server config sets `noUncheckedIndexedAccess`.
 - **Async everywhere** — all I/O is async/await, no callbacks
 - **Zod at boundaries** — request bodies validated in `apps/api/src/routes/*` and `mcp.ts`; transcript frontmatter validated in `types.ts`. Internal modules trust their inputs.
-- **Pino logging** — structured logs via `logger.info({ context }, "message")`. The logger is built from the workspace-shared `@kagami/logger` factory, which provides stable `service`/`component`/`env` bindings and the common secret-redaction list. `pino-http` is mounted on the API. Pretty transport in non-production.
+- **Pino logging** — structured logs via `logger.info({ context }, "message")`. The logger is built from the workspace-shared `@kagami/logger` factory, which provides stable `service`/`component`/`env` bindings and the common secret-redaction list. `pino-http` is mounted on the API. Pretty transport in non-production. When `KANSOKU_URL` and `KANSOKU_INGEST_TOKEN` are set, logs also stream to the workspace's Kansoku service via a fail-open in-process shipper.
+- **Trace context** — `traceMiddleware` from `@kagami/logger/express-trace` is mounted before `pinoHttp` so every log line inside a request — including body-parse errors (`PayloadTooLargeError`, malformed JSON) and pino-http's completion log — auto-carries `traceId`/`spanId` via the pino mixin. Incoming W3C `traceparent` headers (e.g. from Kokoro's `tracedFetch`) open a child span; absence mints a fresh trace.
 - **Vercel AI SDK + OpenAI-compatible provider** — `generateObject()` for extraction/summary, `generateText()` for the answerer, `embed()` / `embedMany()` for vectors. Any OpenAI-compatible endpoint works (LM Studio, OpenAI, vLLM, Ollama).
 - **No classes for services** — prefer standalone exported functions. Routers, ranker, ingest paths, and MCP tools are all plain functions.
 - **Atomic facts are write-once** — no UPDATE/DELETE on the `facts` collection. Corrections happen by appending newer facts with later `event_date`; the answerer prompt resolves contradictions newest-wins. Every mutation leaves a row in `history`.

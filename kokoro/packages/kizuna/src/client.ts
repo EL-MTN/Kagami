@@ -1,5 +1,5 @@
 import { z, ZodError } from "zod";
-import { config } from "@kokoro/shared";
+import { config, tracedFetch } from "@kokoro/shared";
 
 export type KizunaClientErrorKind = "disabled" | "timeout" | "transport" | "http" | "schema";
 
@@ -99,7 +99,9 @@ export async function getJson<T>(
   }
 
   try {
-    const res = await fetch(`${baseUrl()}${pathAndQuery}`, {
+    // tracedFetch stamps the active W3C traceparent so Kizuna's trace
+    // middleware can link this call into the same trace as the inbound update.
+    const res = await tracedFetch(`${baseUrl()}${pathAndQuery}`, {
       method: "GET",
       headers: { accept: "application/json" },
       signal,
@@ -131,7 +133,7 @@ export async function sendJson<T>(
   }
 
   try {
-    const res = await fetch(`${baseUrl()}${pathAndQuery}`, {
+    const res = await tracedFetch(`${baseUrl()}${pathAndQuery}`, {
       method,
       headers: {
         accept: "application/json",

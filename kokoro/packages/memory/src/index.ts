@@ -1,4 +1,4 @@
-import { config, logger } from "@kokoro/shared";
+import { config, logger, tracedFetch } from "@kokoro/shared";
 import { enqueuePendingFact } from "@kokoro/db";
 
 // Typed fetch wrapper around Kioku's REST API. The only Kokoro module
@@ -93,7 +93,10 @@ async function request<T>(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
   try {
-    const res = await fetch(url, {
+    // tracedFetch stamps the active W3C traceparent header so Kioku's trace
+    // middleware can link this call into the same trace as the inbound
+    // Telegram/iMessage update that triggered it.
+    const res = await tracedFetch(url, {
       method,
       headers: opts.body ? { "content-type": "application/json" } : undefined,
       body: opts.body ? JSON.stringify(opts.body) : undefined,

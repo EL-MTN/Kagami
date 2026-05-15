@@ -78,7 +78,8 @@ Lint and tsconfig bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from 
 - **TypeScript + ESM** — strict mode, ES2022 target, ESNext modules. `verbatimModuleSyntax: true` is now applied **per-tsconfig.json** as an override (the new shared `@kagami/tsconfig/base.json` doesn't enable it by default, so each Kokoro tsconfig sets it explicitly to preserve the previous behavior).
 - **Async everywhere** — all I/O is async/await, no callbacks
 - **Zod for config** — environment variables validated at startup via `@kokoro/shared` config
-- **Pino logging** — structured logs via the workspace-shared `@kagami/logger` factory (stable `service`/`component`/`env` bindings + common secret redaction); Kokoro adds a `formatters.log` hook to strip base64 `imageData` to `[base64 omitted]`. Use `logger.info({ context }, "message")` pattern
+- **Pino logging** — structured logs via the workspace-shared `@kagami/logger` factory (stable `service`/`component`/`env` bindings + common secret redaction, which now includes `imageData` paths with a base64-aware censor — so the historical `formatters.log` hook is gone). When `KANSOKU_URL` and `KANSOKU_INGEST_TOKEN` are set, logs also stream to the workspace's Kansoku service via a fail-open in-process shipper. Use `logger.info({ context }, "message")` pattern.
+- **Trace context** — Grammy middleware at the top of `createBot` wraps every Telegram update in `runWithTrace(newTraceContext(), …)`; the BlueBubbles webhook does the same per inbound request (honoring an incoming `traceparent` when present). Kokoro's Kioku and Kizuna HTTP clients call `tracedFetch` from `@kokoro/shared` so the active span propagates downstream.
 - **Vercel AI SDK** — `generateText()` from `ai` package for all LLM calls
 - **No classes for services** — prefer standalone exported functions
 - **Platform-agnostic types** — `IncomingMessage`/`PlatformAdapter` in `@kokoro/shared`

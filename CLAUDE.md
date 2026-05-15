@@ -2,7 +2,7 @@
 
 ## Project
 
-Kagami ("mirror") is a personal-AI workspace. It contains three sibling TypeScript projects in one nested monorepo: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), and **Kokoro** (心, heart/mind). They share tooling, a single `package.json` install, and a unified Turborepo pipeline, but each project is bounded — its apps, internal packages, docs, and `CLAUDE.md` live under its own subdirectory.
+Kagami ("mirror") is a personal-AI workspace. It contains four sibling TypeScript projects in one nested monorepo: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind), and **Kansoku** (観測, observation). They share tooling, a single `package.json` install, and a unified Turborepo pipeline, but each project is bounded — its apps, internal packages, docs, and `CLAUDE.md` live under its own subdirectory.
 
 This file is the workspace-level guide. Each project has its own deeper `CLAUDE.md` and `docs/` — start here for cross-cutting context, then descend.
 
@@ -14,7 +14,7 @@ Kagami/                       # one git repo, one workspace
 ├── CLAUDE.md                 # this file
 ├── package.json              # workspace root: workspace globs + shared devDeps
 ├── turbo.json                # unified pipeline (build, dev, typecheck, test, lint)
-├── dev-all.sh                # boot all three in parallel under Turbo's TUI (or streamed)
+├── dev-all.sh                # boot all four in parallel under Turbo's TUI (or streamed)
 │
 ├── kioku/                    # long-term memory store
 │   ├── apps/                 # api, dashboard
@@ -25,13 +25,20 @@ Kagami/                       # one git repo, one workspace
 │
 ├── kokoro/                   # Telegram + iMessage AI agent
 │   ├── apps/                 # bot, dashboard
-│   ├── packages/             # shared, db, memory, test-utils
+│   ├── packages/             # shared, db, memory, kizuna, test-utils
 │   ├── scripts/              # auth scripts
 │   ├── docs/
 │   ├── CLAUDE.md
 │   └── vitest.config.ts
 │
 ├── kizuna/                   # personal CRM
+│   ├── apps/                 # api, dashboard
+│   ├── docs/
+│   ├── CLAUDE.md
+│   ├── portless.json
+│   └── vitest.config.ts
+│
+├── kansoku/                  # observability service (logs, traces, errors, metrics)
 │   ├── apps/                 # api, dashboard
 │   ├── docs/
 │   ├── CLAUDE.md
@@ -45,7 +52,7 @@ Kagami/                       # one git repo, one workspace
         └── tsconfig/         # @kagami/tsconfig (./base.json, ./library.json, ./server.json, ./nextjs.json)
 ```
 
-The Kagami root is the single git repo. The three project subtrees were imported via `git subtree add` so each project's prior history is preserved in `git log`. Each project still has its own `CLAUDE.md` and `docs/` next to its code.
+The Kagami root is the single git repo. The Kioku, Kokoro, and Kizuna subtrees were imported via `git subtree add` so each project's prior history is preserved in `git log`; Kansoku was added natively as the workspace's observability service. Each project still has its own `CLAUDE.md` and `docs/` next to its code.
 
 ## How they relate
 
@@ -58,9 +65,18 @@ Kokoro ──HTTP──► Kizuna           Kokoro reads CRM context directly; w
                                   KIZUNA_URL defaults to https://api.kizuna.localhost.
 Kizuna ────X──── Kioku/Kokoro     No outbound code references to sibling services.
 Kioku  ────X──── anything         Pull-only by design; never initiates outbound to siblings.
+{Kioku,Kokoro,Kizuna} ──HTTP──► Kansoku
+                                  Observability push from @kagami/logger transport,
+                                  fail-open. KANSOKU_URL defaults to
+                                  https://api.kansoku.localhost. Live ingest, live
+                                  tail (SSE), historical search, distributed
+                                  tracing, fingerprinted errors, derived metrics,
+                                  optional new-error webhook — see
+                                  kansoku/docs/architecture.md.
+Kansoku ────X──── anything        Push-only-in. Never initiates outbound to siblings.
 ```
 
-`dev-all.sh` boots all three in parallel — there is no startup ordering between them. Kokoro's Kioku client is fail-open (`KiokuClientError` is caught at the AI tool layer; chat continues degraded), and any pending writes are retried by Kokoro's 5-min sweeper. Kokoro's Kizuna CRM read tools are also fail-open at the tool layer; write tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) only fire from Kokoro's gated dispatcher after the user taps Approve.
+`dev-all.sh` boots all four in parallel — there is no startup ordering between them. Kokoro's Kioku client is fail-open (`KiokuClientError` is caught at the AI tool layer; chat continues degraded), and any pending writes are retried by Kokoro's 5-min sweeper. Kokoro's Kizuna CRM read tools are also fail-open at the tool layer; write tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) only fire from Kokoro's gated dispatcher after the user taps Approve. Every sibling's Kansoku shipper is fail-open at the call site — observability failure must never wedge a service.
 
 See `ARCHITECTURE.md` for the full edge table, endpoint surface, and per-project env-var cheat sheet.
 
@@ -69,11 +85,12 @@ See `ARCHITECTURE.md` for the full edge table, endpoint surface, and per-project
 All commands run from the Kagami root.
 
 ```bash
-./dev-all.sh                     # boot all three in parallel under Turbo's TUI
+./dev-all.sh                     # boot all four in parallel under Turbo's TUI
                                  # (per-task panes, single Ctrl-C stops all)
 ./dev-all.sh --no kokoro:bot     # selective: --only / --no take projects or
-./dev-all.sh --only kioku        # components (e.g. kokoro:bot, kioku:dashboard)
-./dev-all.sh --stream            # force streamed [prefix] output instead of TUI
+./dev-all.sh --only kioku        # components (e.g. kokoro:bot, kioku:dashboard,
+./dev-all.sh --stream            #            kansoku:api). --stream forces
+                                 #            streamed [prefix] output.
 npm run dev                      # alias for ./dev-all.sh
 npm run typecheck                # turbo run typecheck across every workspace
 npm run test                     # turbo run test
@@ -86,6 +103,7 @@ npm run format                   # prettier --write all files
 npm run kioku:dev                # turbo run dev --filter="@kioku/*"
 npm run kokoro:dev
 npm run kizuna:dev
+npm run kansoku:dev
 
 # Per-component filters
 npm run kioku:dev:api
@@ -94,6 +112,8 @@ npm run kokoro:dev:bot
 npm run kokoro:dev:dashboard
 npm run kizuna:dev:api
 npm run kizuna:dev:dashboard
+npm run kansoku:dev:api
+npm run kansoku:dev:dashboard
 
 # Project-specific scripts
 npm run kokoro:auth:google       # tsx kokoro/scripts/authorize-google.ts
@@ -105,20 +125,22 @@ npm run kokoro:auth:google       # tsx kokoro/scripts/authorize-google.ts
 
 All HTTP entry points are served as HTTPS named URLs by [Portless](https://github.com/vercel-labs/portless) (Vercel Labs reverse proxy). First run prompts once for sudo to install a local CA; HTTPS is auto-trusted thereafter. Portless picks an ephemeral port per app and binds 443.
 
-| Project | Component | URL                            |
-| ------- | --------- | ------------------------------ |
-| Kioku   | dashboard | `https://kioku.localhost`      |
-| Kioku   | API       | `https://api.kioku.localhost`  |
-| Kokoro  | dashboard | `https://kokoro.localhost`     |
-| Kokoro  | bot       | (none — Telegram long-poll)    |
-| Kizuna  | dashboard | `https://kizuna.localhost`     |
-| Kizuna  | API       | `https://api.kizuna.localhost` |
+| Project | Component | URL                             |
+| ------- | --------- | ------------------------------- |
+| Kioku   | dashboard | `https://kioku.localhost`       |
+| Kioku   | API       | `https://api.kioku.localhost`   |
+| Kokoro  | dashboard | `https://kokoro.localhost`      |
+| Kokoro  | bot       | (none — Telegram long-poll)     |
+| Kizuna  | dashboard | `https://kizuna.localhost`      |
+| Kizuna  | API       | `https://api.kizuna.localhost`  |
+| Kansoku | dashboard | `https://kansoku.localhost`     |
+| Kansoku | API       | `https://api.kansoku.localhost` |
 
 Each project keeps its own `portless.json` next to its code. Numeric `PORT` defaults inside apps only matter when running an app standalone outside Portless; normal local development should use the named HTTPS URLs above.
 
 ## Shared conventions
 
-All three projects share tooling via `shared/packages/`:
+All four projects share tooling via `shared/packages/`:
 
 - **`@kagami/eslint-config`** — flat ESLint config; `./base` for general TS, `./next` for Next.js apps.
 - **`@kagami/tsconfig`** — `./base.json`, `./library.json`, `./server.json`, `./nextjs.json`. Per-app `tsconfig.json` files extend one of these and add overrides (e.g. `verbatimModuleSyntax`, `esModuleInterop`, `noImplicitOverride`, `allowImportingTsExtensions`, `allowJs`) where projects diverge.
@@ -127,7 +149,7 @@ All three projects share tooling via `shared/packages/`:
 Other workspace-wide conventions:
 
 - **Language**: TypeScript (strict, ESM), Node ≥ 22
-- **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs are `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, and `shared/packages/*`.
+- **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs are `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, `kansoku/{apps,packages}/*`, and `shared/packages/*`.
 - **Apps split**: `apps/api` (or `apps/bot` for Kokoro) + `apps/dashboard`
 - **Local dev hosting**: Portless via stable HTTPS named `*.localhost` URLs
 - **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku)
@@ -149,11 +171,12 @@ Lint-staged globs:
 
 When working inside a project, consult that project's `CLAUDE.md` first — it's authoritative for module structure, conventions, and the docs index.
 
-| Project | Role                         | Start here                             |
-| ------- | ---------------------------- | -------------------------------------- |
-| Kioku   | Long-term memory service     | [`kioku/CLAUDE.md`](kioku/CLAUDE.md)   |
-| Kokoro  | Telegram + iMessage AI agent | [`kokoro/CLAUDE.md`](kokoro/CLAUDE.md) |
-| Kizuna  | Personal CRM                 | [`kizuna/CLAUDE.md`](kizuna/CLAUDE.md) |
+| Project | Role                                       | Start here                               |
+| ------- | ------------------------------------------ | ---------------------------------------- |
+| Kioku   | Long-term memory service                   | [`kioku/CLAUDE.md`](kioku/CLAUDE.md)     |
+| Kokoro  | Telegram + iMessage AI agent               | [`kokoro/CLAUDE.md`](kokoro/CLAUDE.md)   |
+| Kizuna  | Personal CRM                               | [`kizuna/CLAUDE.md`](kizuna/CLAUDE.md)   |
+| Kansoku | Observability (logs, traces, errors, etc.) | [`kansoku/CLAUDE.md`](kansoku/CLAUDE.md) |
 
 For cross-service detail (Kokoro→Kioku coupling, observed gaps, planned Kao identity service), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
