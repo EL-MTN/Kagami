@@ -10,7 +10,7 @@ export type DbHandle = {
 export async function connectDb(uri: string): Promise<DbHandle> {
   mongoose.set("strictQuery", true);
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 5_000 });
-  logger.info({ uri: redactUri(uri) }, "mongo connected");
+  logger.info({ uri }, "mongo connected");
 
   const results = await mongoose.syncIndexes();
   logger.info({ models: Object.keys(results) }, "mongo indexes synced");
@@ -27,8 +27,4 @@ export async function connectDb(uri: string): Promise<DbHandle> {
       await mongoose.disconnect();
     },
   };
-}
-
-function redactUri(uri: string): string {
-  return uri.replace(/\/\/[^@/]*@/, "//***@");
 }
