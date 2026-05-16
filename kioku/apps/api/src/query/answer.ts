@@ -120,8 +120,8 @@ export async function query(question: string, deps: QueryDeps = {}): Promise<Que
   let facts: RankedFact[] = [];
   try {
     facts = await ranker(question, k, { filters: deps.filters });
-  } catch (error) {
-    logger.error({ error }, "fact ranker failed");
+  } catch (err) {
+    logger.error({ err, question, filters: deps.filters, k }, "fact ranker failed");
   }
 
   const memoriesText =
@@ -145,6 +145,7 @@ export async function query(question: string, deps: QueryDeps = {}): Promise<Que
       citations,
     };
   } catch (err) {
+    logger.error({ err, question, factCount: facts.length }, "answerer generateText failed");
     return {
       answer: `(no answer — query failed: ${(err as Error).message})`,
       citations,

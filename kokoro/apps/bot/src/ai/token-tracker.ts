@@ -77,7 +77,7 @@ export function trackUsage(
   const totalTokens = usage.totalTokens ?? promptTokens + completionTokens;
   const cost = estimateCost(model, usage);
 
-  logger.info(
+  logger.debug(
     { category, model, promptTokens, completionTokens, totalTokens, estimatedCost: cost },
     "Token usage tracked",
   );
@@ -107,7 +107,7 @@ export function trackTtsGeneration(
   const perThousand = TTS_GENERATION_PRICING[model] ?? 0;
   const cost = (charCount / 1000) * perThousand;
 
-  logger.info(
+  logger.debug(
     { category: "tts-generation", model, provider, charCount, estimatedCost: cost },
     "TTS usage tracked",
   );
@@ -155,7 +155,7 @@ export function trackSttTranscription(
     );
   }
 
-  logger.info(
+  logger.debug(
     {
       category: "stt-transcription",
       model,
@@ -189,7 +189,7 @@ export function trackImageGeneration(
 ): void {
   const cost = IMAGE_GENERATION_PRICING[model] ?? 0;
 
-  logger.info(
+  logger.debug(
     {
       category: "image-generation",
       model,

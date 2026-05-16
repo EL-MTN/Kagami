@@ -45,7 +45,7 @@ startIngestScheduler({ config }) → { stop() }
 ```
 
 - If `KIZUNA_INGEST_INTERVAL_SEC === 0` (the default), the scheduler is a no-op. Manual triggers via `POST /sync/{gmail,gcal}/run` still work.
-- Otherwise: `setInterval(tick, intervalSec * 1000)`. Each tick runs Gmail then Calendar sequentially; failures are logged but not rethrown so the next tick still fires.
+- Otherwise: `setInterval(tick, intervalSec * 1000)`. Each tick runs Gmail then Calendar sequentially; failures are logged but not rethrown so the next tick still fires. Per-provider outcome is logged via `logTick`: `debug` for an idle tick (nothing fetched, no errors, status `ok`) — silent at the default `info` level — `info` when something changed or status isn't `ok`, and `warn` on per-run errors. Messages are `"<provider> ingest tick"` / `"… (idle)"` / `"… : N error(s)"`.
 - A `running = true` flag guards against overlapping ticks (if a tick takes longer than the interval, the next is skipped with `logger.warn('ingest tick skipped')`).
 - **No tick on startup.** First tick is one full interval after boot; this avoids surprise sync runs on `tsx watch` reloads.
 - Real Gmail and Calendar clients wrap every Google `fetch` in `AbortSignal.timeout(30_000)`. A timeout is recorded as `gmail_request_timeout` or `gcal_request_timeout` in `SyncState.lastError` and the run does not advance its cursor.
@@ -100,7 +100,7 @@ Per ID:
 
 ### Pause + resume semantics
 
-- On `OAuthError('invalid_grant')` or a Gmail 401 outside `getMessage` → `pauseWith(message)`: set `pausedAt: now`, increment `errorCount`, write `lastError`. Subsequent runs short-circuit with `{ status: 'paused' }` until either:
+- On `OAuthError('invalid_grant')` or a Gmail 401 outside `getMessage` → `pauseWith(message)`: log at `error` (`"<provider> ingest paused — re-grant required"`, with `provider` + `reason` — pausing freezes ingest until a manual re-grant, so it is not a silent state mutation), then set `pausedAt: now`, increment `errorCount`, write `lastError`. Subsequent runs short-circuit with `{ status: 'paused' }` until either:
   - The user re-authorizes via `/oauth/google/start` → `/callback`, which calls `SyncState.updateMany({ pausedAt: { $ne: null } }, { pausedAt: null, lastError: null })`; or
   - The caller passes `force: true` to `POST /sync/gmail/run`, which clears `pausedAt` and runs once.
 - On any other error → write `lastError` + bump `errorCount` (without setting `pausedAt`). Next tick retries.

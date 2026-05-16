@@ -25,7 +25,7 @@ export function createWebSearchTool() {
     }),
     execute: async ({ query, count }) => {
       try {
-        logger.info({ query, count }, "Tool: webSearch");
+        logger.debug({ query, count }, "Tool: webSearch");
         const results = await webSearch(query, { count });
         return { success: true, query, results };
       } catch (error) {

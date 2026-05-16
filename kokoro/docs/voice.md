@@ -96,7 +96,7 @@ STT_BASE_URL=http://127.0.0.1:8089/v1
 STT_API_KEY=local                  # whisper.cpp doesn't enforce auth; any non-empty string
 ```
 
-Restart the bot. Send a voice note → bot logs `STT usage tracked` with `customEndpoint: true` and `estimatedCost: 0`.
+Restart the bot with `LOG_LEVEL=debug` and send a voice note → bot logs `STT usage tracked` with `customEndpoint: true` and `estimatedCost: 0`. (Usage tracking logs at `debug`; at the default `info` level it's silent but still persisted to `TokenUsage`.)
 
 ## Setup — cloud Whisper
 

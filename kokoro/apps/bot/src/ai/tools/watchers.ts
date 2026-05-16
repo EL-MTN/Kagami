@@ -118,7 +118,7 @@ export function createManageWatchersTool(chatId: string) {
               );
             }
 
-            logger.info(
+            logger.debug(
               { chatId, name, cronSchedule, oneShot, maxFires, cooldownMinutes },
               "Tool: manageWatchers (create)",
             );
@@ -154,7 +154,7 @@ export function createManageWatchersTool(chatId: string) {
           }
 
           case "list": {
-            logger.info({ chatId }, "Tool: manageWatchers (list)");
+            logger.debug({ chatId }, "Tool: manageWatchers (list)");
             const watchers = await listWatchersForChat(chatId);
             return {
               success: true,
@@ -183,7 +183,7 @@ export function createManageWatchersTool(chatId: string) {
             if (!watcherId) {
               return { success: false, reason: "watcherId is required for update" };
             }
-            logger.info({ watcherId }, "Tool: manageWatchers (update)");
+            logger.debug({ watcherId }, "Tool: manageWatchers (update)");
 
             const existing = await getWatcherById(watcherId, chatId);
             if (!existing) return { success: false, reason: "Watcher not found" };
@@ -225,7 +225,7 @@ export function createManageWatchersTool(chatId: string) {
             if (!watcherId) {
               return { success: false, reason: "watcherId is required for delete" };
             }
-            logger.info({ watcherId }, "Tool: manageWatchers (delete)");
+            logger.debug({ watcherId }, "Tool: manageWatchers (delete)");
             const deleted = await deleteWatcher(watcherId, chatId);
             return deleted
               ? { success: true, deleted: watcherId }
@@ -236,7 +236,7 @@ export function createManageWatchersTool(chatId: string) {
             if (!watcherId) {
               return { success: false, reason: "watcherId is required for enable" };
             }
-            logger.info({ watcherId }, "Tool: manageWatchers (enable)");
+            logger.debug({ watcherId }, "Tool: manageWatchers (enable)");
             const enabled = await updateWatcher(watcherId, { enabled: true }, chatId);
             return enabled
               ? { success: true, watcherId, enabled: true }
@@ -247,7 +247,7 @@ export function createManageWatchersTool(chatId: string) {
             if (!watcherId) {
               return { success: false, reason: "watcherId is required for disable" };
             }
-            logger.info({ watcherId }, "Tool: manageWatchers (disable)");
+            logger.debug({ watcherId }, "Tool: manageWatchers (disable)");
             const disabled = await updateWatcher(watcherId, { enabled: false }, chatId);
             return disabled
               ? { success: true, watcherId, enabled: false }
@@ -265,7 +265,7 @@ export function createManageWatchersTool(chatId: string) {
               };
             }
             const snoozedUntil = new Date(Date.now() + untilHours * 60 * 60 * 1000);
-            logger.info({ watcherId, untilHours, snoozedUntil }, "Tool: manageWatchers (snooze)");
+            logger.debug({ watcherId, untilHours, snoozedUntil }, "Tool: manageWatchers (snooze)");
             const snoozed = await updateWatcher(watcherId, { snoozedUntil }, chatId);
             return snoozed
               ? {

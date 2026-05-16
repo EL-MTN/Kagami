@@ -31,7 +31,8 @@ async function loadDir(dirPath: string): Promise<RefImage[]> {
   let files: string[];
   try {
     files = await fs.readdir(dirPath);
-  } catch {
+  } catch (err) {
+    logger.debug({ err, dirPath }, "reference image dir unreadable — skipping");
     return [];
   }
 
@@ -45,7 +46,7 @@ async function loadDir(dirPath: string): Promise<RefImage[]> {
     const dataUri = `data:${mimeType};base64,${data.toString("base64")}`;
 
     results.push({ filename: file, dataUri });
-    logger.info(
+    logger.debug(
       { file, mimeType, bytes: data.length, dir: path.basename(dirPath) },
       "Loaded reference image",
     );
@@ -60,7 +61,8 @@ async function loadSettings(): Promise<void> {
   let files: string[];
   try {
     files = await fs.readdir(settingsDir);
-  } catch {
+  } catch (err) {
+    logger.debug({ err, settingsDir }, "settings dir unreadable — skipping");
     return;
   }
 
@@ -81,7 +83,8 @@ async function loadImagePrefix(): Promise<void> {
   try {
     imagePrefix = (await fs.readFile(prefixPath, "utf-8")).trim();
     logger.info({ length: imagePrefix.length }, "Loaded image prefix");
-  } catch {
+  } catch (err) {
+    logger.debug({ err, prefixPath }, "image-prefix.md unreadable — using empty prefix");
     imagePrefix = "";
   }
 }

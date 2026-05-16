@@ -105,7 +105,7 @@ export function createManageRoutinesTool(chatId: string) {
 
             const resolvedPurity = purity ?? "action";
 
-            logger.info(
+            logger.debug(
               { chatId, name, cronSchedule, reportMode, purity: resolvedPurity },
               "Tool: manageRoutines (create)",
             );
@@ -136,7 +136,7 @@ export function createManageRoutinesTool(chatId: string) {
           }
 
           case "list": {
-            logger.info({ chatId }, "Tool: manageRoutines (list)");
+            logger.debug({ chatId }, "Tool: manageRoutines (list)");
             const routines = await listRoutinesForChat(chatId);
             return {
               success: true,
@@ -161,7 +161,7 @@ export function createManageRoutinesTool(chatId: string) {
             if (!routineId) {
               return { success: false, reason: "routineId is required for update" };
             }
-            logger.info({ routineId }, "Tool: manageRoutines (update)");
+            logger.debug({ routineId }, "Tool: manageRoutines (update)");
 
             const existing = await getRoutineById(routineId, chatId);
             if (!existing) {
@@ -205,7 +205,7 @@ export function createManageRoutinesTool(chatId: string) {
             if (!routineId) {
               return { success: false, reason: "routineId is required for delete" };
             }
-            logger.info({ routineId }, "Tool: manageRoutines (delete)");
+            logger.debug({ routineId }, "Tool: manageRoutines (delete)");
             const deleted = await deleteRoutine(routineId, chatId);
             return deleted
               ? { success: true, deleted: routineId }
@@ -216,7 +216,7 @@ export function createManageRoutinesTool(chatId: string) {
             if (!routineId) {
               return { success: false, reason: "routineId is required for enable" };
             }
-            logger.info({ routineId }, "Tool: manageRoutines (enable)");
+            logger.debug({ routineId }, "Tool: manageRoutines (enable)");
             const enabled = await updateRoutine(routineId, { enabled: true }, chatId);
             return enabled
               ? { success: true, routineId, enabled: true }
@@ -227,7 +227,7 @@ export function createManageRoutinesTool(chatId: string) {
             if (!routineId) {
               return { success: false, reason: "routineId is required for disable" };
             }
-            logger.info({ routineId }, "Tool: manageRoutines (disable)");
+            logger.debug({ routineId }, "Tool: manageRoutines (disable)");
             const disabled = await updateRoutine(routineId, { enabled: false }, chatId);
             return disabled
               ? { success: true, routineId, enabled: false }
@@ -469,7 +469,7 @@ export function createUseRoutineTool(
           return { success: false, reason: validation.reason };
         }
 
-        logger.info(
+        logger.debug(
           { chatId, routineName, depth, paramCount: Object.keys(validation.resolved).length },
           "Tool: useRoutine",
         );

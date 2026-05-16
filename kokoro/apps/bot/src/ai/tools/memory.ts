@@ -38,7 +38,7 @@ export function createSearchMemoryTool() {
     }),
     execute: async ({ query, k, since, until }) => {
       try {
-        logger.info({ query, k, since, until }, "Tool: searchMemory");
+        logger.debug({ query, k, since, until }, "Tool: searchMemory");
         const facts = await recall(query, { k: k ?? 8, since, until });
         return { success: true, query, facts };
       } catch (err) {
@@ -81,7 +81,7 @@ export function createRememberFactTool() {
     }),
     execute: async ({ text, eventDate }) => {
       try {
-        logger.info({ text, eventDate }, "Tool: rememberFact");
+        logger.debug({ text, eventDate }, "Tool: rememberFact");
         const result = await appendFactWithRetryQueue({
           text,
           event_date: eventDate,

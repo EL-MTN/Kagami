@@ -3,6 +3,7 @@ import type { Config } from "../config.js";
 import { OAuthToken } from "../db/models/OAuthToken.js";
 import { decrypt, encrypt } from "./encryption.js";
 import { errors } from "./errors.js";
+import { logger } from "./logger.js";
 
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
@@ -110,8 +111,10 @@ export async function getAccessToken(config: Config): Promise<string> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("invalid_grant")) {
+      logger.error({ err }, "google token refresh rejected — re-grant required");
       throw new OAuthError("invalid_grant", "Google rejected the refresh token; re-grant required");
     }
+    logger.error({ err }, "google token refresh failed");
     throw new OAuthError("refresh_failed", msg);
   }
 }

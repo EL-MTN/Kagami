@@ -414,7 +414,7 @@ The original audio is persisted to a separate GridFS bucket (`audio.files` / `au
 
 ## Token Usage Observability
 
-All LLM call sites track token usage via `apps/bot/src/ai/token-tracker.ts`. Each call logs prompt/completion tokens and estimated cost via Pino, then persists to the `TokenUsage` MongoDB collection (fire-and-forget).
+All LLM call sites track token usage via `apps/bot/src/ai/token-tracker.ts`. Each call logs prompt/completion tokens and estimated cost via Pino at **`debug`** level (silent at the default `info` level — the data is persisted regardless), then persists to the `TokenUsage` MongoDB collection (fire-and-forget). The `/usage` dashboard reads `TokenUsage`, not the logs.
 
 ### Categories
 

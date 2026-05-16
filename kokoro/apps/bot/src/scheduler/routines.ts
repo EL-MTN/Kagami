@@ -50,7 +50,7 @@ async function runDueRoutines(registry: AdapterRegistry): Promise<void> {
         });
       } catch (error) {
         logger.error(
-          { error, routineId: routine._id, name: routine.name },
+          { err: error, routineId: routine._id, name: routine.name },
           "Failed to execute routine",
         );
       }
