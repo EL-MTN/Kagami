@@ -102,7 +102,7 @@ export class BlueBubblesAdapter implements PlatformAdapter {
       await this.client.sendText({ chatGuid: this.toChatGuid(chatId), message: text });
     } catch (error) {
       logger.warn(
-        { err: error, chatId },
+        { error: error, chatId },
         "BlueBubbles editConfirmationPrompt fallback send failed",
       );
     }

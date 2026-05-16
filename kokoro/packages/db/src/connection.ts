@@ -6,7 +6,7 @@ export async function connectDB(): Promise<void> {
     await mongoose.connect(config.MONGODB_URI);
     logger.info("Connected to MongoDB");
   } catch (error) {
-    logger.fatal({ err: error }, "Failed to connect to MongoDB");
+    logger.fatal({ error: error }, "Failed to connect to MongoDB");
     process.exit(1);
   }
 }

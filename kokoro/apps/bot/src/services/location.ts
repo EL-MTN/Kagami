@@ -108,7 +108,6 @@ async function learnPlace(
       );
     }
   } catch (err) {
-    const reason = err instanceof Error ? err.message : "place learning failed";
-    logger.warn({ err: reason, chatId, placeName }, "Place learning failed");
+    logger.warn({ error: err, chatId, placeName }, "Place learning failed");
   }
 }

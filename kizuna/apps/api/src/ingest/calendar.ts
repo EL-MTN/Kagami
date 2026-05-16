@@ -113,7 +113,7 @@ async function processEvent(
     parsed = parseCalendarEvent(ev);
   } catch (err) {
     result.errors++;
-    logger.warn({ err, id: ev.id }, "gcal: failed to parse event");
+    logger.warn({ error: err, id: ev.id }, "gcal: failed to parse event");
     return;
   }
 
@@ -134,7 +134,7 @@ async function processEvent(
       participants.push({ personId: r.personId, role });
     } catch (err) {
       result.errors++;
-      logger.warn({ err, email: a.email, eventId: ev.id }, "gcal: upsertPerson failed");
+      logger.warn({ error: err, email: a.email, eventId: ev.id }, "gcal: upsertPerson failed");
     }
   };
 
@@ -170,7 +170,7 @@ async function processEvent(
     if (parsed.cancelled) result.cancelled++;
   } catch (err) {
     result.errors++;
-    logger.warn({ err, id: ev.id }, "gcal: upsertInteractionBySourceRef failed");
+    logger.warn({ error: err, id: ev.id }, "gcal: upsertInteractionBySourceRef failed");
   }
   // Suppress unused-config warning — kept for symmetry with gmail worker.
   void config;
@@ -291,12 +291,12 @@ export async function runCalendarSync(args: {
     };
     if (err instanceof GoogleRequestTimeoutError) {
       await recordFailedRun(err.code);
-      logger.error({ err, code: err.code, ...progress }, "gcal sync timed out");
+      logger.error({ error: err, code: err.code, ...progress }, "gcal sync timed out");
       return { ...result, status: "error", message: err.code };
     }
     const message = err instanceof Error ? err.message : String(err);
     await recordFailedRun(message);
-    logger.error({ err, ...progress }, "gcal sync failed");
+    logger.error({ error: err, ...progress }, "gcal sync failed");
     return { ...result, status: "error", message };
   }
 }

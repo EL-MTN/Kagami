@@ -61,7 +61,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeR
 
     return { placeName, formattedAddress, placeCategory };
   } catch (error) {
-    logger.warn({ err: error, lat, lng }, "Reverse geocoding failed");
+    logger.warn({ error: error, lat, lng }, "Reverse geocoding failed");
     return null;
   }
 }

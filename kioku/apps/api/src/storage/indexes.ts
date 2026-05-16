@@ -394,7 +394,7 @@ export async function ensureIndexes(opts: EnsureIndexesOptions = {}): Promise<vo
   } catch (err) {
     if (opts.allowMissingSearch && isSearchUnsupportedError(err)) {
       logger.warn(
-        { err: (err as Error).message },
+        { error: err },
         "search/vector indexes skipped — server lacks Atlas Search support",
       );
       return;

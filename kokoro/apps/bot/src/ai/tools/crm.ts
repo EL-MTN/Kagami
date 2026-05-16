@@ -54,7 +54,7 @@ function logFailure(toolName: string, err: unknown) {
   if (err instanceof KizunaClientError) {
     logger.warn(
       {
-        err,
+        error: err,
         tool: toolName,
         kind: err.kind,
         routeTemplate: err.routeTemplate,
@@ -64,7 +64,7 @@ function logFailure(toolName: string, err: unknown) {
     );
     return;
   }
-  logger.error({ err, tool: toolName }, `Tool: ${toolName} crashed`);
+  logger.error({ error: err, tool: toolName }, `Tool: ${toolName} crashed`);
 }
 
 export function createFindPeopleTool() {

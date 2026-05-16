@@ -6,7 +6,7 @@ export function healthRouter(db: DbHandle): Router {
   const r = Router();
   r.get("/health", async (_req, res) => {
     const dbOk = await db.ping().catch((err: unknown) => {
-      logger.error({ err }, "health: db ping failed");
+      logger.error({ error: err }, "health: db ping failed");
       return false;
     });
     res.status(dbOk ? 200 : 503).json({

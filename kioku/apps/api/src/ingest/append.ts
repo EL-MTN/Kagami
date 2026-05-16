@@ -128,10 +128,7 @@ async function appendSingleFactImpl(input: AppendFactInput): Promise<AppendFactR
   try {
     await upsertEntitiesFromFacts([fact]);
   } catch (err) {
-    logger.warn(
-      { err: (err as Error).message, factId: fact.id },
-      "entity upsert failed for single-fact append",
-    );
+    logger.warn({ error: err, factId: fact.id }, "entity upsert failed for single-fact append");
   }
 
   return { id: fact.id, status: "added" };

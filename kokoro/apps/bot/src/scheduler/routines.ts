@@ -50,13 +50,13 @@ async function runDueRoutines(registry: AdapterRegistry): Promise<void> {
         });
       } catch (error) {
         logger.error(
-          { err: error, routineId: routine._id, name: routine.name },
+          { error: error, routineId: routine._id, name: routine.name },
           "Failed to execute routine",
         );
       }
     }
   } catch (error) {
-    logger.error({ err: error }, "Failed to poll due routines");
+    logger.error({ error: error }, "Failed to poll due routines");
   }
 }
 
@@ -81,7 +81,7 @@ async function runPendingManualRequest(registry: AdapterRegistry): Promise<void>
       parameters: Object.keys(params).length > 0 ? params : undefined,
     });
   } catch (error) {
-    logger.error({ err: error }, "Failed to execute manual run request");
+    logger.error({ error: error }, "Failed to execute manual run request");
   }
 }
 
@@ -93,7 +93,7 @@ async function startupRecovery(registry: AdapterRegistry): Promise<void> {
       logger.info({ count }, "Reset stale running routine logs");
     }
   } catch (error) {
-    logger.error({ err: error }, "Failed to reset stale routine logs");
+    logger.error({ error: error }, "Failed to reset stale routine logs");
   }
 
   // Then run any due routines

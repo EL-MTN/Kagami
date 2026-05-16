@@ -90,7 +90,7 @@ function shutdown(signal: string) {
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("uncaughtException", (error) => {
-  logger.fatal({ err: error }, "Uncaught exception");
+  logger.fatal({ error: error }, "Uncaught exception");
   shutdown("uncaughtException");
 });
 process.on("unhandledRejection", (reason) => {
@@ -99,6 +99,6 @@ process.on("unhandledRejection", (reason) => {
 });
 
 main().catch((error) => {
-  logger.fatal({ err: error }, "Unhandled error in main");
+  logger.fatal({ error: error }, "Unhandled error in main");
   process.exit(1);
 });
