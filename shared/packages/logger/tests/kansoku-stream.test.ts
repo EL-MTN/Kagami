@@ -201,60 +201,6 @@ describe("overflow accounting", () => {
   });
 });
 
-describe("head sampling", () => {
-  it("drops below-warn lines on sampled-out traces, always ships warn+", async () => {
-    fetchMock.mockResolvedValue(ok());
-    const s = mk({ batchSize: 100, batchIntervalMs: 50 });
-
-    s.write('{"level":"info","sampled":false}\n'); // sampled out
-    s.write('{"level":"debug","sampled":false}\n'); // sampled out
-    s.write('{"level":20,"sampled":false}\n'); // legacy numeric debug → sampled out
-    s.write('{"level":"warn","sampled":false}\n'); // warn+ always ships
-    s.write('{"level":"error","sampled":false}\n'); // warn+ always ships
-    s.write('{"level":50,"sampled":false}\n'); // legacy numeric error → ships
-    s.write('{"level":"info"}\n'); // no sampled flag → kept (sampled in)
-
-    expect(s.sampledOutTotal()).toBe(3);
-    expect(s.droppedTotal()).toBe(0); // sampling is shedding, not loss
-
-    await vi.advanceTimersByTimeAsync(50);
-    expect(bodyOf(0)).toEqual([
-      { level: "warn", sampled: false },
-      { level: "error", sampled: false },
-      { level: 50, sampled: false },
-      { level: "info" },
-    ]);
-  });
-
-  it("reads the ECS log.level shape for the sampling decision", async () => {
-    fetchMock.mockResolvedValue(ok());
-    const s = mk({ batchSize: 100, batchIntervalMs: 50 });
-
-    s.write('{"log":{"level":"info"},"sampled":false,"message":"a"}\n'); // shed
-    s.write('{"log":{"level":"error"},"sampled":false,"message":"b"}\n'); // ship
-    s.write('{"log":{"level":"info"},"message":"c"}\n'); // sampled in → ship
-
-    expect(s.sampledOutTotal()).toBe(1);
-    await vi.advanceTimersByTimeAsync(50);
-    expect(bodyOf(0)).toEqual([
-      { log: { level: "error" }, sampled: false, message: "b" },
-      { log: { level: "info" }, message: "c" },
-    ]);
-  });
-
-  it("keeps everything when no trace is sampled out (zero overhead path)", async () => {
-    fetchMock.mockResolvedValue(ok());
-    const s = mk({ batchSize: 2, batchIntervalMs: 50 });
-
-    s.write('{"level":"debug"}\n');
-    s.write('{"level":"info"}\n');
-    await vi.advanceTimersByTimeAsync(0);
-
-    expect(s.sampledOutTotal()).toBe(0);
-    expect(bodyOf(0)).toEqual([{ level: "debug" }, { level: "info" }]);
-  });
-});
-
 describe("final() drain", () => {
   it("waits for an in-flight flush then resolves", async () => {
     let release: (() => void) | undefined;

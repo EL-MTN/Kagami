@@ -127,13 +127,7 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
       if (!ctx) return {};
       const span: Record<string, unknown> = { id: ctx.spanId };
       if (ctx.parentSpanId) span.parent = { id: ctx.parentSpanId };
-      const out: Record<string, unknown> = { trace: { id: ctx.traceId }, span };
-      // `sampled` is an internal shipper hint (not an ECS field): the
-      // Kansoku stream keys head sampling off it — below-warn lines on a
-      // sampled-out trace aren't shipped (warn+ always are). Emitted only
-      // when sampled out, so records stay lean in the keep-all case.
-      if (ctx.sampled === false) out.sampled = false;
-      return out;
+      return { trace: { id: ctx.traceId }, span };
     },
     // ECS level/bindings formatters as defaults; an explicit caller
     // `formatters.*` still wins (spread last) without losing the others.

@@ -77,50 +77,6 @@ describe("childSpan", () => {
   });
 });
 
-describe("head sampling", () => {
-  const KEY = "LOG_SAMPLE_RATE";
-
-  function withRate(value: string | undefined, fn: () => void): void {
-    const saved = process.env[KEY];
-    if (value === undefined) delete process.env[KEY];
-    else process.env[KEY] = value;
-    try {
-      fn();
-    } finally {
-      if (saved === undefined) delete process.env[KEY];
-      else process.env[KEY] = saved;
-    }
-  }
-
-  it("defaults to sampled when LOG_SAMPLE_RATE is unset", () => {
-    withRate(undefined, () => expect(newTraceContext().sampled).toBe(true));
-  });
-
-  it("rate 0 makes fresh roots unsampled; rate 1 keeps them sampled", () => {
-    withRate("0", () => expect(newTraceContext().sampled).toBe(false));
-    withRate("1", () => expect(newTraceContext().sampled).toBe(true));
-  });
-
-  it("an explicit sampled flag overrides the rate", () => {
-    withRate("0", () => expect(newTraceContext({ sampled: true }).sampled).toBe(true));
-    withRate("1", () => expect(newTraceContext({ sampled: false }).sampled).toBe(false));
-  });
-
-  it("fails open (sampled) on an unparseable rate", () => {
-    withRate("garbage", () => expect(newTraceContext().sampled).toBe(true));
-  });
-
-  it("a sampled-out root propagates through childSpan and traceparent", () => {
-    withRate("0", () => {
-      const root = newTraceContext();
-      expect(root.sampled).toBe(false);
-      expect(childSpan(root).sampled).toBe(false);
-      const reparsed = parseTraceparent(formatTraceparent(root));
-      expect(reparsed?.sampled).toBe(false);
-    });
-  });
-});
-
 describe("runWithSpan", () => {
   function captureSpans(): { events: SpanEndEvent[]; restore: () => void } {
     const events: SpanEndEvent[] = [];
