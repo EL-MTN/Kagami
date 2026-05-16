@@ -111,10 +111,10 @@ export async function getAccessToken(config: Config): Promise<string> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("invalid_grant")) {
-      logger.error({ err }, "google token refresh rejected — re-grant required");
+      logger.error({ error: err }, "google token refresh rejected — re-grant required");
       throw new OAuthError("invalid_grant", "Google rejected the refresh token; re-grant required");
     }
-    logger.error({ err }, "google token refresh failed");
+    logger.error({ error: err }, "google token refresh failed");
     throw new OAuthError("refresh_failed", msg);
   }
 }

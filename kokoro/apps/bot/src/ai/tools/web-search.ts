@@ -30,7 +30,7 @@ export function createWebSearchTool() {
         return { success: true, query, results };
       } catch (error) {
         const reason = error instanceof Error ? error.message : "search failed";
-        logger.error({ err: error, query }, "Tool: webSearch failed");
+        logger.error({ error: error, query }, "Tool: webSearch failed");
         return { success: false, reason };
       }
     },

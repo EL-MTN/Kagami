@@ -94,7 +94,7 @@ export function trackUsage(
     estimatedCost: cost,
     metadata,
   }).catch((error) => {
-    logger.warn({ err: error }, "Failed to persist token usage");
+    logger.warn({ error: error }, "Failed to persist token usage");
   });
 }
 
@@ -123,7 +123,7 @@ export function trackTtsGeneration(
     estimatedCost: cost,
     metadata,
   }).catch((error) => {
-    logger.warn({ err: error }, "Failed to persist TTS usage");
+    logger.warn({ error: error }, "Failed to persist TTS usage");
   });
 }
 
@@ -178,7 +178,7 @@ export function trackSttTranscription(
     estimatedCost: cost,
     metadata,
   }).catch((error) => {
-    logger.warn({ err: error }, "Failed to persist STT usage");
+    logger.warn({ error: error }, "Failed to persist STT usage");
   });
 }
 
@@ -210,6 +210,6 @@ export function trackImageGeneration(
     estimatedCost: cost,
     metadata,
   }).catch((error) => {
-    logger.warn({ err: error }, "Failed to persist image generation usage");
+    logger.warn({ error: error }, "Failed to persist image generation usage");
   });
 }

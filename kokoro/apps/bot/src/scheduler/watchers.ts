@@ -46,13 +46,13 @@ async function runDueWatchers(registry: AdapterRegistry): Promise<void> {
         });
       } catch (error) {
         logger.error(
-          { err: error, watcherId: watcher._id, name: watcher.name },
+          { error: error, watcherId: watcher._id, name: watcher.name },
           "Failed to execute watcher",
         );
       }
     }
   } catch (error) {
-    logger.error({ err: error }, "Failed to poll due watchers");
+    logger.error({ error: error }, "Failed to poll due watchers");
   }
 }
 
@@ -71,7 +71,7 @@ async function runPendingManualRequest(registry: AdapterRegistry): Promise<void>
       silent: true,
     });
   } catch (error) {
-    logger.error({ err: error }, "Failed to execute manual watcher run");
+    logger.error({ error: error }, "Failed to execute manual watcher run");
   }
 }
 
@@ -80,14 +80,14 @@ async function startupRecovery(registry: AdapterRegistry): Promise<void> {
     const reset = await resetStaleRunningWatcherLogs();
     if (reset > 0) logger.info({ count: reset }, "Reset stale running watcher logs");
   } catch (error) {
-    logger.error({ err: error }, "Failed to reset stale watcher logs");
+    logger.error({ error: error }, "Failed to reset stale watcher logs");
   }
 
   try {
     const archived = await archiveExpiredWatchers();
     if (archived > 0) logger.info({ count: archived }, "Archived expired watchers");
   } catch (error) {
-    logger.error({ err: error }, "Failed to archive expired watchers (startup recovery)");
+    logger.error({ error: error }, "Failed to archive expired watchers (startup recovery)");
   }
 
   await runDueWatchers(registry);
@@ -101,7 +101,7 @@ export function startWatcherScheduler(registry: AdapterRegistry): () => void {
       try {
         await archiveExpiredWatchers();
       } catch (error) {
-        logger.error({ err: error }, "Failed to archive expired watchers (scheduled poll)");
+        logger.error({ error: error }, "Failed to archive expired watchers (scheduled poll)");
       }
       await runDueWatchers(registry);
     }),

@@ -1,6 +1,6 @@
 import type { IConversation } from "@kokoro/db";
 import { logger } from "@kokoro/shared";
-import { ingestSession, KiokuClientError } from "./index";
+import { ingestSession } from "./index";
 import { buildTranscript, transcriptHasContent } from "./transcript";
 
 // Background ingest of a closed Kokoro conversation into Kioku. Two
@@ -36,19 +36,18 @@ async function runIngest(convo: IConversation): Promise<void> {
       "kioku ingest: done",
     );
   } catch (err) {
-    const reason = err instanceof KiokuClientError ? err.message : (err as Error).message;
     convo.ingestAttempts = (convo.ingestAttempts ?? 0) + 1;
     try {
       await convo.save();
     } catch (saveErr) {
       logger.warn(
-        { err: (saveErr as Error).message, sessionId: convo.sessionId },
+        { error: saveErr, sessionId: convo.sessionId },
         "kioku ingest: failed to update ingestAttempts after error",
       );
     }
     logger.error(
       {
-        err: reason,
+        error: err,
         sessionId: convo.sessionId,
         chatId: convo.chatId,
         attempts: convo.ingestAttempts,
@@ -67,7 +66,7 @@ async function markEmptyAsDone(convo: IConversation): Promise<void> {
     await convo.save();
   } catch (err) {
     logger.warn(
-      { err: (err as Error).message, sessionId: convo.sessionId },
+      { error: err, sessionId: convo.sessionId },
       "kioku ingest: failed to mark empty session done",
     );
   }

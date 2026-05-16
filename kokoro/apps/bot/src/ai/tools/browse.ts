@@ -182,7 +182,7 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
             }
           } catch (error) {
             const message = error instanceof Error ? error.message : "Browser operation failed";
-            logger.error({ err: error, action }, `Tool: ${logPrefix} failed`);
+            logger.error({ error: error, action }, `Tool: ${logPrefix} failed`);
             if (isFatalBrowserError(message)) {
               resetBrowser();
               resetDone = true;

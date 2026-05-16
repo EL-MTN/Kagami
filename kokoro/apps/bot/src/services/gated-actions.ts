@@ -251,7 +251,7 @@ export async function dispatchGatedAction(tool: string, rawArgs: unknown): Promi
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unknown error";
-    logger.error({ err: error, tool }, "Gated action dispatch failed");
+    logger.error({ error: error, tool }, "Gated action dispatch failed");
     return {
       success: false,
       summary: `failed: ${reason}`,

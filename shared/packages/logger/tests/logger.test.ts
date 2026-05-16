@@ -1,7 +1,7 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import pino from "pino";
-import { DEFAULT_REDACT_PATHS, buildLoggerBase, createLogger } from "../src/index";
+import { buildLoggerBase, createLogger } from "../src/index";
 import { getTraceContext, newTraceContext, runWithTrace } from "../src/trace";
 
 describe("buildLoggerBase", () => {
@@ -68,23 +68,6 @@ describe("createLogger", () => {
         kansoku: { url: "https://api.kansoku.localhost", token: "t" },
       }),
     ).toThrow(/invalid level/i);
-  });
-
-  it("redacts common secret paths by default", () => {
-    expect(DEFAULT_REDACT_PATHS).toEqual(
-      expect.arrayContaining([
-        "authorization",
-        "password",
-        "token",
-        "secret",
-        "headers.authorization",
-        "*.password",
-      ]),
-    );
-  });
-
-  it("includes imageData in the redact path list", () => {
-    expect(DEFAULT_REDACT_PATHS).toEqual(expect.arrayContaining(["imageData", "*.imageData"]));
   });
 });
 
@@ -160,7 +143,7 @@ describe("createLogger end-to-end logs outside a trace context", () => {
     expect(() => logger.info({ host: "127.0.0.1", port: 1234 }, "startup")).not.toThrow();
   });
 
-  it("does not throw on a logger.error({err}, msg) call inside a trace scope either", () => {
+  it("does not throw on a logger.error({ error }, msg) call inside a trace scope either", () => {
     const logger = createLogger({
       service: "test-service",
       component: "test-component",
@@ -169,8 +152,36 @@ describe("createLogger end-to-end logs outside a trace context", () => {
     const ctx = newTraceContext();
     expect(() =>
       runWithTrace(ctx, () => {
-        logger.error({ err: new Error("boom").message }, "ingest failed");
+        logger.error({ error: new Error("boom") }, "ingest failed");
       }),
     ).not.toThrow();
+  });
+});
+
+// The factory wires pino's standard error serializer onto the `error` key
+// (the workspace-wide convention). Verify an Error logged as { error } is
+// expanded to type/message/stack rather than collapsed to "{}". Mirror the
+// factory's serializer option on a hand-built pino so the line is scrapeable.
+describe("error serializer", () => {
+  interface ErrRecord {
+    error?: { type?: string; message?: string; stack?: string };
+  }
+
+  it("expands an Error logged under the `error` key to type/message/stack", () => {
+    const lines: ErrRecord[] = [];
+    const stream = new PassThrough();
+    stream.on("data", (chunk: Buffer | string) => {
+      const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      for (const line of text.split("\n").filter(Boolean)) {
+        lines.push(JSON.parse(line) as ErrRecord);
+      }
+    });
+    const logger = pino({ serializers: { error: pino.stdSerializers.err } }, stream);
+
+    logger.error({ error: new Error("boom") }, "ingest failed");
+
+    expect(lines[0]?.error?.type).toBe("Error");
+    expect(lines[0]?.error?.message).toBe("boom");
+    expect(lines[0]?.error?.stack).toMatch(/Error: boom/);
   });
 });

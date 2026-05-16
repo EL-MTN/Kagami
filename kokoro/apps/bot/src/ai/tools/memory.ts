@@ -48,7 +48,7 @@ export function createSearchMemoryTool() {
             : err instanceof Error
               ? err.message
               : "memory search failed";
-        logger.warn({ err: reason, query }, "Tool: searchMemory failed");
+        logger.warn({ error: err, query }, "Tool: searchMemory failed");
         return { success: false, reason, facts: [], degraded: true };
       }
     },
@@ -95,7 +95,7 @@ export function createRememberFactTool() {
             : err instanceof Error
               ? err.message
               : "memory write failed";
-        logger.error({ err: reason, text }, "Tool: rememberFact failed");
+        logger.error({ error: err, text }, "Tool: rememberFact failed");
         return { success: false, reason };
       }
     },

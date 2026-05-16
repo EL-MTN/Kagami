@@ -26,17 +26,17 @@ async function runKiokuSweep(): Promise<void> {
   try {
     await sweepStaleActiveSessions();
   } catch (error) {
-    logger.error({ err: error }, "Kioku stale-active sweep failed");
+    logger.error({ error: error }, "Kioku stale-active sweep failed");
   }
   try {
     await sweepPendingIngests();
   } catch (error) {
-    logger.error({ err: error }, "Kioku pending-ingest sweep failed");
+    logger.error({ error: error }, "Kioku pending-ingest sweep failed");
   }
   try {
     await sweepPendingFacts();
   } catch (error) {
-    logger.error({ err: error }, "Kioku pending-fact sweep failed");
+    logger.error({ error: error }, "Kioku pending-fact sweep failed");
   }
 }
 
@@ -63,7 +63,7 @@ async function runDailyCleanup(): Promise<void> {
       );
     }
   } catch (error) {
-    logger.error({ err: error }, "Daily cleanup failed");
+    logger.error({ error: error }, "Daily cleanup failed");
   }
 }
 
@@ -74,7 +74,7 @@ export function startMaintenanceScheduler(): () => void {
   cleanupTimer = setInterval(
     withRootTrace(() => {
       runDailyCleanup().catch((error) => {
-        logger.error({ err: error }, "Cleanup interval failed");
+        logger.error({ error: error }, "Cleanup interval failed");
       });
     }),
     CLEANUP_INTERVAL,
@@ -83,7 +83,7 @@ export function startMaintenanceScheduler(): () => void {
   setTimeout(
     withRootTrace(() => {
       runDailyCleanup().catch((error) => {
-        logger.error({ err: error }, "Startup cleanup failed");
+        logger.error({ error: error }, "Startup cleanup failed");
       });
     }),
     STARTUP_CLEANUP_DELAY,
@@ -93,7 +93,7 @@ export function startMaintenanceScheduler(): () => void {
   kiokuSweepTimer = setInterval(
     withRootTrace(() => {
       runKiokuSweep().catch((error) => {
-        logger.error({ err: error }, "Kioku sweep interval failed");
+        logger.error({ error: error }, "Kioku sweep interval failed");
       });
     }),
     KIOKU_SWEEP_INTERVAL,
@@ -105,7 +105,7 @@ export function startMaintenanceScheduler(): () => void {
   setTimeout(
     withRootTrace(() => {
       runKiokuSweep().catch((error) => {
-        logger.error({ err: error }, "Startup Kioku sweep failed");
+        logger.error({ error: error }, "Startup Kioku sweep failed");
       });
     }),
     STARTUP_SWEEP_DELAY,
