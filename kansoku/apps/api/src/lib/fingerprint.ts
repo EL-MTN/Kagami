@@ -28,8 +28,12 @@ interface ErrorShape {
 
 interface ErrorSource {
   name?: unknown;
+  // ECS uses `type` (not `name`) and `stack_trace` (not `stack`). Accept
+  // both so error grouping is stable whether a line arrives ECS or legacy.
+  type?: unknown;
   message?: unknown;
   stack?: unknown;
+  stack_trace?: unknown;
   cause?: unknown;
   errors?: unknown;
 }
@@ -51,10 +55,21 @@ function firstStackFrame(stack: string): string | undefined {
   return undefined;
 }
 
+function errName(src: ErrorSource): string {
+  if (typeof src.name === "string") return src.name;
+  if (typeof src.type === "string") return src.type;
+  return "";
+}
+
+function errStack(src: ErrorSource): string | undefined {
+  if (typeof src.stack === "string") return src.stack;
+  if (typeof src.stack_trace === "string") return src.stack_trace;
+  return undefined;
+}
+
 function summarize(src: ErrorSource): string {
-  const name = typeof src.name === "string" ? src.name : "";
   const message = typeof src.message === "string" ? src.message : "";
-  return `${name}:${message}`;
+  return `${errName(src)}:${message}`;
 }
 
 /**
@@ -82,10 +97,12 @@ function pickErrorObject(fields: Record<string, unknown>): ErrorShape {
   const candidate =
     pickIfObject(fields.err) ?? pickIfObject(fields.error) ?? pickIfObject(fields.cause);
   if (candidate) {
+    const name = errName(candidate);
+    const stack = errStack(candidate);
     return {
-      name: typeof candidate.name === "string" ? candidate.name : undefined,
+      name: name === "" ? undefined : name,
       message: typeof candidate.message === "string" ? candidate.message : undefined,
-      topFrame: typeof candidate.stack === "string" ? firstStackFrame(candidate.stack) : undefined,
+      topFrame: stack ? firstStackFrame(stack) : undefined,
       causeChain: buildCauseChain(candidate),
     };
   }

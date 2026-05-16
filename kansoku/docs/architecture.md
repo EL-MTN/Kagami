@@ -21,17 +21,18 @@ Kansoku is **push-only-in**. It never initiates outbound calls to siblings. Ever
 
 MongoDB is the only store. The existing workspace Mongo instance is reused with a dedicated database (`kansoku`).
 
-| Collection | Type                                             | Purpose                                                                                                               | Retention  |
-| ---------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ---------- |
-| `logs`     | time-series (`timeField: ts`, `metaField: meta`) | Every shipped log line. `meta: { service, component, env, level }`.                                                   | 30 days    |
-| `metrics`  | time-series (`timeField: ts`, `metaField: meta`) | Pushed metrics. `meta: { service, name, tags }`. Phase 6+.                                                            | 30 days    |
-| `errors`   | regular, `_id = fingerprint`                     | One doc per unique error. Holds `count`, sample message, sample stack, `firstSeen`, `lastSeen`, last-N trace IDs.     | indefinite |
-| `spans`    | time-series (optional)                           | Derived from `logs` initially; promoted to a first-class collection if log-derived traces get too expensive to query. | 30 days    |
+| Collection | Type                                             | Purpose                                                                                                            | Retention                                        |
+| ---------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| `logs`     | time-series (`timeField: ts`, `metaField: meta`) | Every shipped log line (incl. span-event lines). `meta: { service, component, env, level }`.                       | `KANSOKU_LOGS_TTL_DAYS` (30)                     |
+| `errors`   | regular, `_id = fingerprint`                     | One doc per unique error. Holds `count`, sample message, sample stack, `firstSeen`, `lastSeen`, last-N trace IDs.  | `KANSOKU_ERRORS_TTL_DAYS` (90) TTL on `lastSeen` |
+| `spans`    | regular, `_id = traceId:spanId`                  | Build-light: one doc per completed `runWithSpan`, folded from `event.kind:"span"` log lines. Drives the waterfall. | `KANSOKU_LOGS_TTL_DAYS` TTL on `startedAt`       |
+| `metrics`  | time-series (reserved)                           | Pushed-metric API placeholder; not created — derived metrics aggregate over `logs` today.                          | n/a                                              |
 
-Indexes (Phase 1):
+Indexes:
 
 - `logs`: `{ "meta.service": 1, ts: -1 }`, `{ traceId: 1 }`, `{ "meta.level": 1, ts: -1 }`
-- `errors`: `{ lastSeen: -1 }`, `{ service: 1, lastSeen: -1 }`
+- `errors`: `{ lastSeen: -1 }` (TTL), `{ service: 1, lastSeen: -1 }`
+- `spans`: `{ traceId: 1, startedAt: 1 }`, `{ startedAt: -1 }` (TTL)
 
 ## Ingest path
 
@@ -39,34 +40,56 @@ Indexes (Phase 1):
 service code
   └─ logger.info({ ... }, "msg")
         └─ pino multistream (in-process, no worker threads):
-              ├─ stdout (pino-pretty in dev, raw JSON in prod)
+              ├─ stdout (pino-pretty on a TTY or LOG_PRETTY=1, else raw JSON)
               └─ kansoku-stream  (shared/packages/logger/src/kansoku-stream.ts)
                     └─ buffer (250ms or 50 events, whichever first)
                           └─ POST https://api.kansoku.localhost/v1/logs
                                 ├─ constant-time check of x-kansoku-auth
                                 ├─ Zod-validate envelope (apps/api/src/lib/envelope.ts)
                                 ├─ normalize pino → StoredLog
-                                │     (time → ts, numeric level → string,
-                                │      service/component/env/level → meta,
-                                │      everything else → fields)
-                                └─ async insertMany into the `logs`
-                                   time-series collection
-                          └─ 202 Accepted { accepted: N }
+                                │     (time epoch-ms|ISO → ts Date,
+                                │      level numeric|string → name,
+                                │      meta passed through the cardinality
+                                │      guard, everything else → fields)
+                                ├─ broadcast to live-tail subscribers
+                                └─ await insertMany into the `logs`
+                                   time-series collection (bounded retry)
+                          └─ 202 Accepted { accepted: N }  (or 503 → requeue)
 ```
 
-The route returns 202 before the Mongo write resolves so the shipper's socket
-closes fast. If Mongo is down at write time the events are lost (the shipper
-has already moved on), but every step before insertMany is synchronous —
-schema validation rejects malformed batches with 400 rather than swallowing
-them.
+Ingest is **write-then-ack**: the live-tail broadcast is synchronous, but
+the 202 is held until the bulk write durably lands (a bounded, jittered
+retry absorbs transient Mongo errors). If the write keeps failing the route
+responds 503, and the shipper — which treats any non-2xx as a failure —
+requeues the batch into its bounded local buffer and backs off. So a Mongo
+outage degrades to "buffered at the producer + retried", not the old
+fire-and-forget total silent loss. Fingerprint upserts stay fire-and-forget
+(derived and idempotent on resend). Schema validation still rejects
+malformed batches with 400 before any of this.
 
 ### Wire envelope
 
-Each batch is `application/json` — an array of pino log objects. The schema
-(at `apps/api/src/lib/envelope.ts`) requires `time`, `level`, `service`,
-`component`, `env` and accepts any additional fields via passthrough.
-Recognized special keys: `msg`, `pid`, `hostname`, `traceId`, `spanId`.
-Everything else lands under `fields` on the stored doc.
+Each batch is `application/json` — an array of pino log objects.
+`apps/api/src/lib/envelope.ts` accepts **two shapes** and normalizes both to
+the same internal `StoredLog`:
+
+- **ECS / OTel (current `@kagami/logger`)** — nested: `@timestamp`,
+  `log.level`, `service.{name,environment,component}`, `host.name`,
+  `process.pid`, `trace.id`, `span.{id,parent.id}`, `message`,
+  `error.{type,message,stack_trace}`.
+- **Legacy (pre-ECS pino)** — flat: `time` (epoch-ms or ISO), `level`
+  (numeric or string), `service`/`component`/`env`, `msg`, `pid`,
+  `hostname`, `traceId`/`spanId`/`parentSpanId`.
+
+ECS wins when both are present. Tolerating both means producers and the
+consumer never restart in lock-step. Everything not consumed (incl.
+`error`, `sampled`, `event`, user fields) lands under `fields`. `time`
+normalizes to a `Date`, `level` to a known lowercase name (unrecognized →
+`"unknown"`), `service`/`component`/`env` are capped at 64 chars, and the
+normalized `meta` tuple passes through the cardinality guard (below) before
+storage. Because everything downstream reads `StoredLog`, the ECS rename
+stayed contained to `envelope.ts` (+ `fingerprint.ts` reading
+`error.type`/`error.stack_trace`, and the shipper reading `log.level`).
 
 ### Retention + alerts (Phase 7)
 
@@ -76,6 +99,42 @@ collection at that TTL on first boot and reconciles via `collMod` on
 subsequent boots — so dialing retention up or down is just an env edit and
 a restart. Other time-series options (`timeField`, `metaField`,
 `granularity`) still require a manual drop + recreate.
+
+The `errors` registry (a regular collection) now also has a retention TTL,
+`KANSOKU_ERRORS_TTL_DAYS` (default 90, capped at 365), implemented as a TTL
+index on `errors_last_seen`. A fingerprint that stops recurring ages out
+that many days after its last hit; an active one keeps refreshing
+`lastSeen` and never expires. `ensureIndexes` creates the TTL index or
+reconciles a pre-existing non-TTL `errors_last_seen` in place via
+`collMod`.
+
+**Cardinality guard.** A time-series collection buckets per distinct
+`metaField` value, so an unbounded number of distinct
+`{service,component,env,level}` tuples (a buggy producer putting a request
+id in `component`, say) explodes bucket count and tanks ingest + `$group`
+queries. `apps/api/src/lib/cardinality.ts` keeps a process-lifetime budget
+of distinct tuples (`KANSOKU_MAX_META_COMBOS`, default 1000); tuples seen
+under budget pass through, and once it's exhausted every _new_ tuple
+collapses into one fixed sentinel bucket (level preserved, already bounded
+to 7 names). Worst-case added cardinality is therefore `budget + |levels|`
+regardless of producer behavior. A throttled `warn` names a sample
+offending tuple so the bug stays diagnosable.
+
+### Shipper hardening (Phase 8)
+
+No log sampling: this is a single-user system, so every log ships in full.
+(The W3C `sampled` bit still rides `traceparent` for spec correctness and
+defaults to "sampled" — but no producer ever clears it.)
+
+**Backoff + overflow.** Backoff is full-jitter (the doubling ceiling, then a
+uniform wait in `[1, ceil]`) so a fleet of shippers reconnecting after a
+Kansoku blip doesn't resynchronize onto one retry tick. `dropPolicy`
+(`"oldest"` default, recency-biased; `"newest"` preserves the incident
+head) selects which end overflow discards. The shipper stays an in-process
+stream (not a pino worker-thread transport) by design — it composes in the
+same multistream as the console stream and the trace mixin reads
+AsyncLocalStorage synchronously at log-call time; a worker boundary would
+sever both, and the shipper does no CPU-bound work.
 
 A brand-new error fingerprint optionally fires a webhook configured via
 `KANSOKU_ALERT_WEBHOOK_URL`. The hook is fail-open at every step (5 s
@@ -233,10 +292,29 @@ enriched automatically. The shipper's envelope already accepts these fields,
 and the server-side normalizer keeps them as top-level keys on `StoredLog`
 for fast indexed lookup (`{ traceId: 1 }` sparse index).
 
-`GET /v1/traces/:id` returns every log line sharing the given traceId,
-oldest-first. The dashboard's `/traces/[id]` page groups by `spanId`, walks
-parent-child links into a tree, and renders a waterfall (offset + duration
-proportional to the total trace window) above a flat log timeline.
+`GET /v1/traces/:id` returns `{ traceId, logs, spans }` — every log line
+sharing the traceId (oldest-first) plus any real spans.
+
+### Build-light spans (Phase 8)
+
+The "build" fork of the spans decision (vs. adopting OpenTelemetry).
+`@kagami/logger`'s `runWithSpan(name, fn)` opens a child span of the active
+trace, times it, and emits **one ECS log line** on completion:
+`event.kind:"span"` + `event.{name,duration_ms,status}` + the span's own
+`trace.id`/`span.id`/`span.parent.id` (via a sink `createLogger` registers —
+it overrides the mixin so the line carries the span's own ids, not the
+parent's). No SDK, no second exporter: a span event is just a log, so it
+also shows in tail/search.
+
+Kansoku ingest folds those lines into the regular `spans` collection
+(`storage/spans.ts`, `_id = traceId:spanId`, idempotent on resend,
+fire-and-forget like error fingerprints). The dashboard `/traces/[id]` page
+renders a real waterfall from `spans` (accurate `durationMs`, explicit
+parent/child tree, ok/error status) when present, and **gracefully falls
+back** to the old log-timestamp-derived approximation for traces that
+predate this. `tracedFetch` still deliberately mints no client RPC span —
+with `runWithSpan` available, an explicit span at the call site is the
+lightweight path; auto-instrumenting fetch is intentionally not done.
 
 Phase 3 wires the middleware into Kioku and Kansoku itself; Phase 5
 extends it to Kokoro (Grammy middleware per Telegram update, the same
@@ -247,16 +325,17 @@ across all three services.
 
 ## Phased delivery
 
-| Phase | Scope                                                                                                   | Status      |
-| ----- | ------------------------------------------------------------------------------------------------------- | ----------- |
-| 0     | Scaffold (`kansoku/{apps,packages,docs}`, Portless URLs, workspace globs, `/health`)                    | done        |
-| 1     | Mongo time-series setup, `/v1/logs` ingest, Zod envelope, kansoku-stream shipper, wire Kioku end-to-end | done        |
-| 2     | Dashboard `/tail` (SSE) and `/search`                                                                   | done        |
-| 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                    | done        |
-| 4     | Error fingerprinting + `/errors` page                                                                   | done        |
-| 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                          | done        |
-| 6     | Derived metrics + `/services` dashboard                                                                 | done        |
-| 7     | TTL policies, retention dial-in, optional alert webhook on new errors                                   | **this PR** |
+| Phase | Scope                                                                                                                                                                                                                                           | Status      |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 0     | Scaffold (`kansoku/{apps,packages,docs}`, Portless URLs, workspace globs, `/health`)                                                                                                                                                            | done        |
+| 1     | Mongo time-series setup, `/v1/logs` ingest, Zod envelope, kansoku-stream shipper, wire Kioku end-to-end                                                                                                                                         | done        |
+| 2     | Dashboard `/tail` (SSE) and `/search`                                                                                                                                                                                                           | done        |
+| 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                                                                                                                                                            | done        |
+| 4     | Error fingerprinting + `/errors` page                                                                                                                                                                                                           | done        |
+| 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                                                                                                                                                                  | done        |
+| 6     | Derived metrics + `/services` dashboard                                                                                                                                                                                                         | done        |
+| 7     | TTL policies, retention dial-in, optional alert webhook on new errors                                                                                                                                                                           | done        |
+| 8     | Prod-hardening (branch `logging-prod-hardening`): TTY pretty gate, shipper `fetch` timeout + jitter + drop policy, write-then-ack ingest, `errors` TTL, meta cardinality guard, ECS/OTel field-name rename (tolerant ingest), build-light spans | **this PR** |
 
 ## Open questions
 

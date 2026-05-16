@@ -1,12 +1,16 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
+import { performance } from "node:perf_hooks";
 
 /**
  * W3C trace context (https://www.w3.org/TR/trace-context/) carried through
  * the workspace. `traceId` is 32 hex chars; `spanId` is 16 hex. `sampled`
- * follows the W3C flags bit and defaults to true on fresh contexts — the
- * `sampled: false` path is wired (`newTraceContext({ sampled: false })`)
- * but no producer in Kagami uses it today.
+ * follows the W3C flags bit and defaults to true on fresh contexts — every
+ * log ships in full (this is a single-user system; no sampling). The
+ * `sampled: false` path is still wired (`newTraceContext({ sampled: false })`,
+ * `childSpan`/`parseTraceparent` inheritance) for W3C correctness if an
+ * upstream caller ever sends `traceparent` with the bit clear, but no
+ * producer in Kagami sets it.
  */
 export interface TraceContext {
   traceId: string;
@@ -66,7 +70,11 @@ export function formatTraceparent(ctx: TraceContext): string {
   return `00-${ctx.traceId}-${ctx.spanId}-${flags}`;
 }
 
-/** Brand new trace — fresh trace + span IDs, no parent. */
+/**
+ * Brand new trace — fresh trace + span IDs, no parent. `sampled` defaults to
+ * true (ship everything); pass `{ sampled: false }` only if you ever need to
+ * honor an upstream "don't sample" signal.
+ */
 export function newTraceContext(opts: { sampled?: boolean } = {}): TraceContext {
   return {
     traceId: generateTraceId(),
@@ -101,4 +109,68 @@ export function withRootTrace<Args extends unknown[]>(
   return (...args: Args) => {
     void runWithTrace(newTraceContext(), () => fn(...args));
   };
+}
+
+// --- Build-light spans -----------------------------------------------------
+//
+// A span is just timed work on a trace. `runWithSpan` opens a child span,
+// times it, and emits ONE span-end event through a sink. `@kagami/logger`
+// wires the sink to log an ECS line (`event.kind:"span"`), so spans show in
+// tail/search like any log AND get folded into Kansoku's `spans` collection
+// for a real waterfall — no separate SDK/exporter (the "build" fork).
+
+export interface SpanEndEvent {
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string;
+  name: string;
+  startedAt: Date;
+  durationMs: number;
+  status: "ok" | "error";
+}
+
+type SpanSink = (e: SpanEndEvent) => void;
+let spanSink: SpanSink | null = null;
+
+/**
+ * Register the span-end sink. `createLogger` wires this to emit one span
+ * event per completed span. Left unset (a lib used without the factory)
+ * `runWithSpan` still runs the work + context — it just doesn't emit.
+ */
+export function setSpanSink(sink: SpanSink | null): void {
+  spanSink = sink;
+}
+
+/**
+ * Run `fn` inside a fresh child span of the active trace (or a new root if
+ * none), measuring wall-clock duration and emitting one span-end event.
+ * Re-throws so control flow is unchanged; a thrown span is still recorded
+ * with status `"error"`.
+ */
+export async function runWithSpan<T>(name: string, fn: () => Promise<T> | T): Promise<T> {
+  const parent = getTraceContext();
+  const ctx: TraceContext = parent ? childSpan(parent) : newTraceContext();
+  const startedAt = new Date();
+  const start = performance.now();
+  let status: "ok" | "error" = "ok";
+  try {
+    return await runWithTrace(ctx, fn);
+  } catch (err) {
+    status = "error";
+    throw err;
+  } finally {
+    const sink = spanSink;
+    if (sink) {
+      const event: SpanEndEvent = {
+        traceId: ctx.traceId,
+        spanId: ctx.spanId,
+        name,
+        startedAt,
+        durationMs: Math.round(performance.now() - start),
+        status,
+      };
+      if (ctx.parentSpanId) event.parentSpanId = ctx.parentSpanId;
+      sink(event);
+    }
+  }
 }

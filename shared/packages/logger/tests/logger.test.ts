@@ -23,17 +23,17 @@ describe("buildLoggerBase", () => {
 });
 
 describe("createLogger", () => {
-  it("exposes stable service/component/env bindings", () => {
+  it("exposes stable service/component/env bindings in ECS shape", () => {
     const logger = createLogger({
       service: "test-service",
       component: "test-component",
       env: "test",
     });
 
+    // `formatters.bindings` remaps base bindings to ECS resource fields, and
+    // pino applies it to `.bindings()` too.
     expect(logger.bindings()).toMatchObject({
-      service: "test-service",
-      component: "test-component",
-      env: "test",
+      service: { name: "test-service", component: "test-component", environment: "test" },
     });
   });
 
