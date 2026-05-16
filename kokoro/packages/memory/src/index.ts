@@ -123,7 +123,7 @@ async function request<T>(
         `Kioku ${method} ${pathAndQuery} timed out after ${opts.timeoutMs}ms`,
       );
     }
-    logger.error({ err: (err as Error).message, url }, "kioku request transport error");
+    logger.error({ error: err, url }, "kioku request transport error");
     throw new KiokuClientError(
       `Kioku ${method} ${pathAndQuery} transport error: ${(err as Error).message}`,
     );
@@ -168,7 +168,7 @@ export async function appendFactWithRetryQueue(
       sourceSession: input.source_session ?? "appendFact",
       userId: input.user_id,
     });
-    logger.warn({ err: reason, sourceSession: input.source_session }, "queued pending Kioku fact");
+    logger.warn({ error: err, sourceSession: input.source_session }, "queued pending Kioku fact");
     return { status: "queued", queued: true, reason };
   }
 }

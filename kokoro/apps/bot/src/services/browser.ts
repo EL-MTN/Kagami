@@ -239,7 +239,7 @@ export async function shutdownBrowser(): Promise<void> {
       await current.close();
       logger.info("Browser shut down");
     } catch (err) {
-      logger.warn({ err }, "Error closing browser");
+      logger.warn({ error: err }, "Error closing browser");
     }
   }
 }

@@ -54,7 +54,7 @@ export function startIngestScheduler(args: { config: Config }): Scheduler {
       const gcal = await runCalendarSyncOnce(config);
       logTick("gcal", gcal.status, gcal.upserted, gcal.errors, gcal);
     } catch (err) {
-      logger.error({ err }, "ingest tick failed");
+      logger.error({ error: err }, "ingest tick failed");
     } finally {
       running = false;
     }

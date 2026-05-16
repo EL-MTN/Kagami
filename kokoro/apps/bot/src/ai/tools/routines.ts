@@ -238,7 +238,7 @@ export function createManageRoutinesTool(chatId: string) {
         if (isDuplicateKeyError(error)) {
           return { success: false, reason: `A routine named "${name}" already exists` };
         }
-        logger.error({ err: error, action }, "Tool: manageRoutines failed");
+        logger.error({ error: error, action }, "Tool: manageRoutines failed");
         return {
           success: false,
           reason: error instanceof Error ? error.message : "Routine operation failed",
@@ -309,7 +309,7 @@ export function createSearchRoutinesTool(chatId: string) {
           })),
         };
       } catch (error) {
-        logger.error({ err: error }, "Tool: searchRoutines failed");
+        logger.error({ error: error }, "Tool: searchRoutines failed");
         return {
           success: false,
           reason: error instanceof Error ? error.message : "Routine search failed",
@@ -489,7 +489,7 @@ export function createUseRoutineTool(
           result,
         };
       } catch (error) {
-        logger.error({ err: error, routineName }, "Tool: useRoutine failed");
+        logger.error({ error: error, routineName }, "Tool: useRoutine failed");
         return {
           success: false,
           reason: error instanceof Error ? error.message : "Routine invocation failed",

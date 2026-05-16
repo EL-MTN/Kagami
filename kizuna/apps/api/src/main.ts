@@ -34,6 +34,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logger.fatal({ err }, "boot failed");
+  logger.fatal({ error: err }, "boot failed");
   process.exit(1);
 });

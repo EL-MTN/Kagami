@@ -6,38 +6,6 @@ import { createKansokuStream } from "./kansoku-stream.js";
 import type { KansokuStreamOptions } from "./kansoku-stream.js";
 import { getTraceContext } from "./trace.js";
 
-export const DEFAULT_REDACT_PATHS = [
-  "authorization",
-  "cookie",
-  "password",
-  "token",
-  "apiKey",
-  "api_key",
-  "secret",
-  "accessToken",
-  "refreshToken",
-  "headers.authorization",
-  "headers.cookie",
-  "req.headers.authorization",
-  "req.headers.cookie",
-  "*.authorization",
-  "*.cookie",
-  "*.password",
-  "*.token",
-  "*.apiKey",
-  "*.api_key",
-  "*.secret",
-  "*.accessToken",
-  "*.refreshToken",
-  // Base64 image payloads: scrubbed before they can leave the process. Belt
-  // for the centralized logger's mouth — covers Kokoro's existing shape plus
-  // common nesting one level deep.
-  "imageData",
-  "*.imageData",
-  "message.imageData",
-  "messages[*].imageData",
-];
-
 export interface ServiceBindings {
   service: string;
   component: string;
@@ -89,26 +57,12 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
   const pinoOptions: LoggerOptions = {
     level,
     base: buildLoggerBase({ service, component, env }),
-    redact: {
-      paths: DEFAULT_REDACT_PATHS,
-      censor: (value, path) => {
-        const tail = path[path.length - 1];
-        if (tail === "imageData") {
-          // Preserve the byte-size hint for any binary-ish shape we
-          // recognize — strings or any typed-array view (which includes
-          // Node `Buffer` since Buffer extends Uint8Array). Anything else
-          // falls through to a generic placeholder.
-          if (typeof value === "string") {
-            return `[base64 omitted, ~${value.length}b]`;
-          }
-          if (value instanceof Uint8Array) {
-            return `[binary omitted, ${value.byteLength}b]`;
-          }
-          return "[imageData omitted]";
-        }
-        return "[redacted]";
-      },
-    },
+    // The workspace-wide error convention is `logger.<level>({ error }, msg)`.
+    // `errorKey` routes a bare Error first-arg to the same `error` key, and
+    // pino's standard error serializer expands it into { type, message, stack }
+    // so failures keep their stack on the wire.
+    errorKey: "error",
+    serializers: { error: pino.stdSerializers.err },
     // Mixin runs on every log call and merges its return value into the
     // emitted record. Reading from AsyncLocalStorage means every log line
     // inside a traced request auto-includes traceId/spanId without callers

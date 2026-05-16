@@ -197,7 +197,7 @@ export async function getEmailById(messageId: string): Promise<EmailDetail | nul
       body: body.slice(0, 2000),
     };
   } catch (error) {
-    logger.error({ err: error, messageId }, "Failed to get email by ID");
+    logger.error({ error: error, messageId }, "Failed to get email by ID");
     return null;
   }
 }

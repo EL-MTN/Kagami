@@ -78,7 +78,7 @@ export async function upsertEntitiesFromFacts(
     try {
       newEmbeddings = await embedTexts(newKeys.map((k) => pending.get(k)!.display));
     } catch (error) {
-      logger.warn({ err: error, entityKeys: newKeys }, "entity embedding failed");
+      logger.warn({ error, entityKeys: newKeys }, "entity embedding failed");
       newEmbeddings = newKeys.map(() => []);
     }
   }

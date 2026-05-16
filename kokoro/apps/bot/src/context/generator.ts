@@ -32,7 +32,7 @@ async function loadDir(dirPath: string): Promise<RefImage[]> {
   try {
     files = await fs.readdir(dirPath);
   } catch (err) {
-    logger.debug({ err, dirPath }, "reference image dir unreadable — skipping");
+    logger.debug({ error: err, dirPath }, "reference image dir unreadable — skipping");
     return [];
   }
 
@@ -62,7 +62,7 @@ async function loadSettings(): Promise<void> {
   try {
     files = await fs.readdir(settingsDir);
   } catch (err) {
-    logger.debug({ err, settingsDir }, "settings dir unreadable — skipping");
+    logger.debug({ error: err, settingsDir }, "settings dir unreadable — skipping");
     return;
   }
 
@@ -84,7 +84,7 @@ async function loadImagePrefix(): Promise<void> {
     imagePrefix = (await fs.readFile(prefixPath, "utf-8")).trim();
     logger.info({ length: imagePrefix.length }, "Loaded image prefix");
   } catch (err) {
-    logger.debug({ err, prefixPath }, "image-prefix.md unreadable — using empty prefix");
+    logger.debug({ error: err, prefixPath }, "image-prefix.md unreadable — using empty prefix");
     imagePrefix = "";
   }
 }
@@ -215,7 +215,7 @@ Return ONLY the setting name, nothing else.`,
     logger.info({ selected: original, total: settingsMap.size }, "Selected setting for scene");
     return { name: original, description: settingsMap.get(original)! };
   } catch (error) {
-    logger.warn({ err: error }, "Setting selection failed — skipping");
+    logger.warn({ error: error }, "Setting selection failed — skipping");
     return null;
   }
 }

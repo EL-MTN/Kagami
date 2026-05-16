@@ -118,11 +118,21 @@ export async function handleMessage(
     assembleMessages(incoming.chatId),
   ]);
 
+  const lastContent = messages.at(-1)?.content;
+  const lastMessagePreview =
+    typeof lastContent === "string"
+      ? lastContent.slice(0, 80)
+      : Array.isArray(lastContent)
+        ? lastContent
+            .map((part) => (part.type === "text" ? part.text.slice(0, 80) : `[${part.type}]`))
+            .join(" ")
+        : undefined;
+
   logger.debug(
     {
       systemPromptLength: systemPrompt.length,
       messageCount: messages.length,
-      lastMessage: JSON.stringify(messages.at(-1)?.content)?.slice(0, 80),
+      lastMessagePreview,
     },
     "Context assembled",
   );

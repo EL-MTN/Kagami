@@ -41,8 +41,9 @@ app.use(
       if (res.statusCode >= 400) return "warn";
       return "info";
     },
+    customAttributeKeys: { err: "error" },
     serializers: {
-      err: pino.stdSerializers.err,
+      error: pino.stdSerializers.err,
       req: (req: { method?: string; url?: string; id?: string | number }) => ({
         method: req.method,
         url: req.url,
@@ -67,7 +68,10 @@ const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     res.status(400).json({ error: "validation_error", issues: err.issues });
     return;
   }
-  req.log.error({ err, method: req.method, url: req.originalUrl }, "unhandled request error");
+  req.log.error(
+    { error: err, method: req.method, url: req.originalUrl },
+    "unhandled request error",
+  );
   if (!res.headersSent) {
     res.status(500).json({ error: "internal_error" });
   }
@@ -80,7 +84,7 @@ async function main(): Promise<void> {
   try {
     await ensureIndexes();
   } catch (err) {
-    logger.error({ err }, "kioku startup failed");
+    logger.error({ error: err }, "kioku startup failed");
     process.exit(1);
   }
 

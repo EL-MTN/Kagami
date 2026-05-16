@@ -75,7 +75,7 @@ function scheduleNext(chatId: string, userId: string, delayMs?: number): void {
 
   // Persist so we survive restarts
   setNextProactiveAt(chatId, nextAt).catch((error) => {
-    logger.error({ err: error, chatId }, "Failed to persist scheduler state");
+    logger.error({ error: error, chatId }, "Failed to persist scheduler state");
   });
 
   // Each per-chat fire is its own root trace — logs from the AI turn and
@@ -85,7 +85,7 @@ function scheduleNext(chatId: string, userId: string, delayMs?: number): void {
     withRootTrace(() => {
       timers.delete(chatId);
       fireProactive(chatId, userId).catch((error) => {
-        logger.error({ err: error, chatId }, "Proactive fire failed");
+        logger.error({ error: error, chatId }, "Proactive fire failed");
         scheduleNext(chatId, userId);
       });
     }),
@@ -135,7 +135,7 @@ async function fireProactive(chatId: string, userId: string): Promise<void> {
   try {
     await generateProactiveMessage(chatId, userId, adapter);
   } catch (error) {
-    logger.error({ err: error, chatId }, "Failed to send proactive message");
+    logger.error({ error: error, chatId }, "Failed to send proactive message");
   }
 
   // Schedule next
@@ -272,7 +272,7 @@ function bootstrapProactiveTimerFor(chatId: string, userId: string): void {
       scheduleNext(chatId, userId, delay);
     })
     .catch((error) => {
-      logger.error({ err: error, chatId }, "Failed to init proactive timer");
+      logger.error({ error: error, chatId }, "Failed to init proactive timer");
       scheduleNext(chatId, userId, randomBetween(STARTUP_MIN, STARTUP_MAX));
     });
 }
