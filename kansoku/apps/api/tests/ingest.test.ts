@@ -150,6 +150,62 @@ it("accepts the new wire format: ISO-8601 string time + string level", async () 
   expect(logs[0]!.ts.toISOString()).toBe("2026-05-15T12:34:56.000Z");
 });
 
+it("accepts the ECS wire shape and normalizes it to the same StoredLog", async () => {
+  const ecs = {
+    "@timestamp": "2026-05-15T12:34:56.000Z",
+    log: { level: "error" },
+    service: { name: "ecs-svc", environment: "test", component: "worker" },
+    host: { name: "h1" },
+    process: { pid: 99 },
+    trace: { id: "ecs-trace-1" },
+    span: { id: "ecs-span-1", parent: { id: "ecs-parent-1" } },
+    message: "ecs round trip",
+    error: {
+      type: "BoomError",
+      message: "kaboom",
+      stack_trace: "BoomError: kaboom\n    at boom (/app/x.js:1:1)",
+    },
+    userField: 7,
+  };
+  const res = await fetch(`${baseUrl}/v1/logs`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-kansoku-auth": TOKEN },
+    body: JSON.stringify([ecs]),
+  });
+  expect(res.status).toBe(202);
+
+  await waitForLogCount(1);
+  const { queryLogs } = await import("../src/storage/logs.ts");
+  const logs = await queryLogs({ service: "ecs-svc" });
+  expect(logs).toHaveLength(1);
+  const doc = logs[0]!;
+  expect(doc.meta).toEqual({
+    service: "ecs-svc",
+    component: "worker",
+    env: "test",
+    level: "error",
+  });
+  expect(doc.ts.toISOString()).toBe("2026-05-15T12:34:56.000Z");
+  expect(doc.msg).toBe("ecs round trip");
+  expect(doc.traceId).toBe("ecs-trace-1");
+  expect(doc.spanId).toBe("ecs-span-1");
+  expect(doc.parentSpanId).toBe("ecs-parent-1");
+  expect(doc.fields).toMatchObject({ userField: 7, pid: 99, hostname: "h1" });
+
+  // The ECS error object (type/stack_trace) must still fingerprint. The
+  // errors upsert is fire-and-forget (parallel to the log write), so poll.
+  const { listErrors } = await import("../src/storage/errors.ts");
+  const deadline = Date.now() + 5_000;
+  let errs = await listErrors({ service: "ecs-svc" });
+  while (errs.length < 1 && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 50));
+    errs = await listErrors({ service: "ecs-svc" });
+  }
+  expect(errs).toHaveLength(1);
+  expect(errs[0]!.name).toBe("BoomError");
+  expect(errs[0]!.message).toBe("kaboom");
+});
+
 it('collapses an unrecognized level to "unknown" rather than leaking cardinality', async () => {
   const res = await fetch(`${baseUrl}/v1/logs`, {
     method: "POST",

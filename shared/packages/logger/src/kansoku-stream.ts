@@ -68,10 +68,14 @@ function isSampledOutNoise(line: string): boolean {
   // keep-all path never pays for a JSON.parse.
   if (!line.includes('"sampled":false')) return false;
   try {
-    const rec = JSON.parse(line) as { level?: unknown; sampled?: unknown };
+    const rec = JSON.parse(line) as {
+      level?: unknown;
+      log?: { level?: unknown };
+      sampled?: unknown;
+    };
     if (rec.sampled !== false) return false;
-    const lvl = rec.level;
-    // String level (current wire form) or legacy pino numeric.
+    // ECS `log.level` (current) or legacy flat `level` (string or pino numeric).
+    const lvl = rec.log && typeof rec.log === "object" ? rec.log.level : rec.level;
     const rank =
       typeof lvl === "number" ? lvl : typeof lvl === "string" ? LEVEL_RANK[lvl] : undefined;
     return rank !== undefined && rank < WARN_RANK;
