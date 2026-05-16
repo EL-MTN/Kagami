@@ -41,48 +41,9 @@ interface KansokuStreamInternals {
   bufferSize(): number;
   /** @internal — total events dropped due to overflow since process start. */
   droppedTotal(): number;
-  /** @internal — total below-warn lines not shipped due to head sampling. */
-  sampledOutTotal(): number;
 }
 
 export type KansokuStream = Writable & KansokuStreamInternals;
-
-// Head sampling enforcement. A sampled-out trace tags its lines with
-// `"sampled":false` (the @kagami/logger mixin). We ship those only when
-// they're warn or worse — problems must never be sampled away — and drop
-// the below-warn noise before it touches the wire (saves bandwidth at the
-// producer, which is the right place to enforce). Everything else, and any
-// line we can't classify, is kept (fail-open).
-const LEVEL_RANK: Record<string, number> = {
-  trace: 10,
-  debug: 20,
-  info: 30,
-  warn: 40,
-  error: 50,
-  fatal: 60,
-};
-const WARN_RANK = 40;
-
-function isSampledOutNoise(line: string): boolean {
-  // Substring prefilter: only sampled-out lines carry this, so the common
-  // keep-all path never pays for a JSON.parse.
-  if (!line.includes('"sampled":false')) return false;
-  try {
-    const rec = JSON.parse(line) as {
-      level?: unknown;
-      log?: { level?: unknown };
-      sampled?: unknown;
-    };
-    if (rec.sampled !== false) return false;
-    // ECS `log.level` (current) or legacy flat `level` (string or pino numeric).
-    const lvl = rec.log && typeof rec.log === "object" ? rec.log.level : rec.level;
-    const rank =
-      typeof lvl === "number" ? lvl : typeof lvl === "string" ? LEVEL_RANK[lvl] : undefined;
-    return rank !== undefined && rank < WARN_RANK;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Pino destination stream that batches NDJSON log lines and POSTs them to
@@ -132,7 +93,6 @@ export function createKansokuStream(opts: KansokuStreamOptions): KansokuStream {
   let inFlightPromise: Promise<void> | null = null;
   let droppedSinceLastSuccess = 0;
   let droppedTotal = 0;
-  let sampledOutTotal = 0;
   let backoffMs = batchIntervalMs;
 
   const scheduleFlush = (): void => {
@@ -226,13 +186,6 @@ export function createKansokuStream(opts: KansokuStreamOptions): KansokuStream {
       const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
       for (const line of text.split("\n")) {
         if (!line) continue;
-        // Head sampling: a sampled-out trace's below-warn lines never reach
-        // the wire. This is intentional shedding, not loss — it does NOT
-        // count toward droppedTotal / x-kansoku-dropped.
-        if (isSampledOutNoise(line)) {
-          sampledOutTotal += 1;
-          continue;
-        }
         buffer.push(line);
         if (buffer.length > bufferLimit) {
           // "newest": drop the line we just pushed (reject the arrival,
@@ -281,7 +234,6 @@ export function createKansokuStream(opts: KansokuStreamOptions): KansokuStream {
 
   stream.bufferSize = () => buffer.length;
   stream.droppedTotal = () => droppedTotal;
-  stream.sampledOutTotal = () => sampledOutTotal;
 
   return stream;
 }

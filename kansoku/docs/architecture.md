@@ -42,8 +42,6 @@ service code
         └─ pino multistream (in-process, no worker threads):
               ├─ stdout (pino-pretty on a TTY or LOG_PRETTY=1, else raw JSON)
               └─ kansoku-stream  (shared/packages/logger/src/kansoku-stream.ts)
-                    ├─ head sampling: below-warn lines on a sampled-out
-                    │  trace are shed here (never hit the wire)
                     └─ buffer (250ms or 50 events, whichever first)
                           └─ POST https://api.kansoku.localhost/v1/logs
                                 ├─ constant-time check of x-kansoku-auth
@@ -122,18 +120,13 @@ to 7 names). Worst-case added cardinality is therefore `budget + |levels|`
 regardless of producer behavior. A throttled `warn` names a sample
 offending tuple so the bug stays diagnosable.
 
-### Sampling + shipper durability (Phase 8)
+### Shipper hardening (Phase 8)
 
-**Head sampling.** A fresh root trace's `sampled` bit is a head decision
-from `LOG_SAMPLE_RATE` (default 1 = keep everything; `childSpan` /
-`traceparent` inherit it so the call is made once at the root). Enforcement
-is producer-side in the shipper — it's the cheapest place and saves wire
-bandwidth: on a sampled-out trace, below-`warn` lines are shed before
-buffering (`warn`/`error`/`fatal` always ship, so problems are never
-sampled away). Kansoku ingest needs no change; an incoming `sampled:false`
-just rides along into `fields`.
+No log sampling: this is a single-user system, so every log ships in full.
+(The W3C `sampled` bit still rides `traceparent` for spec correctness and
+defaults to "sampled" — but no producer ever clears it.)
 
-**Shipper hardening.** Backoff is full-jitter (the doubling ceiling, then a
+**Backoff + overflow.** Backoff is full-jitter (the doubling ceiling, then a
 uniform wait in `[1, ceil]`) so a fleet of shippers reconnecting after a
 Kansoku blip doesn't resynchronize onto one retry tick. `dropPolicy`
 (`"oldest"` default, recency-biased; `"newest"` preserves the incident
@@ -332,17 +325,17 @@ across all three services.
 
 ## Phased delivery
 
-| Phase | Scope                                                                                                                                                                                                                                                          | Status      |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| 0     | Scaffold (`kansoku/{apps,packages,docs}`, Portless URLs, workspace globs, `/health`)                                                                                                                                                                           | done        |
-| 1     | Mongo time-series setup, `/v1/logs` ingest, Zod envelope, kansoku-stream shipper, wire Kioku end-to-end                                                                                                                                                        | done        |
-| 2     | Dashboard `/tail` (SSE) and `/search`                                                                                                                                                                                                                          | done        |
-| 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                                                                                                                                                                           | done        |
-| 4     | Error fingerprinting + `/errors` page                                                                                                                                                                                                                          | done        |
-| 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                                                                                                                                                                                 | done        |
-| 6     | Derived metrics + `/services` dashboard                                                                                                                                                                                                                        | done        |
-| 7     | TTL policies, retention dial-in, optional alert webhook on new errors                                                                                                                                                                                          | done        |
-| 8     | Prod-hardening (branch `logging-prod-hardening`): TTY pretty gate, shipper `fetch` timeout + jitter + drop policy, write-then-ack ingest, `errors` TTL, meta cardinality guard, head sampling, ECS/OTel field-name rename (tolerant ingest), build-light spans | **this PR** |
+| Phase | Scope                                                                                                                                                                                                                                           | Status      |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 0     | Scaffold (`kansoku/{apps,packages,docs}`, Portless URLs, workspace globs, `/health`)                                                                                                                                                            | done        |
+| 1     | Mongo time-series setup, `/v1/logs` ingest, Zod envelope, kansoku-stream shipper, wire Kioku end-to-end                                                                                                                                         | done        |
+| 2     | Dashboard `/tail` (SSE) and `/search`                                                                                                                                                                                                           | done        |
+| 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                                                                                                                                                            | done        |
+| 4     | Error fingerprinting + `/errors` page                                                                                                                                                                                                           | done        |
+| 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                                                                                                                                                                  | done        |
+| 6     | Derived metrics + `/services` dashboard                                                                                                                                                                                                         | done        |
+| 7     | TTL policies, retention dial-in, optional alert webhook on new errors                                                                                                                                                                           | done        |
+| 8     | Prod-hardening (branch `logging-prod-hardening`): TTY pretty gate, shipper `fetch` timeout + jitter + drop policy, write-then-ack ingest, `errors` TTL, meta cardinality guard, ECS/OTel field-name rename (tolerant ingest), build-light spans | **this PR** |
 
 ## Open questions
 

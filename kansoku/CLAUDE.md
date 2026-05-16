@@ -14,7 +14,7 @@ This file is the project guide. Cross-service facts live in the workspace root: 
 
 - **Wire format is ECS / OTel** (`log.level`, `@timestamp`, `service.{name,environment,component}`, `host.name`, `process.pid`, `trace.id`, `span.{id,parent.id}`, `error.{type,message,stack_trace}`, `message`). `lib/envelope.ts` tolerantly accepts BOTH the ECS shape and the legacy flat form and normalizes both to the unchanged internal `StoredLog`, so queries/metrics/errors/dashboard are untouched and producers/consumer needn't restart in lock-step.
 - **Build-light spans.** `@kagami/logger`'s `runWithSpan` emits `event.kind:"span"` log lines; `storage/spans.ts` folds them into a regular `spans` collection (`_id = traceId:spanId`); `GET /v1/traces/:id` returns `{ logs, spans }`; the dashboard renders a real waterfall (graceful fallback to the log-derived approximation for old traces).
-- **Durability + sampling + cardinality.** Ingest is write-then-ack (503 → shipper requeues); `KANSOKU_ERRORS_TTL_DAYS` (90) and the logs TTL on `spans`; `KANSOKU_MAX_META_COMBOS` (1000) cardinality budget (`lib/cardinality.ts`); `LOG_SAMPLE_RATE` head sampling enforced producer-side. Fixed a pre-existing `recordErrors` bug that silently dropped every traced error.
+- **Durability + sampling + cardinality.** Ingest is write-then-ack (503 → shipper requeues); `KANSOKU_ERRORS_TTL_DAYS` (90) and the logs TTL on `spans`; `KANSOKU_MAX_META_COMBOS` (1000) cardinality budget (`lib/cardinality.ts`). Fixed a pre-existing `recordErrors` bug that silently dropped every traced error.
 
 **Phase 7 — retention dial-in + new-error alerts live.** On top of Phases 0–6:
 
