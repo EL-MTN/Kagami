@@ -42,9 +42,13 @@ it("ships warn+ but not below-warn lines from a sampled-out trace", async () => 
   });
 
   await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
-  const lines = shippedLines() as Array<{ msg?: string; level?: string; sampled?: boolean }>;
-  expect(lines.map((l) => l.msg)).toEqual(["kept error"]);
-  expect(lines[0]?.level).toBe("error");
+  const lines = shippedLines() as Array<{
+    message?: string;
+    log?: { level?: string };
+    sampled?: boolean;
+  }>;
+  expect(lines.map((l) => l.message)).toEqual(["kept error"]);
+  expect(lines[0]?.log?.level).toBe("error");
   expect(lines[0]?.sampled).toBe(false);
 });
 
@@ -63,7 +67,7 @@ it("ships everything from a sampled-in trace (no sampled flag emitted)", async (
   });
 
   await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
-  const lines = shippedLines() as Array<{ msg?: string; sampled?: boolean }>;
-  expect(lines.map((l) => l.msg)).toEqual(["kept debug", "kept info"]);
+  const lines = shippedLines() as Array<{ message?: string; sampled?: boolean }>;
+  expect(lines.map((l) => l.message)).toEqual(["kept debug", "kept info"]);
   expect(lines.every((l) => l.sampled === undefined)).toBe(true);
 });

@@ -1,10 +1,9 @@
 import { expect, it } from "vitest";
 import { logger } from "../src/lib/logger.js";
 
-it("sets stable Kizuna service bindings", () => {
+it("sets stable Kizuna service bindings (ECS shape)", () => {
   expect(logger.bindings()).toMatchObject({
-    service: "kizuna-api",
-    component: "api",
+    service: { name: "kizuna-api", component: "api" },
   });
-  expect(logger.bindings()).toHaveProperty("env");
+  expect(logger.bindings()).toHaveProperty("service.environment");
 });

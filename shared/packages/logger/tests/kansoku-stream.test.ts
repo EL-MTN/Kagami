@@ -226,6 +226,22 @@ describe("head sampling", () => {
     ]);
   });
 
+  it("reads the ECS log.level shape for the sampling decision", async () => {
+    fetchMock.mockResolvedValue(ok());
+    const s = mk({ batchSize: 100, batchIntervalMs: 50 });
+
+    s.write('{"log":{"level":"info"},"sampled":false,"message":"a"}\n'); // shed
+    s.write('{"log":{"level":"error"},"sampled":false,"message":"b"}\n'); // ship
+    s.write('{"log":{"level":"info"},"message":"c"}\n'); // sampled in → ship
+
+    expect(s.sampledOutTotal()).toBe(1);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(bodyOf(0)).toEqual([
+      { log: { level: "error" }, sampled: false, message: "b" },
+      { log: { level: "info" }, message: "c" },
+    ]);
+  });
+
   it("keeps everything when no trace is sampled out (zero overhead path)", async () => {
     fetchMock.mockResolvedValue(ok());
     const s = mk({ batchSize: 2, batchIntervalMs: 50 });

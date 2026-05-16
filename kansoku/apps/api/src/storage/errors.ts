@@ -50,7 +50,6 @@ export async function recordErrors(docs: StoredLog[]): Promise<void> {
       component: doc.meta.component,
       message: fp.message,
       firstSeen: doc.ts,
-      recentTraceIds: [],
     };
     if (fp.name !== undefined) setOnInsert.name = fp.name;
     if (fp.sampleStack !== undefined) setOnInsert.sampleStack = fp.sampleStack;
@@ -62,7 +61,15 @@ export async function recordErrors(docs: StoredLog[]): Promise<void> {
       $inc: { count: 1 },
     };
     if (doc.traceId) {
+      // Mongo forbids touching the same path in $setOnInsert and $push in
+      // one update ("would create a conflict"). $push with $slice creates
+      // the array on insert anyway, so we only seed an empty
+      // `recentTraceIds` via $setOnInsert when there's no traceId to push.
+      // (Pre-fix this rejected EVERY traced error — the registry silently
+      // only ever recorded errors logged outside a trace.)
       update.$push = { recentTraceIds: { $each: [doc.traceId], $slice: -RECENT_TRACE_CAP } };
+    } else {
+      setOnInsert.recentTraceIds = [];
     }
 
     // Each upsert is its own task so one failing doc doesn't poison the

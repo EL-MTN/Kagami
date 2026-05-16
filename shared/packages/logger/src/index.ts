@@ -29,12 +29,40 @@ export function buildLoggerBase(bindings: ServiceBindings): LoggerBaseBindings {
 
 const PINO_LEVELS = new Set<string>(["trace", "debug", "info", "warn", "error", "fatal", "silent"]);
 
-// Emit `"level":"info"` instead of pino's numeric `30`. Off-the-shelf log
-// tooling (Datadog/Loki/ELK/OTel) keys severity off a string label; the
-// numeric form needs a per-vendor decoder ring. Kansoku ingest accepts both
-// the string and legacy-numeric forms during the rollout window, so this is
-// safe to flip ahead of every producer restarting.
-const stringLevelFormatter = (label: string): { level: string } => ({ level: label });
+// Field names follow ECS / OTel resource semantic conventions so logs drop
+// straight into Datadog/Loki/ELK/OTel-native backends with no per-vendor
+// remap. Nested form (`log.level`, `service.name`, …) is the canonical ECS
+// data model — cleaner JSON than dotted flat keys and pino-pretty resolves
+// it via dotted key paths. The string severity label (vs pino's numeric
+// `30`) and the ISO-8601 `@timestamp` are part of the same portability win.
+// Kansoku ingest still accepts every legacy key during the rollout window,
+// so producers and the consumer needn't restart in lock-step.
+const ecsLevelFormatter = (label: string): object => ({ log: { level: label } });
+
+const ecsBindingsFormatter = (b: pino.Bindings): object => {
+  // `base` is always our `LoggerBaseBindings` (set via `base:` below); the
+  // cast narrows pino's `Record<string, any>` Bindings off the `any` path.
+  const base = b as LoggerBaseBindings;
+  return {
+    service: { name: base.service, environment: base.env, component: base.component },
+    host: { name: base.hostname },
+    process: { pid: base.pid },
+  };
+};
+
+// pino's `timestamp` returns the raw `,"key":value` fragment, so this is the
+// only place the time *key* can be renamed (`formatters` can't). `@timestamp`
+// is the ECS canonical event time.
+const ecsTimestamp = (): string => `,"@timestamp":"${new Date().toISOString()}"`;
+
+// ECS error fields are `error.type` / `error.message` / `error.stack_trace`
+// (no `error.name`/`error.stack`). Reuse pino's std serializer for the cause
+// chain + aggregate handling, then rename `stack` → `stack_trace`.
+const ecsErrorSerializer = (e: unknown): object => {
+  const s = pino.stdSerializers.err(e as Error) as Record<string, unknown> & { stack?: string };
+  const { stack, ...rest } = s;
+  return { ...rest, stack_trace: stack };
+};
 
 // Console rendering decision, decoupled from `env`. `env !== "production"`
 // silently broke stdout collectors on any deployed box with an unset
@@ -77,21 +105,19 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
   const pinoOptions: LoggerOptions = {
     level,
     base: buildLoggerBase({ service, component, env }),
-    // ISO-8601 timestamps (`"time":"2026-05-15T…Z"`) instead of epoch-ms.
-    // Same portability rationale as the string level: collectors and trace
-    // backends parse RFC3339 natively; epoch-ms needs a transform step.
-    // Kansoku ingest accepts both forms during rollout.
-    timestamp: pino.stdTimeFunctions.isoTime,
-    // The workspace-wide error convention is `logger.<level>({ error }, msg)`.
-    // `errorKey` routes a bare Error first-arg to the same `error` key, and
-    // pino's standard error serializer expands it into { type, message, stack }
-    // so failures keep their stack on the wire.
+    // ECS event time as `@timestamp` (ISO-8601), not epoch-ms `time`.
+    timestamp: ecsTimestamp,
+    // ECS message field (`message`, not pino's default `msg`).
+    messageKey: "message",
+    // Workspace error convention `logger.<level>({ error }, msg)`. `errorKey`
+    // routes a bare Error first-arg to the same `error` key; the serializer
+    // expands it to ECS `error.{type,message,stack_trace}` (+ cause chain).
     errorKey: "error",
-    serializers: { error: pino.stdSerializers.err },
+    serializers: { error: ecsErrorSerializer },
     // Mixin runs on every log call and merges its return value into the
     // emitted record. Reading from AsyncLocalStorage means every log line
-    // inside a traced request auto-includes traceId/spanId without callers
-    // having to thread context manually. The return value is the target of
+    // inside a traced request auto-includes the ECS trace fields without
+    // callers threading context manually. The return value is the target of
     // pino's default `Object.assign(mixinObject, mergeObject)` strategy, so
     // we MUST return a fresh extensible object every call — a shared/frozen
     // sentinel would throw on any `logger.info({...}, "msg")` outside a
@@ -99,20 +125,19 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
     mixin: () => {
       const ctx = getTraceContext();
       if (!ctx) return {};
-      const out: Record<string, unknown> = { traceId: ctx.traceId, spanId: ctx.spanId };
-      if (ctx.parentSpanId) out.parentSpanId = ctx.parentSpanId;
-      // Emit `sampled` only when the trace was sampled out. The Kansoku
-      // shipper keys head sampling off this: below-warn lines on a
-      // sampled-out trace aren't shipped (warn+ always are). Absence ⇒
-      // sampled, so records stay lean in the common (keep-all) case.
+      const span: Record<string, unknown> = { id: ctx.spanId };
+      if (ctx.parentSpanId) span.parent = { id: ctx.parentSpanId };
+      const out: Record<string, unknown> = { trace: { id: ctx.traceId }, span };
+      // `sampled` is an internal shipper hint (not an ECS field): the
+      // Kansoku stream keys head sampling off it — below-warn lines on a
+      // sampled-out trace aren't shipped (warn+ always are). Emitted only
+      // when sampled out, so records stay lean in the keep-all case.
       if (ctx.sampled === false) out.sampled = false;
       return out;
     },
-    // Default to the string-level formatter; let an explicit caller
-    // `formatters.level` (or `.bindings`/`.log`) win. Spreading `formatters`
-    // last means a caller can override the level shape but doesn't lose it
-    // by passing only `bindings`/`log`.
-    formatters: { level: stringLevelFormatter, ...formatters },
+    // ECS level/bindings formatters as defaults; an explicit caller
+    // `formatters.*` still wins (spread last) without losing the others.
+    formatters: { level: ecsLevelFormatter, bindings: ecsBindingsFormatter, ...formatters },
   };
 
   // Console rendering: human-pretty on a TTY (or `LOG_PRETTY=1`), raw NDJSON
@@ -120,7 +145,16 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
   // worker-thread transports) so multistream can compose them with the
   // Kansoku shipper without bridging worker boundaries.
   const consoleStream: NodeJS.WritableStream = shouldPretty()
-    ? pretty({ colorize: true, translateTime: "HH:MM:ss.l", ignore: "pid,hostname" })
+    ? pretty({
+        colorize: true,
+        translateTime: "HH:MM:ss.l",
+        // Match the ECS field names so dev output still renders level/time/
+        // message; hide the verbose resource objects.
+        levelKey: "log.level",
+        timestampKey: "@timestamp",
+        messageKey: "message",
+        ignore: "process,host,service",
+      })
     : process.stdout;
 
   if (!kansoku) {
