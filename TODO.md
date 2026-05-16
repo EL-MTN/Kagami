@@ -9,12 +9,14 @@ corrections, and the pre-existing Kioku test lint.
 The three tracks below are the remaining gaps versus production-grade /
 industry-standard logging. Ordered within each track by leverage.
 
-Branch `logging-prod-hardening` (not yet on `main`) ships the non-decision,
-non-architectural subset: track 1's string level / ISO time / TTY pretty
-gate (with tolerant Kansoku ingest), and track 3's Tier-1 `fetch` timeout,
-`kansoku-stream` test suite, `errors` TTL, and `metaField` cardinality
-guard. The remaining open items are the explicit **Decision:** forks plus
-server-side durability and shipper hardening.
+Branch `logging-prod-hardening` (not yet on `main`) ships **all the
+non-decision work** across the three tracks: track 1's string level / ISO
+time / TTY pretty gate (with tolerant Kansoku ingest); track 2's `sampled`
+flag wiring; and track 3 in full — Tier-1 `fetch` timeout, `kansoku-stream`
+test suite, `errors` TTL, `metaField` cardinality guard, head sampling,
+write-then-ack server-side durability, and shipper hardening (jitter +
+drop policy). The only items left open are the two explicit **Decision:**
+forks — see the recommendation at the bottom of this file.
 
 ---
 
@@ -47,12 +49,14 @@ Trace **correlation** is already strong (W3C `traceparent` via
 AsyncLocalStorage, auto-injected `traceId`/`spanId`, `tracedFetch`
 propagation). What's missing is real **spans**.
 
-- [ ] **Decision: build vs. adopt OpenTelemetry.** This is the
-      architectural fork — pick before doing the items below. - Build-light: emit explicit span lifecycle events (start/end,
-      `durationMs`, parent/child, status) from the `@kagami/logger` trace
-      helpers (`runWithTrace`/`childSpan` in `trace.ts`) and have Kansoku
-      store + aggregate a real `spans` collection. - Adopt: OTel SDK + OTLP exporter; Kansoku grows an OTLP endpoint or
-      point at an OTel-native backend.
+- [ ] **Decision: build vs. adopt OpenTelemetry.** The architectural fork —
+      pick before doing the items below. **Build-light**: emit explicit span
+      lifecycle events (start/end, `durationMs`, parent/child, status) from
+      the `@kagami/logger` trace helpers (`runWithTrace`/`childSpan` in
+      `trace.ts`) and have Kansoku store + aggregate a real `spans`
+      collection. **Adopt**: OTel SDK + OTLP exporter; Kansoku grows an OTLP
+      endpoint or points at an OTel-native backend. _(Open — see the
+      recommendation at the bottom of this file.)_
 - [ ] Today a "trace" is just `logs.find({ traceId })`
       (`kansoku/apps/api/src/storage/logs.ts`) — no durations, no waterfall.
       The documented `spans`/`metrics` collections don't exist in code;
@@ -60,8 +64,11 @@ propagation). What's missing is real **spans**.
 - [ ] `traced-fetch.ts` deliberately does **not** mint a client RPC span
       (client and server share one span) — revisit for a real client/server
       split once spans exist.
-- [ ] Wire the existing-but-unused `sampled` flag in `TraceContext`
-      (`trace.ts`) — overlaps with track 3.
+- [x] Wire the existing-but-unused `sampled` flag in `TraceContext`.
+      `newTraceContext` now makes a `LOG_SAMPLE_RATE` head decision;
+      `childSpan`/`traceparent` propagate it; the mixin emits `sampled:false`
+      and the shipper enforces it (see track 3 head sampling).
+      _(branch `logging-prod-hardening`)_
 
 ## 3. Sampling + durability
 
@@ -69,9 +76,12 @@ No sampling anywhere; the ingest path is lossy by design.
 
 **Sampling / cost / cardinality**
 
-- [ ] Head sampling for high-volume `debug`/`info`; always keep `warn`+,
-      errors, and traced-error paths. Honor the `sampled` flag end-to-end
-      (producer multistream + Kansoku ingest).
+- [x] Head sampling for high-volume `debug`/`info`; always keep `warn`+.
+      `LOG_SAMPLE_RATE` (default 1 = keep all) drives the per-root-trace
+      `sampled` head decision; the shipper sheds below-`warn` lines on
+      sampled-out traces producer-side (cheapest place, saves bandwidth);
+      `warn`/`error`/`fatal` always ship. Kansoku ingest unchanged.
+      _(branch `logging-prod-hardening`)_
 - [x] Cardinality guard on Kansoku ingest `metaField`. Implemented as a
       process-lifetime distinct-tuple budget (`KANSOKU_MAX_META_COMBOS`,
       default 1000) in `kansoku/apps/api/src/lib/cardinality.ts`: over-budget
@@ -86,14 +96,18 @@ No sampling anywhere; the ingest path is lossy by design.
       connection aborts, the batch requeues onto the existing
       backoff/requeue path, the in-flight guard clears, and the shipper
       keeps draining. Regression-tested. _(branch `logging-prod-hardening`)_
-- [ ] Server-side durability: ingest returns `202` _before_ the Mongo
-      write (`kansoku/apps/api/src/routes/ingest.ts`), no queue/retry/DLQ →
-      total silent loss during a Mongo outage. Add write-then-ack with a
-      bounded queue, or a producer-side spill/DLQ.
-- [ ] Shipper hardening: drop-**oldest** on overflow loses
-      start-of-incident lines; no retry jitter (thundering herd on Kansoku
-      recovery); runs on the event loop (no worker-thread transport).
-      `kansoku-stream.ts`.
+- [x] Server-side durability: ingest is now **write-then-ack** with a
+      bounded jittered retry; persistent failure → 503 so the shipper
+      requeues into its bounded buffer (the producer-side durable queue)
+      instead of the old fire-and-forget silent loss. Fingerprint upserts
+      stay fire-and-forget (idempotent on resend).
+      `kansoku/apps/api/src/routes/ingest.ts`. _(branch `logging-prod-hardening`)_
+- [x] Shipper hardening: full-jitter backoff (no more thundering herd) and a
+      configurable `dropPolicy` (`oldest` default | `newest` to preserve the
+      incident head). Worker-thread transport **intentionally not done** —
+      it conflicts with the in-process multistream composition and the
+      synchronous trace-mixin read; rationale documented in
+      `kansoku-stream.ts`. _(branch `logging-prod-hardening`)_
 - [x] `errors` collection TTL. TTL index on `errors_last_seen`
       (`KANSOKU_ERRORS_TTL_DAYS`, default 90, capped 365); quiet
       fingerprints age out, active ones never expire. `ensureIndexes`
@@ -106,6 +120,26 @@ No sampling anywhere; the ingest path is lossy by design.
       _(branch `logging-prod-hardening`)_
 
 ---
+
+## Recommendation on the two open forks
+
+Both are genuine product/architecture decisions, deliberately left for a
+human call rather than decided unilaterally.
+
+- **Build vs. adopt OpenTelemetry (track 2).** Recommend **build-light**:
+  emit span lifecycle events from the existing `trace.ts` helpers and add a
+  Kansoku `spans` collection. Rationale: correlation + propagation are
+  already done; the gap is only durations/waterfall. Full OTel SDK + OTLP
+  across four services adds a heavy dependency and a second wire/storage
+  path for a personal-scale workspace that already has a working
+  trace-by-`traceId` model. Adopt OTel only if a third-party
+  OTel-native backend becomes the goal.
+- **ECS / OTel field names (track 1).** Recommend **defer / don't do it**
+  at current scale. The portability win (string level + ISO time) is
+  already banked; a full `service.name` / `log.level` / `error.*` rename is
+  a breaking cross-service churn (producer + Kansoku ingest, queries,
+  dashboard in one PR) with little payoff until logs actually feed an
+  ECS/OTel-native backend. Revisit alongside the OTel decision.
 
 _Out of scope here but tracked elsewhere: redaction reintroduction is a
 hard pre-VPS-exposure blocker recorded in `project_vps_deployment_intent.md`._

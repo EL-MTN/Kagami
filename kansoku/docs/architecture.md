@@ -41,6 +41,8 @@ service code
         └─ pino multistream (in-process, no worker threads):
               ├─ stdout (pino-pretty on a TTY or LOG_PRETTY=1, else raw JSON)
               └─ kansoku-stream  (shared/packages/logger/src/kansoku-stream.ts)
+                    ├─ head sampling: below-warn lines on a sampled-out
+                    │  trace are shed here (never hit the wire)
                     └─ buffer (250ms or 50 events, whichever first)
                           └─ POST https://api.kansoku.localhost/v1/logs
                                 ├─ constant-time check of x-kansoku-auth
@@ -50,16 +52,21 @@ service code
                                 │      level numeric|string → name,
                                 │      meta passed through the cardinality
                                 │      guard, everything else → fields)
-                                └─ async insertMany into the `logs`
-                                   time-series collection
-                          └─ 202 Accepted { accepted: N }
+                                ├─ broadcast to live-tail subscribers
+                                └─ await insertMany into the `logs`
+                                   time-series collection (bounded retry)
+                          └─ 202 Accepted { accepted: N }  (or 503 → requeue)
 ```
 
-The route returns 202 before the Mongo write resolves so the shipper's socket
-closes fast. If Mongo is down at write time the events are lost (the shipper
-has already moved on), but every step before insertMany is synchronous —
-schema validation rejects malformed batches with 400 rather than swallowing
-them.
+Ingest is **write-then-ack**: the live-tail broadcast is synchronous, but
+the 202 is held until the bulk write durably lands (a bounded, jittered
+retry absorbs transient Mongo errors). If the write keeps failing the route
+responds 503, and the shipper — which treats any non-2xx as a failure —
+requeues the batch into its bounded local buffer and backs off. So a Mongo
+outage degrades to "buffered at the producer + retried", not the old
+fire-and-forget total silent loss. Fingerprint upserts stay fire-and-forget
+(derived and idempotent on resend). Schema validation still rejects
+malformed batches with 400 before any of this.
 
 ### Wire envelope
 
@@ -107,6 +114,27 @@ collapses into one fixed sentinel bucket (level preserved, already bounded
 to 7 names). Worst-case added cardinality is therefore `budget + |levels|`
 regardless of producer behavior. A throttled `warn` names a sample
 offending tuple so the bug stays diagnosable.
+
+### Sampling + shipper durability (Phase 8)
+
+**Head sampling.** A fresh root trace's `sampled` bit is a head decision
+from `LOG_SAMPLE_RATE` (default 1 = keep everything; `childSpan` /
+`traceparent` inherit it so the call is made once at the root). Enforcement
+is producer-side in the shipper — it's the cheapest place and saves wire
+bandwidth: on a sampled-out trace, below-`warn` lines are shed before
+buffering (`warn`/`error`/`fatal` always ship, so problems are never
+sampled away). Kansoku ingest needs no change; an incoming `sampled:false`
+just rides along into `fields`.
+
+**Shipper hardening.** Backoff is full-jitter (the doubling ceiling, then a
+uniform wait in `[1, ceil]`) so a fleet of shippers reconnecting after a
+Kansoku blip doesn't resynchronize onto one retry tick. `dropPolicy`
+(`"oldest"` default, recency-biased; `"newest"` preserves the incident
+head) selects which end overflow discards. The shipper stays an in-process
+stream (not a pino worker-thread transport) by design — it composes in the
+same multistream as the console stream and the trace mixin reads
+AsyncLocalStorage synchronously at log-call time; a worker boundary would
+sever both, and the shipper does no CPU-bound work.
 
 A brand-new error fingerprint optionally fires a webhook configured via
 `KANSOKU_ALERT_WEBHOOK_URL`. The hook is fail-open at every step (5 s
