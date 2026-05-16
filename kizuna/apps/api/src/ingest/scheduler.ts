@@ -16,6 +16,23 @@ export type Scheduler = {
  * Manual triggers via POST /sync/{gmail,gcal}/run remain available
  * regardless of the scheduler.
  */
+function logTick(
+  provider: "gmail" | "gcal",
+  status: string,
+  changed: number,
+  errors: number,
+  result: object,
+): void {
+  const fields = { provider, ...result };
+  if (errors > 0) {
+    logger.warn(fields, `${provider} ingest tick: ${errors} error(s)`);
+  } else if (changed > 0 || status !== "ok") {
+    logger.info(fields, `${provider} ingest tick`);
+  } else {
+    logger.debug(fields, `${provider} ingest tick (idle)`);
+  }
+}
+
 export function startIngestScheduler(args: { config: Config }): Scheduler {
   const { config } = args;
   const intervalSec = config.KIZUNA_INGEST_INTERVAL_SEC;
@@ -33,9 +50,9 @@ export function startIngestScheduler(args: { config: Config }): Scheduler {
     running = true;
     try {
       const gmail = await runGmailSyncOnce(config);
-      logger.info({ provider: "gmail", ...gmail }, "ingest tick");
+      logTick("gmail", gmail.status, gmail.inserted, gmail.errors, gmail);
       const gcal = await runCalendarSyncOnce(config);
-      logger.info({ provider: "gcal", ...gcal }, "ingest tick");
+      logTick("gcal", gcal.status, gcal.upserted, gcal.errors, gcal);
     } catch (err) {
       logger.error({ err }, "ingest tick failed");
     } finally {

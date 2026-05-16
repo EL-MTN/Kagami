@@ -36,6 +36,11 @@ function fail(text: string) {
   return { content: [{ type: "text" as const, text }], isError: true };
 }
 
+function failLogged(tool: string, e: unknown) {
+  logger.error({ err: e, tool }, "mcp tool failed");
+  return fail(String(e));
+}
+
 function buildServer(): McpServer {
   const server = new McpServer({ name: "kioku", version: "0.1.0" });
 
@@ -63,7 +68,7 @@ function buildServer(): McpServer {
         const facts = await recall(q, { k, since, until, filters });
         return ok(JSON.stringify({ facts, total: facts.length }));
       } catch (e) {
-        return fail(String(e));
+        return failLogged("recall", e);
       }
     },
   );
@@ -79,7 +84,7 @@ function buildServer(): McpServer {
       try {
         return ok(JSON.stringify(await query(question, { filters })));
       } catch (e) {
-        return fail(String(e));
+        return failLogged("query", e);
       }
     },
   );
@@ -108,7 +113,7 @@ function buildServer(): McpServer {
         const result = await appendSingleFact(input);
         return ok(JSON.stringify(result));
       } catch (e) {
-        return fail(String(e));
+        return failLogged("append_fact", e);
       }
     },
   );
@@ -144,7 +149,7 @@ function buildServer(): McpServer {
         const added = results.filter((r) => r.status === "added").length;
         return ok(JSON.stringify({ results, added, duplicates: results.length - added }));
       } catch (e) {
-        return fail(String(e));
+        return failLogged("append_facts", e);
       }
     },
   );
@@ -173,7 +178,7 @@ function buildServer(): McpServer {
         });
         return ok(JSON.stringify(result));
       } catch (e) {
-        return fail(String(e));
+        return failLogged("ingest_session", e);
       }
     },
   );
@@ -189,7 +194,7 @@ function buildServer(): McpServer {
         const facts = await readFacts();
         return ok(String(facts.length));
       } catch (e) {
-        return fail(String(e));
+        return failLogged("fact_count", e);
       }
     },
   );
@@ -206,7 +211,7 @@ function buildServer(): McpServer {
         const events = await readHistoryFor(id);
         return ok(JSON.stringify({ id, events }));
       } catch (e) {
-        return fail(String(e));
+        return failLogged("fact_history", e);
       }
     },
   );
@@ -232,7 +237,7 @@ mcpRouter.post("/", async (req, res) => {
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   } catch (err) {
-    logger.error({ err: (err as Error).message }, "mcp request failed");
+    logger.error({ err }, "mcp request failed");
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: "2.0",

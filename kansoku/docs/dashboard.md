@@ -39,6 +39,23 @@ proxies from collapsing the connection. The subscriber cap is 64 — the
 65th tab opening `/v1/tail` gets a 503 instead of silently leaking
 listener refs.
 
+## Log rows
+
+`src/components/log-row.tsx` (`LogRow`) renders one log line and is shared
+by `/tail`, `/search`, and the flat timeline on `/traces/[id]`. It is a
+**client component** (it owns expand/collapse state):
+
+- The collapsed row is one line (timestamp, level, service, message,
+  trace link). When the log has a non-empty `fields` object a chevron +
+  `+N fields` affordance appears.
+- Expanding renders `fields` as a pretty-printed block. String values
+  keep their **real newlines** (a recursive renderer quotes but does not
+  `\n`-escape them), so stack traces and multi-line `responsePreview`
+  read as actual lines instead of one `"...\n..."` blob.
+- `showSpanId` prop: on `/traces/[id]` the per-row trace link is
+  redundant, so the trace page passes `showSpanId` to render the span id
+  in that column instead.
+
 ## Caching
 
 Per-service timeline fetches on `/services` use an in-memory 30 s TTL

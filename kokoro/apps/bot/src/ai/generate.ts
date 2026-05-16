@@ -162,6 +162,8 @@ export async function handleMessage(
   if (!responseText) {
     logger.warn(
       {
+        chatId: incoming.chatId,
+        model: getModelName(),
         stepCount: result.steps.length,
         finishReason: result.finishReason,
       },
