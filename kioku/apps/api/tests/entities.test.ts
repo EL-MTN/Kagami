@@ -73,9 +73,7 @@ it("parallel upsert-style updateOnes converge on union of linked_memory_ids", as
 it("upsertEntitiesFromFacts stores new entities with empty embeddings when embedding fails", async () => {
   vi.resetModules();
   vi.doMock("../src/llm.ts", () => ({
-    embedTexts: vi.fn(async () => {
-      throw new Error("embedding provider down");
-    }),
+    embedTexts: vi.fn().mockRejectedValue(new Error("embedding provider down")),
   }));
 
   const { upsertEntitiesFromFacts } = await import("../src/storage/entities.ts");
@@ -93,7 +91,11 @@ it("upsertEntitiesFromFacts stores new entities with empty embeddings when embed
 
   const { getDb } = await import("../src/storage/mongo.ts");
   const db = await getDb();
-  const docs = await db.collection("entities").find({}).sort({ text_lower: 1 }).toArray();
+  const docs = await db
+    .collection<{ text: string; embedding: number[]; linked_memory_ids: string[] }>("entities")
+    .find({})
+    .sort({ text_lower: 1 })
+    .toArray();
 
   expect(result).toEqual({ created: 2, linked: 2 });
   expect(
