@@ -9,14 +9,16 @@ corrections, and the pre-existing Kioku test lint.
 The three tracks below are the remaining gaps versus production-grade /
 industry-standard logging. Ordered within each track by leverage.
 
-Branch `logging-prod-hardening` (not yet on `main`) ships **all the
-non-decision work** across the three tracks: track 1's string level / ISO
-time / TTY pretty gate (with tolerant Kansoku ingest); track 2's `sampled`
-flag wiring; and track 3 in full — Tier-1 `fetch` timeout, `kansoku-stream`
-test suite, `errors` TTL, `metaField` cardinality guard, head sampling,
-write-then-ack server-side durability, and shipper hardening (jitter +
-drop policy). The only items left open are the two explicit **Decision:**
-forks — see the recommendation at the bottom of this file.
+Branch `logging-prod-hardening` (not yet on `main`) now ships **all three
+tracks in full**, including both Decision forks (resolved with the user):
+track 1 — string level / ISO time / TTY pretty gate **and the full ECS /
+OTel field-name rename** (tolerant Kansoku ingest); track 2 — `sampled`
+flag wiring **and build-light spans** (real `spans` collection + waterfall);
+track 3 — Tier-1 `fetch` timeout, `kansoku-stream` tests, `errors` TTL,
+`metaField` cardinality guard, head sampling, write-then-ack durability,
+shipper hardening (jitter + drop policy). Nothing logging-track is open;
+remaining boxes are all `[x]`. (Redaction reintroduction is still tracked
+separately — see the note at the bottom.)
 
 ---
 
@@ -35,13 +37,14 @@ The wire format is JSON, but the schema fights off-the-shelf tooling
       `shouldPretty()` — pretty only on an interactive stdout TTY or
       `LOG_PRETTY=1`/`true`; raw NDJSON otherwise.
       _(branch `logging-prod-hardening`)_
-- [ ] **Decision: adopt ECS or OTel field names** (`service.name`,
-      `log.level`, `error.*`, `trace.id`). Bigger, breaking change —
-      **cross-service coupling**: Kansoku's ingest envelope
-      (`kansoku/apps/api/src/lib/envelope.ts`) hard-codes numeric `level` /
-      numeric `time`, and the query routes + dashboard read those. Any
-      producer schema change must land Kansoku ingest + queries + dashboard
-      in the same PR (producer-before-consumer in one commit).
+- [x] **Decision: ECS / OTel field names — DONE (chosen: do it now).**
+      `@kagami/logger` emits nested ECS (`log.level`, `@timestamp`,
+      `service.{name,environment,component}`, `host.name`, `process.pid`,
+      `trace.id`, `span.{id,parent.id}`, `error.{type,message,stack_trace}`,
+      `message`). The feared cross-service coupling didn't materialize:
+      queries/dashboard read the normalized `StoredLog`, so the change was
+      contained to `envelope.ts` (tolerant ECS+legacy) + `fingerprint.ts` +
+      the shipper's level read. _(branch `logging-prod-hardening`)_
 
 ## 2. Distributed tracing
 
@@ -49,21 +52,23 @@ Trace **correlation** is already strong (W3C `traceparent` via
 AsyncLocalStorage, auto-injected `traceId`/`spanId`, `tracedFetch`
 propagation). What's missing is real **spans**.
 
-- [ ] **Decision: build vs. adopt OpenTelemetry.** The architectural fork —
-      pick before doing the items below. **Build-light**: emit explicit span
-      lifecycle events (start/end, `durationMs`, parent/child, status) from
-      the `@kagami/logger` trace helpers (`runWithTrace`/`childSpan` in
-      `trace.ts`) and have Kansoku store + aggregate a real `spans`
-      collection. **Adopt**: OTel SDK + OTLP exporter; Kansoku grows an OTLP
-      endpoint or points at an OTel-native backend. _(Open — see the
-      recommendation at the bottom of this file.)_
-- [ ] Today a "trace" is just `logs.find({ traceId })`
-      (`kansoku/apps/api/src/storage/logs.ts`) — no durations, no waterfall.
-      The documented `spans`/`metrics` collections don't exist in code;
-      reconcile `kansoku/docs/architecture.md` once decided.
-- [ ] `traced-fetch.ts` deliberately does **not** mint a client RPC span
-      (client and server share one span) — revisit for a real client/server
-      split once spans exist.
+- [x] **Decision: build vs. adopt OTel — DONE (chosen: build-light).**
+      `@kagami/logger`'s `runWithSpan(name, fn)` opens a timed child span and
+      emits one `event.kind:"span"` ECS log line via a sink `createLogger`
+      registers. No SDK/exporter. _(branch `logging-prod-hardening`)_
+- [x] Real spans exist. Kansoku folds span events into a regular `spans`
+      collection (`storage/spans.ts`, `_id = traceId:spanId`);
+      `GET /v1/traces/:id` returns `{ logs, spans }`; the dashboard renders a
+      real waterfall (durations + parent/child + ok/error) with graceful
+      fallback to the log-derived approximation for pre-spans traces.
+      `kansoku/docs/architecture.md` reconciled (`spans` is a real regular
+      collection; `metrics` marked reserved-not-created).
+      _(branch `logging-prod-hardening`)_
+- [x] `traced-fetch.ts` revisited: with `runWithSpan` available, an
+      explicit span at the call site is the lightweight path; auto-minting a
+      client RPC span inside `tracedFetch` is **intentionally not done**
+      (keeps client/server on one span unless a caller opts in). Rationale
+      recorded in `traced-fetch.ts`. _(branch `logging-prod-hardening`)_
 - [x] Wire the existing-but-unused `sampled` flag in `TraceContext`.
       `newTraceContext` now makes a `LOG_SAMPLE_RATE` head decision;
       `childSpan`/`traceparent` propagate it; the mixin emits `sampled:false`
@@ -121,25 +126,19 @@ No sampling anywhere; the ingest path is lossy by design.
 
 ---
 
-## Recommendation on the two open forks
+## Fork decisions (resolved)
 
-Both are genuine product/architecture decisions, deliberately left for a
-human call rather than decided unilaterally.
+Both forks were put to the user and implemented on this branch:
 
-- **Build vs. adopt OpenTelemetry (track 2).** Recommend **build-light**:
-  emit span lifecycle events from the existing `trace.ts` helpers and add a
-  Kansoku `spans` collection. Rationale: correlation + propagation are
-  already done; the gap is only durations/waterfall. Full OTel SDK + OTLP
-  across four services adds a heavy dependency and a second wire/storage
-  path for a personal-scale workspace that already has a working
-  trace-by-`traceId` model. Adopt OTel only if a third-party
-  OTel-native backend becomes the goal.
-- **ECS / OTel field names (track 1).** Recommend **defer / don't do it**
-  at current scale. The portability win (string level + ISO time) is
-  already banked; a full `service.name` / `log.level` / `error.*` rename is
-  a breaking cross-service churn (producer + Kansoku ingest, queries,
-  dashboard in one PR) with little payoff until logs actually feed an
-  ECS/OTel-native backend. Revisit alongside the OTel decision.
+- **Build vs. adopt OpenTelemetry (track 2) → build-light.** `runWithSpan`
+  emits span events from the existing `trace.ts` helpers; Kansoku stores a
+  real `spans` collection. No OTel SDK/OTLP — the workspace already had
+  working trace-by-`traceId`; only durations/waterfall were missing.
+- **ECS / OTel field names (track 1) → done now.** Producer emits nested
+  ECS; Kansoku ingest accepts ECS + legacy. The anticipated cross-service
+  churn didn't materialize because the dashboard/queries read the
+  normalized `StoredLog`, not the wire shape — so the change stayed
+  contained to `envelope.ts`/`fingerprint.ts`/the shipper.
 
 _Out of scope here but tracked elsewhere: redaction reintroduction is a
 hard pre-VPS-exposure blocker recorded in `project_vps_deployment_intent.md`._

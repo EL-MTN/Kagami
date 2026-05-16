@@ -7,7 +7,10 @@ import {
   getTraceContext,
   newTraceContext,
   parseTraceparent,
+  runWithSpan,
   runWithTrace,
+  setSpanSink,
+  type SpanEndEvent,
 } from "../src/trace";
 
 describe("trace IDs", () => {
@@ -115,6 +118,75 @@ describe("head sampling", () => {
       const reparsed = parseTraceparent(formatTraceparent(root));
       expect(reparsed?.sampled).toBe(false);
     });
+  });
+});
+
+describe("runWithSpan", () => {
+  function captureSpans(): { events: SpanEndEvent[]; restore: () => void } {
+    const events: SpanEndEvent[] = [];
+    setSpanSink((e) => events.push(e));
+    return { events, restore: () => setSpanSink(null) };
+  }
+
+  it("emits a child span of the active trace with ok status", async () => {
+    const { events, restore } = captureSpans();
+    try {
+      const root = newTraceContext();
+      const result = await runWithTrace(root, () =>
+        runWithSpan("work", () => {
+          // The span's own context is active inside fn.
+          expect(getTraceContext()?.parentSpanId).toBe(root.spanId);
+          return 42;
+        }),
+      );
+      expect(result).toBe(42);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        traceId: root.traceId,
+        parentSpanId: root.spanId,
+        name: "work",
+        status: "ok",
+      });
+      expect(events[0].durationMs).toBeGreaterThanOrEqual(0);
+    } finally {
+      restore();
+    }
+  });
+
+  it("records status error and re-throws", async () => {
+    const { events, restore } = captureSpans();
+    try {
+      await expect(
+        runWithTrace(newTraceContext(), () =>
+          runWithSpan("boom", () => {
+            throw new Error("nope");
+          }),
+        ),
+      ).rejects.toThrow("nope");
+      expect(events).toHaveLength(1);
+      expect(events[0]?.status).toBe("error");
+      expect(events[0]?.name).toBe("boom");
+    } finally {
+      restore();
+    }
+  });
+
+  it("mints a fresh root trace when there is no active context", async () => {
+    const { events, restore } = captureSpans();
+    try {
+      await runWithSpan("orphan", () => {});
+      expect(events).toHaveLength(1);
+      expect(events[0]?.parentSpanId).toBeUndefined();
+      expect(events[0]?.traceId).toMatch(/^[0-9a-f]{32}$/);
+    } finally {
+      restore();
+    }
+  });
+
+  it("is a no-op emitter (but still runs fn) with no sink registered", async () => {
+    setSpanSink(null);
+    const ran = await runWithSpan("nosink", () => "ok");
+    expect(ran).toBe("ok");
   });
 });
 
