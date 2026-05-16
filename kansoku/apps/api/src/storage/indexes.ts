@@ -161,4 +161,11 @@ export async function ensureIndexes(): Promise<void> {
   await ensureTtlIndex(db, "errors", { lastSeen: -1 }, "errors_last_seen", errorsTtlSeconds);
   const errors = db.collection("errors");
   await errors.createIndex({ service: 1, lastSeen: -1 }, { name: "errors_service_last_seen" });
+
+  // Build-light spans (Phase 8). `_id` is `traceId:spanId`; the waterfall
+  // fetches a whole trace's spans by `traceId`. Same retention as `logs`
+  // (spans are part of the trace) via a TTL on `startedAt`.
+  const spans = db.collection("spans");
+  await spans.createIndex({ traceId: 1, startedAt: 1 }, { name: "spans_trace_started" });
+  await ensureTtlIndex(db, "spans", { startedAt: -1 }, "spans_started_ttl", logsTtlSeconds);
 }

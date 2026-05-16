@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { EmptyState, PageHeader } from "@/components/shell";
 import { LevelBadge } from "@/components/level-badge";
 import { LogRow } from "@/components/log-row";
-import { getTrace, type StoredLog } from "@/lib/api";
+import { getTrace, type StoredLog, type StoredSpan } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ const TRACE_ID_RE = /^[0-9a-f]{32}$/i;
 interface Span {
   spanId: string;
   parentSpanId?: string;
+  name?: string;
   startMs: number;
   endMs: number;
   service: string;
@@ -90,6 +91,40 @@ function buildSpans(logs: StoredLog[]): Span[] {
   return roots;
 }
 
+// Real spans (build-light tracing): accurate durations + an explicit
+// parent/child tree, so no timestamp guessing. Same `Span` shape as the
+// log-derived path so the waterfall renderer is shared.
+function buildSpansFromStored(spans: StoredSpan[]): Span[] {
+  const byId = new Map<string, Span>();
+  for (const s of spans) {
+    const startMs = new Date(s.startedAt).getTime();
+    byId.set(s.spanId, {
+      spanId: s.spanId,
+      parentSpanId: s.parentSpanId,
+      name: s.name,
+      startMs,
+      endMs: startMs + s.durationMs,
+      service: s.service,
+      component: s.component,
+      logs: [],
+      worstLevel: s.status === "error" ? "error" : "info",
+      children: [],
+    });
+  }
+  const roots: Span[] = [];
+  for (const span of byId.values()) {
+    if (span.parentSpanId && byId.has(span.parentSpanId)) {
+      byId.get(span.parentSpanId)!.children.push(span);
+    } else {
+      roots.push(span);
+    }
+  }
+  const byStart = (a: Span, b: Span) => a.startMs - b.startMs;
+  roots.sort(byStart);
+  for (const s of byId.values()) s.children.sort(byStart);
+  return roots;
+}
+
 function flatten(roots: Span[]): { span: Span; depth: number }[] {
   const out: { span: Span; depth: number }[] = [];
   const walk = (s: Span, depth: number): void => {
@@ -109,10 +144,12 @@ export default async function TracePage({ params }: TracePageProps) {
   if (!TRACE_ID_RE.test(id)) notFound();
 
   let logs: StoredLog[] = [];
+  let spans: StoredSpan[] = [];
   let error: string | undefined;
   try {
     const res = await getTrace(id);
     logs = res.logs;
+    spans = res.spans ?? [];
   } catch (err) {
     error = (err as Error).message;
   }
@@ -128,7 +165,7 @@ export default async function TracePage({ params }: TracePageProps) {
     );
   }
 
-  if (logs.length === 0) {
+  if (logs.length === 0 && spans.length === 0) {
     return (
       <div className="space-y-8">
         <PageHeader title="Trace" description={`ID ${id}`} />
@@ -137,7 +174,11 @@ export default async function TracePage({ params }: TracePageProps) {
     );
   }
 
-  const roots = buildSpans(logs);
+  // Prefer real spans (accurate durations + explicit tree); fall back to the
+  // log-timestamp-derived approximation for traces predating build-light
+  // spans.
+  const useRealSpans = spans.length > 0;
+  const roots = useRealSpans ? buildSpansFromStored(spans) : buildSpans(logs);
   const flatAll = flatten(roots);
   // Use `reduce` instead of `Math.min(...flat.map())` — spread args have a
   // V8-imposed cap (~65k) that we shouldn't approach, but the safer
@@ -197,7 +238,12 @@ export default async function TracePage({ params }: TracePageProps) {
       />
 
       <section className="space-y-1">
-        <h3 className="kicker mb-3">Waterfall</h3>
+        <div className="mb-3 flex items-center gap-2">
+          <h3 className="kicker">Waterfall</h3>
+          <span className="text-[10px] uppercase tracking-wide text-faint">
+            {useRealSpans ? "real spans" : "log-derived (approx.)"}
+          </span>
+        </div>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           {flatWaterfall.map(({ span, depth }) => {
             const offsetPct = ((span.startMs - traceStartMs) / totalMs) * 100;
@@ -218,6 +264,14 @@ export default async function TracePage({ params }: TracePageProps) {
                   </span>
                   <span className="text-faint">·</span>
                   <span className="truncate text-muted-foreground">{span.component}</span>
+                  {span.name && (
+                    <>
+                      <span className="text-faint">·</span>
+                      <span className="truncate font-mono text-foreground" title={span.name}>
+                        {span.name}
+                      </span>
+                    </>
+                  )}
                 </div>
                 <div className="relative h-5 rounded-sm bg-muted">
                   <div

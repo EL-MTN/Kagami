@@ -4,6 +4,7 @@ import { requireIngestToken } from "../lib/auth.js";
 import { publishLogs } from "../lib/log-events.js";
 import { insertLogs, type InsertLogsResult } from "../storage/logs.js";
 import { recordErrors } from "../storage/errors.js";
+import { recordSpans } from "../storage/spans.js";
 import { logger } from "../logger.js";
 import type { StoredLog } from "../storage/logs.js";
 
@@ -75,6 +76,15 @@ export function createIngestRouter(token: string | undefined): Router {
       logger.error(
         { error: (err as Error).message, count: docs.length },
         "kansoku error fingerprint write failed",
+      );
+    });
+
+    // Spans are derived from span-event log lines (already durably written
+    // above) and idempotent on `_id`, so same fail-and-forget posture.
+    void recordSpans(docs).catch((err) => {
+      logger.error(
+        { error: (err as Error).message, count: docs.length },
+        "kansoku span write failed",
       );
     });
 

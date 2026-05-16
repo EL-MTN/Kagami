@@ -4,7 +4,7 @@ import pretty from "pino-pretty";
 import type { LoggerOptions } from "pino";
 import { createKansokuStream } from "./kansoku-stream.js";
 import type { KansokuStreamOptions } from "./kansoku-stream.js";
-import { getTraceContext } from "./trace.js";
+import { getTraceContext, setSpanSink } from "./trace.js";
 
 export interface ServiceBindings {
   service: string;
@@ -157,24 +157,39 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
       })
     : process.stdout;
 
-  if (!kansoku) {
-    return pino(pinoOptions, consoleStream);
-  }
+  const logger = !kansoku
+    ? pino(pinoOptions, consoleStream)
+    : pino(
+        pinoOptions,
+        // `level` is already validated against PINO_LEVELS above; the cast
+        // is safe — pino's StreamEntry just wants its narrow `Level` union.
+        pino.multistream([
+          { level: level as pino.Level, stream: consoleStream },
+          { level: level as pino.Level, stream: createKansokuStream(kansoku) },
+        ]),
+      );
 
-  const kansokuStream = createKansokuStream(kansoku);
-  // `level` is already validated against PINO_LEVELS above; the cast is
-  // safe — pino's StreamEntry just wants its narrow `Level` union.
-  const streamLevel = level as pino.Level;
-  const streams: pino.StreamEntry[] = [
-    { level: streamLevel, stream: consoleStream },
-    { level: streamLevel, stream: kansokuStream },
-  ];
-  return pino(pinoOptions, pino.multistream(streams));
+  // Build-light spans: emit one ECS span event per completed `runWithSpan`.
+  // The explicit `trace`/`span` keys override the mixin (which, in the
+  // sink's `finally`, would otherwise tag the *parent* context). Last
+  // createLogger wins the sink — one logger per service in this workspace.
+  setSpanSink((e) => {
+    logger.info(
+      {
+        event: { kind: "span", name: e.name, duration_ms: e.durationMs, status: e.status },
+        trace: { id: e.traceId },
+        span: { id: e.spanId, ...(e.parentSpanId ? { parent: { id: e.parentSpanId } } : {}) },
+      },
+      "span",
+    );
+  });
+
+  return logger;
 }
 
 export type { Logger } from "pino";
 export type { KansokuStreamOptions } from "./kansoku-stream.js";
-export type { TraceContext } from "./trace.js";
+export type { TraceContext, SpanEndEvent } from "./trace.js";
 export {
   childSpan,
   formatTraceparent,
@@ -183,6 +198,8 @@ export {
   getTraceContext,
   newTraceContext,
   parseTraceparent,
+  runWithSpan,
   runWithTrace,
+  setSpanSink,
   withRootTrace,
 } from "./trace.js";
