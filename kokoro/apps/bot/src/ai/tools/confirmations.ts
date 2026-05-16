@@ -88,7 +88,7 @@ export function createRequestConfirmationTool(
             "Approval prompt sent. Stop here — don't call the action again in this turn. Goshujin-sama will tap Approve or Deny.",
         };
       } catch (error) {
-        logger.error({ err: error }, "Tool: requestConfirmation failed");
+        logger.error({ error: error }, "Tool: requestConfirmation failed");
         return {
           pending: false,
           success: false,
@@ -167,7 +167,7 @@ export function createCancelConfirmationTool(
         logger.debug({ confirmationId, chatId, reason }, "Tool: cancelConfirmation");
         return { success: true, confirmationId };
       } catch (error) {
-        logger.error({ err: error, confirmationId }, "Tool: cancelConfirmation failed");
+        logger.error({ error: error, confirmationId }, "Tool: cancelConfirmation failed");
         return {
           success: false,
           reason: error instanceof Error ? error.message : "Failed to cancel confirmation",

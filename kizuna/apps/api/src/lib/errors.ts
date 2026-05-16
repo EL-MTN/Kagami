@@ -40,7 +40,7 @@ export function makeErrorHandler(): ErrorRequestHandler {
 
     if (err instanceof HttpError) {
       if (err.status >= 500) {
-        logger.error({ err, ...ctx, status: err.status, code: err.code }, "request failed");
+        logger.error({ error: err, ...ctx, status: err.status, code: err.code }, "request failed");
       } else {
         logger.warn(
           { ...ctx, status: err.status, code: err.code, message: err.message },
@@ -99,7 +99,7 @@ export function makeErrorHandler(): ErrorRequestHandler {
         .json(envelope("conflict", "duplicate key", (err as { keyValue?: unknown }).keyValue));
       return;
     }
-    logger.error({ err, ...ctx }, "unhandled error");
+    logger.error({ error: err, ...ctx }, "unhandled error");
     res.status(500).json(envelope("internal", "internal error"));
   };
 }

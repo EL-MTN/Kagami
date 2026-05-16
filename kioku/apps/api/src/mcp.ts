@@ -37,7 +37,7 @@ function fail(text: string) {
 }
 
 function failLogged(tool: string, e: unknown) {
-  logger.error({ err: e, tool }, "mcp tool failed");
+  logger.error({ error: e, tool }, "mcp tool failed");
   return fail(String(e));
 }
 
@@ -237,7 +237,7 @@ mcpRouter.post("/", async (req, res) => {
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   } catch (err) {
-    logger.error({ err }, "mcp request failed");
+    logger.error({ error: err }, "mcp request failed");
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: "2.0",

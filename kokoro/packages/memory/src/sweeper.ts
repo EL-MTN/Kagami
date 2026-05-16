@@ -90,7 +90,7 @@ export async function sweepPendingIngests(
       // paraphrased duplicate when the LLM phrases the same fact slightly
       // differently. Better than skipping a real ingest.
       logger.warn(
-        { err: (err as Error).message, sessionId: convo.sessionId },
+        { error: err, sessionId: convo.sessionId },
         "kioku sweeper: probe failed, attempting ingest anyway",
       );
     }
@@ -208,7 +208,7 @@ export async function sweepPendingFacts(
       await pending.save();
       logger.warn(
         {
-          err: reason,
+          error: err,
           sourceSession: pending.sourceSession,
           attempts: nextAttemptCount,
           status: pending.status,

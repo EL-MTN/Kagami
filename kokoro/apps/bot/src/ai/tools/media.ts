@@ -35,7 +35,7 @@ export function createSendPhotoTool(chatId: string, adapter: PlatformAdapter) {
         return { sent: true, caption };
       } catch (err) {
         const reason = err instanceof Error ? err.message : "Image generation failed";
-        logger.error({ err, description }, "Image generation failed");
+        logger.error({ error: err, description }, "Image generation failed");
         return { sent: false, reason };
       }
     },
@@ -57,7 +57,7 @@ export function createSendVoiceTool(chatId: string, adapter: PlatformAdapter) {
         await adapter.sendVoiceBuffer(chatId, audio.buffer, audio.durationSeconds);
         return { sent: true };
       } catch (err) {
-        logger.error({ err, text: text.slice(0, 100) }, "Voice generation failed");
+        logger.error({ error: err, text: text.slice(0, 100) }, "Voice generation failed");
         return { sent: false, reason: "Voice generation failed" };
       }
     },

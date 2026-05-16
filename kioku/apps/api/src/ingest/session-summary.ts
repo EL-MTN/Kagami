@@ -72,7 +72,7 @@ async function generateNarrativeSummary(
     return object.summary.trim();
   } catch (err) {
     logger.warn(
-      { err: (err as Error).message },
+      { error: err },
       "session narrative summary failed — extraction will proceed without one",
     );
     return "";
