@@ -29,6 +29,26 @@ export function buildLoggerBase(bindings: ServiceBindings): LoggerBaseBindings {
 
 const PINO_LEVELS = new Set<string>(["trace", "debug", "info", "warn", "error", "fatal", "silent"]);
 
+// Emit `"level":"info"` instead of pino's numeric `30`. Off-the-shelf log
+// tooling (Datadog/Loki/ELK/OTel) keys severity off a string label; the
+// numeric form needs a per-vendor decoder ring. Kansoku ingest accepts both
+// the string and legacy-numeric forms during the rollout window, so this is
+// safe to flip ahead of every producer restarting.
+const stringLevelFormatter = (label: string): { level: string } => ({ level: label });
+
+// Console rendering decision, decoupled from `env`. `env !== "production"`
+// silently broke stdout collectors on any deployed box with an unset
+// NODE_ENV (or a staging env), which emitted human-pretty text where a JSON
+// collector expected NDJSON. Now: pretty only when explicitly asked
+// (`LOG_PRETTY=1`) or when stdout is an interactive TTY; JSON everywhere
+// else (pipes, files, collectors, systemd, containers).
+function shouldPretty(): boolean {
+  const flag = process.env.LOG_PRETTY?.trim().toLowerCase();
+  if (flag === "1" || flag === "true") return true;
+  if (flag === "0" || flag === "false") return false;
+  return Boolean(process.stdout.isTTY);
+}
+
 export interface CreateLoggerOptions extends ServiceBindings {
   level?: string;
   formatters?: LoggerOptions["formatters"];
@@ -57,6 +77,11 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
   const pinoOptions: LoggerOptions = {
     level,
     base: buildLoggerBase({ service, component, env }),
+    // ISO-8601 timestamps (`"time":"2026-05-15T…Z"`) instead of epoch-ms.
+    // Same portability rationale as the string level: collectors and trace
+    // backends parse RFC3339 natively; epoch-ms needs a transform step.
+    // Kansoku ingest accepts both forms during rollout.
+    timestamp: pino.stdTimeFunctions.isoTime,
     // The workspace-wide error convention is `logger.<level>({ error }, msg)`.
     // `errorKey` routes a bare Error first-arg to the same `error` key, and
     // pino's standard error serializer expands it into { type, message, stack }
@@ -78,16 +103,20 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
         ? { traceId: ctx.traceId, spanId: ctx.spanId, parentSpanId: ctx.parentSpanId }
         : { traceId: ctx.traceId, spanId: ctx.spanId };
     },
-    ...(formatters ? { formatters } : {}),
+    // Default to the string-level formatter; let an explicit caller
+    // `formatters.level` (or `.bindings`/`.log`) win. Spreading `formatters`
+    // last means a caller can override the level shape but doesn't lose it
+    // by passing only `bindings`/`log`.
+    formatters: { level: stringLevelFormatter, ...formatters },
   };
 
-  // Console rendering: pretty in dev, raw JSON in production. Run as in-process
-  // streams (not pino worker-thread transports) so multistream can compose them
-  // with the Kansoku shipper without bridging worker boundaries.
-  const consoleStream: NodeJS.WritableStream =
-    env !== "production"
-      ? pretty({ colorize: true, translateTime: "HH:MM:ss.l", ignore: "pid,hostname" })
-      : process.stdout;
+  // Console rendering: human-pretty on a TTY (or `LOG_PRETTY=1`), raw NDJSON
+  // everywhere else — see `shouldPretty`. Run as in-process streams (not pino
+  // worker-thread transports) so multistream can compose them with the
+  // Kansoku shipper without bridging worker boundaries.
+  const consoleStream: NodeJS.WritableStream = shouldPretty()
+    ? pretty({ colorize: true, translateTime: "HH:MM:ss.l", ignore: "pid,hostname" })
+    : process.stdout;
 
   if (!kansoku) {
     return pino(pinoOptions, consoleStream);

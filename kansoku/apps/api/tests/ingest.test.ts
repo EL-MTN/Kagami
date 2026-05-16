@@ -127,6 +127,53 @@ it("accepts a valid batch and persists it as a time-series doc", async () => {
   expect(doc.fields).toMatchObject({ userField: 42, pid: 1234, hostname: "test-host" });
 });
 
+it("accepts the new wire format: ISO-8601 string time + string level", async () => {
+  const res = await fetch(`${baseUrl}/v1/logs`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-kansoku-auth": TOKEN },
+    body: JSON.stringify([
+      sampleEnvelope({
+        time: new Date("2026-05-15T12:34:56.000Z").toISOString(),
+        level: "warn",
+        service: "iso-svc",
+        msg: "iso line",
+      }),
+    ]),
+  });
+  expect(res.status).toBe(202);
+
+  await waitForLogCount(1);
+  const { queryLogs } = await import("../src/storage/logs.ts");
+  const logs = await queryLogs({ service: "iso-svc" });
+  expect(logs).toHaveLength(1);
+  expect(logs[0]!.meta.level).toBe("warn");
+  expect(logs[0]!.ts.toISOString()).toBe("2026-05-15T12:34:56.000Z");
+});
+
+it('collapses an unrecognized level to "unknown" rather than leaking cardinality', async () => {
+  const res = await fetch(`${baseUrl}/v1/logs`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-kansoku-auth": TOKEN },
+    body: JSON.stringify([sampleEnvelope({ level: 99, service: "junk-level-svc" })]),
+  });
+  expect(res.status).toBe(202);
+
+  await waitForLogCount(1);
+  const { queryLogs } = await import("../src/storage/logs.ts");
+  const logs = await queryLogs({ service: "junk-level-svc" });
+  expect(logs).toHaveLength(1);
+  expect(logs[0]!.meta.level).toBe("unknown");
+});
+
+it("rejects an over-long meta field with 400", async () => {
+  const res = await fetch(`${baseUrl}/v1/logs`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-kansoku-auth": TOKEN },
+    body: JSON.stringify([sampleEnvelope({ component: "c".repeat(65) })]),
+  });
+  expect(res.status).toBe(400);
+});
+
 it("normalizes pino numeric levels to strings", async () => {
   const res = await fetch(`${baseUrl}/v1/logs`, {
     method: "POST",

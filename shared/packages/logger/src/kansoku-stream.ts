@@ -13,6 +13,14 @@ export interface KansokuStreamOptions {
   bufferLimit?: number;
   /** Backoff ceiling in ms. Default 30_000. */
   maxBackoffMs?: number;
+  /**
+   * Per-request timeout in ms. Default 10_000. A hung Kansoku connection
+   * (TCP open, no response) is aborted after this so the in-flight guard
+   * clears and the batch is requeued/backed-off like any other failure.
+   * Without it a single stuck socket wedges the shipper forever and every
+   * subsequent log line is silently dropped — fail-open turning fail-closed.
+   */
+  requestTimeoutMs?: number;
 }
 
 interface KansokuStreamInternals {
@@ -26,9 +34,10 @@ export type KansokuStream = Writable & KansokuStreamInternals;
 
 /**
  * Pino destination stream that batches NDJSON log lines and POSTs them to
- * Kansoku. Fail-open at every step: network errors are swallowed and retried
- * with exponential backoff; buffer overflow drops oldest events and surfaces
- * the count in the next successful request's `x-kansoku-dropped` header.
+ * Kansoku. Fail-open at every step: network errors (including a hung
+ * connection, bounded by `requestTimeoutMs`) are swallowed and retried with
+ * exponential backoff; buffer overflow drops oldest events and surfaces the
+ * count in the next successful request's `x-kansoku-dropped` header.
  */
 export function createKansokuStream(opts: KansokuStreamOptions): KansokuStream {
   const {
@@ -38,6 +47,7 @@ export function createKansokuStream(opts: KansokuStreamOptions): KansokuStream {
     batchIntervalMs = 250,
     bufferLimit = 5000,
     maxBackoffMs = 30_000,
+    requestTimeoutMs = 10_000,
   } = opts;
   const ingestUrl = `${url.replace(/\/$/, "")}/v1/logs`;
 
@@ -91,7 +101,24 @@ export function createKansokuStream(opts: KansokuStreamOptions): KansokuStream {
         "x-kansoku-auth": token,
       };
       if (dropCount > 0) headers["x-kansoku-dropped"] = String(dropCount);
-      const res = await fetch(ingestUrl, { method: "POST", headers, body });
+      // Abort a stalled request so this promise always settles. On abort
+      // `fetch` rejects with an AbortError that falls through to the catch
+      // below — same requeue + exponential-backoff path as any other
+      // failure, so `inFlightPromise` clears and the shipper keeps draining.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+      if (typeof timeout.unref === "function") timeout.unref();
+      let res: Response;
+      try {
+        res = await fetch(ingestUrl, {
+          method: "POST",
+          headers,
+          body,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       if (!res.ok) throw new Error(`kansoku http ${res.status}`);
       backoffMs = batchIntervalMs;
     } catch {

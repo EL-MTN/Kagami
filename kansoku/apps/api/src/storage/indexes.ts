@@ -4,38 +4,47 @@ import { logger } from "../logger.js";
 
 const SECONDS_PER_DAY = 24 * 60 * 60;
 const DEFAULT_LOGS_TTL_DAYS = 30;
+// Errors are fingerprinted + deduped, so the registry grows far slower than
+// `logs` — but it has no TTL today and fingerprint fragmentation (a stack
+// frame that varies, an inlined id the normalizer misses) still accretes
+// rows unboundedly. Keyed on `lastSeen`, so a fingerprint that stops
+// recurring ages out; an active one is continually refreshed and never
+// expires. 90 days default — long enough that a quarterly-recurring bug is
+// still grouped, not a fresh fingerprint.
+const DEFAULT_ERRORS_TTL_DAYS = 90;
+const MAX_TTL_DAYS = 365;
 
 /**
- * Resolve the configured TTL in seconds. Bounded by a sane floor + ceiling.
- * Strict integer parsing — `"30days"` (which `parseInt` would silently
- * accept as `30`) and similar typos are rejected so the user gets a clear
- * fallback warning instead of mystery semantics.
+ * Resolve a day-valued TTL env var to seconds. Bounded by a floor of 1 and a
+ * 365-day ceiling. Strict integer parsing — `"30days"` (which `parseInt`
+ * would silently accept as `30`) and similar typos fall back to the default
+ * with a clear warning instead of mystery semantics.
  */
-function resolveLogsTtlSeconds(): number {
-  const raw = process.env.KANSOKU_LOGS_TTL_DAYS;
+function resolveTtlSeconds(envVar: string, defaultDays: number): number {
+  const raw = process.env[envVar];
   if (raw === undefined || raw.trim() === "") {
-    return DEFAULT_LOGS_TTL_DAYS * SECONDS_PER_DAY;
+    return defaultDays * SECONDS_PER_DAY;
   }
   const trimmed = raw.trim();
   if (!/^\d+$/.test(trimmed)) {
     logger.warn(
-      { provided: raw, fallback: DEFAULT_LOGS_TTL_DAYS },
-      "KANSOKU_LOGS_TTL_DAYS not a positive integer; using default",
+      { envVar, provided: raw, fallback: defaultDays },
+      `${envVar} not a positive integer; using default`,
     );
-    return DEFAULT_LOGS_TTL_DAYS * SECONDS_PER_DAY;
+    return defaultDays * SECONDS_PER_DAY;
   }
   const days = Number.parseInt(trimmed, 10);
   if (days < 1) {
     logger.warn(
-      { provided: raw, fallback: DEFAULT_LOGS_TTL_DAYS },
-      "KANSOKU_LOGS_TTL_DAYS must be >= 1; using default",
+      { envVar, provided: raw, fallback: defaultDays },
+      `${envVar} must be >= 1; using default`,
     );
-    return DEFAULT_LOGS_TTL_DAYS * SECONDS_PER_DAY;
+    return defaultDays * SECONDS_PER_DAY;
   }
-  // Cap at 365 days — anything longer is presumably a typo (and time-series
-  // bucket compaction degrades with very long retention).
-  const capped = Math.min(days, 365);
-  return capped * SECONDS_PER_DAY;
+  // Cap at 365 days — anything longer is presumably a typo (and, for the
+  // time-series logs collection, bucket compaction degrades with very long
+  // retention).
+  return Math.min(days, MAX_TTL_DAYS) * SECONDS_PER_DAY;
 }
 
 // `createCollection` throws `NamespaceExists` (code 48) when the collection
@@ -44,6 +53,13 @@ function resolveLogsTtlSeconds(): number {
 // time-series option Mongo lets us change in place. Other options
 // (timeField, metaField, granularity) require a manual drop + recreate.
 const NAMESPACE_EXISTS = 48;
+// createIndex throws one of these when an index with the same name/key
+// already exists but with different options (e.g. a pre-existing
+// non-TTL `errors_last_seen` from before this change). We then reconcile
+// the TTL in place via `collMod` — the same idempotent-on-restart posture
+// as the time-series TTL above.
+const INDEX_OPTIONS_CONFLICT = 85;
+const INDEX_KEY_SPECS_CONFLICT = 86;
 
 interface MongoCodeError {
   code?: number;
@@ -89,9 +105,35 @@ async function ensureTimeSeriesCollection(
   }
 }
 
+/**
+ * Create `keySpec` as a TTL index, or reconcile an existing same-named index
+ * to `expireAfterSeconds` if it predates the TTL (or its window changed).
+ * `errors` is a regular collection — a normal single-field TTL index works
+ * here (unlike the time-series `logs` collection, whose TTL is a collection
+ * option reconciled via `collMod` in `ensureTimeSeriesCollection`).
+ */
+async function ensureTtlIndex(
+  db: Db,
+  collName: string,
+  keySpec: Record<string, 1 | -1>,
+  name: string,
+  expireAfterSeconds: number,
+): Promise<void> {
+  try {
+    await db.collection(collName).createIndex(keySpec, { name, expireAfterSeconds });
+    return;
+  } catch (err) {
+    const code = (err as MongoCodeError).code;
+    if (code !== INDEX_OPTIONS_CONFLICT && code !== INDEX_KEY_SPECS_CONFLICT) throw err;
+  }
+  // Same name/key, different (or absent) TTL — adjust it in place.
+  await db.command({ collMod: collName, index: { name, expireAfterSeconds } });
+  logger.info({ collection: collName, index: name, expireAfterSeconds }, "reconciled TTL index");
+}
+
 export async function ensureIndexes(): Promise<void> {
   const db = await getDb();
-  const logsTtlSeconds = resolveLogsTtlSeconds();
+  const logsTtlSeconds = resolveTtlSeconds("KANSOKU_LOGS_TTL_DAYS", DEFAULT_LOGS_TTL_DAYS);
 
   await ensureTimeSeriesCollection(db, "logs", logsTtlSeconds);
 
@@ -112,7 +154,11 @@ export async function ensureIndexes(): Promise<void> {
 
   // Error registry (Phase 4). `_id` is the fingerprint, so the primary key
   // already covers lookups; the secondary indexes drive the dashboard list.
+  // `errors_last_seen` doubles as the retention TTL: a fingerprint that
+  // stops recurring ages out `KANSOKU_ERRORS_TTL_DAYS` after its last hit,
+  // while an active one keeps refreshing `lastSeen` and never expires.
+  const errorsTtlSeconds = resolveTtlSeconds("KANSOKU_ERRORS_TTL_DAYS", DEFAULT_ERRORS_TTL_DAYS);
+  await ensureTtlIndex(db, "errors", { lastSeen: -1 }, "errors_last_seen", errorsTtlSeconds);
   const errors = db.collection("errors");
-  await errors.createIndex({ lastSeen: -1 }, { name: "errors_last_seen" });
   await errors.createIndex({ service: 1, lastSeen: -1 }, { name: "errors_service_last_seen" });
 }

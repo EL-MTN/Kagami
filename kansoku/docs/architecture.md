@@ -39,16 +39,17 @@ Indexes (Phase 1):
 service code
   └─ logger.info({ ... }, "msg")
         └─ pino multistream (in-process, no worker threads):
-              ├─ stdout (pino-pretty in dev, raw JSON in prod)
+              ├─ stdout (pino-pretty on a TTY or LOG_PRETTY=1, else raw JSON)
               └─ kansoku-stream  (shared/packages/logger/src/kansoku-stream.ts)
                     └─ buffer (250ms or 50 events, whichever first)
                           └─ POST https://api.kansoku.localhost/v1/logs
                                 ├─ constant-time check of x-kansoku-auth
                                 ├─ Zod-validate envelope (apps/api/src/lib/envelope.ts)
                                 ├─ normalize pino → StoredLog
-                                │     (time → ts, numeric level → string,
-                                │      service/component/env/level → meta,
-                                │      everything else → fields)
+                                │     (time epoch-ms|ISO → ts Date,
+                                │      level numeric|string → name,
+                                │      meta passed through the cardinality
+                                │      guard, everything else → fields)
                                 └─ async insertMany into the `logs`
                                    time-series collection
                           └─ 202 Accepted { accepted: N }
@@ -68,6 +69,16 @@ Each batch is `application/json` — an array of pino log objects. The schema
 Recognized special keys: `msg`, `pid`, `hostname`, `traceId`, `spanId`.
 Everything else lands under `fields` on the stored doc.
 
+`time` and `level` are accepted in **both** the current and legacy wire
+forms — `time` as an ISO-8601 string (`@kagami/logger`'s
+`pino.stdTimeFunctions.isoTime`) or legacy epoch-ms number; `level` as a
+string label (`formatters.level`) or legacy pino numeric. Ingest tolerates
+either so a producer restart and the consumer needn't be lock-stepped, and
+normalizes to a `Date` + a known lowercase level name (unrecognized →
+`"unknown"`). `service`/`component`/`env` are capped at 64 chars; the
+normalized `meta` tuple then passes through the cardinality guard
+(see below) before storage.
+
 ### Retention + alerts (Phase 7)
 
 The `logs` time-series TTL is configurable via `KANSOKU_LOGS_TTL_DAYS`
@@ -76,6 +87,26 @@ collection at that TTL on first boot and reconciles via `collMod` on
 subsequent boots — so dialing retention up or down is just an env edit and
 a restart. Other time-series options (`timeField`, `metaField`,
 `granularity`) still require a manual drop + recreate.
+
+The `errors` registry (a regular collection) now also has a retention TTL,
+`KANSOKU_ERRORS_TTL_DAYS` (default 90, capped at 365), implemented as a TTL
+index on `errors_last_seen`. A fingerprint that stops recurring ages out
+that many days after its last hit; an active one keeps refreshing
+`lastSeen` and never expires. `ensureIndexes` creates the TTL index or
+reconciles a pre-existing non-TTL `errors_last_seen` in place via
+`collMod`.
+
+**Cardinality guard.** A time-series collection buckets per distinct
+`metaField` value, so an unbounded number of distinct
+`{service,component,env,level}` tuples (a buggy producer putting a request
+id in `component`, say) explodes bucket count and tanks ingest + `$group`
+queries. `apps/api/src/lib/cardinality.ts` keeps a process-lifetime budget
+of distinct tuples (`KANSOKU_MAX_META_COMBOS`, default 1000); tuples seen
+under budget pass through, and once it's exhausted every _new_ tuple
+collapses into one fixed sentinel bucket (level preserved, already bounded
+to 7 names). Worst-case added cardinality is therefore `budget + |levels|`
+regardless of producer behavior. A throttled `warn` names a sample
+offending tuple so the bug stays diagnosable.
 
 A brand-new error fingerprint optionally fires a webhook configured via
 `KANSOKU_ALERT_WEBHOOK_URL`. The hook is fail-open at every step (5 s
@@ -247,16 +278,17 @@ across all three services.
 
 ## Phased delivery
 
-| Phase | Scope                                                                                                   | Status      |
-| ----- | ------------------------------------------------------------------------------------------------------- | ----------- |
-| 0     | Scaffold (`kansoku/{apps,packages,docs}`, Portless URLs, workspace globs, `/health`)                    | done        |
-| 1     | Mongo time-series setup, `/v1/logs` ingest, Zod envelope, kansoku-stream shipper, wire Kioku end-to-end | done        |
-| 2     | Dashboard `/tail` (SSE) and `/search`                                                                   | done        |
-| 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                    | done        |
-| 4     | Error fingerprinting + `/errors` page                                                                   | done        |
-| 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                          | done        |
-| 6     | Derived metrics + `/services` dashboard                                                                 | done        |
-| 7     | TTL policies, retention dial-in, optional alert webhook on new errors                                   | **this PR** |
+| Phase | Scope                                                                                                                                     | Status      |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 0     | Scaffold (`kansoku/{apps,packages,docs}`, Portless URLs, workspace globs, `/health`)                                                      | done        |
+| 1     | Mongo time-series setup, `/v1/logs` ingest, Zod envelope, kansoku-stream shipper, wire Kioku end-to-end                                   | done        |
+| 2     | Dashboard `/tail` (SSE) and `/search`                                                                                                     | done        |
+| 3     | Trace context (ALS + middleware + `tracedFetch`), `/traces/:id` view                                                                      | done        |
+| 4     | Error fingerprinting + `/errors` page                                                                                                     | done        |
+| 5     | Roll out shipper to Kokoro and Kizuna; collapse any divergence                                                                            | done        |
+| 6     | Derived metrics + `/services` dashboard                                                                                                   | done        |
+| 7     | TTL policies, retention dial-in, optional alert webhook on new errors                                                                     | done        |
+| 8     | Wire-format portability (string level / ISO time, tolerant ingest), `errors` TTL, meta cardinality guard, shipper `fetch` timeout + tests | **this PR** |
 
 ## Open questions
 
