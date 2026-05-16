@@ -144,7 +144,7 @@ All four projects share tooling via `shared/packages/`:
 
 - **`@kagami/eslint-config`** — flat ESLint config; `./base` for general TS, `./next` for Next.js apps.
 - **`@kagami/tsconfig`** — `./base.json`, `./library.json`, `./server.json`, `./nextjs.json`. Per-app `tsconfig.json` files extend one of these and add overrides (e.g. `verbatimModuleSyntax`, `esModuleInterop`, `noImplicitOverride`, `allowImportingTsExtensions`, `allowJs`) where projects diverge.
-- **`@kagami/logger`** — Pino factory exposing `createLogger({ service, component, env, level?, formatters?, kansoku? })`. Emits string `level` + ISO-8601 `time` and owns the console transport policy: `pino-pretty` only on an interactive TTY or `LOG_PRETTY=1`, raw NDJSON otherwise. No secret/PII redaction (local-trust only — reintroduce before non-localhost exposure). Each service's `logger.ts` is a thin wrapper that calls it with service-specific bindings.
+- **`@kagami/logger`** — Pino factory exposing `createLogger({ service, component, env, level?, formatters?, kansoku? })`. Emits string `level` + ISO-8601 `time`, owns the console transport policy (`pino-pretty` only on an interactive TTY or `LOG_PRETTY=1`, raw NDJSON otherwise), and the Kansoku shipper (write-then-ack aware, full-jitter backoff, `LOG_SAMPLE_RATE` head sampling). No secret/PII redaction (local-trust only — reintroduce before non-localhost exposure). Each service's `logger.ts` is a thin wrapper that calls it with service-specific bindings.
 
 Other workspace-wide conventions:
 

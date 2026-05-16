@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createKansokuStream } from "../src/kansoku-stream";
+import { createKansokuStream, type KansokuStreamOptions } from "../src/kansoku-stream";
 
 // kansoku-stream drives all of its timing through setTimeout (soft flush,
-// exponential backoff, the request-abort deadline) and a single global
+// full-jitter backoff, the request-abort deadline) and a single global
 // `fetch`. Fake timers + a hand-driven fetch mock let us assert the
-// batch / requeue / backoff / overflow / drain / timeout behavior
-// deterministically without real sockets or sleeps.
+// batch / requeue / backoff / overflow / drain / timeout / sampling
+// behavior deterministically without real sockets or sleeps.
+//
+// Backoff is full-jitter (`rng() * ceil`); `mk()` pins `rng` to `() => 1`
+// so the jittered delay equals the ceiling and the timing assertions stay
+// exact. Tests that care about jitter pass their own `rng`.
 //
 // The shipper concatenates buffered lines verbatim into a JSON array
 // (`[line,line]`), so every test line must itself be a valid JSON object —
@@ -24,6 +28,10 @@ const TOKEN = "test-token";
 
 let originalFetch: typeof globalThis.fetch;
 let fetchMock: FetchMock;
+
+function mk(opts: Omit<KansokuStreamOptions, "url" | "token"> = {}) {
+  return createKansokuStream({ url: URL_BASE, token: TOKEN, rng: () => 1, ...opts });
+}
 
 /** A pino-shaped NDJSON line for id `n`, newline-terminated like pino writes. */
 function line(n: string | number): string {
@@ -60,7 +68,7 @@ afterEach(() => {
 describe("batching", () => {
   it("flushes immediately once batchSize lines are buffered", async () => {
     fetchMock.mockResolvedValue(ok());
-    const s = createKansokuStream({ url: URL_BASE, token: TOKEN, batchSize: 3 });
+    const s = mk({ batchSize: 3 });
 
     s.write(line("a"));
     s.write(line("b"));
@@ -77,12 +85,7 @@ describe("batching", () => {
 
   it("soft-flushes a partial batch after batchIntervalMs", async () => {
     fetchMock.mockResolvedValue(ok());
-    const s = createKansokuStream({
-      url: URL_BASE,
-      token: TOKEN,
-      batchSize: 50,
-      batchIntervalMs: 250,
-    });
+    const s = mk({ batchSize: 50, batchIntervalMs: 250 });
 
     s.write(line("only"));
     await vi.advanceTimersByTimeAsync(249);
@@ -96,18 +99,14 @@ describe("batching", () => {
 describe("requeue + backoff", () => {
   it("requeues the batch in order and retries after escalating backoff", async () => {
     fetchMock.mockRejectedValueOnce(new Error("network down")).mockResolvedValue(ok());
-    const s = createKansokuStream({
-      url: URL_BASE,
-      token: TOKEN,
-      batchSize: 2,
-      batchIntervalMs: 100,
-    });
+    const s = mk({ batchSize: 2, batchIntervalMs: 100 });
 
     s.write(line("a"));
     s.write(line("b"));
     await vi.advanceTimersByTimeAsync(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    // Backoff after the first failure is batchIntervalMs * 2 = 200ms.
+    // Backoff ceiling after the first failure is batchIntervalMs * 2 = 200ms;
+    // rng()=>1 makes the jittered delay equal the ceiling.
     await vi.advanceTimersByTimeAsync(199);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
@@ -119,12 +118,7 @@ describe("requeue + backoff", () => {
 
   it("treats a non-2xx response as a failure and requeues", async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 })).mockResolvedValue(ok());
-    const s = createKansokuStream({
-      url: URL_BASE,
-      token: TOKEN,
-      batchSize: 1,
-      batchIntervalMs: 100,
-    });
+    const s = mk({ batchSize: 1, batchIntervalMs: 100 });
 
     s.write(line("x"));
     await vi.advanceTimersByTimeAsync(0);
@@ -133,14 +127,37 @@ describe("requeue + backoff", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(bodyOf(1)).toEqual([{ n: "x" }]);
   });
+
+  it("applies full jitter to the backoff delay (rng scales the ceiling)", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("down")).mockResolvedValue(ok());
+    // rng()=>0.5 → delay = floor(0.5 * 200) = 100ms (not the 200 ceiling).
+    const s = mk({ batchSize: 1, batchIntervalMs: 100, rng: () => 0.5 });
+
+    s.write(line("a"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(99);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("floors the jittered delay at 1ms when rng returns 0", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("down")).mockResolvedValue(ok());
+    const s = mk({ batchSize: 1, batchIntervalMs: 100, rng: () => 0 });
+
+    s.write(line("a"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("overflow accounting", () => {
   it("drops oldest past bufferLimit and reports the count via x-kansoku-dropped", async () => {
     fetchMock.mockRejectedValue(new Error("down"));
-    const s = createKansokuStream({
-      url: URL_BASE,
-      token: TOKEN,
+    const s = mk({
       batchSize: 100,
       batchIntervalMs: 50,
       bufferLimit: 3,
@@ -163,6 +180,63 @@ describe("overflow accounting", () => {
     expect(bodyOf(successCall)).toEqual([{ n: 3 }, { n: 4 }, { n: 5 }]);
     expect(s.droppedTotal()).toBe(2);
   });
+
+  it('dropPolicy "newest" preserves the incident head', async () => {
+    fetchMock.mockResolvedValue(ok());
+    const s = mk({
+      batchSize: 100,
+      batchIntervalMs: 50,
+      bufferLimit: 3,
+      dropPolicy: "newest",
+    });
+
+    for (const c of [1, 2, 3, 4, 5]) s.write(line(c));
+    // "newest": 4 and 5 rejected on arrival; the head [1,2,3] survives.
+    expect(s.droppedTotal()).toBe(2);
+    expect(s.bufferSize()).toBe(3);
+
+    await vi.advanceTimersByTimeAsync(50);
+    expect(bodyOf(0)).toEqual([{ n: 1 }, { n: 2 }, { n: 3 }]);
+    expect(headersOf(0)["x-kansoku-dropped"]).toBe("2");
+  });
+});
+
+describe("head sampling", () => {
+  it("drops below-warn lines on sampled-out traces, always ships warn+", async () => {
+    fetchMock.mockResolvedValue(ok());
+    const s = mk({ batchSize: 100, batchIntervalMs: 50 });
+
+    s.write('{"level":"info","sampled":false}\n'); // sampled out
+    s.write('{"level":"debug","sampled":false}\n'); // sampled out
+    s.write('{"level":20,"sampled":false}\n'); // legacy numeric debug → sampled out
+    s.write('{"level":"warn","sampled":false}\n'); // warn+ always ships
+    s.write('{"level":"error","sampled":false}\n'); // warn+ always ships
+    s.write('{"level":50,"sampled":false}\n'); // legacy numeric error → ships
+    s.write('{"level":"info"}\n'); // no sampled flag → kept (sampled in)
+
+    expect(s.sampledOutTotal()).toBe(3);
+    expect(s.droppedTotal()).toBe(0); // sampling is shedding, not loss
+
+    await vi.advanceTimersByTimeAsync(50);
+    expect(bodyOf(0)).toEqual([
+      { level: "warn", sampled: false },
+      { level: "error", sampled: false },
+      { level: 50, sampled: false },
+      { level: "info" },
+    ]);
+  });
+
+  it("keeps everything when no trace is sampled out (zero overhead path)", async () => {
+    fetchMock.mockResolvedValue(ok());
+    const s = mk({ batchSize: 2, batchIntervalMs: 50 });
+
+    s.write('{"level":"debug"}\n');
+    s.write('{"level":"info"}\n');
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(s.sampledOutTotal()).toBe(0);
+    expect(bodyOf(0)).toEqual([{ level: "debug" }, { level: "info" }]);
+  });
 });
 
 describe("final() drain", () => {
@@ -174,7 +248,7 @@ describe("final() drain", () => {
           release = () => resolve(ok());
         }),
     );
-    const s = createKansokuStream({ url: URL_BASE, token: TOKEN, batchSize: 1 });
+    const s = mk({ batchSize: 1 });
 
     s.write(line("x"));
     await vi.advanceTimersByTimeAsync(0);
@@ -202,12 +276,7 @@ describe("final() drain", () => {
   it("gives up after the 5s deadline if the request never settles", async () => {
     // A request that ignores the abort signal entirely (worst case).
     fetchMock.mockReturnValue(new Promise<Response>(() => {}));
-    const s = createKansokuStream({
-      url: URL_BASE,
-      token: TOKEN,
-      batchSize: 1,
-      requestTimeoutMs: 60_000,
-    });
+    const s = mk({ batchSize: 1, requestTimeoutMs: 60_000 });
 
     s.write(line("stuck"));
     await vi.advanceTimersByTimeAsync(0);
@@ -246,9 +315,7 @@ describe("request timeout (Tier-1 wedge regression)", () => {
       return Promise.resolve(ok());
     });
 
-    const s = createKansokuStream({
-      url: URL_BASE,
-      token: TOKEN,
+    const s = mk({
       batchSize: 1,
       batchIntervalMs: 100,
       requestTimeoutMs: 1_000,
@@ -263,7 +330,7 @@ describe("request timeout (Tier-1 wedge regression)", () => {
 
     // requestTimeoutMs fires → abort → reject → catch → requeue + backoff.
     await vi.advanceTimersByTimeAsync(1_000);
-    // Backoff after the failure is min(100*2, 1000) = 200ms.
+    // Backoff ceiling after the failure is min(100*2, 1000) = 200ms.
     await vi.advanceTimersByTimeAsync(200);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);

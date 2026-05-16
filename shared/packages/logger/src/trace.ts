@@ -4,9 +4,11 @@ import { randomBytes } from "node:crypto";
 /**
  * W3C trace context (https://www.w3.org/TR/trace-context/) carried through
  * the workspace. `traceId` is 32 hex chars; `spanId` is 16 hex. `sampled`
- * follows the W3C flags bit and defaults to true on fresh contexts — the
- * `sampled: false` path is wired (`newTraceContext({ sampled: false })`)
- * but no producer in Kagami uses it today.
+ * follows the W3C flags bit: on a fresh root it's a head decision driven by
+ * `LOG_SAMPLE_RATE` (default 1 = keep everything); an explicit
+ * `newTraceContext({ sampled })` still overrides, and `childSpan` /
+ * `parseTraceparent` inherit the upstream bit so the decision is made once
+ * at the trace root and respected everywhere downstream.
  */
 export interface TraceContext {
   traceId: string;
@@ -66,12 +68,39 @@ export function formatTraceparent(ctx: TraceContext): string {
   return `00-${ctx.traceId}-${ctx.spanId}-${flags}`;
 }
 
-/** Brand new trace — fresh trace + span IDs, no parent. */
+/**
+ * Head sampling rate from `LOG_SAMPLE_RATE`, clamped to [0,1]. Unset, empty,
+ * or unparseable → 1 (fail-open: never silently drop because of a typo'd
+ * rate). Read per root-trace creation, not per log line — `newTraceContext`
+ * fires once per request / scheduler tick, so the env read is negligible and
+ * stays test-friendly (set the env, no module reload needed). trace.ts must
+ * not import the logger (cycle), so a bad value clamps silently.
+ */
+function resolveSampleRate(): number {
+  const raw = process.env.LOG_SAMPLE_RATE;
+  if (raw === undefined || raw.trim() === "") return 1;
+  const n = Number.parseFloat(raw);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(1, Math.max(0, n));
+}
+
+function headSampleDecision(): boolean {
+  const rate = resolveSampleRate();
+  if (rate >= 1) return true;
+  if (rate <= 0) return false;
+  return Math.random() < rate;
+}
+
+/**
+ * Brand new trace — fresh trace + span IDs, no parent. `sampled` defaults to
+ * the `LOG_SAMPLE_RATE` head decision; pass `{ sampled }` to force it (e.g.
+ * always-sample a critical job).
+ */
 export function newTraceContext(opts: { sampled?: boolean } = {}): TraceContext {
   return {
     traceId: generateTraceId(),
     spanId: generateSpanId(),
-    sampled: opts.sampled ?? true,
+    sampled: opts.sampled ?? headSampleDecision(),
   };
 }
 

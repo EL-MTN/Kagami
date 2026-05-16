@@ -99,9 +99,14 @@ export function createLogger(opts: CreateLoggerOptions): pino.Logger {
     mixin: () => {
       const ctx = getTraceContext();
       if (!ctx) return {};
-      return ctx.parentSpanId
-        ? { traceId: ctx.traceId, spanId: ctx.spanId, parentSpanId: ctx.parentSpanId }
-        : { traceId: ctx.traceId, spanId: ctx.spanId };
+      const out: Record<string, unknown> = { traceId: ctx.traceId, spanId: ctx.spanId };
+      if (ctx.parentSpanId) out.parentSpanId = ctx.parentSpanId;
+      // Emit `sampled` only when the trace was sampled out. The Kansoku
+      // shipper keys head sampling off this: below-warn lines on a
+      // sampled-out trace aren't shipped (warn+ always are). Absence ⇒
+      // sampled, so records stay lean in the common (keep-all) case.
+      if (ctx.sampled === false) out.sampled = false;
+      return out;
     },
     // Default to the string-level formatter; let an explicit caller
     // `formatters.level` (or `.bindings`/`.log`) win. Spreading `formatters`
