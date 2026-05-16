@@ -171,7 +171,7 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 `apps/api/src/server.ts`:
 
 1. Load `dotenv/config`
-2. Build the Express app — `express.json({ limit: "10mb" })` (transcripts are big), `pinoHttp`, route mounting, error handler
+2. Build the Express app — `traceMiddleware`, `pinoHttp` (configured: see Logging below), `express.json({ limit: "10mb" })` (transcripts are big), route mounting, error handler
 3. `await ensureIndexes()` — idempotent btree + Atlas Search + vector index setup, polled until READY (180 s ceiling, calibrated against atlas-local's mongot build times). Probes the embedding provider at startup so an `EMBEDDING_MODEL` change is detected here, not at the next write.
 4. `app.listen(PORT, HOST)` — `PORT` from Portless, `7777` fallback; `HOST` defaults to `127.0.0.1`.
 5. SIGINT / SIGTERM → close server → close Mongo client → exit.
@@ -210,7 +210,7 @@ If `ensureIndexes()` throws, the process exits and logs `kioku startup failed` w
 
 ## Cross-cutting Concerns
 
-- **Logging.** `apps/api/src/logger.ts` is a thin wrapper around `@kagami/logger`'s `createLogger`, which provides the stable `service`/`component`/`env` bindings and the common secret-redaction list. `pino-http` is mounted as middleware so every request gets a `req.log`. Pretty transport whenever `NODE_ENV !== "production"`.
+- **Logging.** `apps/api/src/logger.ts` is a thin wrapper around `@kagami/logger`'s `createLogger`, which provides the stable `service`/`component`/`env` bindings and the common secret-redaction list. `pino-http` is mounted as middleware so every request gets a `req.log`. Pretty transport whenever `NODE_ENV !== "production"`. The `pino-http` instance is configured (not default): `/health` probes are not logged at all (`autoLogging.ignore`); the completion line's level is by outcome — `info` for <400, `warn` for 4xx, `silent` for ≥500 (the error handler and `mcp.ts` already log every 5xx with the full stack + context, so the completion line would be a duplicate), and `error` only for pino-http's own transport-level errors; and the `req`/`res` serializers are trimmed to `{ method, url, id }` / `{ statusCode }` instead of dumping every header.
 - **Error handling.** A single Express error handler maps `ZodError` → `400 { error: "validation_error", issues }` and everything else → `500 { error: "internal_error" }` with a logged `req.log.error`.
 - **Timeouts.** Embed calls use `AbortSignal.timeout(5_000)` (single) / `15_000` / `30_000` (batched). Extraction `generateObject` is `120_000`. Summary `generateObject` is `60_000`. Answerer `generateText` is `120_000`.
 - **Caching.** The two prompts (`extraction.md`, `answer.md`) are read once and cached in module scope. The narrative session summary is persisted in the `session_summaries` collection so re-ingest is free.
