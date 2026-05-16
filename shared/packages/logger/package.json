@@ -2,14 +2,33 @@
   "name": "@kagami/logger",
   "private": true,
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "exports": {
-    ".": "./src/index.ts",
-    "./kansoku-stream": "./src/kansoku-stream.ts",
-    "./trace": "./src/trace.ts",
-    "./express-trace": "./src/express-trace.ts",
-    "./traced-fetch": "./src/traced-fetch.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./kansoku-stream": {
+      "types": "./dist/kansoku-stream.d.ts",
+      "default": "./dist/kansoku-stream.js"
+    },
+    "./trace": {
+      "types": "./dist/trace.d.ts",
+      "default": "./dist/trace.js"
+    },
+    "./express-trace": {
+      "types": "./dist/express-trace.d.ts",
+      "default": "./dist/express-trace.js"
+    },
+    "./traced-fetch": {
+      "types": "./dist/traced-fetch.d.ts",
+      "default": "./dist/traced-fetch.js"
+    }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
