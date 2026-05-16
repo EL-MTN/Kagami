@@ -10,15 +10,9 @@ import type { StoredLog } from "@/lib/api";
 
 interface LogRowProps {
   log: StoredLog;
-  // On a trace page the per-row trace link is redundant (you're already in
-  // one trace); show the span id instead so rows are distinguishable.
   showSpanId?: boolean;
 }
 
-// Pretty-print the structured `fields` payload. Strings keep their REAL
-// newlines (quoted but not escaped) so a stack trace or a multi-line
-// responsePreview renders as actual lines instead of a single "...\n..."
-// blob — that escaping is exactly what made multi-line logs unreadable.
 function renderValue(v: unknown, indent: string): string {
   if (typeof v === "string") {
     const body = v.includes("\n") ? v.split("\n").join(`\n${indent}`) : v;

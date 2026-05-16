@@ -1,5 +1,4 @@
 import "dotenv/config";
-import type { IncomingMessage, ServerResponse } from "node:http";
 import express, { type ErrorRequestHandler } from "express";
 import pino from "pino";
 import { pinoHttp } from "pino-http";
@@ -37,18 +36,19 @@ app.use(
     logger,
     autoLogging: { ignore: (req) => req.url === "/health" },
     customLogLevel: (_req, res, err) => {
-      if (err || res.statusCode >= 500) return "error";
+      if (err) return "error";
+      if (res.statusCode >= 500) return "silent";
       if (res.statusCode >= 400) return "warn";
       return "info";
     },
     serializers: {
       err: pino.stdSerializers.err,
-      req: (req: IncomingMessage & { id?: string | number }) => ({
+      req: (req: { method?: string; url?: string; id?: string | number }) => ({
         method: req.method,
         url: req.url,
         id: req.id,
       }),
-      res: (res: ServerResponse) => ({ statusCode: res.statusCode }),
+      res: (res: { statusCode: number }) => ({ statusCode: res.statusCode }),
     },
   }),
 );
