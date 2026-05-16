@@ -1,10 +1,9 @@
 import { expect, it } from "vitest";
 import { logger } from "../src/logger";
 
-it("sets stable Kokoro service bindings", () => {
+it("sets stable Kokoro service bindings (ECS shape)", () => {
   expect(logger.bindings()).toMatchObject({
-    service: "kokoro-bot",
-    component: "bot",
+    service: { name: "kokoro-bot", component: "bot" },
   });
-  expect(logger.bindings()).toHaveProperty("env");
+  expect(logger.bindings()).toHaveProperty("service.environment");
 });

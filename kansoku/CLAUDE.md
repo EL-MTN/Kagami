@@ -10,6 +10,12 @@ This file is the project guide. Cross-service facts live in the workspace root: 
 
 ## Status
 
+**Phase 8 — prod-hardening (branch `logging-prod-hardening`, not yet on `main`).** On top of Phases 0–7:
+
+- **Wire format is ECS / OTel** (`log.level`, `@timestamp`, `service.{name,environment,component}`, `host.name`, `process.pid`, `trace.id`, `span.{id,parent.id}`, `error.{type,message,stack_trace}`, `message`). `lib/envelope.ts` tolerantly accepts BOTH the ECS shape and the legacy flat form and normalizes both to the unchanged internal `StoredLog`, so queries/metrics/errors/dashboard are untouched and producers/consumer needn't restart in lock-step.
+- **Build-light spans.** `@kagami/logger`'s `runWithSpan` emits `event.kind:"span"` log lines; `storage/spans.ts` folds them into a regular `spans` collection (`_id = traceId:spanId`); `GET /v1/traces/:id` returns `{ logs, spans }`; the dashboard renders a real waterfall (graceful fallback to the log-derived approximation for old traces).
+- **Durability + sampling + cardinality.** Ingest is write-then-ack (503 → shipper requeues); `KANSOKU_ERRORS_TTL_DAYS` (90) and the logs TTL on `spans`; `KANSOKU_MAX_META_COMBOS` (1000) cardinality budget (`lib/cardinality.ts`). Fixed a pre-existing `recordErrors` bug that silently dropped every traced error.
+
 **Phase 7 — retention dial-in + new-error alerts live.** On top of Phases 0–6:
 
 - `KANSOKU_LOGS_TTL_DAYS` (default 30, capped 365) tunes the `logs` time-series TTL. `ensureIndexes` reconciles via `collMod` on every startup — bump the env, restart, done.
@@ -47,16 +53,18 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │   │   │   │   └── services.ts  # GET /v1/services (+ /:service/timeline) — derived metrics
 │   │   │   ├── storage/
 │   │   │   │   ├── mongo.ts     # lazy MongoClient singleton
-│   │   │   │   ├── indexes.ts   # time-series + btree indexes; configurable TTL (default 30 days)
+│   │   │   │   ├── indexes.ts   # time-series + btree + TTL indexes (logs/errors/spans)
 │   │   │   │   ├── logs.ts      # StoredLog type, insertLogs, queryLogs, queryTrace
 │   │   │   │   ├── errors.ts    # ErrorRecord type, recordErrors, listErrors
+│   │   │   │   ├── spans.ts     # StoredSpan, extractSpan, recordSpans, querySpansByTrace
 │   │   │   │   └── metrics.ts   # serviceSummary + serviceTimeline aggregations
 │   │   │   ├── lib/
 │   │   │   │   ├── auth.ts      # constant-time x-kansoku-auth check
-│   │   │   │   ├── envelope.ts  # Zod schema + pino → StoredLog normalizer
+│   │   │   │   ├── envelope.ts  # ECS + legacy tolerant parse → StoredLog normalizer
+│   │   │   │   ├── cardinality.ts # metaField distinct-tuple budget guard
 │   │   │   │   ├── cors.ts      # *.localhost echo for the dashboard
 │   │   │   │   ├── log-events.ts # in-process broadcaster + 500-entry ring
-│   │   │   │   ├── fingerprint.ts # error signature builder + normalizer
+│   │   │   │   ├── fingerprint.ts # error signature builder (ECS + legacy error shapes)
 │   │   │   │   └── alerts.ts    # fail-open webhook for new error fingerprints
 │   │   │   ├── server.ts        # createApp() + main() boot
 │   │   │   └── logger.ts        # @kagami/logger wrapper

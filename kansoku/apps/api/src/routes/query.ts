@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { queryLogs, queryTrace } from "../storage/logs.js";
+import { querySpansByTrace } from "../storage/spans.js";
 
 export const queryRouter = Router();
 
@@ -31,8 +32,9 @@ queryRouter.get("/traces/:id", async (req, res, next) => {
       res.status(400).json({ error: "invalid_trace_id" });
       return;
     }
-    const logs = await queryTrace(id.toLowerCase());
-    res.json({ traceId: id.toLowerCase(), logs });
+    const traceId = id.toLowerCase();
+    const [logs, spans] = await Promise.all([queryTrace(traceId), querySpansByTrace(traceId)]);
+    res.json({ traceId, logs, spans });
   } catch (err) {
     next(err);
   }

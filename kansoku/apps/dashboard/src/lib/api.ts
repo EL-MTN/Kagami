@@ -65,9 +65,24 @@ export async function searchLogs(params: SearchLogsParams = {}): Promise<LogsRes
   return api(`/v1/logs${suffix}`);
 }
 
+export interface StoredSpan {
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string;
+  name: string;
+  service: string;
+  component: string;
+  startedAt: string;
+  durationMs: number;
+  status: "ok" | "error";
+}
+
 export interface TraceResponse {
   traceId: string;
   logs: StoredLog[];
+  // Real spans (build-light tracing). Empty for traces logged before spans
+  // existed — the page falls back to a log-derived waterfall then.
+  spans?: StoredSpan[];
 }
 
 export async function getTrace(id: string): Promise<TraceResponse> {
