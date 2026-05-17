@@ -1,7 +1,6 @@
 import "dotenv/config";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { wrapLanguageModel } from "ai";
-import type { LanguageModelV3Middleware } from "@ai-sdk/provider";
+import { createInference } from "@kagami/llm";
+import { embed, embedMany } from "ai";
 import { logger } from "./logger.js";
 
 // Provider profiles fill in URL + key defaults for common setups. Explicit
@@ -28,82 +27,52 @@ function resolveEndpoint(role: "LLM" | "EMBEDDING"): { baseURL: string; apiKey: 
 const llm = resolveEndpoint("LLM");
 const emb = resolveEndpoint("EMBEDDING");
 const modelName = process.env.MODEL ?? "";
+const embeddingModelName = process.env.EMBEDDING_MODEL ?? "text-embedding-nomic-embed-text-v1.5";
 
 if (!modelName) {
   logger.warn("MODEL is unset. Set it in .env to whatever your provider exposes.");
 }
 
-// `supportsStructuredOutputs: true` makes the provider send
-// `response_format: { type: "json_schema", ... }` instead of the default
-// `json_object`, which LM Studio rejects with "must be 'json_schema' or 'text'".
-const provider = createOpenAICompatible({
-  name: "llm",
-  baseURL: llm.baseURL,
-  apiKey: llm.apiKey,
-  supportsStructuredOutputs: true,
-});
+// Provider construction, structured-output mode, the LM-Studio
+// `reasoning_content` repair (default-on for openai-compatible), retry, and
+// span/usage emission now live in @kagami/llm. `supportsStructuredOutputs`
+// and `reasoningRepair` keep their gateway defaults — see its SPEC.md §6/§11.
+const timeoutMs = process.env.LLM_TIMEOUT_MS
+  ? Number.parseInt(process.env.LLM_TIMEOUT_MS, 10)
+  : undefined;
 
-// Embeddings can target a different endpoint than chat — e.g. chat=OpenAI
-// gpt-4o-mini while embeddings run through a local LM Studio nomic model.
-// Reuses the chat provider when both endpoints resolve to the same place.
-const embeddingProvider =
-  emb.baseURL === llm.baseURL && emb.apiKey === llm.apiKey
-    ? provider
-    : createOpenAICompatible({
-        name: "embeddings",
-        baseURL: emb.baseURL,
-        apiKey: emb.apiKey,
-      });
+const inference = createInference({
+  service: "kioku",
+  logger,
+  chat: {
+    kind: "openai-compatible",
+    name: "llm",
+    baseURL: llm.baseURL,
+    apiKey: llm.apiKey,
+    model: modelName,
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  },
+  embedding: {
+    kind: "openai-compatible",
+    name: "embeddings",
+    baseURL: emb.baseURL,
+    apiKey: emb.apiKey,
+    model: embeddingModelName,
+  },
+});
 
 // Re-export the resolved chat endpoint for callers like the bench runner
 // that build their own LLM instances (e.g. a separate judge model).
 export const llmEndpoint = llm;
 
-// Thinking-mode models (GLM-4.7-flash, Qwen3.6, etc.) sometimes emit their
-// final structured output into the `reasoning_content` field while leaving
-// the assistant `content` empty. The AI SDK reads only the text-typed
-// content parts, so generateObject sees nothing and throws
-// AI_NoObjectGeneratedError. This middleware repairs that case: when the
-// generate result has no non-empty text part but does have one or more
-// reasoning parts, promote the concatenated reasoning text to a text part.
-//
-// Tool-call results are untouched — when the model emits a tool_call
-// alongside reasoning, the tool_call part survives unchanged.
-const reasoningToContentMiddleware: LanguageModelV3Middleware = {
-  specificationVersion: "v3",
-  wrapGenerate: async ({ doGenerate }) => {
-    const result = await doGenerate();
-    const hasText = result.content.some((p) => p.type === "text" && p.text.trim().length > 0);
-    if (hasText) return result;
-    const reasoning = result.content
-      .filter((p): p is { type: "reasoning"; text: string } => p.type === "reasoning")
-      .map((p) => p.text)
-      .join("");
-    if (reasoning.trim().length === 0) return result;
-    return {
-      ...result,
-      content: [
-        ...result.content.filter((p) => p.type !== "text" && p.type !== "reasoning"),
-        { type: "text", text: reasoning },
-      ],
-    };
-  },
-};
-
-export const model = wrapLanguageModel({
-  model: provider(modelName),
-  middleware: reasoningToContentMiddleware,
-});
+export const model = inference.model();
 
 export function getEmbeddingModel() {
-  const name = process.env.EMBEDDING_MODEL ?? "text-embedding-nomic-embed-text-v1.5";
-  return embeddingProvider.textEmbeddingModel(name);
+  return inference.embeddings();
 }
 
 // Embedding helpers live in llm.ts (alongside the model factory) to
 // avoid a circular import between embeddings.ts and entities.ts.
-import { embed, embedMany } from "ai";
-
 export async function embedQuestion(q: string): Promise<number[]> {
   const { embedding } = await embed({
     model: getEmbeddingModel(),
