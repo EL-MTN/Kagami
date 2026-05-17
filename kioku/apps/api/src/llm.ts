@@ -57,7 +57,8 @@ const modelName = process.env.LLM_MODEL ?? process.env.MODEL ?? "";
 if (process.env.LLM_MODEL === undefined && process.env.MODEL !== undefined) {
   deprecated.MODEL = "LLM_MODEL";
 }
-const embeddingModelName = process.env.EMBEDDING_MODEL ?? "text-embedding-nomic-embed-text-v1.5";
+export const embeddingModelName =
+  process.env.EMBEDDING_MODEL ?? "text-embedding-nomic-embed-text-v1.5";
 
 if (Object.keys(deprecated).length > 0) {
   logger.warn(
@@ -118,6 +119,11 @@ const inference = createInference({
 // Re-export the resolved chat endpoint for callers like the bench runner
 // that build their own LLM instances (e.g. a separate judge model).
 export const llmEndpoint = llm;
+
+// Resolved embedding endpoint — single source of truth for diagnostics
+// (e.g. indexes.ts) so they report what was actually resolved regardless
+// of whether canonical or legacy env keys were used.
+export const embeddingEndpoint = emb;
 
 export const model = inference.model();
 

@@ -1,7 +1,7 @@
 import type { Collection, Db } from "mongodb";
 import { getDb } from "./mongo.js";
 import { logger } from "../logger.js";
-import { embedQuestion } from "../llm.js";
+import { embedQuestion, embeddingEndpoint, embeddingModelName } from "../llm.js";
 
 // Idempotent index setup. Safe to call on every startup — Mongo's
 // createIndex / createSearchIndex are no-ops when an equivalent index
@@ -31,12 +31,10 @@ async function probeEmbeddingDim(): Promise<number> {
 }
 
 function describeEmbeddingEndpoint(): string {
-  const provider = (process.env.EMBEDDING_PROVIDER ?? "lmstudio").toLowerCase();
-  const defaultURL =
-    provider === "openai" ? "https://api.openai.com/v1" : "http://localhost:1234/v1";
-  const url = process.env.EMBEDDING_URL ?? defaultURL;
-  const model = process.env.EMBEDDING_MODEL ?? "<default>";
-  return `EMBEDDING_PROVIDER=${provider}, EMBEDDING_URL=${url}, EMBEDDING_MODEL=${model}`;
+  // Report the endpoint @kagami/llm actually resolved (canonical or legacy
+  // env keys) rather than re-reading raw env, so the diagnostic can't drift
+  // from the real configuration.
+  return `EMBEDDING_BASE_URL=${embeddingEndpoint.baseURL}, EMBEDDING_MODEL=${embeddingModelName}`;
 }
 
 interface SearchIndexSpec {
