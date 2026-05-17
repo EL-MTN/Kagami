@@ -48,6 +48,7 @@ Kagami/                       # one git repo, one workspace
 └── shared/
     └── packages/
         ├── eslint-config/    # @kagami/eslint-config (./base, ./next)
+        ├── llm/              # @kagami/llm (createInference: provider/key mgmt, retry, same-tier fallback, reasoning-repair, span+usage seam)
         ├── logger/           # @kagami/logger (createLogger factory, ECS field names, trace/span helpers, Kansoku shipper)
         └── tsconfig/         # @kagami/tsconfig (./base.json, ./library.json, ./server.json, ./nextjs.json)
 ```
@@ -144,6 +145,7 @@ All four projects share tooling via `shared/packages/`:
 
 - **`@kagami/eslint-config`** — flat ESLint config; `./base` for general TS, `./next` for Next.js apps.
 - **`@kagami/tsconfig`** — `./base.json`, `./library.json`, `./server.json`, `./nextjs.json`, plus emit-on build presets `./server.build.json` and `./library.build.json` (consumed by each compiled package's `tsconfig.build.json`). Per-app `tsconfig.json` files extend one of these and add overrides (e.g. `verbatimModuleSyntax`, `esModuleInterop`, `noImplicitOverride`, `allowImportingTsExtensions`, `allowJs`) where projects diverge.
+- **`@kagami/llm`** — inference gateway exposing `createInference({ service, logger, chat, embedding?, fallback?, models? })`. Owns provider construction (native `@ai-sdk/{anthropic,openai,xai,google}` + `@ai-sdk/openai-compatible`), key management, full-jitter retry, same-tier fallback, per-attempt timeout, the LM-Studio `reasoning_content` repair (default-on for `openai-compatible`), and span+usage emission via an internal observability seam. Returns AI SDK model objects — callers keep `generateText`/`generateObject`/`embed`; the gateway owns construction, not invocation. Tier _policy_ stays caller-side. Consumed by Kioku (`apps/api/src/llm.ts`) and Kokoro (`apps/bot/src/ai/provider.ts`).
 - **`@kagami/logger`** — Pino factory exposing `createLogger({ service, component, env, level?, formatters?, kansoku? })`. Emits ECS / OTel field names (`log.level`, `@timestamp`, `service.*`, `trace.id`, `error.*`, …); owns the console transport policy (`pino-pretty` only on an interactive TTY or `LOG_PRETTY=1`, raw NDJSON otherwise) and the Kansoku shipper (write-then-ack aware, full-jitter backoff). Also exports trace helpers including `runWithSpan` (build-light spans → `event.kind:"span"` lines). No secret/PII redaction (local-trust only — reintroduce before non-localhost exposure). Each service's `logger.ts` is a thin wrapper that calls it with service-specific bindings. Unlike the `@kokoro/*` internal packages (raw `.ts`), `@kagami/logger` is a **built** package — it emits `dist/` JS + `.d.ts` and its `exports` map to `dist`, so the Express APIs run from compiled output in production (`build` → `start` = `node dist/...`); Turbo's `dev`/`typecheck`/`test` depend on `^build` so it is compiled before consumers resolve it.
 
 Other workspace-wide conventions:
