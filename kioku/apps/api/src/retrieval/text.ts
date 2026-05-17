@@ -9,8 +9,10 @@
 //
 // extractEntities pulls two cheap-to-detect entity shapes used by the
 // entity-boost ranker:
-//   - PROPER:  sequences of capitalized words
-//   - QUOTED:  text inside single or double quotes
+//   - PROPER:  sequences of capitalized words, including ones with an
+//              internal hyphen ("Goshujin-sama", "Jean-Luc")
+//   - QUOTED:  text inside double / curly quotes, or single quotes that
+//              are real delimiters rather than a possessive apostrophe
 
 const STOPWORDS = new Set<string>([
   "a",
@@ -175,9 +177,26 @@ export function lemmatizeForBm25(text: string): string {
 // Match runs of capitalized words (proper-noun phrases). Skips known
 // generic capitalized words and avoids matching the first word of a
 // sentence by requiring the run to be at least 4 chars or contain
-// multiple words. Lossier than spaCy NER but cheap and deterministic.
-const PROPER_RE = /\b([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)*)\b/g;
-const QUOTED_RE = /"([^"\n]+)"|'([^'\n]+)'/g;
+// multiple words. Each word may carry an internal hyphen so
+// "Goshujin-sama" / "Jean-Luc" survive intact instead of truncating at
+// the punctuation. An internal apostrophe is deliberately NOT allowed:
+// it would coin possessives/contractions ("User's", "It's") as entities
+// — the lowercased form ("user's") slips past the generic-word guard,
+// which only knows "user". Lossier than spaCy NER but cheap, deterministic,
+// and free of that whole noise class.
+const PROPER_RE =
+  /\b([A-Z][a-zA-Z0-9]+(?:-[A-Za-z0-9]+)*(?:\s+[A-Z][a-zA-Z0-9]+(?:-[A-Za-z0-9]+)*)*)\b/g;
+// Double and curly quotes are unambiguous delimiters. Straight single
+// quotes are only treated as a delimiter when the opener sits at a word
+// boundary (start / space / opening bracket) and the closer is followed
+// by space or terminal punctuation — so a possessive ("assistant's") or
+// contraction can't open a span and swallow the text up to the next real
+// quote. Group order: 1 = double, 2 = curly-double, 3 = curly-single,
+// 4 = anchored straight-single. Known miss: a quoted phrase that itself
+// contains a contraction won't match as one span (acceptable — rare, and
+// far cheaper than the apostrophe-collision garbage it prevents).
+const QUOTED_RE =
+  /"([^"\n]+)"|[“”]([^“”\n]+)[“”]|‘([^’\n]+)’|(?<=^|[\s([])'([^'\n]+?)'(?=$|[\s).,!?;:\]])/g;
 
 export type EntityType = "PROPER" | "QUOTED";
 export interface Entity {
@@ -208,7 +227,7 @@ export function extractEntities(text: string): Entity[] {
   }
 
   for (const m of text.matchAll(QUOTED_RE)) {
-    const ent = (m[1] ?? m[2] ?? "").trim();
+    const ent = (m[1] ?? m[2] ?? m[3] ?? m[4] ?? "").trim();
     if (!ent || ent.length > 100) continue;
     const key = `QUOTED:${ent.toLowerCase()}`;
     if (seen.has(key)) continue;
