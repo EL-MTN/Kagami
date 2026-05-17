@@ -21,10 +21,17 @@ const baseSchema = z.object({
     .default("")
     .transform((s) => (s ? s.split(",").map(Number) : [])),
 
+  // Kokoro chat is native-only; LLM_KIND is the explicit canonical marker
+  // LLM_PROVIDER/LLM_MODEL are already canonical for
+  // native, so no legacy rename here. LLM_MODEL_{FAST,SMART} externalize the
+  // previously-hardcoded tier map; unset → provider defaults (unchanged).
+  LLM_KIND: z.enum(["native"]).default("native"),
   LLM_PROVIDER: z.enum(["anthropic", "openai", "xai"]).default("anthropic"),
   ANTHROPIC_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   LLM_MODEL: z.string().default("claude-sonnet-4-6"),
+  LLM_MODEL_FAST: z.string().optional(),
+  LLM_MODEL_SMART: z.string().optional(),
 
   XAI_API_KEY: z.string().optional(),
 

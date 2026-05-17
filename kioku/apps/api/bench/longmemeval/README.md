@@ -18,18 +18,22 @@ The full S subset (`longmemeval_s_cleaned.json`, 277 MB) and M subset (`longmeme
 
 ```sh
 # All-local LM Studio + GLM-4.7-flash
-LLM_PROVIDER=lmstudio MODEL=zai-org/glm-4.7-flash \
+LLM_KIND=openai-compatible LLM_BASE_URL=http://localhost:1234/v1 LLM_API_KEY=lm-studio \
+  LLM_MODEL=zai-org/glm-4.7-flash \
   npx tsx scripts/longmemeval.ts --limit 5
 
 # All-OpenAI gpt-4o-mini + text-embedding-3-small (the most-tested config)
-LLM_PROVIDER=openai MODEL=gpt-4o-mini \
-  EMBEDDING_PROVIDER=openai EMBEDDING_MODEL=text-embedding-3-small \
-  OPENAI_API_KEY=$OPENAI_API_KEY \
+LLM_KIND=openai-compatible LLM_BASE_URL=https://api.openai.com/v1 LLM_API_KEY=$OPENAI_API_KEY \
+  LLM_MODEL=gpt-4o-mini \
+  EMBEDDING_KIND=openai-compatible EMBEDDING_BASE_URL=https://api.openai.com/v1 \
+  EMBEDDING_API_KEY=$OPENAI_API_KEY EMBEDDING_MODEL=text-embedding-3-small \
   npx tsx scripts/longmemeval.ts --limit 100
 
 # Hybrid: OpenAI chat, local embeddings
-LLM_PROVIDER=openai MODEL=gpt-4o-mini OPENAI_API_KEY=$OPENAI_API_KEY \
-  EMBEDDING_PROVIDER=lmstudio EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5 \
+LLM_KIND=openai-compatible LLM_BASE_URL=https://api.openai.com/v1 LLM_API_KEY=$OPENAI_API_KEY \
+  LLM_MODEL=gpt-4o-mini \
+  EMBEDDING_KIND=openai-compatible EMBEDDING_BASE_URL=http://localhost:1234/v1 \
+  EMBEDDING_API_KEY=lm-studio EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5 \
   npx tsx scripts/longmemeval.ts --limit 100
 
 # Reuse vaults from a prior run (skips ingest if the per-item Mongo DB already has facts)

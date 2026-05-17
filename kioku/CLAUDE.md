@@ -2,7 +2,7 @@
 
 ## Project
 
-Kioku — a personal long-term memory subsystem. Atomic facts in MongoDB + hybrid retrieval (`$vectorSearch` + `$search` + entity boost) + a single MCP server interface. Designed to be consumed over HTTP by external agents (Kokoro is the primary client). Built with TypeScript, Express, the Vercel AI SDK (`@ai-sdk/openai-compatible`), and a Next.js dashboard for inspection. Lives as a subtree inside the Kagami nested monorepo.
+Kioku — a personal long-term memory subsystem. Atomic facts in MongoDB + hybrid retrieval (`$vectorSearch` + `$search` + entity boost) + a single MCP server interface. Designed to be consumed over HTTP by external agents (Kokoro is the primary client). Built with TypeScript, Express, the `@kagami/llm` inference gateway (OpenAI-compatible), and a Next.js dashboard for inspection. Lives as a subtree inside the Kagami nested monorepo.
 
 ## Monorepo Structure
 
@@ -18,7 +18,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 │   │   │   ├── storage/     # mongo singleton, idempotent indexes, facts, entities, transcripts, history
 │   │   │   ├── server.ts    # express bootstrap + ensureIndexes + graceful shutdown
 │   │   │   ├── mcp.ts       # streamable-HTTP MCP transport mounted at /mcp
-│   │   │   ├── llm.ts       # provider profiles, model factory, embed helpers
+│   │   │   ├── llm.ts       # env resolution (canonical + legacy shim) + @kagami/llm createInference wiring + embed helpers
 │   │   │   ├── paths.ts     # prompts directory pointer
 │   │   │   ├── types.ts     # Transcript / Turn / frontmatter zod schemas
 │   │   │   └── logger.ts    # pino logger
@@ -37,7 +37,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 └── docs/
 ```
 
-**Stack**: Kioku is a _subtree_ inside the Kagami nested monorepo. The Kagami workspace root owns `package.json`, `turbo.json`, and `package-lock.json`; npm workspaces and Turborepo span all four sibling projects (Kioku, Kokoro, Kizuna, Kansoku). Tooling is shared via the workspace-level `@kagami/eslint-config`, `@kagami/tsconfig`, and `@kagami/logger` packages (which live in `shared/packages/` at the Kagami root). Kioku has no project-internal TypeScript packages today — `kioku/packages/` is empty (or absent). Apps depend on each other only via HTTP (the dashboard calls the API at `KIOKU_API_URL`).
+**Stack**: Kioku is a _subtree_ inside the Kagami nested monorepo. The Kagami workspace root owns `package.json`, `turbo.json`, and `package-lock.json`; npm workspaces and Turborepo span all four sibling projects (Kioku, Kokoro, Kizuna, Kansoku). Tooling and runtime helpers are shared via the workspace-level `@kagami/eslint-config`, `@kagami/tsconfig`, `@kagami/logger`, and `@kagami/llm` packages (which live in `shared/packages/` at the Kagami root). Kioku has no project-internal TypeScript packages today — `kioku/packages/` is empty (or absent). Apps depend on each other only via HTTP (the dashboard calls the API at `KIOKU_API_URL`).
 
 ## Commands
 
@@ -69,7 +69,7 @@ The benchmark runner lives at `apps/api/bench/longmemeval/README.md` — see [be
 ## Dependency Graph
 
 ```
-@kagami/eslint-config, @kagami/tsconfig (workspace-shared, live in shared/packages/)
+@kagami/eslint-config, @kagami/tsconfig, @kagami/llm (workspace-shared, live in shared/packages/)
        ↑
 @kioku/api          ← Express server, MCP, ingest + retrieval pipelines
 @kioku/dashboard    ← Next.js inspector (talks to API over HTTP via KIOKU_API_URL)
@@ -84,7 +84,7 @@ Apps share no in-process code. The dashboard reaches the API only through `fetch
 - **Zod at boundaries** — request bodies validated in `apps/api/src/routes/*` and `mcp.ts`; transcript frontmatter validated in `types.ts`. Internal modules trust their inputs.
 - **Pino logging** — structured logs via `logger.info({ context }, "message")`. The logger is built from the workspace-shared `@kagami/logger` factory, which emits ECS / OTel field names (`log.level`, `@timestamp`, `service.*`, `trace.id`, `error.{type,message,stack_trace}`, …) and an `error`-key serializer (raw `Error`s keep their stack). There is no secret/PII redaction — it was removed (local-trust only; reintroduce before any non-localhost exposure). `pino-http` is mounted on the API. Console output is `pino-pretty` only on an interactive TTY or `LOG_PRETTY=1`, raw NDJSON otherwise. When `KANSOKU_URL` and `KANSOKU_INGEST_TOKEN` are set, logs also stream to the workspace's Kansoku service via a fail-open in-process shipper.
 - **Trace context** — `traceMiddleware` from `@kagami/logger/express-trace` is mounted before `pinoHttp` so every log line inside a request — including body-parse errors (`PayloadTooLargeError`, malformed JSON) and pino-http's completion log — auto-carries `traceId`/`spanId` via the pino mixin. Incoming W3C `traceparent` headers (e.g. from Kokoro's `tracedFetch`) open a child span; absence mints a fresh trace.
-- **Vercel AI SDK + OpenAI-compatible provider** — `generateObject()` for extraction/summary, `generateText()` for the answerer, `embed()` / `embedMany()` for vectors. Any OpenAI-compatible endpoint works (LM Studio, OpenAI, vLLM, Ollama).
+- **Inference via `@kagami/llm`** — `generateObject()` (extraction/summary) and `generateText()` (answerer) run on models from the `@kagami/llm` gateway; `embed()` / `embedMany()` still call the `ai` SDK directly. Any OpenAI-compatible endpoint works (LM Studio, OpenAI, vLLM, Ollama).
 - **No classes for services** — prefer standalone exported functions. Routers, ranker, ingest paths, and MCP tools are all plain functions.
 - **Atomic facts are write-once** — no UPDATE/DELETE on the `facts` collection. Corrections happen by appending newer facts with later `event_date`; the answerer prompt resolves contradictions newest-wins. Every mutation leaves a row in `history`.
 - **Race-safe by Mongo primitives where it matters** — `entities_text_lower_unique` plus `$setOnInsert` / `$addToSet` upserts on the entity store. Fact dedup is cosine-based at the ingest layer (no storage-layer hash index); the single-fact append path serializes on a process-wide async lock so concurrent cosine read-then-act calls don't both insert.
@@ -93,7 +93,7 @@ Apps share no in-process code. The dashboard reaches the API only through `fetch
 - **mem0-OSS-shaped multi-tenancy** — facts are scoped by `(user_id, run_id, agent_id)`. `user_id` defaults to `'default'`. Cosine dedup at append/consolidate is scope-bound by reading only in-scope facts, so identical text under different scopes does not collide. There is no auth layer; multi-tenancy is filter-based.
 - **`.env` location** — `apps/api/.env` (not root). `apps/api/.env.example` is the template.
 - **Tests as source of truth** — when a test fails because production behaves differently than the test expects, fix the API, not the test. See [docs/testing.md](docs/testing.md).
-- **Cross-package imports** — `@kagami/eslint-config`, `@kagami/tsconfig` only (no project-internal packages today); no cross-app TS imports.
+- **Cross-package imports** — `@kagami/eslint-config`, `@kagami/tsconfig`, and `@kagami/llm` (the runtime inference gateway, consumed by `apps/api/src/llm.ts`); no project-internal packages today; no cross-app TS imports.
 - **Within-package imports** — relative paths with explicit `.js` extensions (NodeNext requirement on the API).
 - **Internal packages pattern** — Kioku has no project-internal TS packages today. The apps consume only the shared `@kagami/*` config packages from the Kagami workspace root (`shared/packages/`); the former `kioku/packages/typescript-config` and `kioku/packages/eslint-config` were folded into those workspace-level packages during the Kagami migration.
 
@@ -109,6 +109,6 @@ See `/docs` for:
 - [storage.md](docs/storage.md) — Mongo collections, idempotent indexes, scope-aware reads, audit log
 - [api.md](docs/api.md) — REST surface (`/facts`, `/recall`, `/query`, `/sessions`, `/health`, `/version`) and MCP tools at `/mcp`
 - [dashboard.md](docs/dashboard.md) — Next.js inspector, design system, page map
-- [configuration.md](docs/configuration.md) — env vars, provider profiles, common LLM/embedding combos, MongoDB setup
+- [configuration.md](docs/configuration.md) — env vars, `@kagami/llm` provider config, common LLM/embedding combos, MongoDB setup
 - [testing.md](docs/testing.md) — vitest + mongodb-memory-server harness, what's covered, how to add tests
 - [bench.md](docs/bench.md) — LongMemEval runner, headline numbers, BM25 calibration tool
