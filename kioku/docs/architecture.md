@@ -13,7 +13,7 @@ kioku/                              # subtree of the Kagami nested monorepo
 │   │   ├── src/
 │   │   │   ├── server.ts           # bootstrap: ensureIndexes → app.listen → graceful shutdown
 │   │   │   ├── mcp.ts              # streamable-HTTP MCP transport mounted at /mcp
-│   │   │   ├── llm.ts              # provider profiles, model + embedding factories
+│   │   │   ├── llm.ts              # env resolution (canonical + legacy shim) + @kagami/llm createInference wiring + embed helpers
 │   │   │   ├── paths.ts            # prompts directory pointer
 │   │   │   ├── types.ts            # Transcript / Turn zod schemas
 │   │   │   ├── logger.ts           # pino logger
@@ -35,12 +35,12 @@ kioku/                              # subtree of the Kagami nested monorepo
 └── docs/
 ```
 
-Tooling (`@kagami/eslint-config`, `@kagami/tsconfig`) lives at the Kagami workspace root under `shared/packages/`; Kioku has no project-internal TS packages.
+Workspace-shared packages — `@kagami/eslint-config`, `@kagami/tsconfig` (tooling) and the `@kagami/llm` runtime inference gateway — live at the Kagami workspace root under `shared/packages/`; Kioku has no project-internal TS packages.
 
 ### Dependency Graph
 
 ```
-@kagami/eslint-config, @kagami/tsconfig (workspace-shared, from shared/packages/)
+@kagami/eslint-config, @kagami/tsconfig, @kagami/llm (workspace-shared, from shared/packages/)
        ↑
 @kioku/api          ← Express, MCP, ingest + retrieval pipelines
 @kioku/dashboard    ← Next.js inspector — talks to API only over HTTP

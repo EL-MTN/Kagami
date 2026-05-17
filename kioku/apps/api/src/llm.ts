@@ -74,16 +74,18 @@ if (!modelName) {
 // `reasoning_content` repair (default-on for openai-compatible), retry, and
 // span/usage emission live in @kagami/llm.
 const rawTimeout = process.env.LLM_TIMEOUT_MS;
-const parsedTimeout = rawTimeout ? Number.parseInt(rawTimeout, 10) : undefined;
-// Guard a malformed value: a non-numeric LLM_TIMEOUT_MS makes parseInt return
-// NaN, which would reach AbortSignal.timeout(NaN) and abort every call. Treat
-// anything not a positive finite integer as "unset" (no gateway timeout).
+// `Number()` not `parseInt`: parseInt does a partial parse ("180s" -> 180,
+// "1e5" -> 1) that would slip past the guard as a silently-wrong timeout.
+// `Number("180s")` -> NaN, caught below; anything not a positive finite
+// number is treated as "unset" (no gateway timeout) with a warn — otherwise
+// a malformed value could reach AbortSignal.timeout() and abort every call.
+const parsedTimeout = rawTimeout ? Number(rawTimeout) : undefined;
 const timeoutMs =
   parsedTimeout !== undefined && Number.isFinite(parsedTimeout) && parsedTimeout > 0
     ? parsedTimeout
     : undefined;
 if (rawTimeout && timeoutMs === undefined) {
-  logger.warn(`LLM_TIMEOUT_MS="${rawTimeout}" is not a positive integer — ignoring.`);
+  logger.warn(`LLM_TIMEOUT_MS="${rawTimeout}" is not a positive number — ignoring.`);
 }
 
 const inference = createInference({
