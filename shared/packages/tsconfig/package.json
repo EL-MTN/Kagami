@@ -4,7 +4,9 @@
   "exports": {
     "./base.json": "./base.json",
     "./library.json": "./library.json",
+    "./library.build.json": "./library.build.json",
     "./server.json": "./server.json",
+    "./server.build.json": "./server.build.json",
     "./nextjs.json": "./nextjs.json"
   }
 }

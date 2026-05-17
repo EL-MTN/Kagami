@@ -1,0 +1,7 @@
+{
+  "extends": "./server.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false
+  }
+}
