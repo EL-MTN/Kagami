@@ -2,9 +2,10 @@
 # Regression guard for the production build path.
 #
 # The class of bug this catches: a service that cannot run as plain
-# `node dist/...` because something in its graph (notably @kagami/logger)
-# resolves to raw .ts, or a build that silently emits nothing. That failure
-# has no other automated detection — full API suites need a MongoDB binary.
+# `node dist/...` because something in its graph (notably @kagami/logger
+# or @kagami/llm) resolves to raw .ts, or a build that silently emits
+# nothing. That failure has no other automated detection — full API
+# suites need a MongoDB binary.
 #
 # Builds the compiled-prod packages, then boots each API's dist entrypoint
 # and asserts it gets PAST module resolution. A clean env makes the servers
@@ -19,6 +20,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 echo "── building compiled-prod packages ──"
 npx turbo run build \
   --filter=@kagami/logger \
+  --filter=@kagami/llm \
   --filter=@kioku/api \
   --filter=@kansoku/api \
   --filter=@kizuna/api
@@ -38,7 +40,7 @@ boot_check() {
   done
   kill -TERM "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
-  if grep -qE 'ERR_UNKNOWN_FILE_EXTENSION|Unknown file extension "\.ts"|Cannot find package .@kagami/logger.|ERR_MODULE_NOT_FOUND' "$log"; then
+  if grep -qE 'ERR_UNKNOWN_FILE_EXTENSION|Unknown file extension "\.ts"|Cannot find package .@kagami/(logger|llm).|ERR_MODULE_NOT_FOUND' "$log"; then
     echo "FAIL  $name — module/.ts resolution error:"
     tail -n 5 "$log" | sed 's/^/      /'
     fail=1

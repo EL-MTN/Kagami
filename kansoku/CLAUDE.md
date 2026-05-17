@@ -70,6 +70,7 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │   │   │   └── logger.ts        # @kagami/logger wrapper
 │   │   ├── tests/               # vitest + mongodb-memory-server harness
 │   │   ├── tsconfig.json        # extends @kagami/tsconfig/server.json
+│   │   ├── tsconfig.build.json  # prod build: tsc -p this → dist/ (extends @kagami/tsconfig/server.build.json)
 │   │   ├── eslint.config.js
 │   │   └── package.json
 │   └── dashboard/      # Next.js 16 inspector at https://kansoku.localhost
