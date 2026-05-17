@@ -7,9 +7,9 @@
 # nothing. That failure has no other automated detection — full API
 # suites need a MongoDB binary.
 #
-# Builds the compiled-prod packages, then boots each API's dist entrypoint
-# and asserts it gets PAST module resolution. A clean env makes the servers
-# fail fast on Mongo/config — that's expected and counts as success here;
+# Builds the compiled-prod packages, then boots each backend's dist
+# entrypoint and asserts it gets PAST module resolution. A clean env makes
+# the processes fail fast on Mongo/config — that's expected and counts as success here;
 # only a .ts / module-resolution error is a failure.
 #
 # Usage: npm run smoke   (or: bash scripts/smoke-prod-build.sh)
@@ -23,7 +23,8 @@ npx turbo run build \
   --filter=@kagami/llm \
   --filter=@kioku/api \
   --filter=@kansoku/api \
-  --filter=@kizuna/api
+  --filter=@kizuna/api \
+  --filter=@kokoro/bot
 
 fail=0
 
@@ -55,6 +56,7 @@ echo "── booting compiled entrypoints under plain node ──"
 boot_check "@kioku/api"   kioku/apps/api   dist/server.js
 boot_check "@kansoku/api" kansoku/apps/api dist/server.js
 boot_check "@kizuna/api"  kizuna/apps/api  dist/main.js
+boot_check "@kokoro/bot"  kokoro/apps/bot  dist/index.js
 
 echo
 if [ "$fail" -ne 0 ]; then
