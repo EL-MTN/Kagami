@@ -245,11 +245,19 @@ No dependency on unmerged work.
   green). Kokoro cutover (`apps/bot/src/ai/provider.ts` kept as the caller-side
   tier adapter — zero call-site changes — 238 bot tests green). Cross-cutting
   docs (`ARCHITECTURE.md`, workspace `CLAUDE.md`).
-- **Deliberately deferred — §7 env-key versioning.** The cutover is
-  behavior-preserving: Kioku still reads `LLM_*`/`EMBEDDING_*` via its existing
-  `resolveEndpoint`; Kokoro still reads `config.LLM_PROVIDER`/`LLM_MODEL`. The
-  `LLM_KIND`-style versioned keys + deprecation-warn shim + `.env.example`
-  rewrite change the config contract and warrant their own change with a
-  deprecation window — not smuggled into a behavior-preserving cutover. The
-  per-project docs (`kioku/docs/configuration.md`, `kokoro/docs/ai-layer.md`)
-  still describe the pre-gateway wiring and are part of that same follow-up.
+- **Done (folded in) — §7 env-key versioning.** Canonical keys are now live
+  and behavior-preserving via a deprecation shim:
+  - **Kioku** (`apps/api/src/llm.ts`): canonical `LLM_KIND`/`LLM_BASE_URL`/
+    `LLM_API_KEY`/`LLM_MODEL`/`LLM_TIMEOUT_MS` + `EMBEDDING_*`. Legacy
+    `LLM_PROVIDER` (profile selector), `LLM_URL`, bare `MODEL`,
+    `EMBEDDING_PROVIDER`/`EMBEDDING_URL` still resolve via a legacy profile
+    table and emit a single startup `logger.warn` listing the legacy→canonical
+    mapping. Removed next release.
+  - **Kokoro** (`packages/shared/src/config.ts`, `apps/bot/src/ai/provider.ts`):
+    `LLM_PROVIDER`/`LLM_MODEL` were already canonical for native, so no rename
+    — added `LLM_KIND` (`z.enum(["native"])`, default `native`) and optional
+    `LLM_MODEL_FAST`/`LLM_MODEL_SMART` that externalize the previously
+    hardcoded tier map (unset → identical defaults).
+  - `.env.example` (both services) and the per-project docs
+    (`kioku/docs/configuration.md`, `kokoro/docs/ai-layer.md`) rewritten to the
+    canonical keys with the deprecation note.

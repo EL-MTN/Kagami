@@ -2,18 +2,25 @@
 
 API config lives at `apps/api/.env`. Copy `apps/api/.env.example` to start. The dashboard reads only `KIOKU_API_URL` and inherits `PORT` from Portless.
 
-## Provider profiles
+## Provider config
 
-Kioku uses `@ai-sdk/openai-compatible`, so any OpenAI-shaped endpoint works (LM Studio, OpenAI, vLLM, Ollama, …). Two profiles in `apps/api/src/llm.ts` fill in URL + key defaults so a typical setup is one line per role:
+Kioku reaches all models through the shared `@kagami/llm` gateway
+(`createInference`, `kind: "openai-compatible"`), so any OpenAI-shaped endpoint
+works (LM Studio, OpenAI, vLLM, Ollama, …). The gateway owns provider
+construction, structured-output mode, the LM-Studio `reasoning_content` repair
+(default-on), retry, and span/usage emission — see `shared/packages/llm/SPEC.md`.
 
-```ts
-PROFILES = {
-  lmstudio: { baseURL: "http://localhost:1234/v1", apiKey: "lm-studio" },
-  openai: { baseURL: "https://api.openai.com/v1", apiKey: process.env.OPENAI_API_KEY ?? "" },
-};
-```
+Canonical keys are `LLM_KIND` / `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` /
+`LLM_TIMEOUT_MS` and the `EMBEDDING_*` counterparts. Chat and embedding
+endpoints are independent — set each separately.
 
-Explicit `LLM_URL` / `LLM_API_KEY` (and `EMBEDDING_*` counterparts) always win as overrides. Chat and embedding providers are independent — pick separately.
+> **Deprecated (one more release, emits a startup warn):** the pre-gateway
+> keys `LLM_PROVIDER` (profile selector `lmstudio`/`openai`), `LLM_URL`, bare
+> `MODEL`, and the `EMBEDDING_PROVIDER`/`EMBEDDING_URL` counterparts. They are
+> still honored via a legacy profile table in `apps/api/src/llm.ts`
+> (`lmstudio` → `http://localhost:1234/v1`, `openai` →
+> `https://api.openai.com/v1` + `OPENAI_API_KEY`). Migrate to the canonical
+> keys above.
 
 ## Reference
 
@@ -35,20 +42,21 @@ KIOKU_TOP_K=50                                   # answerer top-K (default 50)
 # PORT=7777                                      # Portless injects this; 7777 is the fallback
 # KIOKU_HOST=127.0.0.1
 
-# ── Chat / answerer ─────────────────────────────────────
-LLM_PROVIDER=lmstudio                            # 'lmstudio' or 'openai'
-MODEL=zai-org/glm-4.7-flash                      # provider-native model id
-# LLM_URL=http://localhost:1234/v1               # override
-# LLM_API_KEY=lm-studio                          # override
+# ── Chat / answerer (via @kagami/llm, openai-compatible) ─
+LLM_KIND=openai-compatible
+LLM_BASE_URL=http://localhost:1234/v1
+LLM_API_KEY=lm-studio
+LLM_MODEL=zai-org/glm-4.7-flash                  # provider-native model id
+# LLM_TIMEOUT_MS=180000                          # optional per-attempt deadline
 
-# ── Embeddings (independent provider) ───────────────────
-EMBEDDING_PROVIDER=lmstudio                      # 'lmstudio' or 'openai'
+# ── Embeddings (independent endpoint) ───────────────────
+EMBEDDING_KIND=openai-compatible
+EMBEDDING_BASE_URL=http://localhost:1234/v1
+EMBEDDING_API_KEY=lm-studio
 EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
-# EMBEDDING_URL=...                              # override
-# EMBEDDING_API_KEY=...                          # override
 
-# ── Used as the *_API_KEY default when *_PROVIDER=openai
-OPENAI_API_KEY=sk-...
+# ── Only used by the deprecated 'openai' legacy profile ──
+# OPENAI_API_KEY=sk-...
 
 # ── Logging ─────────────────────────────────────────────
 # LOG_LEVEL=info                                 # pino level
@@ -60,32 +68,43 @@ OPENAI_API_KEY=sk-...
 - **All-local** — LM Studio on `localhost:1234` for both chat and embeddings:
 
   ```sh
-  LLM_PROVIDER=lmstudio
-  EMBEDDING_PROVIDER=lmstudio
-  MODEL=zai-org/glm-4.7-flash
+  LLM_KIND=openai-compatible
+  LLM_BASE_URL=http://localhost:1234/v1
+  LLM_API_KEY=lm-studio
+  LLM_MODEL=zai-org/glm-4.7-flash
+  EMBEDDING_KIND=openai-compatible
+  EMBEDDING_BASE_URL=http://localhost:1234/v1
+  EMBEDDING_API_KEY=lm-studio
   EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
   ```
 
 - **All-OpenAI** — paid chat + paid embeddings:
 
   ```sh
-  LLM_PROVIDER=openai
-  EMBEDDING_PROVIDER=openai
-  MODEL=gpt-4o-mini
+  LLM_KIND=openai-compatible
+  LLM_BASE_URL=https://api.openai.com/v1
+  LLM_API_KEY=sk-...
+  LLM_MODEL=gpt-4o-mini
+  EMBEDDING_KIND=openai-compatible
+  EMBEDDING_BASE_URL=https://api.openai.com/v1
+  EMBEDDING_API_KEY=sk-...
   EMBEDDING_MODEL=text-embedding-3-small
-  OPENAI_API_KEY=sk-...
   ```
 
 - **Hybrid (cheap chat, free embed)** — OpenAI answerer, local LM Studio embeddings:
   ```sh
-  LLM_PROVIDER=openai
-  MODEL=gpt-4o-mini
-  OPENAI_API_KEY=sk-...
-  EMBEDDING_PROVIDER=lmstudio
+  LLM_KIND=openai-compatible
+  LLM_BASE_URL=https://api.openai.com/v1
+  LLM_API_KEY=sk-...
+  LLM_MODEL=gpt-4o-mini
+  EMBEDDING_KIND=openai-compatible
+  EMBEDDING_BASE_URL=http://localhost:1234/v1
+  EMBEDDING_API_KEY=lm-studio
   EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
   ```
 
-The provider abstraction collapses to a single OpenAI-compatible client when chat and embedding URLs/keys match (no duplicate provider instance).
+`@kagami/llm` builds the chat and embedding providers independently; the
+gateway owns the OpenAI-compatible client construction.
 
 ## Write rate limits
 
