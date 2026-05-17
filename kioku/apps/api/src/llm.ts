@@ -73,19 +73,26 @@ if (!modelName) {
 // Provider construction, structured-output mode, the LM-Studio
 // `reasoning_content` repair (default-on for openai-compatible), retry, and
 // span/usage emission live in @kagami/llm.
+// `Number()` not `parseInt`: parseInt partial-parses ("180s" -> 180,
+// "1e5" -> 1), silently yielding a wrong timeout. `Number()` rejects
+// suffixed junk as NaN ("180s" -> NaN) and parses scientific notation
+// correctly ("1e5" -> 100000). A value must be a positive finite number
+// within Node's timer ceiling; anything else is treated as "unset" (no
+// gateway timeout) with a warn — an out-of-range value would otherwise
+// make AbortSignal.timeout() throw ERR_OUT_OF_RANGE (or int32-overflow
+// to an instant abort) on every call.
+const MAX_TIMEOUT_MS = 2_147_483_647; // Node setTimeout / AbortSignal.timeout ceiling
 const rawTimeout = process.env.LLM_TIMEOUT_MS;
-// `Number()` not `parseInt`: parseInt does a partial parse ("180s" -> 180,
-// "1e5" -> 1) that would slip past the guard as a silently-wrong timeout.
-// `Number("180s")` -> NaN, caught below; anything not a positive finite
-// number is treated as "unset" (no gateway timeout) with a warn — otherwise
-// a malformed value could reach AbortSignal.timeout() and abort every call.
 const parsedTimeout = rawTimeout ? Number(rawTimeout) : undefined;
 const timeoutMs =
-  parsedTimeout !== undefined && Number.isFinite(parsedTimeout) && parsedTimeout > 0
+  parsedTimeout !== undefined &&
+  Number.isFinite(parsedTimeout) &&
+  parsedTimeout > 0 &&
+  parsedTimeout <= MAX_TIMEOUT_MS
     ? parsedTimeout
     : undefined;
 if (rawTimeout && timeoutMs === undefined) {
-  logger.warn(`LLM_TIMEOUT_MS="${rawTimeout}" is not a positive number — ignoring.`);
+  logger.warn(`LLM_TIMEOUT_MS="${rawTimeout}" is not a positive number within range — ignoring.`);
 }
 
 const inference = createInference({

@@ -37,7 +37,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 └── docs/
 ```
 
-**Stack**: Kioku is a _subtree_ inside the Kagami nested monorepo. The Kagami workspace root owns `package.json`, `turbo.json`, and `package-lock.json`; npm workspaces and Turborepo span all four sibling projects (Kioku, Kokoro, Kizuna, Kansoku). Tooling is shared via the workspace-level `@kagami/eslint-config`, `@kagami/tsconfig`, and `@kagami/logger` packages (which live in `shared/packages/` at the Kagami root). Kioku has no project-internal TypeScript packages today — `kioku/packages/` is empty (or absent). Apps depend on each other only via HTTP (the dashboard calls the API at `KIOKU_API_URL`).
+**Stack**: Kioku is a _subtree_ inside the Kagami nested monorepo. The Kagami workspace root owns `package.json`, `turbo.json`, and `package-lock.json`; npm workspaces and Turborepo span all four sibling projects (Kioku, Kokoro, Kizuna, Kansoku). Tooling and runtime helpers are shared via the workspace-level `@kagami/eslint-config`, `@kagami/tsconfig`, `@kagami/logger`, and `@kagami/llm` packages (which live in `shared/packages/` at the Kagami root). Kioku has no project-internal TypeScript packages today — `kioku/packages/` is empty (or absent). Apps depend on each other only via HTTP (the dashboard calls the API at `KIOKU_API_URL`).
 
 ## Commands
 
@@ -69,7 +69,7 @@ The benchmark runner lives at `apps/api/bench/longmemeval/README.md` — see [be
 ## Dependency Graph
 
 ```
-@kagami/eslint-config, @kagami/tsconfig (workspace-shared, live in shared/packages/)
+@kagami/eslint-config, @kagami/tsconfig, @kagami/llm (workspace-shared, live in shared/packages/)
        ↑
 @kioku/api          ← Express server, MCP, ingest + retrieval pipelines
 @kioku/dashboard    ← Next.js inspector (talks to API over HTTP via KIOKU_API_URL)

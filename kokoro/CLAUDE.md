@@ -2,7 +2,7 @@
 
 ## Project
 
-Kokoro — a Telegram-based conversational AI that maintains persistent personality, memories, and proactive engagement. Built as a monorepo with TypeScript, Vercel AI SDK, MongoDB, and the Grammy Telegram framework. Includes a Next.js dashboard for routine management and observability.
+Kokoro — a Telegram-based conversational AI that maintains persistent personality, memories, and proactive engagement. Built as a monorepo with TypeScript, the `@kagami/llm` inference gateway (Vercel AI SDK for image/TTS/STT), MongoDB, and the Grammy Telegram framework. Includes a Next.js dashboard for routine management and observability.
 
 Kokoro is now a subtree inside the **Kagami nested monorepo** (`/Kagami/kokoro/`). It consumes shared tooling — `@kagami/eslint-config`, `@kagami/tsconfig`, and the `@kagami/llm` inference gateway — from `Kagami/shared/packages/`. There is no top-level `package.json`, `turbo.json`, or `package-lock.json` inside `kokoro/`; those live at the Kagami root. Husky hooks are also managed at the Kagami root (no `kokoro/.husky/`).
 
