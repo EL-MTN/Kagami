@@ -31,9 +31,9 @@ async function probeEmbeddingDim(): Promise<number> {
 }
 
 function describeEmbeddingEndpoint(): string {
-  // Report the endpoint @kagami/llm actually resolved (canonical or legacy
-  // env keys) rather than re-reading raw env, so the diagnostic can't drift
-  // from the real configuration.
+  // Report the endpoint llm.ts resolved (canonical or legacy env keys) and
+  // passed to @kagami/llm, rather than re-reading raw env here, so the
+  // diagnostic can't drift from the real configuration.
   return `EMBEDDING_BASE_URL=${embeddingEndpoint.baseURL}, EMBEDDING_MODEL=${embeddingModelName}`;
 }
 

@@ -194,19 +194,19 @@ If `ensureIndexes()` throws, the process exits and logs `kioku startup failed` w
 
 ## Module Map
 
-| Directory                     | Purpose                                                                                                                                                                               |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/api/src/ingest/`        | Transcript parsing + the atomic-fact extraction pipeline. `consolidate.ts` is the core; `append.ts` is the single-fact path; `sessions.ts` is the HTTP entry that glues them.         |
-| `apps/api/src/query/`         | Read paths above the ranker. `recall.ts` returns ranked facts; `answer.ts` runs the answerer prompt over them.                                                                        |
-| `apps/api/src/retrieval/`     | Hybrid ranker. `embeddings.ts` orchestrates the three signals; `scoring.ts` does the additive fusion + BM25 sigmoid; `text.ts` is the lemmatizer + entity extractor.                  |
-| `apps/api/src/routes/`        | Express routers, one per resource. `filters.ts` is the shared zod schema for the mem0-shaped filter payload.                                                                          |
-| `apps/api/src/storage/`       | Mongo. `mongo.ts` is the lazy client singleton; `indexes.ts` is the idempotent index setup with READY-polling; the rest are per-collection accessors.                                 |
-| `apps/api/src/mcp.ts`         | Streamable-HTTP MCP transport. Seven tools (`recall`, `query`, `append_fact`, `append_facts`, `ingest_session`, `fact_count`, `fact_history`).                                        |
-| `apps/api/src/llm.ts`         | Env resolution (canonical keys + legacy profile shim) and `@kagami/llm` `createInference` wiring; exports `model`, `getEmbeddingModel`, `embedQuestion`, `embedTexts`, `llmEndpoint`. |
-| `apps/api/prompts/`           | `extraction.md` (ingest), `answer.md` (answerer). Read at runtime by ingest/consolidate and query/answer respectively. Cached after first read.                                       |
-| `apps/api/scripts/`           | One-off tools: `cc-to-transcript.ts` and `cc-ingest-chunked.ts` (Claude Code session import); `longmemeval.ts` + worker (bench); `probe-bm25-scores.ts` (BM25 sigmoid calibration).   |
-| `apps/api/bench/longmemeval/` | LongMemEval runner + datasets + results. See [bench.md](bench.md).                                                                                                                    |
-| `apps/dashboard/src/`         | Next.js 15 App Router inspector. See [dashboard.md](dashboard.md).                                                                                                                    |
+| Directory                     | Purpose                                                                                                                                                                                                                          |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/src/ingest/`        | Transcript parsing + the atomic-fact extraction pipeline. `consolidate.ts` is the core; `append.ts` is the single-fact path; `sessions.ts` is the HTTP entry that glues them.                                                    |
+| `apps/api/src/query/`         | Read paths above the ranker. `recall.ts` returns ranked facts; `answer.ts` runs the answerer prompt over them.                                                                                                                   |
+| `apps/api/src/retrieval/`     | Hybrid ranker. `embeddings.ts` orchestrates the three signals; `scoring.ts` does the additive fusion + BM25 sigmoid; `text.ts` is the lemmatizer + entity extractor.                                                             |
+| `apps/api/src/routes/`        | Express routers, one per resource. `filters.ts` is the shared zod schema for the mem0-shaped filter payload.                                                                                                                     |
+| `apps/api/src/storage/`       | Mongo. `mongo.ts` is the lazy client singleton; `indexes.ts` is the idempotent index setup with READY-polling; the rest are per-collection accessors.                                                                            |
+| `apps/api/src/mcp.ts`         | Streamable-HTTP MCP transport. Seven tools (`recall`, `query`, `append_fact`, `append_facts`, `ingest_session`, `fact_count`, `fact_history`).                                                                                   |
+| `apps/api/src/llm.ts`         | Env resolution (canonical keys + legacy profile shim) and `@kagami/llm` `createInference` wiring; exports `model`, `getEmbeddingModel`, `embedQuestion`, `embedTexts`, `llmEndpoint`, `embeddingEndpoint`, `embeddingModelName`. |
+| `apps/api/prompts/`           | `extraction.md` (ingest), `answer.md` (answerer). Read at runtime by ingest/consolidate and query/answer respectively. Cached after first read.                                                                                  |
+| `apps/api/scripts/`           | One-off tools: `cc-to-transcript.ts` and `cc-ingest-chunked.ts` (Claude Code session import); `longmemeval.ts` + worker (bench); `probe-bm25-scores.ts` (BM25 sigmoid calibration).                                              |
+| `apps/api/bench/longmemeval/` | LongMemEval runner + datasets + results. See [bench.md](bench.md).                                                                                                                                                               |
+| `apps/dashboard/src/`         | Next.js 15 App Router inspector. See [dashboard.md](dashboard.md).                                                                                                                                                               |
 
 ## Cross-cutting Concerns
 
