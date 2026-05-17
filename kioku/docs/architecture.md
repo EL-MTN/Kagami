@@ -13,7 +13,7 @@ kioku/                              # subtree of the Kagami nested monorepo
 │   │   ├── src/
 │   │   │   ├── server.ts           # bootstrap: ensureIndexes → app.listen → graceful shutdown
 │   │   │   ├── mcp.ts              # streamable-HTTP MCP transport mounted at /mcp
-│   │   │   ├── llm.ts              # provider profiles, model + embedding factories
+│   │   │   ├── llm.ts              # env resolution (canonical + legacy shim) + @kagami/llm createInference wiring + embed helpers
 │   │   │   ├── paths.ts            # prompts directory pointer
 │   │   │   ├── types.ts            # Transcript / Turn zod schemas
 │   │   │   ├── logger.ts           # pino logger
@@ -35,12 +35,12 @@ kioku/                              # subtree of the Kagami nested monorepo
 └── docs/
 ```
 
-Tooling (`@kagami/eslint-config`, `@kagami/tsconfig`) lives at the Kagami workspace root under `shared/packages/`; Kioku has no project-internal TS packages.
+Workspace-shared packages — `@kagami/eslint-config`, `@kagami/tsconfig` (tooling) and the `@kagami/llm` runtime inference gateway — live at the Kagami workspace root under `shared/packages/`; Kioku has no project-internal TS packages.
 
 ### Dependency Graph
 
 ```
-@kagami/eslint-config, @kagami/tsconfig (workspace-shared, from shared/packages/)
+@kagami/eslint-config, @kagami/tsconfig, @kagami/llm (workspace-shared, from shared/packages/)
        ↑
 @kioku/api          ← Express, MCP, ingest + retrieval pipelines
 @kioku/dashboard    ← Next.js inspector — talks to API only over HTTP
@@ -176,7 +176,7 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 4. `app.listen(PORT, HOST)` — `PORT` from Portless, `7777` fallback; `HOST` defaults to `127.0.0.1`.
 5. SIGINT / SIGTERM → close server → close Mongo client → exit.
 
-If `ensureIndexes()` throws, the process exits and logs `kioku startup failed` with a stage-specific cause: a Mongo connect failure names `MONGODB_URI` and asks whether atlas-local is running, while an embedding probe failure names `EMBEDDING_PROVIDER`/`EMBEDDING_URL`/`EMBEDDING_MODEL` and asks whether the embedding endpoint is up.
+If `ensureIndexes()` throws, the process exits and logs `kioku startup failed` with a stage-specific cause: a Mongo connect failure names `MONGODB_URI` and asks whether atlas-local is running, while an embedding probe failure names the resolved `EMBEDDING_BASE_URL`/`EMBEDDING_MODEL` and asks whether the embedding endpoint is up.
 
 ## Key Design Decisions
 
@@ -187,26 +187,26 @@ If `ensureIndexes()` throws, the process exits and logs `kioku startup failed` w
 - **Atomic facts are write-once.** No UPDATE / DELETE / soft-archival on `facts`. Corrections happen by appending newer facts with later `event_date`; the answerer prompt resolves contradictions newest-wins (`prompts/answer.md`). Every mutation leaves a row in `history` for postmortem.
 - **Race-safe writes by Mongo primitives where it matters.** `entities_text_lower_unique` plus `$setOnInsert` / `$addToSet` upserts on the entity store. Fact dedup is cosine-based at the ingest layer (`append.ts` and `consolidate.ts`); the single-fact append path serializes on a process-wide async lock because cosine is a read-then-act sequence.
 - **mem0-OSS-shaped multi-tenancy.** Facts are scoped by `(user_id, run_id, agent_id)`. `user_id` defaults to `'default'`. Cosine dedup reads only in-scope facts, so identical text under different scopes does not collide. There is no auth layer; multi-tenancy is filter-based.
-- **Provider-agnostic LLM + embeddings.** `@ai-sdk/openai-compatible` against any OpenAI-shaped endpoint (LM Studio, OpenAI, vLLM, Ollama). Chat and embedding providers are independent — typical setup is one line per role.
-- **Reasoning-content middleware.** Thinking-mode models (GLM-4.7-flash, Qwen3.6) sometimes emit their final structured output into `reasoning_content` while leaving the assistant `content` empty. `llm.ts` wraps the model with a middleware that promotes the reasoning text to a text part when no real content is present. Without this, `generateObject` raises `AI_NoObjectGeneratedError`.
+- **Provider-agnostic LLM + embeddings.** Access goes through the shared `@kagami/llm` gateway (`createInference`, openai-compatible) against any OpenAI-shaped endpoint (LM Studio, OpenAI, vLLM, Ollama). Chat and embedding providers are independent — typical setup is one line per role.
+- **Reasoning-content middleware.** Thinking-mode models (GLM-4.7-flash, Qwen3.6) sometimes emit their final structured output into `reasoning_content` while leaving the assistant `content` empty. `@kagami/llm` applies a middleware (default-on for openai-compatible) that promotes the reasoning text to a text part when no real content is present. Without this, `generateObject` raises `AI_NoObjectGeneratedError`.
 - **Stateless MCP.** A fresh transport + server connection per `/mcp` POST. The MCP-over-HTTP semantics don't need session state for our tool set — every call is a one-shot tool invocation.
 - **Pull-only by design (system level).** Kioku exposes an API; it never initiates outbound calls to sibling services in the Kagami workspace. Its only outbound network calls are to the configured LLM and embedding endpoints.
 
 ## Module Map
 
-| Directory                     | Purpose                                                                                                                                                                             |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/api/src/ingest/`        | Transcript parsing + the atomic-fact extraction pipeline. `consolidate.ts` is the core; `append.ts` is the single-fact path; `sessions.ts` is the HTTP entry that glues them.       |
-| `apps/api/src/query/`         | Read paths above the ranker. `recall.ts` returns ranked facts; `answer.ts` runs the answerer prompt over them.                                                                      |
-| `apps/api/src/retrieval/`     | Hybrid ranker. `embeddings.ts` orchestrates the three signals; `scoring.ts` does the additive fusion + BM25 sigmoid; `text.ts` is the lemmatizer + entity extractor.                |
-| `apps/api/src/routes/`        | Express routers, one per resource. `filters.ts` is the shared zod schema for the mem0-shaped filter payload.                                                                        |
-| `apps/api/src/storage/`       | Mongo. `mongo.ts` is the lazy client singleton; `indexes.ts` is the idempotent index setup with READY-polling; the rest are per-collection accessors.                               |
-| `apps/api/src/mcp.ts`         | Streamable-HTTP MCP transport. Seven tools (`recall`, `query`, `append_fact`, `append_facts`, `ingest_session`, `fact_count`, `fact_history`).                                      |
-| `apps/api/src/llm.ts`         | Provider profiles (`lmstudio`, `openai`), chat + embedding model factories, reasoning-to-content middleware, embed helpers.                                                         |
-| `apps/api/prompts/`           | `extraction.md` (ingest), `answer.md` (answerer). Read at runtime by ingest/consolidate and query/answer respectively. Cached after first read.                                     |
-| `apps/api/scripts/`           | One-off tools: `cc-to-transcript.ts` and `cc-ingest-chunked.ts` (Claude Code session import); `longmemeval.ts` + worker (bench); `probe-bm25-scores.ts` (BM25 sigmoid calibration). |
-| `apps/api/bench/longmemeval/` | LongMemEval runner + datasets + results. See [bench.md](bench.md).                                                                                                                  |
-| `apps/dashboard/src/`         | Next.js 15 App Router inspector. See [dashboard.md](dashboard.md).                                                                                                                  |
+| Directory                     | Purpose                                                                                                                                                                                                                          |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/src/ingest/`        | Transcript parsing + the atomic-fact extraction pipeline. `consolidate.ts` is the core; `append.ts` is the single-fact path; `sessions.ts` is the HTTP entry that glues them.                                                    |
+| `apps/api/src/query/`         | Read paths above the ranker. `recall.ts` returns ranked facts; `answer.ts` runs the answerer prompt over them.                                                                                                                   |
+| `apps/api/src/retrieval/`     | Hybrid ranker. `embeddings.ts` orchestrates the three signals; `scoring.ts` does the additive fusion + BM25 sigmoid; `text.ts` is the lemmatizer + entity extractor.                                                             |
+| `apps/api/src/routes/`        | Express routers, one per resource. `filters.ts` is the shared zod schema for the mem0-shaped filter payload.                                                                                                                     |
+| `apps/api/src/storage/`       | Mongo. `mongo.ts` is the lazy client singleton; `indexes.ts` is the idempotent index setup with READY-polling; the rest are per-collection accessors.                                                                            |
+| `apps/api/src/mcp.ts`         | Streamable-HTTP MCP transport. Seven tools (`recall`, `query`, `append_fact`, `append_facts`, `ingest_session`, `fact_count`, `fact_history`).                                                                                   |
+| `apps/api/src/llm.ts`         | Env resolution (canonical keys + legacy profile shim) and `@kagami/llm` `createInference` wiring; exports `model`, `getEmbeddingModel`, `embedQuestion`, `embedTexts`, `llmEndpoint`, `embeddingEndpoint`, `embeddingModelName`. |
+| `apps/api/prompts/`           | `extraction.md` (ingest), `answer.md` (answerer). Read at runtime by ingest/consolidate and query/answer respectively. Cached after first read.                                                                                  |
+| `apps/api/scripts/`           | One-off tools: `cc-to-transcript.ts` and `cc-ingest-chunked.ts` (Claude Code session import); `longmemeval.ts` + worker (bench); `probe-bm25-scores.ts` (BM25 sigmoid calibration).                                              |
+| `apps/api/bench/longmemeval/` | LongMemEval runner + datasets + results. See [bench.md](bench.md).                                                                                                                                                               |
+| `apps/dashboard/src/`         | Next.js 15 App Router inspector. See [dashboard.md](dashboard.md).                                                                                                                                                               |
 
 ## Cross-cutting Concerns
 

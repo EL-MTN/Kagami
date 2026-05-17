@@ -4,12 +4,19 @@ The AI layer handles LLM integration, prompt assembly, tool orchestration, image
 
 ## Provider Configuration
 
-Defined in `apps/bot/src/ai/provider.ts`. Uses the Vercel AI SDK (`ai` package).
+Defined in `apps/bot/src/ai/provider.ts`. Chat goes through the shared
+`@kagami/llm` gateway (`createInference`, `kind: "native"`) — the gateway owns
+provider/key construction, retry, same-tier fallback, and span/usage emission;
+`provider.ts` stays the caller-side **tier policy** (the `ModelTier` → model-id
+map). Image / TTS / STT still use the Vercel AI SDK directly.
 
 | Env Variable                 | Description                                                                                                                                                        |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `LLM_KIND`                   | `"native"` (only supported value for Kokoro chat; default)                                                                                                         |
 | `LLM_PROVIDER`               | `"anthropic"` (default), `"openai"`, or `"xai"`                                                                                                                    |
-| `LLM_MODEL`                  | Model identifier (default: `"claude-sonnet-4-6"`; recommended xAI model: `grok-4-1-fast-non-reasoning`)                                                            |
+| `LLM_MODEL`                  | Default-tier model id (default: `"claude-sonnet-4-6"`; recommended xAI model: `grok-4-1-fast-non-reasoning`)                                                       |
+| `LLM_MODEL_FAST`             | Optional override for the `Fast` tier (unset → per-provider default below)                                                                                         |
+| `LLM_MODEL_SMART`            | Optional override for the `Smart` tier (unset → per-provider default below)                                                                                        |
 | `ANTHROPIC_API_KEY`          | Required if provider is `anthropic` (validated at startup)                                                                                                         |
 | `OPENAI_API_KEY`             | Required if provider is `openai` (validated at startup)                                                                                                            |
 | `XAI_API_KEY`                | Required if provider is `xai` (validated at startup)                                                                                                               |
@@ -25,11 +32,13 @@ Defined in `apps/bot/src/ai/provider.ts`. Uses the Vercel AI SDK (`ai` package).
 | `GOOGLE_MAPS_API_KEY`        | Google Maps Geocoding API key (required when `LOCATION_ENABLED=true`)                                                                                              |
 | `LOCATION_CONTEXT_MAX_AGE_H` | Max age in hours for location data to appear in LLM context (default: `12`)                                                                                        |
 
-`getModel(tier?)` returns a `LanguageModel` instance from the appropriate SDK (`@ai-sdk/anthropic`, `@ai-sdk/openai`, or `@ai-sdk/xai`).
+`getModel(tier?)` returns a `LanguageModel` from the `@kagami/llm` gateway
+(retry, same-tier fallback, span/usage applied); `getModelName(tier?)` resolves
+just the model-id string for token accounting without constructing a provider.
 
 ### Model Tiers
 
-The `ModelTier` enum lets call sites declare intent rather than hardcoding model IDs. The provider maps each tier to the right model.
+The `ModelTier` enum lets call sites declare intent rather than hardcoding model IDs. `provider.ts` resolves each tier to a model id and passes the map to `@kagami/llm` as named aliases. The `Fast`/`Smart` columns are per-provider **defaults** — override either with `LLM_MODEL_FAST` / `LLM_MODEL_SMART`.
 
 | Tier      | Purpose                              | Anthropic           | OpenAI             | xAI                           |
 | --------- | ------------------------------------ | ------------------- | ------------------ | ----------------------------- |

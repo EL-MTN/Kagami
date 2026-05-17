@@ -1,8 +1,8 @@
-import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
 import { xai } from "@ai-sdk/xai";
-import { config } from "@kokoro/shared";
+import { createInference } from "@kagami/llm";
+import { config, logger } from "@kokoro/shared";
 import type { LanguageModel } from "ai";
 
 export enum ModelTier {
@@ -13,7 +13,7 @@ export enum ModelTier {
 
 type NonDefaultTier = Exclude<ModelTier, ModelTier.Default>;
 
-const TIER_MODELS: Record<string, Record<NonDefaultTier, string>> = {
+const TIER_DEFAULTS: Record<string, Record<NonDefaultTier, string>> = {
   anthropic: {
     [ModelTier.Fast]: "claude-haiku-4-5",
     [ModelTier.Smart]: "claude-sonnet-4-6",
@@ -28,9 +28,20 @@ const TIER_MODELS: Record<string, Record<NonDefaultTier, string>> = {
   },
 };
 
+// Resolved tier → model-id map: env overrides (LLM_MODEL_{FAST,SMART}) win,
+// else the per-provider defaults above. Computed once; behavior is identical
+// to the old hardcoded map when the overrides are unset.
+// `?? .anthropic` defends partial config mocks in tests where
+// `config.LLM_PROVIDER` is absent; for a real (Zod-validated) config the
+// provider is always a TIER_DEFAULTS key, so this is a no-op there.
+const tierDefaults = TIER_DEFAULTS[config.LLM_PROVIDER] ?? TIER_DEFAULTS.anthropic;
+const tierModels: Record<NonDefaultTier, string> = {
+  [ModelTier.Fast]: config.LLM_MODEL_FAST ?? tierDefaults[ModelTier.Fast],
+  [ModelTier.Smart]: config.LLM_MODEL_SMART ?? tierDefaults[ModelTier.Smart],
+};
+
 export function getModelName(tier: ModelTier = ModelTier.Default): string {
-  const provider = config.LLM_PROVIDER;
-  return tier === ModelTier.Default ? config.LLM_MODEL : TIER_MODELS[provider][tier];
+  return tier === ModelTier.Default ? config.LLM_MODEL : tierModels[tier];
 }
 
 // --- Image model (provider/model compound format) ---
@@ -64,15 +75,22 @@ export function getImageModelSpec(): { provider: string; modelId: string } {
 
 // --- Language model ---
 
-export function getModel(tier: ModelTier = ModelTier.Default): LanguageModel {
-  const provider = config.LLM_PROVIDER;
-  const modelId = tier === ModelTier.Default ? config.LLM_MODEL : TIER_MODELS[provider][tier];
+// Provider/key construction, retry, and span+usage emission now live in
+// @kagami/llm. This module stays the caller-side tier *policy* (the
+// ModelTier → model-id map above). Native
+// vendor reads provider API keys from env exactly as the bare SDK
+// singletons did, so behavior is unchanged.
+const inference = createInference({
+  service: "kokoro",
+  logger,
+  chat: {
+    kind: config.LLM_KIND,
+    vendor: config.LLM_PROVIDER,
+    model: config.LLM_MODEL,
+    models: tierModels,
+  },
+});
 
-  if (provider === "anthropic") {
-    return anthropic(modelId);
-  }
-  if (provider === "xai") {
-    return xai(modelId);
-  }
-  return openai(modelId);
+export function getModel(tier: ModelTier = ModelTier.Default): LanguageModel {
+  return tier === ModelTier.Default ? inference.model() : inference.model(tier);
 }
