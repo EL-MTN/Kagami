@@ -4,7 +4,7 @@
 
 Kokoro — a Telegram-based conversational AI that maintains persistent personality, memories, and proactive engagement. Built as a monorepo with TypeScript, Vercel AI SDK, MongoDB, and the Grammy Telegram framework. Includes a Next.js dashboard for routine management and observability.
 
-Kokoro is now a subtree inside the **Kagami nested monorepo** (`/Kagami/kokoro/`). It consumes shared tooling — `@kagami/eslint-config` and `@kagami/tsconfig` — from `Kagami/shared/packages/`. There is no top-level `package.json`, `turbo.json`, or `package-lock.json` inside `kokoro/`; those live at the Kagami root. Husky hooks are also managed at the Kagami root (no `kokoro/.husky/`).
+Kokoro is now a subtree inside the **Kagami nested monorepo** (`/Kagami/kokoro/`). It consumes shared tooling — `@kagami/eslint-config`, `@kagami/tsconfig`, and the `@kagami/llm` inference gateway — from `Kagami/shared/packages/`. There is no top-level `package.json`, `turbo.json`, or `package-lock.json` inside `kokoro/`; those live at the Kagami root. Husky hooks are also managed at the Kagami root (no `kokoro/.husky/`).
 
 ## Monorepo Structure
 
@@ -80,10 +80,10 @@ Lint and tsconfig bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from 
 - **Zod for config** — environment variables validated at startup via `@kokoro/shared` config
 - **Pino logging** — structured logs via the workspace-shared `@kagami/logger` factory (ECS / OTel field names — `log.level`, `@timestamp`, `service.*`, `trace.id`, …; `pino-pretty` only on a TTY or `LOG_PRETTY=1`). **No secret/PII redaction** — the redact list and `imageData` censor were removed (local-trust only; see `ARCHITECTURE.md` and the VPS-exposure note before deploying). Errors go under the `error` key with the raw `Error` — `logger.error({ error }, "message")` — and the factory wires `errorKey`/`stdSerializers.err` so the stack is preserved on the wire. When `KANSOKU_URL` and `KANSOKU_INGEST_TOKEN` are set, logs also stream to the workspace's Kansoku service via a fail-open in-process shipper. Use the `logger.info({ context }, "message")` pattern.
 - **Trace context** — Grammy middleware at the top of `createBot` wraps every Telegram update in `runWithTrace(newTraceContext(), …)`; the BlueBubbles webhook does the same per inbound request (honoring an incoming `traceparent` when present). Kokoro's Kioku and Kizuna HTTP clients call `tracedFetch` from `@kokoro/shared` so the active span propagates downstream.
-- **Vercel AI SDK** — `generateText()` from `ai` package for all LLM calls
+- **Inference via `@kagami/llm`** — chat models go through `createInference` (`apps/bot/src/ai/provider.ts`); image generation, TTS, and STT still call the Vercel AI SDK (`ai`) directly
 - **No classes for services** — prefer standalone exported functions
 - **Platform-agnostic types** — `IncomingMessage`/`PlatformAdapter` in `@kokoro/shared`
-- **Cross-package imports** — use `@kokoro/shared`, `@kokoro/db`, `@kokoro/memory`, `@kokoro/kizuna` for Kokoro-internal packages, and `@kagami/eslint-config` / `@kagami/tsconfig` for shared workspace tooling. Never use relative paths across package boundaries.
+- **Cross-package imports** — use `@kokoro/shared`, `@kokoro/db`, `@kokoro/memory`, `@kokoro/kizuna` for Kokoro-internal packages, and `@kagami/eslint-config` / `@kagami/tsconfig` / `@kagami/llm` for shared workspace packages. Never use relative paths across package boundaries.
 - **Within-package imports** — use relative paths without file extensions
 - **Internal packages** — libraries export raw `.ts` source (`exports: "./src/index.ts"`); only `bot` and `dashboard` have build steps
 - **`.env` location** — `apps/bot/.env` (not root)

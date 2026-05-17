@@ -18,7 +18,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 │   │   │   ├── storage/     # mongo singleton, idempotent indexes, facts, entities, transcripts, history
 │   │   │   ├── server.ts    # express bootstrap + ensureIndexes + graceful shutdown
 │   │   │   ├── mcp.ts       # streamable-HTTP MCP transport mounted at /mcp
-│   │   │   ├── llm.ts       # provider profiles, model factory, embed helpers
+│   │   │   ├── llm.ts       # env resolution (canonical + legacy shim) + @kagami/llm createInference wiring + embed helpers
 │   │   │   ├── paths.ts     # prompts directory pointer
 │   │   │   ├── types.ts     # Transcript / Turn / frontmatter zod schemas
 │   │   │   └── logger.ts    # pino logger
@@ -93,7 +93,7 @@ Apps share no in-process code. The dashboard reaches the API only through `fetch
 - **mem0-OSS-shaped multi-tenancy** — facts are scoped by `(user_id, run_id, agent_id)`. `user_id` defaults to `'default'`. Cosine dedup at append/consolidate is scope-bound by reading only in-scope facts, so identical text under different scopes does not collide. There is no auth layer; multi-tenancy is filter-based.
 - **`.env` location** — `apps/api/.env` (not root). `apps/api/.env.example` is the template.
 - **Tests as source of truth** — when a test fails because production behaves differently than the test expects, fix the API, not the test. See [docs/testing.md](docs/testing.md).
-- **Cross-package imports** — `@kagami/eslint-config`, `@kagami/tsconfig` only (no project-internal packages today); no cross-app TS imports.
+- **Cross-package imports** — `@kagami/eslint-config`, `@kagami/tsconfig`, and `@kagami/llm` (the runtime inference gateway, consumed by `apps/api/src/llm.ts`); no project-internal packages today; no cross-app TS imports.
 - **Within-package imports** — relative paths with explicit `.js` extensions (NodeNext requirement on the API).
 - **Internal packages pattern** — Kioku has no project-internal TS packages today. The apps consume only the shared `@kagami/*` config packages from the Kagami workspace root (`shared/packages/`); the former `kioku/packages/typescript-config` and `kioku/packages/eslint-config` were folded into those workspace-level packages during the Kagami migration.
 
@@ -109,6 +109,6 @@ See `/docs` for:
 - [storage.md](docs/storage.md) — Mongo collections, idempotent indexes, scope-aware reads, audit log
 - [api.md](docs/api.md) — REST surface (`/facts`, `/recall`, `/query`, `/sessions`, `/health`, `/version`) and MCP tools at `/mcp`
 - [dashboard.md](docs/dashboard.md) — Next.js inspector, design system, page map
-- [configuration.md](docs/configuration.md) — env vars, provider profiles, common LLM/embedding combos, MongoDB setup
+- [configuration.md](docs/configuration.md) — env vars, `@kagami/llm` provider config, common LLM/embedding combos, MongoDB setup
 - [testing.md](docs/testing.md) — vitest + mongodb-memory-server harness, what's covered, how to add tests
 - [bench.md](docs/bench.md) — LongMemEval runner, headline numbers, BM25 calibration tool

@@ -3,17 +3,17 @@ import type { Logger } from "@kagami/logger";
 import type { UsageEvent } from "./types.js";
 
 /**
- * The observability seam.
+ * The observability seam: emit one ECS `event.kind:"span"` line per completed
+ * inference, enriched with this call's LLM token usage, through the caller's
+ * logger.
  *
- * On this base (`origin/main`) `@kagami/logger` has no `runWithSpan`, so this
- * reconstructs an equivalent build-light span from the primitives that *are*
- * present (`getTraceContext` + `childSpan` + `generateSpanId`) and emits one
- * ECS-shaped `event.kind:"span"` line through the **caller's** logger.
- *
- * This is the single place that knows *how* a span is emitted. When
- * `logging-prod-hardening` lands `runWithSpan`, only this function body
- * changes — `emitUsage`'s signature, and therefore every caller and the
- * package's public API, stay byte-identical.
+ * `@kagami/logger` exports `runWithSpan`, but it wraps-and-times a function
+ * and emits a *generic* span — it has no hook to attach this call's `llm.*`
+ * token fields or the fallback-composite-measured duration. So `emitUsage`
+ * deliberately builds the span line from the lower-level primitives
+ * (`getTraceContext` + `childSpan` + `generateSpanId`); it is a tailored
+ * usage-span emitter, not a `runWithSpan` substitute, and is the single
+ * place that knows how this span is shaped.
  */
 export function emitUsage(logger: Logger, ev: UsageEvent): void {
   const ctx = getTraceContext();

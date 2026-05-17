@@ -73,9 +73,18 @@ if (!modelName) {
 // Provider construction, structured-output mode, the LM-Studio
 // `reasoning_content` repair (default-on for openai-compatible), retry, and
 // span/usage emission live in @kagami/llm.
-const timeoutMs = process.env.LLM_TIMEOUT_MS
-  ? Number.parseInt(process.env.LLM_TIMEOUT_MS, 10)
-  : undefined;
+const rawTimeout = process.env.LLM_TIMEOUT_MS;
+const parsedTimeout = rawTimeout ? Number.parseInt(rawTimeout, 10) : undefined;
+// Guard a malformed value: a non-numeric LLM_TIMEOUT_MS makes parseInt return
+// NaN, which would reach AbortSignal.timeout(NaN) and abort every call. Treat
+// anything not a positive finite integer as "unset" (no gateway timeout).
+const timeoutMs =
+  parsedTimeout !== undefined && Number.isFinite(parsedTimeout) && parsedTimeout > 0
+    ? parsedTimeout
+    : undefined;
+if (rawTimeout && timeoutMs === undefined) {
+  logger.warn(`LLM_TIMEOUT_MS="${rawTimeout}" is not a positive integer — ignoring.`);
+}
 
 const inference = createInference({
   service: "kioku",
