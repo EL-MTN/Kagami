@@ -10,7 +10,7 @@ interface ProviderConfigBase {
   /**
    * Alias → model id for this provider, e.g. `{ fast: "...", smart: "..." }`.
    * `model("smart")` resolves here. A provider that lacks a requested alias is
-   * skipped during fallback (see §6 of SPEC.md) rather than silently downgraded.
+   * skipped during fallback rather than silently downgraded.
    */
   models?: Record<string, string>;
   apiKey?: string;
@@ -40,7 +40,7 @@ export interface OpenAICompatibleProviderConfig extends ProviderConfigBase {
   supportsStructuredOutputs?: boolean;
   /**
    * Promote stranded `reasoning_content` to a text part. Default-on for this
-   * kind — see SPEC.md §11.2. Set `false` only for an endpoint that uses
+   * kind. Set `false` only for an endpoint that uses
    * `reasoning_content` semantically.
    */
   reasoningRepair?: boolean;

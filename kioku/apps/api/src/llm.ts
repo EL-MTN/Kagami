@@ -8,7 +8,7 @@ import { logger } from "./logger.js";
 // `EMBEDDING_MODEL`. The pre-gateway keys (`{LLM,EMBEDDING}_PROVIDER` profile
 // selector, `_URL`, bare `MODEL`) are still honored for one release with a
 // startup deprecation warn — these legacy profiles only fill defaults for
-// that fallback path. See @kagami/llm SPEC.md §7.
+// that fallback path.
 const LEGACY_PROFILES = {
   lmstudio: { baseURL: "http://localhost:1234/v1", apiKey: "lm-studio" },
   openai: { baseURL: "https://api.openai.com/v1", apiKey: process.env.OPENAI_API_KEY ?? "" },
@@ -72,7 +72,7 @@ if (!modelName) {
 
 // Provider construction, structured-output mode, the LM-Studio
 // `reasoning_content` repair (default-on for openai-compatible), retry, and
-// span/usage emission live in @kagami/llm — see its SPEC.md §6/§11.
+// span/usage emission live in @kagami/llm.
 const timeoutMs = process.env.LLM_TIMEOUT_MS
   ? Number.parseInt(process.env.LLM_TIMEOUT_MS, 10)
   : undefined;

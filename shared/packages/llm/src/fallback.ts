@@ -25,7 +25,7 @@ function tokens(result: unknown): { prompt: number; completion: number } {
 }
 
 /**
- * Same-tier failover composite (SPEC.md §6). `leaves` is the ordered chain for
+ * Same-tier failover composite. `leaves` is the ordered chain for
  * a single resolved alias — every entry serves the *same* tier; a provider that
  * could not resolve the alias was dropped upstream, never downgraded. Each leaf
  * has already exhausted its own retries before it throws here, so this only

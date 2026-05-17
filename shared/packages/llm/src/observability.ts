@@ -3,7 +3,7 @@ import type { Logger } from "@kagami/logger";
 import type { UsageEvent } from "./types.js";
 
 /**
- * The observability seam (SPEC.md §6).
+ * The observability seam.
  *
  * On this base (`origin/main`) `@kagami/logger` has no `runWithSpan`, so this
  * reconstructs an equivalent build-light span from the primitives that *are*

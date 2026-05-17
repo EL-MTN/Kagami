@@ -8,7 +8,7 @@ Kioku reaches all models through the shared `@kagami/llm` gateway
 (`createInference`, `kind: "openai-compatible"`), so any OpenAI-shaped endpoint
 works (LM Studio, OpenAI, vLLM, Ollama, …). The gateway owns provider
 construction, structured-output mode, the LM-Studio `reasoning_content` repair
-(default-on), retry, and span/usage emission — see `shared/packages/llm/SPEC.md`.
+(default-on), retry, and span/usage emission.
 
 Canonical keys are `LLM_KIND` / `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` /
 `LLM_TIMEOUT_MS` and the `EMBEDDING_*` counterparts. Chat and embedding

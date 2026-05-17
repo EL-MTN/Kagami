@@ -68,7 +68,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 /**
  * Full-jitter backoff: `delay = random(0, min(cap, base * 2^attempt))`.
  * Implemented here, not imported — `@kagami/logger`'s jitter is private to its
- * Kansoku shipper (SPEC.md §6). Stream calls retry only the `doStream()`
+ * Kansoku shipper. Stream calls retry only the `doStream()`
  * handshake; a stream that has started cannot be safely replayed.
  */
 export function retryMiddleware(opts?: RetryOptions): LanguageModelV3Middleware {

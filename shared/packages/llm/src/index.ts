@@ -29,7 +29,7 @@ function leafFor(cfg: ProviderConfig, modelId: string, opts: InferenceOptions): 
 }
 
 /**
- * Construct the inference gateway for a service (SPEC.md §5). Returns AI SDK
+ * Construct the inference gateway for a service. Returns AI SDK
  * model objects — callers keep using `generateText`/`generateObject`/`embed`;
  * this owns construction (provider, keys, retry, same-tier fallback, timeout,
  * span+usage), not invocation.
@@ -52,7 +52,7 @@ export function createInference(opts: InferenceOptions): Inference {
       const leaves: Leaf[] = [];
       for (const cfg of chain) {
         // Primary is guaranteed; a fallback that can't serve this tier is
-        // dropped, never downgraded (SPEC.md §6 — same-tier failover).
+        // dropped, never downgraded (same-tier failover).
         const id = cfg === opts.chat ? primaryId : resolveModelId(cfg, name, opts.models);
         if (id === undefined) continue;
         leaves.push(leafFor(cfg, id, opts));

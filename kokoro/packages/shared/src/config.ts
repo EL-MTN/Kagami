@@ -22,7 +22,7 @@ const baseSchema = z.object({
     .transform((s) => (s ? s.split(",").map(Number) : [])),
 
   // Kokoro chat is native-only; LLM_KIND is the explicit canonical marker
-  // (@kagami/llm SPEC §7). LLM_PROVIDER/LLM_MODEL are already canonical for
+  // LLM_PROVIDER/LLM_MODEL are already canonical for
   // native, so no legacy rename here. LLM_MODEL_{FAST,SMART} externalize the
   // previously-hardcoded tier map; unset → provider defaults (unchanged).
   LLM_KIND: z.enum(["native"]).default("native"),

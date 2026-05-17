@@ -77,7 +77,7 @@ export function getImageModelSpec(): { provider: string; modelId: string } {
 
 // Provider/key construction, retry, and span+usage emission now live in
 // @kagami/llm. This module stays the caller-side tier *policy* (the
-// ModelTier → model-id map above) — see @kagami/llm SPEC.md §8. Native
+// ModelTier → model-id map above). Native
 // vendor reads provider API keys from env exactly as the bare SDK
 // singletons did, so behavior is unchanged.
 const inference = createInference({

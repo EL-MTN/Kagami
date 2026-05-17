@@ -68,7 +68,7 @@ function buildOpenAICompatible(
   modelId: string,
 ): LanguageModelV3 {
   const model = openAICompatibleProvider(cfg)(modelId);
-  // Default-on for this kind (SPEC.md §11.2); opt out only for an endpoint
+  // Default-on for this kind; opt out only for an endpoint
   // that uses `reasoning_content` semantically.
   if (cfg.reasoningRepair === false) return model;
   return wrapLanguageModel({ model, middleware: reasoningRepairMiddleware });
