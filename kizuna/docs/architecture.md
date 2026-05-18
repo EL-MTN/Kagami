@@ -39,14 +39,15 @@ kizuna/                              # subtree within the Kagami nested monorepo
 │   │   │   ├── routes/              # one router per resource (people, organizations, interactions, followups, contexts, digest, oauth, sync, health)
 │   │   │   └── schemas/common.ts    # Pagination, IdParam, ISODateString, BoolFlag
 │   │   ├── tests/                   # vitest + supertest + mongodb-memory-server
-│   │   └── scripts/import-vcards.ts # vCard → POST /people
+│   │   ├── scripts/import-vcards.ts # vCard → POST /people
+│   │   └── tsconfig.build.json      # prod build: tsc -p this → dist/ (extends @kagami/tsconfig/server.build.json)
 │   └── dashboard/                   # Next.js 15 (App Router)
 ├── packages/                        # reserved for future Kizuna-only libs (currently empty)
 ├── portless.json                    # api.kizuna + kizuna registrations
 └── docs/
 ```
 
-Shared tooling (`@kagami/eslint-config`, `@kagami/tsconfig`) lives in Kagami's `shared/packages/` and is consumed by both apps. The API's `tsconfig.json` extends `@kagami/tsconfig/server.json` (with `verbatimModuleSyntax`, `noImplicitOverride`, `esModuleInterop` as overrides); the dashboard's extends `@kagami/tsconfig/nextjs.json` (with `verbatimModuleSyntax: false`, `allowJs: true`).
+Shared tooling (`@kagami/eslint-config`, `@kagami/tsconfig`) lives in Kagami's `shared/packages/` and is consumed by both apps. The API's `tsconfig.json` extends `@kagami/tsconfig/server.json` (with `verbatimModuleSyntax`, `noImplicitOverride`, `esModuleInterop` as overrides); the dashboard's extends `@kagami/tsconfig/nextjs.json` (with `verbatimModuleSyntax: false`, `allowJs: true`). For production the API has a sibling `tsconfig.build.json` (extends `@kagami/tsconfig/server.build.json`, emit on) so `npm run build` emits `dist/` and `start` runs `node dist/main.js`.
 
 ### Dependency Graph
 

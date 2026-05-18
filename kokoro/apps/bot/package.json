@@ -20,6 +20,7 @@
     "@ai-sdk/openai": "^3.0.41",
     "@ai-sdk/xai": "^3.0.67",
     "@browserbasehq/stagehand": "^3.0.0",
+    "@kagami/llm": "*",
     "@kokoro/db": "*",
     "@kokoro/kizuna": "*",
     "@kokoro/memory": "*",

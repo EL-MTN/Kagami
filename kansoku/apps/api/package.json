@@ -7,7 +7,8 @@
   "portless": "api.kansoku",
   "scripts": {
     "dev": "portless run tsx watch src/server.ts",
-    "start": "node --import tsx src/server.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

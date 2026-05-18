@@ -23,6 +23,7 @@ kioku/                              # subtree of the Kagami nested monorepo
 │   │   │   ├── routes/             # per-resource Express routers + shared filter zod schema
 │   │   │   └── storage/            # mongo singleton, idempotent indexes, facts/entities/transcripts/history
 │   │   ├── tsconfig.json           # extends @kagami/tsconfig/server.json
+│   │   ├── tsconfig.build.json     # prod build: tsc -p this → dist/ (extends @kagami/tsconfig/server.build.json)
 │   │   ├── eslint.config.js        # imports from @kagami/eslint-config/base
 │   │   ├── prompts/                # extraction.md (8K) + answer.md (3K)
 │   │   ├── tests/                  # vitest + mongodb-memory-server

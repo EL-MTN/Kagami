@@ -25,7 +25,7 @@ kokoro/
 └── docs/
 ```
 
-**Stack**: npm workspaces + Turborepo, orchestrated from the Kagami root (internal packages pattern — libraries export raw `.ts` source, only apps build). Shared lint/tsconfig bases come from `@kagami/eslint-config` and `@kagami/tsconfig`.
+**Stack**: npm workspaces + Turborepo, orchestrated from the Kagami root (internal packages pattern — `@kokoro/*` libraries export raw `.ts` source, only apps build; the shared `@kagami/logger` and `@kagami/llm` are the exceptions — they build to `dist` JS + `.d.ts`). Shared lint/tsconfig bases come from `@kagami/eslint-config` and `@kagami/tsconfig`.
 
 ## Commands
 
@@ -85,7 +85,7 @@ Lint and tsconfig bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from 
 - **Platform-agnostic types** — `IncomingMessage`/`PlatformAdapter` in `@kokoro/shared`
 - **Cross-package imports** — use `@kokoro/shared`, `@kokoro/db`, `@kokoro/memory`, `@kokoro/kizuna` for Kokoro-internal packages, and `@kagami/eslint-config` / `@kagami/tsconfig` / `@kagami/llm` for shared workspace packages. Never use relative paths across package boundaries.
 - **Within-package imports** — use relative paths without file extensions
-- **Internal packages** — libraries export raw `.ts` source (`exports: "./src/index.ts"`); only `bot` and `dashboard` have build steps
+- **Internal packages** — `@kokoro/*` libraries export raw `.ts` source (`exports: "./src/index.ts"`); only `bot` and `dashboard` have build steps. The shared `@kagami/logger` and `@kagami/llm` are built (ship `dist` JS + `.d.ts`) so compiled services can consume them under plain `node`
 - **`.env` location** — `apps/bot/.env` (not root)
 - **Tests as source of truth** — when a test fails because production behaves differently than the test expects, fix the bot, not the test. See `docs/testing.md` for the harness and per-module coverage map.
 
