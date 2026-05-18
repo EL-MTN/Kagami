@@ -46,6 +46,46 @@ it("extractEntities skips generic capitalized words", () => {
   expect(texts).not.toContain("ideas");
 });
 
+it("extractEntities keeps internal hyphens in proper nouns", () => {
+  const ents = extractEntities("User is Goshujin-sama and met Jean-Luc Picard");
+  const texts = ents.map((e) => e.text);
+  expect(texts).toContain("Goshujin-sama");
+  expect(texts).not.toContain("Goshujin");
+  expect(texts).toContain("Jean-Luc Picard");
+});
+
+it("extractEntities does not coin a PROPER entity from a possessive", () => {
+  // An internal apostrophe must not extend the token: "User's" would
+  // otherwise slip past the generic-word guard (which only knows "user").
+  const ents = extractEntities("User's birthday is April 11");
+  const texts = ents.map((e) => e.text.toLowerCase());
+  expect(texts).not.toContain("user's");
+  expect(texts).not.toContain("user");
+});
+
+it("extractEntities does not let a possessive apostrophe open a quoted span", () => {
+  // Exact shape of the polluted DB fact: a possessive immediately before
+  // a real single-quoted phrase. The apostrophe in "assistant's" must
+  // not pair with the opening quote of 'Good girl'.
+  const ents = extractEntities(
+    "User expressed satisfaction with the assistant's memory by saying 'Good girl' in a playful manner",
+  );
+  const quoted = ents.filter((e) => e.type === "QUOTED").map((e) => e.text);
+  expect(quoted).toContain("Good girl");
+  expect(quoted).not.toContain("s memory by saying");
+});
+
+it("extractEntities pulls single-quoted identifiers", () => {
+  const ents = extractEntities("User created the 'robinhood_daily_return' routine");
+  const quoted = ents.filter((e) => e.type === "QUOTED").map((e) => e.text);
+  expect(quoted).toContain("robinhood_daily_return");
+});
+
+it("extractEntities does not coin a quoted entity from a bare possessive", () => {
+  const ents = extractEntities("User likes the assistant's tone today");
+  expect(ents.some((e) => e.type === "QUOTED")).toBe(false);
+});
+
 it("getBm25Params adapts midpoint to query length", () => {
   // Pass pre-lemmatized strings to bypass the lemmatizer's stopword drop.
   // Values calibrated against Lucene/Atlas BM25 score distributions.
