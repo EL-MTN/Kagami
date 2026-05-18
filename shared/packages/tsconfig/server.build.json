@@ -2,6 +2,9 @@
   "extends": "./server.json",
   "compilerOptions": {
     "noEmit": false,
-    "allowImportingTsExtensions": false
-  }
+    "allowImportingTsExtensions": false,
+    "rootDir": "${configDir}/src",
+    "outDir": "${configDir}/dist"
+  },
+  "include": ["${configDir}/src"]
 }
