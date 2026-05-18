@@ -7,7 +7,8 @@
   "portless": "api.kioku",
   "scripts": {
     "dev": "portless run tsx watch src/server.ts",
-    "start": "node --import tsx src/server.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
@@ -16,6 +17,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.46",
+    "@kagami/llm": "*",
     "@kagami/logger": "*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ai": "^6.0.175",

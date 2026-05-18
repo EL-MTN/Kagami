@@ -20,7 +20,8 @@ kizuna/
 │   │   │   ├── lib/            # errors, encryption, oauth-state, google-auth, cursor, duration, serialize, logger
 │   │   │   └── schemas/        # shared zod (Pagination, IdParam, ISODateString, …)
 │   │   ├── tests/          # vitest + supertest + mongodb-memory-server (real Mongo, no Docker)
-│   │   └── scripts/        # import-vcards.ts (vCard → POST /people)
+│   │   ├── scripts/        # import-vcards.ts (vCard → POST /people)
+│   │   └── tsconfig.build.json # prod build: tsc -p this → dist/ (extends @kagami/tsconfig/server.build.json)
 │   └── dashboard/          # Next.js 15 App Router (https://kizuna.localhost)
 │       ├── app/
 │       │   └── (app)/      # all routes — Today, Followups, Interactions, People, Contexts, Sync, Errors, Tombstones (no login)
@@ -78,7 +79,7 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 
 ## Conventions
 
-- **TypeScript + ESM** — strict mode, ES2023 target, NodeNext for the API; bundler resolution + `module: ESNext` for the dashboard. The API extends `@kagami/tsconfig/server.json` and adds `verbatimModuleSyntax: true`, `noImplicitOverride: true`, `esModuleInterop: true` as overrides. The dashboard extends `@kagami/tsconfig/nextjs.json` and overrides `verbatimModuleSyntax: false` plus `allowJs: true`.
+- **TypeScript + ESM** — strict mode, ES2023 target, NodeNext for the API; bundler resolution + `module: ESNext` for the dashboard. The API extends `@kagami/tsconfig/server.json` and adds `verbatimModuleSyntax: true`, `noImplicitOverride: true`, `esModuleInterop: true` as overrides. The dashboard extends `@kagami/tsconfig/nextjs.json` and overrides `verbatimModuleSyntax: false` plus `allowJs: true`. For production the API compiles via a sibling `tsconfig.build.json` (extends `@kagami/tsconfig/server.build.json`, emit on): `npm run build` → `tsc -p tsconfig.build.json` → `dist/`, started as plain `node dist/main.js` (`start`).
 - **Async everywhere** — all I/O is async/await, no callbacks.
 - **Zod at boundaries** — every request body / query / params parsed by zod in the route handler; the global error handler maps `ZodError` to `400 { error: { code: "bad_request", message: "invalid input", details } }`. Internal modules trust their inputs.
 - **Pino logging** — singleton in `apps/api/src/lib/logger.ts`, built from the workspace-shared `@kagami/logger` factory (ECS / OTel field names — `log.level`, `@timestamp`, `service.*`, `trace.id`, `error.{type,message,stack_trace}`; an `error`-key serializer that preserves stacks; **no secret/PII redaction** — removed, local-trust only); `pino-pretty` only on an interactive TTY or `LOG_PRETTY=1`, raw NDJSON otherwise. `logger.info({ context }, "message")` pattern. When `KANSOKU_URL` and `KANSOKU_INGEST_TOKEN` are set, logs also stream to the workspace's Kansoku service via a fail-open in-process shipper. There is no `pino-http` middleware today; route logging is request-scoped only via thrown errors hitting `makeErrorHandler`.

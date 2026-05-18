@@ -28,6 +28,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 │   │   ├── tests/           # vitest suite + mongodb-memory-server harness
 │   │   ├── scripts/         # cc-to-transcript, cc-ingest-chunked, longmemeval, longmemeval-worker, citation-recall, probe-bm25-scores
 │   │   ├── tsconfig.json    # extends @kagami/tsconfig/server.json (+ esModuleInterop, allowImportingTsExtensions)
+│   │   ├── tsconfig.build.json # prod build: tsc -p this → dist/ (extends @kagami/tsconfig/server.build.json)
 │   │   ├── eslint.config.js # imports from @kagami/eslint-config/base
 │   │   └── bench/longmemeval/  # benchmark runner + datasets + results
 │   └── dashboard/    # Next.js 15 inspector at https://kioku.localhost
@@ -57,7 +58,7 @@ npm run format                # prettier --write
 npx turbo run typecheck --filter="@kioku/*"
 npx turbo run test     --filter="@kioku/*"
 npx turbo run lint     --filter="@kioku/*"
-npx turbo run build    --filter="@kioku/*"   # dashboard only — api has no build step
+npx turbo run build    --filter="@kioku/*"   # api (tsc -p tsconfig.build.json → dist/) + dashboard
 # Watch mode for the API tests (vitest auto-discovers kioku/vitest.config.ts):
 cd kioku/apps/api && npm run test:watch
 ```

@@ -5,7 +5,7 @@
   "portless": "api.kizuna",
   "scripts": {
     "dev": "portless run tsx watch src/main.ts",
-    "build": "tsc -p .",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "test": "vitest run",
     "test:watch": "vitest",
