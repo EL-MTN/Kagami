@@ -260,6 +260,7 @@ export async function consolidate(
           batch: batches,
           dropped: dropped.length,
           kept: memory.length,
+          droppedTexts: dropped.map((m) => m.text),
         },
         "ingest relevance filter dropped low-value memories",
       );
