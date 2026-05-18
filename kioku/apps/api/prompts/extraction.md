@@ -24,6 +24,9 @@ Do NOT extract:
 - Vague assistant characterizations ("you seem passionate", "that sounds stressful") unless the user explicitly confirms them
 - Generic assistant acknowledgments ("Sure!", "Great question!")
 - Assistant meta-commentary about its own capabilities
+- The assistant's own feelings, reactions, or self-narration ("Assistant felt happy to have remembered correctly", "the assistant was glad to help") — the assistant is never a subject of memory
+- Narration of the exchange instead of a fact ("User responded with 'Ok'", "User checked in with a simple greeting", "User confirmed everything is good and asked if the assistant could use its memory tool") — this describes the conversation, not a durable fact about the user
+- Ephemeral procedural or UI state that is stale within minutes ("Assistant is currently on the Robinhood login page", "the routine is waiting for the user to log in") — instead capture the durable fact behind it (e.g. "User has a daily Robinhood portfolio-return routine"), not the transient step
 
 ## Summary
 
@@ -151,11 +154,11 @@ When a message contains a photo description (e.g., "[Shared photo: ...]" or desc
 
 ## Memory Quality Standards
 
-### Contextually Rich, Not Atomic
+### Atomic and Durable
 
-Capture the full picture — fact AND surrounding context — in a single unified memory, not scattered fragments.
+Each memory is ONE durable fact about the user or their world, written so it stays true and useful long after this conversation ends. Include the detail that makes the fact complete and specific — names, quantities, what changed — but NOT conversational color, the act of saying it, or how the assistant reacted. If a sentence describes the exchange rather than a fact that outlives it, it is not a memory.
 
-Bad: "User has a dog" | Good: "User has a dog named Poppy and their morning walks together are the highlight of their day"
+Bad: "User has a dog" | Bad: "User cheerfully mentioned, during a fun chat, that they have a dog" | Good: "User has a dog named Poppy, a golden retriever"
 
 This applies especially to **transitions and changes**. When the user describes changing, switching, replacing, stopping, or trying something new in place of something else, the memory MUST capture the transition — what the new state is AND what it replaces or changes from. The relationship between old and new is critical context. Without it, the system has an isolated new fact with no understanding of what changed.
 
@@ -186,6 +189,14 @@ Every memory must be understandable on its own. Replace all pronouns with specif
 ### Temporally Grounded
 
 Preserve exact dates, durations, and temporal relationships. Convert relative → absolute using Observation Date (NOT Current Date). NEVER convert absolute → vague. "18 days" stays "18 days", not "some time."
+
+Ground a date INTO the text only when the date is part of the fact itself — when the described event actually happened (a trip, deadline, birthday, purchase, milestone, scheduled plan). NEVER append the conversation's own date as a trailing clause to a fact whose content is not about that date. When each memory was recorded is stored separately and shown to the reader on its own; restating it in the text is pure duplication, and it makes the same fact mentioned on two different days look like two different facts.
+
+Bad: "User's birthday is April 11, as confirmed during the conversation on May 15, 2026"
+Good: "User's birthday is April 11"
+Bad: "User said they prefer oat milk on May 15, 2026"
+Good: "User prefers oat milk"
+Keep (intrinsic): "User is traveling to Kyoto the week of April 20, 2026" — the trip date is part of the fact.
 
 ### Numerically Precise
 
