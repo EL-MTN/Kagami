@@ -249,7 +249,7 @@ export async function consolidate(
     // extraction prompt biases against these but a stochastic model
     // still emits them on casual chat; see ingest/relevance.ts. Default
     // keep, benchmark-safe by the tests/relevance.test.ts contract.
-    const { kept: memory, dropped } = filterDurableFacts(extraction.memory);
+    const { kept: memory, dropped } = await filterDurableFacts(extraction.memory);
     if (dropped.length > 0) {
       logger.info(
         {
