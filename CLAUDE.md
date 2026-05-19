@@ -138,7 +138,6 @@ npm run kansoku:dev:dashboard
 npm run kao:dev:api
 
 # Project-specific scripts
-npm run kokoro:auth:google       # tsx kokoro/scripts/authorize-google.ts
 ```
 
 `npm install` is hoisted at the Kagami root. There is no per-project `package.json` and no per-project `node_modules` install step.

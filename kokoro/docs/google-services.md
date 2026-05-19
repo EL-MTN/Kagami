@@ -46,10 +46,10 @@ Identical to the pre-Kao set — capability is preserved.
 
 ```
 apps/bot/src/services/
-├── kao-client.ts          NEW — vends access tokens from Kao; per-grant cache; structured errors
-├── google-auth.ts         Async — async getGoogleAuth() returns an OAuth2Client with a fresh access token
-├── gmail.ts               Gmail API wrappers (now await getGoogleAuth)
-└── google-calendar.ts     Calendar API wrappers (now await getGoogleAuth)
+├── kao-client.ts          Vends access tokens from Kao; per-call in-flight dedup; structured error taxonomy; `force` mode
+├── google-auth.ts         Async getGoogleAuth + `withFreshAuth(op)` self-healing wrapper (clears cache + forces a Kao round-trip on Google 401/403)
+├── gmail.ts               Gmail API wrappers (every call wrapped in withFreshAuth; re-throws Kao* errors from getEmailById)
+└── google-calendar.ts     Calendar API wrappers (every call wrapped in withFreshAuth)
 
 packages/db/src/models/
 └── reminder.ts            Reminder MongoDB model (unchanged)
@@ -64,17 +64,38 @@ apps/bot/src/ai/tools/
 
 ### Kao client (`apps/bot/src/services/kao-client.ts`)
 
-- `getAccessToken()` — calls `GET ${KAO_URL}/grants/kokoro/token` with `Authorization: Bearer ${KAO_TOKEN}` (via `tracedFetch`, so the W3C trace context propagates to Kao). Caches the returned token in-process with a 30 s safety buffer that matches Kao's own internal cache policy. Back-to-back gmail/calendar calls within an LLM turn typically hit this cache and never go over the network.
+- `getAccessToken(options?: { force?: boolean })` — calls `GET ${KAO_URL}/grants/kokoro/token` with `Authorization: Bearer ${KAO_TOKEN}` (via `tracedFetch`, so the W3C trace context propagates to Kao). Caches the returned token in-process with a 30 s safety buffer that matches Kao's own. Back-to-back gmail/calendar calls within an LLM turn typically hit this cache and never go over the network. **In-flight dedup**: concurrent callers on a cold cache share one HTTP round-trip.
+- **`force: true`** — bypass the local cache + any in-flight non-force fetch, and append `?force=1` to the Kao URL so Kao **also** bypasses its own cache and round-trips to Google for a fresh token. This is the self-heal route after a Google 401/403 (see `withFreshAuth` below) — without it, both layers would re-vend the same dead token from their respective caches and the retry would fail again.
+- **Race-safety:** only the currently-registered inflight Promise writes back into `cache` and clears the `inflight` slot. A stale inflight whose slot was replaced by a force-refresh still resolves its own awaiters with its own value, but does not touch shared state — so it cannot overwrite a fresh forced token in `cache`, and it cannot null out a newer inflight.
 - **Error taxonomy:**
-  - `KaoMisconfiguredError` — `KAO_URL`/`KAO_TOKEN` unset, or Kao returned 401/404 (bearer wrong or grant unknown). Operator config issue — does not cache.
-  - `KaoNoGrantError { code: "no_grant" | "invalid_grant" }` — Kao returned 409. The message contains a `${KAO_URL}/oauth/kokoro/start` link so the operator can re-consent. `invalid_grant` distinguishes "Google rejected the stored refresh" from "never consented".
-  - `KaoUnreachableError` — network failure or unexpected 5xx. Transient.
+  - `KaoMisconfiguredError` — `KAO_URL`/`KAO_TOKEN` unset, or Kao returned 401/404 (bearer wrong or grant unknown). Operator config issue — never cached.
+  - `KaoNoGrantError { code: "no_grant" | "invalid_grant" | "decrypt_failed" }` — Kao returned 409. The message contains a `${KAO_URL}/oauth/kokoro/start` link so the operator can re-consent. `invalid_grant` = "Google rejected the stored refresh"; `decrypt_failed` = "Kao can't decrypt the stored refresh (rotated `KAO_ENCRYPTION_KEY` / ciphertext corruption)"; `no_grant` = "never consented yet". All three resolve via the same re-consent action.
+  - `KaoUnreachableError` — network failure, timeout (the fetch has a 5 s `AbortSignal.timeout`), malformed JSON body, missing/implausible `accessToken`/`expiresAt`, or an unexpected 5xx. Transient class but propagates to the operator (see `gmail.ts` re-throw contract).
+- **`clearAccessTokenCache()`** — clears BOTH `cache` AND `inflight`. Clearing only `cache` would leave a stale inflight to overwrite `cache` with a stale result the moment it resolves.
 
 ### Google Auth (`apps/bot/src/services/google-auth.ts`)
 
-`async getGoogleAuth(): Promise<OAuth2Client>` — asks `kao-client` for an access token and builds a fresh `OAuth2Client` with `setCredentials({ access_token })`. The `googleapis` library uses the token as-is for the call; refresh is **Kao's job**, not the library's (no refresh token is set client-side, by design).
+`async getGoogleAuth(options?: { force?: boolean }): Promise<OAuth2Client>` — asks `kao-client` for an access token (forwards the `force` flag) and builds a fresh `OAuth2Client` with `setCredentials({ access_token })`. The `googleapis` library uses the token as-is for the call; refresh is **Kao's job**, not the library's (no refresh token is set client-side, by design). The OAuth2Client is constructed per call — cheap, and avoids any stale-singleton hazard.
 
-The OAuth2Client is constructed per call. It's cheap, and avoiding a singleton means a re-issued token from Kao takes effect on the very next call without any explicit cache invalidation here.
+**`withFreshAuth(op)` — the self-healing wrapper.** Every Gmail and Calendar service function runs through this:
+
+```ts
+return withFreshAuth(async (auth) => {
+  const gmail = google.gmail({ version: "v1", auth });
+  // ... use gmail
+});
+```
+
+On a Google 401/403 (cached token revoked or rotated server-side), `withFreshAuth`:
+
+1. Clears the local `kao-client` cache + inflight.
+2. Calls `getGoogleAuth({ force: true })` — which appends `?force=1` to the Kao URL.
+3. Kao bypasses **its** cache + inflight too and round-trips to Google for a brand-new access token.
+4. Retries `op` exactly once with the fresh token.
+
+The cross-service `force` hop is the critical piece: clearing only Kokoro's local cache wouldn't help, because Kao's own 30 s-buffer cache would just re-vend the same dead token until its expiry lapses (~the full token lifetime). See `kao/apps/api/src/lib/google.ts:refreshAccessToken` for Kao's `force` semantics and `kao/apps/api/src/routes/grants.ts` for the `?force=1` query handler.
+
+Retry is bounded to one attempt: if Kao itself can't get a new token from Google (refresh rejected → 409 `invalid_grant`), the forced `getAccessToken` throws `KaoNoGrantError` and the operator gets the re-consent hint.
 
 ### Gmail Service (`apps/bot/src/services/gmail.ts`)
 
