@@ -201,6 +201,38 @@ describe("kao-client", () => {
     );
   });
 
+  it("a stale non-force inflight does NOT overwrite a force-refreshed cache value", async () => {
+    // Scenario: non-force call A is in flight (slow). Force call B runs to
+    // completion against a different mock response. Then A's slow response
+    // finally resolves — it must NOT clobber B's fresh value in cache, and
+    // it must not null out the (now-released) inflight slot in a way that
+    // breaks a third caller's dedup.
+    let resolveStale!: (r: Response) => void;
+    mockFetch.mockReturnValueOnce(new Promise<Response>((r) => (resolveStale = r)));
+
+    const future = Date.now() + 10 * 60_000;
+    const stale = getAccessToken(); // non-force, joins the inflight slot
+
+    // Force call evicts inflight, runs to completion immediately.
+    mockFetch.mockResolvedValueOnce(ok({ accessToken: "ya29.forced", expiresAt: future }));
+    const forced = await getAccessToken({ force: true });
+    expect(forced.accessToken).toBe("ya29.forced");
+
+    // Cache hit after force returns the forced value.
+    const afterForce = await getAccessToken();
+    expect(afterForce.accessToken).toBe("ya29.forced");
+
+    // Now let the stale inflight resolve. Its `.finally`-equivalent logic
+    // must be gated on `inflight === p`; since `inflight` was replaced by
+    // the force, the stale's resolution must NOT write to cache.
+    resolveStale(ok({ accessToken: "ya29.stale", expiresAt: future }));
+    await stale; // stale gets its own value back — but that's local to its caller
+
+    // Cache still holds the forced value.
+    const final = await getAccessToken();
+    expect(final.accessToken).toBe("ya29.forced");
+  });
+
   it("clearAccessTokenCache also clears inflight so a subsequent fetch is fresh", async () => {
     // Start an inflight that will resolve later.
     let resolveStale!: (r: Response) => void;

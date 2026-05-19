@@ -97,9 +97,24 @@ export async function refreshAccessToken(
     inflight.delete(grant);
   }
 
-  const p = doRefresh(config, grant, refreshToken).finally(() => {
-    inflight.delete(grant);
-  });
+  // Race-safety: only the currently-registered inflight writes back into
+  // `cache` and clears the `inflight` slot. A stale inflight whose slot was
+  // already replaced (e.g. by a force-refresh) still resolves its own
+  // awaiters but does not touch shared state — so it can't overwrite a
+  // newer fresh token in `cache`, and it can't break dedup for callers
+  // arriving while the newer refresh is still in flight.
+  let p: Promise<VendedToken> | undefined = undefined;
+  p = (async () => {
+    try {
+      const vended = await doRefresh(config, grant, refreshToken);
+      if (inflight.get(grant) === p) {
+        cache.set(grant, { token: vended.accessToken, expiresAt: vended.expiresAt });
+      }
+      return vended;
+    } finally {
+      if (inflight.get(grant) === p) inflight.delete(grant);
+    }
+  })();
   inflight.set(grant, p);
   return p;
 }
@@ -117,7 +132,9 @@ async function doRefresh(
       throw new OAuthError("refresh_failed", "no access token returned");
     }
     const expiresAt = client.credentials.expiry_date ?? Date.now() + 60_000;
-    cache.set(grant, { token: res.token, expiresAt });
+    // Note: cache write happens in the caller (refreshAccessToken) gated on
+    // `inflight.get(grant) === p` so a stale inflight resolving after a
+    // force-refresh can't overwrite the fresh value in `cache`.
     return { accessToken: res.token, expiresAt };
   } catch (err) {
     if (err instanceof OAuthError) throw err;
