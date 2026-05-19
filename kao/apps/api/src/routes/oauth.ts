@@ -3,10 +3,17 @@ import type { Db } from "mongodb";
 import type { Config } from "../config.js";
 import { isGrantName, scopesFor } from "../grant-registry.js";
 import { errors } from "../lib/errors.js";
-import { buildAuthUrl, clearAccessTokenCache, exchangeCode, makeClient } from "../lib/google.js";
+import {
+  buildAuthUrl,
+  clearAccessTokenCache,
+  exchangeCode,
+  makeClient,
+  revokeAtGoogle,
+} from "../lib/google.js";
+import { logger } from "../lib/logger.js";
 import { makeState, verifyState } from "../lib/oauth-state.js";
-import { encrypt } from "../lib/encryption.js";
-import { upsertGrant } from "../storage/grants.js";
+import { decrypt, encrypt } from "../lib/encryption.js";
+import { getGrant, upsertGrant } from "../storage/grants.js";
 
 const GOOGLE_OAUTH_ERROR_CODES = new Set([
   "access_denied",
@@ -75,6 +82,24 @@ export function makeOauthRouter(config: Config, db: Db): Router {
     // Trust the registry scope set for this grant over whatever Google
     // echoes; consent was requested for exactly those.
     const scopes = scopesFor(grant);
+
+    // Re-consent best-effort revokes the PRIOR refresh token at Google.
+    // Without this, the old token keeps issuing access tokens against Google's
+    // per-client refresh-token limit until it rotates out on its own. The
+    // local row is overwritten regardless of whether revocation succeeded.
+    const prior = await getGrant(db, grant);
+    if (prior?.refreshToken) {
+      try {
+        const priorRefresh = decrypt(prior.refreshToken, config.KAO_ENCRYPTION_KEY);
+        await revokeAtGoogle(config, priorRefresh);
+      } catch (err) {
+        logger.warn(
+          { error: err, grant },
+          "could not revoke prior refresh token; proceeding with new grant",
+        );
+      }
+    }
+
     const enc = encrypt(tokens.refresh_token, config.KAO_ENCRYPTION_KEY);
     await upsertGrant(db, {
       name: grant,

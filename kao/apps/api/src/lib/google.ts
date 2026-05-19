@@ -45,6 +45,10 @@ export class OAuthError extends Error {
 // honor the real expiry minus a 30s buffer (Kizuna's policy). Cleared on a
 // re-consent or revoke of that grant so the change takes effect immediately.
 const cache = new Map<string, { token: string; expiresAt: number }>();
+// In-flight de-dup: N concurrent /grants/:grant/token requests on a cold
+// cache must collapse into ONE Google refresh, not N parallel ones (each
+// constructing its own OAuth2Client and racing to win the cache write).
+const inflight = new Map<string, Promise<VendedToken>>();
 
 export function clearAccessTokenCache(grant: string): void {
   cache.delete(grant);
@@ -64,6 +68,21 @@ export async function refreshAccessToken(
   if (hit && hit.expiresAt > Date.now() + 30_000) {
     return { accessToken: hit.token, expiresAt: hit.expiresAt };
   }
+  const existing = inflight.get(grant);
+  if (existing) return existing;
+
+  const p = doRefresh(config, grant, refreshToken).finally(() => {
+    inflight.delete(grant);
+  });
+  inflight.set(grant, p);
+  return p;
+}
+
+async function doRefresh(
+  config: Config,
+  grant: string,
+  refreshToken: string,
+): Promise<VendedToken> {
   const client = makeClient(config);
   client.setCredentials({ refresh_token: refreshToken });
   try {
