@@ -11,7 +11,7 @@ Run from the Kagami root:
 ```bash
 npx turbo run test --filter=@kao/api
 cd kao && npx vitest            # or --watch
-LOG_LEVEL=debug cd kao && npx vitest   # when triaging
+cd kao && LOG_LEVEL=debug npx vitest   # when triaging — env binding has to land on the vitest invocation, not the cd
 ```
 
 ## What's covered (35 tests, 5 files)
