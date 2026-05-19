@@ -1,6 +1,8 @@
 # Kagami — Architecture Overview
 
-Kagami ("mirror") is a personal-AI workspace housing four TypeScript projects in a single nested monorepo, developed and run together via `dev-all.sh`. The names are Japanese: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind), and **Kansoku** (観測, observation). The workspace is one git repo; project subtrees were imported via `git subtree add` so per-project history is preserved in `git log`.
+Kagami ("mirror") is a personal-AI workspace housing five TypeScript projects in a single nested monorepo, developed and run together via `dev-all.sh`. The names are Japanese: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind), **Kansoku** (観測, observation), and **Kao** (顔, face/identity). The workspace is one git repo; the Kioku/Kokoro/Kizuna subtrees were imported via `git subtree add` so per-project history is preserved in `git log`; Kansoku and Kao were added natively.
+
+> **Status note (Kao):** **Kokoro → Kao is live.** Kokoro no longer owns a refresh token; it fetches access tokens from Kao at runtime. The Kizuna→Kao edge below is still _planned_ — Kizuna keeps its own independent (encrypted-Mongo + web flow) OAuth until its own migration PR.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -36,6 +38,12 @@ Kagami ("mirror") is a personal-AI workspace housing four TypeScript projects in
       │  kansoku.localhost (Next.js) │
       │  MongoDB                     │
       └──────────────────────────────┘
+
+      ┌──────────────────────────────┐
+      │             Kao              │  identity service — per-consumer Google OAuth grants
+      │  api.kao.localhost (API)     │◄──── HTTP token vend (bearer-gated). Inline operator
+      │  MongoDB (encrypted tokens)  │      page; no Next.js dashboard yet. Kokoro wired; Kizuna pending.
+      └──────────────────────────────┘
 ```
 
 Dashboard and API HTTP entry points are served as HTTPS named URLs by [Portless](https://github.com/vercel-labs/portless) — see "Local hosting via Portless" below.
@@ -50,6 +58,9 @@ Dashboard and API HTTP entry points are served as HTTPS named URLs by [Portless]
 | Kioku → anything                  | none (pull-only)                   | exposes API; never initiates outbound to siblings                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | {Kioku, Kokoro, Kizuna} → Kansoku | observability push (**fail-open**) | In-process pino multistream installed by `@kagami/logger` when `KANSOKU_URL` + `KANSOKU_INGEST_TOKEN` are set. Batches log lines (250 ms / 50 events), POSTs to `${KANSOKU_URL}/v1/logs` with `x-kansoku-auth` under a 10 s per-request timeout. Bounded 5000-event ring buffer; full-jitter exponential backoff to 30 s on failure (incl. a 503 from Kansoku's write-then-ack); overflow dropped per `dropPolicy` with the count surfaced in `x-kansoku-dropped` on next success. Lines use ECS / OTel field names (`log.level`, `@timestamp`, `service.name`, `trace.id`, …); Kansoku ingest also accepts the legacy flat form. Every log line in a traced request carries `trace.id`/`span.id` via the pino mixin; `runWithSpan` emits `event.kind:"span"` lines that Kansoku folds into a `spans` collection for the trace waterfall. |
 | Kansoku → anything                | none (push-only-in)                | exposes ingest + query APIs (`/v1/logs`, `/v1/tail`, `/v1/traces/:id`, `/v1/errors`); never initiates outbound to siblings. Failure of Kansoku must never cascade — every shipper is fail-open at the call site.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Kokoro → Kao                      | runtime HTTP dependency (**live**) | `GET ${KAO_URL}/grants/kokoro/token` with bearer `KAO_TOKEN` via `tracedFetch`; thin per-grant access-token cache in `apps/bot/src/services/kao-client.ts` (30 s buffer matching Kao's own). Replaces the prior plaintext `GOOGLE_OAUTH_REFRESH_TOKEN` in `apps/bot/.env`. Structured `KaoNoGrantError` / `KaoUnreachableError` / `KaoMisconfiguredError` taxonomy at the call site; `invalid_grant` from Kao surfaces a `${KAO_URL}/oauth/kokoro/start` re-consent hint to the operator (no Kokoro restart needed). Maid-service tool stack + system-prompt section gate on `config.KAO_URL` (was `GOOGLE_OAUTH_CLIENT_ID`).                                                                                                                                                                                                             |
+| Kizuna → Kao                      | **planned** (not wired yet)        | Will replace Kizuna's own encrypted-Mongo + web-flow OAuth (`apps/api/src/lib/google-auth.ts` + `routes/oauth.ts` + `OAuthToken` model) with the same `${KAO_URL}/grants/kizuna/token` contract. Kizuna's grant in Kao's registry is read-only Gmail + Calendar. Migration intentionally deferred to a dedicated PR. Kioku has **no** Google OAuth and never did.                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Kao → anything                    | none (vend-only-in)                | exposes `/grants/*` (bearer-gated token vend, the one surface in the workspace that does **not** inherit open-at-localhost) + the CSRF-state-protected `/oauth/*` consent flow; never initiates outbound to siblings. Best-effort outbound only to Google (token exchange/refresh/revoke).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 There is no startup ordering constraint. The Kokoro → Kioku edge is fail-open at the client (`KiokuClientError` is caught by the AI tool layer; chat continues degraded). Closed-session transcript ingest, `rememberFact`, and location writes all fail open at the client; on failure they're queued to MongoDB (`PendingFact` for one-off writes, the existing session-ingest queue for transcripts) and flushed by Kokoro's 5-min sweeper. The Kokoro → Kizuna edge is also fail-open at the CRM tool layer (without retries). Reads (`findPeople`, `getPersonContext`, `recentInteractions`, `listMyFollowups`) call Kizuna directly; writes (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are listed in `GATED_TOOL_NAMES` and must be wrapped in `requestConfirmation` so they only fire after the user taps Approve. `dev-all.sh` boots selected apps together under Turbo.
 
@@ -84,6 +95,7 @@ Apps register their name either via a top-level `portless.json` (Kioku, Kizuna) 
 | Kokoro  | bot       | (no browser URL)                | `apps/bot/package.json` → `"portless": "bot.kokoro"`   |
 | Kansoku | dashboard | `https://kansoku.localhost`     | `portless.json` → `apps/dashboard`                     |
 | Kansoku | API       | `https://api.kansoku.localhost` | `portless.json` → `apps/api`                           |
+| Kao     | API       | `https://api.kao.localhost`     | `portless.json` → `apps/api`                           |
 
 Each app server honors Portless's injected `PORT`, falling back to its own numeric default only when run standalone. For example, in `kioku/apps/api/src/server.ts`:
 
@@ -268,6 +280,41 @@ See `kansoku/docs/architecture.md` for the full ingest path, data model, dashboa
 
 ---
 
+## Kao — identity service
+
+**Role.** One Google identity, **per-consumer scoped grants**. Consolidates the two independent OAuth implementations (Kizuna's encrypted-Mongo web flow; Kokoro's plaintext-`.env` CLI flow) behind a single service that owns the refresh tokens and vends short-lived access tokens. **Vend-only-in** — Kao never initiates outbound calls to siblings; its only outbound is to Google (token exchange/refresh/revoke). Kioku has **no** Google OAuth and is not a consumer.
+
+**Status.** **Kokoro migrated; Kizuna pending.** Kokoro now fetches Google access tokens from `${KAO_URL}/grants/kokoro/token` via a thin in-process client (`kokoro/apps/bot/src/services/kao-client.ts`) and its plaintext `GOOGLE_OAUTH_REFRESH_TOKEN` is gone — the only previously-plaintext Google credential in Kagami. Kizuna still runs its own encrypted-Mongo + web-flow OAuth; its migration to `${KAO_URL}/grants/kizuna/token` is queued as a follow-up PR.
+
+**Layout.**
+
+```
+apps/api          Express API (entry: src/main.ts) — /healthz, /oauth/* (consent), /grants/* (vend), inline operator page at /
+packages/         (no directory today — workspace glob is a placeholder for future Kao-only libs)
+docs/             architecture, api, auth, configuration, testing
+```
+
+No `apps/dashboard` yet — the standalone pass serves a minimal inline-HTML grants page from the API (same pattern as the OAuth callback page). A full Next.js dashboard is a deferred follow-up.
+
+**Endpoints.** API under Portless at `https://api.kao.localhost`; standalone fallback port `4040`.
+
+| Group    | Endpoints                                                                                                                                                                                                                  |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Health   | `GET /healthz`                                                                                                                                                                                                             |
+| Operator | `GET /` (inline-HTML grant list + Connect links — open at localhost, no secret)                                                                                                                                            |
+| Consent  | `GET /oauth/:grant/start` (open@localhost; scopes from the registry, never the request), `GET /oauth/callback` (single, CSRF-state-verified; grant bound in signed state so only one redirect URI is registered in Google) |
+| Vend     | `GET /grants`, `GET /grants/:grant`, `GET /grants/:grant/token`, `DELETE /grants/:grant` — **all bearer-gated** (`KAO_TOKEN`)                                                                                              |
+
+**Grant registry.** `apps/api/src/grant-registry.ts` is the version-controlled scope map: `kizuna` → `gmail.readonly` + `calendar.readonly`; `kokoro` → `gmail.readonly` + `gmail.send` + `calendar`. Each grant gets its own refresh token consented for only its scopes — a Kizuna-side compromise can't send mail.
+
+**Storage.** MongoDB `grants` collection (raw driver, like Kioku), one doc per named grant, unique on `name`. Refresh tokens AES-256-GCM encrypted at rest under `KAO_ENCRYPTION_KEY` (envelope code ported verbatim from Kizuna). Revoke is soft (token nulled, `revokedAt` stamped, row kept for history).
+
+**Auth model.** Single-user localhost, but Kao deliberately does **not** inherit the open-at-localhost posture for its vend surface: `/grants/*` always requires `Authorization: Bearer ${KAO_TOKEN}` (SHA-256 + constant-time compare), because it holds the workspace's single most sensitive credential — a Google refresh token that, for `kokoro`, can send mail and write the calendar. The browser-driven `/oauth/*` flow is open@localhost, defended by an HMAC-signed CSRF state that also binds the grant. This is the correct posture ahead of the planned VPS exposure.
+
+See `kao/docs/architecture.md` for the request flow, data model, and the threat model.
+
+---
+
 ## Running the projects together
 
 `dev-all.sh` at the repo root:
@@ -276,19 +323,20 @@ See `kansoku/docs/architecture.md` for the full ingest path, data model, dashboa
 2. Hands off via `exec` to `turbo run dev` with one `--filter` per active app.
 3. Uses Turbo's TUI when stdout is a TTY (per-task panes, scrollback, single Ctrl-C); falls back to streamed `[prefix]` output when piped or redirected.
 
-There is no ordering between the projects — see "How they relate" above. Selective flags: `--only <target>...` and `--no <target>...`, where `<target>` is a project (`kioku`, `kokoro`, `kizuna`, `kansoku`) or a single component (`kokoro:bot`, `kioku:dashboard`, `kansoku:api`, ...). `--stream` forces streamed output even on a TTY.
+There is no ordering between the projects — see "How they relate" above. Selective flags: `--only <target>...` and `--no <target>...`, where `<target>` is a project (`kioku`, `kokoro`, `kizuna`, `kansoku`, `kao`) or a single component (`kokoro:bot`, `kioku:dashboard`, `kansoku:api`, `kao:api`, ...). `--stream` forces streamed output even on a TTY.
 
 ## Configuration cheat sheet
 
 | Project | Critical env vars                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Kioku   | `KIOKU_MONGO_URI`, `LLM_*`, `EMBEDDING_*`, `KIOKU_API_URL` (dashboard → API; default `https://api.kioku.localhost`); port handled by Portless (`PORT`/`KIOKU_HOST` only for standalone runs)                                                                                                                                                                                                                                                                                                                                                                     |
-| Kokoro  | `TELEGRAM_BOT_TOKEN`, `MONGODB_URI`, `KIOKU_URL` (→ `https://api.kioku.localhost`), `KIZUNA_URL` (→ `https://api.kizuna.localhost`), `KIZUNA_ENABLED`, `LLM_PROVIDER`/`LLM_MODEL`, provider API keys, `GOOGLE_OAUTH_*`                                                                                                                                                                                                                                                                                                                                           |
+| Kokoro  | `TELEGRAM_BOT_TOKEN`, `MONGODB_URI`, `KIOKU_URL` (→ `https://api.kioku.localhost`), `KIZUNA_URL` (→ `https://api.kizuna.localhost`), `KIZUNA_ENABLED`, `LLM_PROVIDER`/`LLM_MODEL`, provider API keys, `KAO_URL` + `KAO_TOKEN` (Google services vended by Kao — both or neither)                                                                                                                                                                                                                                                                                  |
 | Kizuna  | `MONGO_URI`, `USER_EMAILS`, `KIZUNA_API_URL` (→ `https://api.kizuna.localhost`), `GOOGLE_OAUTH_*` (redirect URI → `https://api.kizuna.localhost/oauth/google/callback`), `KIZUNA_OAUTH_ENCRYPTION_KEY`, `KIZUNA_HOST` (standalone fallback)                                                                                                                                                                                                                                                                                                                      |
 | Kansoku | `KANSOKU_MONGO_URI`, `KANSOKU_MONGO_DB`, `KANSOKU_INGEST_TOKEN` (shared HMAC for sibling shippers), `KANSOKU_API_URL` (dashboard → API; default `https://api.kansoku.localhost`), `KANSOKU_LOGS_TTL_DAYS` (time-series TTL; default 30, capped 365), `KANSOKU_ERRORS_TTL_DAYS` (errors-registry TTL; default 90, capped 365), `KANSOKU_MAX_META_COMBOS` (meta cardinality budget; default 1000), `KANSOKU_ALERT_WEBHOOK_URL` (optional new-error webhook); `LOG_PRETTY` (TTY/`1`/`0` console gate, all services); `PORT`/`KANSOKU_HOST` only for standalone runs |
+| Kao     | `MONGODB_URI`, `KAO_DB_NAME` (default `kao`), `GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET` (one shared Google Web client; register `${KAO_PUBLIC_URL}/oauth/callback` as the single redirect URI), `KAO_PUBLIC_URL` (default `https://api.kao.localhost`), `KAO_ENCRYPTION_KEY` (base64 32 bytes — refresh-token encryption), `KAO_TOKEN` (≥16-char bearer siblings present to `/grants/*`); `PORT`/`KAO_HOST` only for standalone runs                                                                                                                 |
 
 ## Observed gaps and likely future edges
 
 - **Kokoro → Kizuna writes** are now live behind the confirmation primitive (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`). Remaining write candidates — bulk imports, organization edits, ingest replays from Kokoro — are still gaps.
 - **Kizuna ↔ Kioku** would let Kizuna's interaction timeline feed Kioku's fact store, but again no code path exists today.
-- Kioku and Kizuna both implement Google OAuth independently; a shared token store is a candidate for consolidation but is not implemented.
+- **Kokoro → Kao migration is done.** Kokoro now reads short-lived Google access tokens from Kao (the only previously-plaintext refresh token in the workspace is gone). **Kizuna still runs its own independent OAuth** (encrypted Mongo + web flow); its cutover to `${KAO_URL}/grants/kizuna/token` is the remaining identity-consolidation work. **Kioku has no Google OAuth** — an earlier version of this doc misattributed it; it is not and never has been a Google-OAuth consumer.

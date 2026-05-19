@@ -1,0 +1,11 @@
+{
+  "extends": "@kagami/tsconfig/server.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "noImplicitOverride": true,
+    "esModuleInterop": true
+  },
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": ["dist", "node_modules"]
+}

@@ -57,9 +57,19 @@ const baseSchema = z.object({
     z.string().optional(),
   ),
 
-  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
-  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
-  GOOGLE_OAUTH_REFRESH_TOKEN: z.string().optional(),
+  // Google services (Gmail + Calendar) are vended via the Kao identity
+  // service. Kokoro does not own a refresh token; it fetches short-lived
+  // access tokens from Kao at https://api.kao.localhost/grants/kokoro/token.
+  // `.url()` matches the sibling URL-shaped vars (KIOKU_URL, KIZUNA_URL) and
+  // catches a typo'd value at startup instead of at first vend call.
+  KAO_URL: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().url().optional(),
+  ),
+  KAO_TOKEN: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().optional(),
+  ),
 
   TIMEZONE: z.string().default("America/New_York"),
 
@@ -173,16 +183,15 @@ export function validateConfig(): void {
     }
   }
 
-  const googleOAuthFields = [
-    "GOOGLE_OAUTH_CLIENT_ID",
-    "GOOGLE_OAUTH_CLIENT_SECRET",
-    "GOOGLE_OAUTH_REFRESH_TOKEN",
-  ] as const;
-  const setFields = googleOAuthFields.filter((f) => config[f]);
-  if (setFields.length > 0 && setFields.length < 3) {
-    const missing = googleOAuthFields.filter((f) => !config[f]);
+  // Either both Kao vars or neither — half-configured means the gates that
+  // activate the maid-service tool stack would fire while runtime calls
+  // would 401 at Kao. Catch it at startup, not at the first Gmail call.
+  const kaoFields = ["KAO_URL", "KAO_TOKEN"] as const;
+  const setKao = kaoFields.filter((f) => config[f]);
+  if (setKao.length > 0 && setKao.length < 2) {
+    const missing = kaoFields.filter((f) => !config[f]);
     for (const field of missing) {
-      errors.push(`${field} is required when any Google OAuth variable is set`);
+      errors.push(`${field} is required when any Kao variable is set`);
     }
   }
 

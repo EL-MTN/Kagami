@@ -1,5 +1,6 @@
 import { google } from "googleapis";
-import { getGoogleAuth } from "./google-auth";
+import { withFreshAuth } from "./google-auth";
+import { KaoMisconfiguredError, KaoNoGrantError, KaoUnreachableError } from "./kao-client";
 import { logger } from "@kokoro/shared";
 
 export interface EmailSummary {
@@ -17,10 +18,6 @@ export interface EmailDetail extends EmailSummary {
   messageId: string;
 }
 
-function getGmail() {
-  return google.gmail({ version: "v1", auth: getGoogleAuth() });
-}
-
 function getHeader(
   headers: { name?: string | null; value?: string | null }[],
   name: string,
@@ -29,40 +26,42 @@ function getHeader(
 }
 
 export async function listUnreadEmails(maxResults = 10): Promise<EmailSummary[]> {
-  const gmail = getGmail();
+  return withFreshAuth(async (auth) => {
+    const gmail = google.gmail({ version: "v1", auth });
 
-  const res = await gmail.users.messages.list({
-    userId: "me",
-    q: "is:unread",
-    maxResults,
+    const res = await gmail.users.messages.list({
+      userId: "me",
+      q: "is:unread",
+      maxResults,
+    });
+
+    const messageIds = res.data.messages ?? [];
+    if (messageIds.length === 0) return [];
+
+    const emails = await Promise.all(
+      messageIds.map(async (msg) => {
+        const detail = await gmail.users.messages.get({
+          userId: "me",
+          id: msg.id!,
+          format: "metadata",
+          metadataHeaders: ["From", "Subject", "Date"],
+        });
+
+        const headers = detail.data.payload?.headers ?? [];
+        return {
+          id: detail.data.id!,
+          from: getHeader(headers, "From"),
+          subject: getHeader(headers, "Subject"),
+          snippet: detail.data.snippet ?? "",
+          date: getHeader(headers, "Date"),
+          isUnread: (detail.data.labelIds ?? []).includes("UNREAD"),
+          threadId: detail.data.threadId!,
+        };
+      }),
+    );
+
+    return emails;
   });
-
-  const messageIds = res.data.messages ?? [];
-  if (messageIds.length === 0) return [];
-
-  const emails = await Promise.all(
-    messageIds.map(async (msg) => {
-      const detail = await gmail.users.messages.get({
-        userId: "me",
-        id: msg.id!,
-        format: "metadata",
-        metadataHeaders: ["From", "Subject", "Date"],
-      });
-
-      const headers = detail.data.payload?.headers ?? [];
-      return {
-        id: detail.data.id!,
-        from: getHeader(headers, "From"),
-        subject: getHeader(headers, "Subject"),
-        snippet: detail.data.snippet ?? "",
-        date: getHeader(headers, "Date"),
-        isUnread: (detail.data.labelIds ?? []).includes("UNREAD"),
-        threadId: detail.data.threadId!,
-      };
-    }),
-  );
-
-  return emails;
 }
 
 function extractPlainText(payload: {
@@ -130,74 +129,90 @@ export async function sendEmail(
   body: string,
   options?: { threadId?: string; inReplyTo?: string },
 ): Promise<SendEmailResult> {
-  const gmail = getGmail();
+  return withFreshAuth(async (auth) => {
+    const gmail = google.gmail({ version: "v1", auth });
 
-  const encodedSubject = `=?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`;
-  const encodedBody = Buffer.from(body).toString("base64");
+    const encodedSubject = `=?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`;
+    const encodedBody = Buffer.from(body).toString("base64");
 
-  const messageParts = ["MIME-Version: 1.0", `To: ${to}`, `Subject: ${encodedSubject}`];
+    const messageParts = ["MIME-Version: 1.0", `To: ${to}`, `Subject: ${encodedSubject}`];
 
-  if (options?.inReplyTo) {
-    messageParts.push(`In-Reply-To: ${options.inReplyTo}`);
-    messageParts.push(`References: ${options.inReplyTo}`);
-  }
+    if (options?.inReplyTo) {
+      messageParts.push(`In-Reply-To: ${options.inReplyTo}`);
+      messageParts.push(`References: ${options.inReplyTo}`);
+    }
 
-  messageParts.push(
-    "Content-Type: text/plain; charset=utf-8",
-    "Content-Transfer-Encoding: base64",
-    "",
-    encodedBody,
-  );
-  const raw = Buffer.from(messageParts.join("\r\n")).toString("base64url");
+    messageParts.push(
+      "Content-Type: text/plain; charset=utf-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      encodedBody,
+    );
+    const raw = Buffer.from(messageParts.join("\r\n")).toString("base64url");
 
-  const requestBody: { raw: string; threadId?: string } = { raw };
-  if (options?.threadId) {
-    requestBody.threadId = options.threadId;
-  }
+    const requestBody: { raw: string; threadId?: string } = { raw };
+    if (options?.threadId) {
+      requestBody.threadId = options.threadId;
+    }
 
-  const res = await gmail.users.messages.send({
-    userId: "me",
-    requestBody,
+    const res = await gmail.users.messages.send({
+      userId: "me",
+      requestBody,
+    });
+
+    logger.info({ to, subject, id: res.data.id }, "Email sent");
+
+    return {
+      id: res.data.id!,
+      threadId: res.data.threadId!,
+    };
   });
-
-  logger.info({ to, subject, id: res.data.id }, "Email sent");
-
-  return {
-    id: res.data.id!,
-    threadId: res.data.threadId!,
-  };
 }
 
 export async function getEmailById(messageId: string): Promise<EmailDetail | null> {
-  const gmail = getGmail();
-
   try {
-    const detail = await gmail.users.messages.get({
-      userId: "me",
-      id: messageId,
-      format: "full",
+    return await withFreshAuth(async (auth) => {
+      const gmail = google.gmail({ version: "v1", auth });
+      const detail = await gmail.users.messages.get({
+        userId: "me",
+        id: messageId,
+        format: "full",
+      });
+
+      const headers = detail.data.payload?.headers ?? [];
+      const payload = detail.data.payload as Parameters<typeof extractPlainText>[0];
+      let body = extractPlainText(payload);
+      if (!body) {
+        body = stripHtml(extractHtmlBody(payload));
+      }
+
+      return {
+        id: detail.data.id!,
+        from: getHeader(headers, "From"),
+        subject: getHeader(headers, "Subject"),
+        snippet: detail.data.snippet ?? "",
+        date: getHeader(headers, "Date"),
+        isUnread: (detail.data.labelIds ?? []).includes("UNREAD"),
+        threadId: detail.data.threadId!,
+        messageId: getHeader(headers, "Message-ID"),
+        body: body.slice(0, 2000),
+      };
     });
-
-    const headers = detail.data.payload?.headers ?? [];
-    const payload = detail.data.payload as Parameters<typeof extractPlainText>[0];
-    let body = extractPlainText(payload);
-    if (!body) {
-      body = stripHtml(extractHtmlBody(payload));
-    }
-
-    return {
-      id: detail.data.id!,
-      from: getHeader(headers, "From"),
-      subject: getHeader(headers, "Subject"),
-      snippet: detail.data.snippet ?? "",
-      date: getHeader(headers, "Date"),
-      isUnread: (detail.data.labelIds ?? []).includes("UNREAD"),
-      threadId: detail.data.threadId!,
-      messageId: getHeader(headers, "Message-ID"),
-      body: body.slice(0, 2000),
-    };
   } catch (error) {
-    logger.error({ error: error, messageId }, "Failed to get email by ID");
+    // Re-throw operator-actionable identity errors so the LLM/tool layer can
+    // surface "re-consent required", "Kao misconfigured", or "Kao
+    // unreachable" instead of silently returning "no email". A downed Kao
+    // would otherwise produce an indefinite "no such email" for every call.
+    // Per-message Gmail errors (the pre-existing contract) still resolve to
+    // null.
+    if (
+      error instanceof KaoNoGrantError ||
+      error instanceof KaoMisconfiguredError ||
+      error instanceof KaoUnreachableError
+    ) {
+      throw error;
+    }
+    logger.error({ error, messageId }, "Failed to get email by ID");
     return null;
   }
 }

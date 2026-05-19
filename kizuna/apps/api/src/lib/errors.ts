@@ -36,7 +36,10 @@ function envelope(code: string, message: string, details?: unknown) {
 
 export function makeErrorHandler(): ErrorRequestHandler {
   return (err, req, res, _next) => {
-    const ctx = { method: req.method, route: req.originalUrl };
+    // req.path (no query string) — the OAuth callback URL carries the
+    // single-use Google authorization `code` and the CSRF `state` as query
+    // parameters, and we must not log them. Treat path-only as canonical.
+    const ctx = { method: req.method, route: req.path };
 
     if (err instanceof HttpError) {
       if (err.status >= 500) {

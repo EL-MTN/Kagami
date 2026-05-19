@@ -1,6 +1,6 @@
 import { google } from "googleapis";
 import { addDays } from "date-fns";
-import { getGoogleAuth } from "./google-auth";
+import { withFreshAuth } from "./google-auth";
 import { logger } from "@kokoro/shared";
 
 export interface CalendarEvent {
@@ -19,10 +19,6 @@ export interface CreateEventParams {
   start: string;
   end: string;
   location?: string;
-}
-
-function getCalendar() {
-  return google.calendar({ version: "v3", auth: getGoogleAuth() });
 }
 
 function toCalendarEvent(event: {
@@ -46,67 +42,64 @@ function toCalendarEvent(event: {
 }
 
 export async function listUpcomingEvents(daysAhead = 7, maxResults = 10): Promise<CalendarEvent[]> {
-  const calendar = getCalendar();
-
-  const res = await calendar.events.list({
-    calendarId: "primary",
-    timeMin: new Date().toISOString(),
-    timeMax: addDays(new Date(), daysAhead).toISOString(),
-    maxResults,
-    singleEvents: true,
-    orderBy: "startTime",
+  return withFreshAuth(async (auth) => {
+    const calendar = google.calendar({ version: "v3", auth });
+    const res = await calendar.events.list({
+      calendarId: "primary",
+      timeMin: new Date().toISOString(),
+      timeMax: addDays(new Date(), daysAhead).toISOString(),
+      maxResults,
+      singleEvents: true,
+      orderBy: "startTime",
+    });
+    return (res.data.items ?? []).map(toCalendarEvent);
   });
-
-  return (res.data.items ?? []).map(toCalendarEvent);
 }
 
 export async function createEvent(params: CreateEventParams): Promise<CalendarEvent> {
-  const calendar = getCalendar();
-
-  const res = await calendar.events.insert({
-    calendarId: "primary",
-    requestBody: {
-      summary: params.summary,
-      description: params.description,
-      start: { dateTime: params.start },
-      end: { dateTime: params.end },
-      location: params.location,
-    },
+  return withFreshAuth(async (auth) => {
+    const calendar = google.calendar({ version: "v3", auth });
+    const res = await calendar.events.insert({
+      calendarId: "primary",
+      requestBody: {
+        summary: params.summary,
+        description: params.description,
+        start: { dateTime: params.start },
+        end: { dateTime: params.end },
+        location: params.location,
+      },
+    });
+    logger.info({ eventId: res.data.id, summary: params.summary }, "Calendar event created");
+    return toCalendarEvent(res.data);
   });
-
-  logger.info({ eventId: res.data.id, summary: params.summary }, "Calendar event created");
-  return toCalendarEvent(res.data);
 }
 
 export async function updateEvent(
   eventId: string,
   params: Partial<CreateEventParams>,
 ): Promise<CalendarEvent> {
-  const calendar = getCalendar();
-
-  const res = await calendar.events.patch({
-    calendarId: "primary",
-    eventId,
-    requestBody: {
-      summary: params.summary,
-      description: params.description,
-      start: params.start ? { dateTime: params.start } : undefined,
-      end: params.end ? { dateTime: params.end } : undefined,
-      location: params.location,
-    },
+  return withFreshAuth(async (auth) => {
+    const calendar = google.calendar({ version: "v3", auth });
+    const res = await calendar.events.patch({
+      calendarId: "primary",
+      eventId,
+      requestBody: {
+        summary: params.summary,
+        description: params.description,
+        start: params.start ? { dateTime: params.start } : undefined,
+        end: params.end ? { dateTime: params.end } : undefined,
+        location: params.location,
+      },
+    });
+    logger.info({ eventId, summary: params.summary }, "Calendar event updated");
+    return toCalendarEvent(res.data);
   });
-
-  logger.info({ eventId, summary: params.summary }, "Calendar event updated");
-  return toCalendarEvent(res.data);
 }
 
 export async function deleteEvent(eventId: string): Promise<void> {
-  const calendar = getCalendar();
-
-  await calendar.events.delete({
-    calendarId: "primary",
-    eventId,
+  await withFreshAuth(async (auth) => {
+    const calendar = google.calendar({ version: "v3", auth });
+    await calendar.events.delete({ calendarId: "primary", eventId });
+    logger.info({ eventId }, "Calendar event deleted");
   });
-
-  logger.info({ eventId }, "Calendar event deleted");
 }

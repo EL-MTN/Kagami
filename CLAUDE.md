@@ -2,7 +2,9 @@
 
 ## Project
 
-Kagami ("mirror") is a personal-AI workspace. It contains four sibling TypeScript projects in one nested monorepo: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind), and **Kansoku** (観測, observation). They share tooling, a single `package.json` install, and a unified Turborepo pipeline, but each project is bounded — its apps, internal packages, docs, and `CLAUDE.md` live under its own subdirectory.
+Kagami ("mirror") is a personal-AI workspace. It contains five sibling TypeScript projects in one nested monorepo: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind), **Kansoku** (観測, observation), and **Kao** (顔, face/identity). They share tooling, a single `package.json` install, and a unified Turborepo pipeline, but each project is bounded — its apps, internal packages, docs, and `CLAUDE.md` live under its own subdirectory.
+
+> **Kao status:** **Kokoro migrated, Kizuna pending.** Kokoro reads short-lived Google access tokens from Kao at runtime (the only previously-plaintext refresh token in the workspace is gone). Kizuna still runs its own encrypted-Mongo + web-flow OAuth; its cutover to `${KAO_URL}/grants/kizuna/token` is the remaining identity-consolidation work.
 
 This file is the workspace-level guide. Each project has its own deeper `CLAUDE.md` and `docs/` — start here for cross-cutting context, then descend.
 
@@ -14,7 +16,7 @@ Kagami/                       # one git repo, one workspace
 ├── CLAUDE.md                 # this file
 ├── package.json              # workspace root: workspace globs + shared devDeps
 ├── turbo.json                # unified pipeline (build, dev, typecheck, test, lint)
-├── dev-all.sh                # boot all four in parallel under Turbo's TUI (or streamed)
+├── dev-all.sh                # boot all five in parallel under Turbo's TUI (or streamed)
 │
 ├── kioku/                    # long-term memory store
 │   ├── apps/                 # api, dashboard
@@ -45,6 +47,13 @@ Kagami/                       # one git repo, one workspace
 │   ├── portless.json
 │   └── vitest.config.ts
 │
+├── kao/                      # identity service — per-consumer Google OAuth grants
+│   ├── apps/                 # api (no dashboard yet — inline operator page)
+│   ├── docs/
+│   ├── CLAUDE.md
+│   ├── portless.json
+│   └── vitest.config.ts
+│
 └── shared/
     └── packages/
         ├── eslint-config/    # @kagami/eslint-config (./base, ./next)
@@ -53,7 +62,7 @@ Kagami/                       # one git repo, one workspace
         └── tsconfig/         # @kagami/tsconfig (./base.json, ./library.json, ./server.json, ./nextjs.json, ./server.build.json, ./library.build.json)
 ```
 
-The Kagami root is the single git repo. The Kioku, Kokoro, and Kizuna subtrees were imported via `git subtree add` so each project's prior history is preserved in `git log`; Kansoku was added natively as the workspace's observability service. Each project still has its own `CLAUDE.md` and `docs/` next to its code.
+The Kagami root is the single git repo. The Kioku, Kokoro, and Kizuna subtrees were imported via `git subtree add` so each project's prior history is preserved in `git log`; Kansoku (observability) and Kao (identity) were added natively. Each project still has its own `CLAUDE.md` and `docs/` next to its code.
 
 ## How they relate
 
@@ -75,9 +84,19 @@ Kioku  ────X──── anything         Pull-only by design; never ini
                                   optional new-error webhook — see
                                   kansoku/docs/architecture.md.
 Kansoku ────X──── anything        Push-only-in. Never initiates outbound to siblings.
+Kokoro ──HTTP──► Kao              LIVE. Fetches a fresh Google access token
+                                  from /grants/kokoro/token (bearer KAO_TOKEN)
+                                  instead of owning a refresh token. Plaintext
+                                  GOOGLE_OAUTH_REFRESH_TOKEN is gone.
+Kizuna ──HTTP──► Kao              PLANNED, not wired. Will replace Kizuna's
+                                  encrypted-Mongo + web-flow OAuth with the
+                                  same /grants/kizuna/token contract.
+                                  Kioku has no Google OAuth, ever.
+Kao    ────X──── anything         Vend-only-in. Outbound only to Google
+                                  (token exchange/refresh/revoke).
 ```
 
-`dev-all.sh` boots all four in parallel — there is no startup ordering between them. Kokoro's Kioku client is fail-open (`KiokuClientError` is caught at the AI tool layer; chat continues degraded), and any pending writes are retried by Kokoro's 5-min sweeper. Kokoro's Kizuna CRM read tools are also fail-open at the tool layer; write tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) only fire from Kokoro's gated dispatcher after the user taps Approve. Every sibling's Kansoku shipper is fail-open at the call site — observability failure must never wedge a service.
+`dev-all.sh` boots all five in parallel — there is no startup ordering between them. Kokoro's Kioku client is fail-open (`KiokuClientError` is caught at the AI tool layer; chat continues degraded), and any pending writes are retried by Kokoro's 5-min sweeper. Kokoro's Kizuna CRM read tools are also fail-open at the tool layer; write tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) only fire from Kokoro's gated dispatcher after the user taps Approve. Every sibling's Kansoku shipper is fail-open at the call site — observability failure must never wedge a service.
 
 See `ARCHITECTURE.md` for the full edge table, endpoint surface, and per-project env-var cheat sheet.
 
@@ -86,7 +105,7 @@ See `ARCHITECTURE.md` for the full edge table, endpoint surface, and per-project
 All commands run from the Kagami root.
 
 ```bash
-./dev-all.sh                     # boot all four in parallel under Turbo's TUI
+./dev-all.sh                     # boot all five in parallel under Turbo's TUI
                                  # (per-task panes, single Ctrl-C stops all)
 ./dev-all.sh --no kokoro:bot     # selective: --only / --no take projects or
 ./dev-all.sh --only kioku        # components (e.g. kokoro:bot, kioku:dashboard,
@@ -105,6 +124,7 @@ npm run kioku:dev                # turbo run dev --filter="@kioku/*"
 npm run kokoro:dev
 npm run kizuna:dev
 npm run kansoku:dev
+npm run kao:dev
 
 # Per-component filters
 npm run kioku:dev:api
@@ -115,9 +135,9 @@ npm run kizuna:dev:api
 npm run kizuna:dev:dashboard
 npm run kansoku:dev:api
 npm run kansoku:dev:dashboard
+npm run kao:dev:api
 
 # Project-specific scripts
-npm run kokoro:auth:google       # tsx kokoro/scripts/authorize-google.ts
 ```
 
 `npm install` is hoisted at the Kagami root. There is no per-project `package.json` and no per-project `node_modules` install step.
@@ -136,12 +156,13 @@ All HTTP entry points are served as HTTPS named URLs by [Portless](https://githu
 | Kizuna  | API       | `https://api.kizuna.localhost`  |
 | Kansoku | dashboard | `https://kansoku.localhost`     |
 | Kansoku | API       | `https://api.kansoku.localhost` |
+| Kao     | API       | `https://api.kao.localhost`     |
 
 Each project keeps its own `portless.json` next to its code. Numeric `PORT` defaults inside apps only matter when running an app standalone outside Portless; normal local development should use the named HTTPS URLs above.
 
 ## Shared conventions
 
-All four projects share tooling via `shared/packages/`:
+All five projects share tooling via `shared/packages/`:
 
 - **`@kagami/eslint-config`** — flat ESLint config; `./base` for general TS, `./next` for Next.js apps.
 - **`@kagami/tsconfig`** — `./base.json`, `./library.json`, `./server.json`, `./nextjs.json`, plus emit-on build presets `./server.build.json` and `./library.build.json` (consumed by each compiled package's `tsconfig.build.json`). Per-app `tsconfig.json` files extend one of these and add overrides (e.g. `verbatimModuleSyntax`, `esModuleInterop`, `noImplicitOverride`, `allowImportingTsExtensions`, `allowJs`) where projects diverge.
@@ -151,10 +172,10 @@ All four projects share tooling via `shared/packages/`:
 Other workspace-wide conventions:
 
 - **Language**: TypeScript (strict, ESM), Node ≥ 22
-- **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs are `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, `kansoku/{apps,packages}/*`, and `shared/packages/*`.
-- **Apps split**: `apps/api` (or `apps/bot` for Kokoro) + `apps/dashboard`
+- **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs are `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, `kansoku/{apps,packages}/*`, `kao/{apps,packages}/*`, and `shared/packages/*`.
+- **Apps split**: `apps/api` (or `apps/bot` for Kokoro) + `apps/dashboard` (Kao is API-only so far — minimal inline-HTML operator page instead of a Next.js dashboard)
 - **Local dev hosting**: Portless via stable HTTPS named `*.localhost` URLs
-- **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku)
+- **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku and Kao)
 - **Logging**: Pino (structured) via `@kagami/logger` — ECS / OTel field names, stable service bindings, trace/span correlation; no redaction (local-trust only)
 - **Validation**: Zod schemas at boundaries
 - **Formatting**: Prettier; ESLint flat config
@@ -173,18 +194,19 @@ Lint-staged globs:
 
 When working inside a project, consult that project's `CLAUDE.md` first — it's authoritative for module structure, conventions, and the docs index.
 
-| Project | Role                                       | Start here                               |
-| ------- | ------------------------------------------ | ---------------------------------------- |
-| Kioku   | Long-term memory service                   | [`kioku/CLAUDE.md`](kioku/CLAUDE.md)     |
-| Kokoro  | Telegram + iMessage AI agent               | [`kokoro/CLAUDE.md`](kokoro/CLAUDE.md)   |
-| Kizuna  | Personal CRM                               | [`kizuna/CLAUDE.md`](kizuna/CLAUDE.md)   |
-| Kansoku | Observability (logs, traces, errors, etc.) | [`kansoku/CLAUDE.md`](kansoku/CLAUDE.md) |
+| Project | Role                                        | Start here                               |
+| ------- | ------------------------------------------- | ---------------------------------------- |
+| Kioku   | Long-term memory service                    | [`kioku/CLAUDE.md`](kioku/CLAUDE.md)     |
+| Kokoro  | Telegram + iMessage AI agent                | [`kokoro/CLAUDE.md`](kokoro/CLAUDE.md)   |
+| Kizuna  | Personal CRM                                | [`kizuna/CLAUDE.md`](kizuna/CLAUDE.md)   |
+| Kansoku | Observability (logs, traces, errors, etc.)  | [`kansoku/CLAUDE.md`](kansoku/CLAUDE.md) |
+| Kao     | Identity — per-consumer Google OAuth grants | [`kao/CLAUDE.md`](kao/CLAUDE.md)         |
 
-For cross-service detail (Kokoro→Kioku coupling, observed gaps, planned Kao identity service), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
+For cross-service detail (Kokoro→Kioku coupling, observed gaps, the Kao identity service and its un-migrated consumers), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Working in this workspace
 
 - **One repo, one PR flow.** Cross-service edits (e.g. changing the Kokoro→Kioku contract) can be a single commit/PR now. Producers should still ship before consumers in the same commit, and tests should cover both sides.
 - **`ARCHITECTURE.md` is the source of truth for cross-service facts.** Update it when an edge is added, removed, or its shape changes (URLs, env vars, auth model, coupling direction).
 - **Per-project docs (`<project>/docs/`) are the source of truth for that project's internals.** Update them when modules, schemas, endpoints, or conventions change.
-- **Adding a new service** (e.g. Kao for OAuth state): create `kao/` at the top level with its own `apps/`, `packages/`, `docs/`, `CLAUDE.md`, and add `kao/{apps,packages}/*` to the root `package.json` workspaces array.
+- **Adding a new service**: create `<name>/` at the top level with its own `apps/`, `packages/`, `docs/`, `CLAUDE.md`, `portless.json`, `vitest.config.ts`; add `<name>/{apps,packages}/*` to the root `package.json` workspaces; wire `<name>:dev` scripts and the `dev-all.sh` dispatch blocks. **Kao** (identity / OAuth) is the worked example of this — see `kao/CLAUDE.md`.

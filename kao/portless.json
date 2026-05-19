@@ -1,0 +1,5 @@
+{
+  "apps": {
+    "apps/api": { "name": "api.kao" }
+  }
+}
