@@ -61,19 +61,37 @@ export function makeGrantsRouter(config: Config, db: Db): Router {
   // The hot path: vend a fresh access token for the grant. Structured codes
   // let a caller distinguish "never consented / revoked" (409 no_grant),
   // "Google rejected the refresh — operator must re-consent" (409
-  // invalid_grant), and a transient refresh failure (502).
+  // invalid_grant), a key-rotation / corruption case (409 decrypt_failed),
+  // and a transient refresh failure (502).
+  //
+  // `?force=1` bypasses Kao's in-process access-token cache and round-trips
+  // to Google. Consumers use this when Google rejected a previously-vended
+  // access token (401/403) — without bypass, Kao's own cache would re-vend
+  // the same dead token. See kokoro/apps/bot/src/services/google-auth.ts.
   r.get("/:grant/token", async (req, res) => {
     const grant = req.params.grant;
     if (!isGrantName(grant)) {
       throw errors.notFound(`unknown grant '${grant}'`);
     }
+    const force = req.query.force === "1" || req.query.force === "true";
     const row = await getGrant(db, grant);
     if (!row || !row.refreshToken || row.revokedAt) {
       throw errors.conflict(`no active grant for '${grant}'`, { code: "no_grant" });
     }
-    const refresh = decrypt(row.refreshToken, config.KAO_ENCRYPTION_KEY);
+    let refresh: string;
     try {
-      const vended = await refreshAccessToken(config, grant, refresh);
+      refresh = decrypt(row.refreshToken, config.KAO_ENCRYPTION_KEY);
+    } catch (err) {
+      // Key rotated / ciphertext corruption — surface as a structured
+      // re-consent-required code, not a generic 500. The operator needs to
+      // know the stored token is unreadable so they can /oauth/:grant/start.
+      throw errors.conflict(
+        `cannot decrypt stored refresh token for '${grant}' — re-consent required`,
+        { code: "decrypt_failed", cause: err instanceof Error ? err.message : String(err) },
+      );
+    }
+    try {
+      const vended = await refreshAccessToken(config, grant, refresh, { force });
       res.json({
         accessToken: vended.accessToken,
         expiresAt: vended.expiresAt,

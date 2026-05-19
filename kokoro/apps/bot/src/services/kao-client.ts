@@ -37,8 +37,14 @@ let cache: Cached | null = null;
 // calendar back-to-back; without this they'd issue two parallel vends).
 let inflight: Promise<VendedAccessToken> | null = null;
 
+// Clear BOTH cache and inflight. Clearing only `cache` would leave a stale
+// inflight (started before the clear, e.g. before Google revoked the token)
+// to overwrite `cache` with a stale result the moment it resolves —
+// partially defeating the clear. The withFreshAuth retry path depends on
+// this being a hard reset.
 export function clearAccessTokenCache(): void {
   cache = null;
+  inflight = null;
 }
 
 export interface VendedAccessToken {
@@ -61,11 +67,28 @@ const FETCH_TIMEOUT_MS = 5_000;
 // token until process restart — clamp to a sane upper bound.
 const MAX_PLAUSIBLE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
-export async function getAccessToken(): Promise<VendedAccessToken> {
-  if (cache && cache.expiresAt > Date.now() + EXPIRY_BUFFER_MS) {
-    return { accessToken: cache.token, expiresAt: cache.expiresAt };
+/**
+ * Vend an access token. `force: true` instructs Kao to bypass its own
+ * in-process cache and round-trip to Google for a fresh token — the only
+ * way to recover from a Google-side revocation mid-window. Without it,
+ * Kao's 30s-buffer cache would re-vend the dead token until its expiry
+ * lapses (~the full token lifetime).
+ *
+ * `force` also resets the LOCAL inflight/cache here so the caller doesn't
+ * piggyback an in-flight non-force fetch (which is using the stale token).
+ */
+export async function getAccessToken(
+  options: { force?: boolean } = {},
+): Promise<VendedAccessToken> {
+  if (options.force) {
+    cache = null;
+    inflight = null;
+  } else {
+    if (cache && cache.expiresAt > Date.now() + EXPIRY_BUFFER_MS) {
+      return { accessToken: cache.token, expiresAt: cache.expiresAt };
+    }
+    if (inflight) return inflight;
   }
-  if (inflight) return inflight;
 
   if (!config.KAO_URL || !config.KAO_TOKEN) {
     throw new KaoMisconfiguredError(
@@ -74,7 +97,7 @@ export async function getAccessToken(): Promise<VendedAccessToken> {
   }
 
   const base = config.KAO_URL.replace(/\/+$/, "");
-  const url = `${base}/grants/kokoro/token`;
+  const url = `${base}/grants/kokoro/token${options.force ? "?force=1" : ""}`;
   const bearer = config.KAO_TOKEN;
 
   inflight = (async () => {
@@ -138,6 +161,11 @@ async function fetchAndCache(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new KaoUnreachableError(`Kao returned malformed JSON: ${msg}`);
+  }
+  if (data === null || typeof data !== "object") {
+    // `res.json()` happily resolves to `null` for a literal JSON `null` body;
+    // the subsequent property reads would throw TypeError outside taxonomy.
+    throw new KaoUnreachableError("Kao returned a non-object body");
   }
   const accessToken = (data as { accessToken?: unknown }).accessToken;
   const expiresAt = (data as { expiresAt?: unknown }).expiresAt;

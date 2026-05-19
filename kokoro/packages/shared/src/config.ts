@@ -60,9 +60,11 @@ const baseSchema = z.object({
   // Google services (Gmail + Calendar) are vended via the Kao identity
   // service. Kokoro does not own a refresh token; it fetches short-lived
   // access tokens from Kao at https://api.kao.localhost/grants/kokoro/token.
+  // `.url()` matches the sibling URL-shaped vars (KIOKU_URL, KIZUNA_URL) and
+  // catches a typo'd value at startup instead of at first vend call.
   KAO_URL: z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
-    z.string().optional(),
+    z.string().url().optional(),
   ),
   KAO_TOKEN: z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),

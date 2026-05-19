@@ -170,6 +170,57 @@ describe("kao-client", () => {
     const err = await getAccessToken().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(KaoUnreachableError);
   });
+
+  it("rejects a literal-null JSON body as KaoUnreachableError", async () => {
+    // `res.json()` resolves null for a JSON `null` body — would otherwise
+    // throw TypeError on the subsequent property access, outside taxonomy.
+    mockFetch.mockResolvedValueOnce(new Response("null", { status: 200 }));
+    const err = await getAccessToken().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(KaoUnreachableError);
+  });
+
+  it("force=true sends ?force=1 to Kao and bypasses the local cache", async () => {
+    // Prime the cache.
+    const future = Date.now() + 10 * 60_000;
+    mockFetch.mockResolvedValueOnce(ok({ accessToken: "ya29.cached", expiresAt: future }));
+    await getAccessToken();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // Without force: cache hit, no fetch.
+    await getAccessToken();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // With force: skip cache, hit Kao with ?force=1.
+    mockFetch.mockResolvedValueOnce(ok({ accessToken: "ya29.forced", expiresAt: future }));
+    const forced = await getAccessToken({ force: true });
+    expect(forced.accessToken).toBe("ya29.forced");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "https://api.kao.test/grants/kokoro/token?force=1",
+      expect.any(Object),
+    );
+  });
+
+  it("clearAccessTokenCache also clears inflight so a subsequent fetch is fresh", async () => {
+    // Start an inflight that will resolve later.
+    let resolveStale!: (r: Response) => void;
+    mockFetch.mockReturnValueOnce(new Promise<Response>((r) => (resolveStale = r)));
+    const stale = getAccessToken();
+
+    // While inflight, clear the cache. A subsequent caller must NOT piggyback
+    // the stale inflight — it must start a brand-new fetch.
+    clearAccessTokenCache();
+
+    const future = Date.now() + 10 * 60_000;
+    mockFetch.mockResolvedValueOnce(ok({ accessToken: "ya29.fresh", expiresAt: future }));
+    const freshResult = await getAccessToken();
+    expect(freshResult.accessToken).toBe("ya29.fresh");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    // Let the stale inflight resolve so vitest doesn't complain about unsettled promises.
+    resolveStale(ok({ accessToken: "ya29.stale", expiresAt: future }));
+    await stale.catch(() => undefined);
+  });
 });
 
 describe("kao-client — misconfiguration", () => {
