@@ -5,7 +5,7 @@ vi.mock("@kokoro/shared", async (orig) => ({
   ...(await orig()),
   config: {
     BROWSER_ENABLED: false,
-    GOOGLE_OAUTH_CLIENT_ID: "stub",
+    KAO_URL: "stub",
   },
   logger: {
     info: vi.fn(),
