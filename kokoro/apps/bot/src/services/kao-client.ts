@@ -8,8 +8,8 @@ import { config, logger, tracedFetch } from "@kokoro/shared";
 // doesn't even make a local HTTP round-trip.
 
 export class KaoNoGrantError extends Error {
-  readonly code: "no_grant" | "invalid_grant";
-  constructor(code: "no_grant" | "invalid_grant", message: string) {
+  readonly code: "no_grant" | "invalid_grant" | "decrypt_failed";
+  constructor(code: "no_grant" | "invalid_grant" | "decrypt_failed", message: string) {
     super(message);
     this.code = code;
   }
@@ -100,21 +100,29 @@ export async function getAccessToken(
   const url = `${base}/grants/kokoro/token${options.force ? "?force=1" : ""}`;
   const bearer = config.KAO_TOKEN;
 
-  inflight = (async () => {
+  // Race-safety: only the currently-registered inflight writes back into
+  // `cache` and clears the `inflight` slot. A stale inflight (one whose slot
+  // was already replaced by a force-refresh or a clear) still resolves its
+  // own awaiters but does not touch shared state — so it can't overwrite a
+  // newer fresh token in `cache`, and it can't null out a newer inflight.
+  let p: Promise<VendedAccessToken> | undefined = undefined;
+  p = (async () => {
     try {
-      return await fetchAndCache(url, bearer, base);
+      const vended = await fetchToken(url, bearer);
+      if (inflight === p) {
+        cache = { token: vended.accessToken, expiresAt: vended.expiresAt };
+      }
+      return vended;
     } finally {
-      inflight = null;
+      if (inflight === p) inflight = null;
     }
   })();
-  return inflight;
+  inflight = p;
+  return p;
 }
 
-async function fetchAndCache(
-  url: string,
-  bearer: string,
-  base: string,
-): Promise<VendedAccessToken> {
+async function fetchToken(url: string, bearer: string): Promise<VendedAccessToken> {
+  const base = url.split("/grants/")[0] ?? url;
   let res: Response;
   try {
     res = await tracedFetch(url, {
@@ -137,12 +145,21 @@ async function fetchAndCache(
   }
 
   if (res.status === 409) {
-    // Either no consent yet, or Google rejected the refresh. Both require
-    // the operator to (re-)consent at ${KAO_URL}/oauth/kokoro/start.
+    // Either no consent yet, Google rejected the refresh, or the stored
+    // refresh token can't be decrypted (key rotated / ciphertext corruption).
+    // All three require the operator to (re-)consent at
+    // ${KAO_URL}/oauth/kokoro/start, but the structured code lets a caller
+    // distinguish them.
     const body = (await res.json().catch(() => ({}))) as {
       error?: { details?: { code?: string } };
     };
-    const code = body.error?.details?.code === "invalid_grant" ? "invalid_grant" : "no_grant";
+    const detailsCode = body.error?.details?.code;
+    const code: "no_grant" | "invalid_grant" | "decrypt_failed" =
+      detailsCode === "invalid_grant"
+        ? "invalid_grant"
+        : detailsCode === "decrypt_failed"
+          ? "decrypt_failed"
+          : "no_grant";
     throw new KaoNoGrantError(
       code,
       `Kao: ${code} for grant 'kokoro' — consent at ${base}/oauth/kokoro/start`,
@@ -183,7 +200,9 @@ async function fetchAndCache(
     throw new KaoUnreachableError(`Kao returned implausible expiresAt: ${String(expiresAt)}`);
   }
 
-  cache = { token: accessToken, expiresAt };
+  // Note: cache write happens in the caller (getAccessToken) gated on
+  // `inflight === p` so a stale inflight resolving after a force-refresh
+  // can't overwrite the fresh value in `cache`.
   logger.debug(
     { expiresAt: new Date(expiresAt).toISOString() },
     "fetched google access token from Kao",
