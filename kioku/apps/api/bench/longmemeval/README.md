@@ -48,6 +48,7 @@ Flags:
 - `--keep-vaults` — skip the per-item Mongo DB drop; reuse the existing facts for the query/judge passes (saves ingest cost on prompt iterations)
 - `--clean-vaults` — delete each vault after its item finishes (default: kept on disk)
 - `--resume` — pick up from `partial-predictions.json` if a prior run was interrupted
+- `--concurrency N` — run N items in parallel (default: 1 = serial). Items are fully isolated (own vault DB each), so results are identical to serial — purely a wall-clock speedup for repeated runs. Bounded by the OpenAI rate limit; 6–8 is a safe start. Only the per-item ingest/query loop is parallelized; the judge pass stays serial.
 
 ## Output
 
