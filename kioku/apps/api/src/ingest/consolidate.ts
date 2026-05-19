@@ -9,6 +9,7 @@ import { lemmatizeForBm25 } from "../retrieval/text.js";
 import { upsertEntitiesFromFacts } from "../storage/entities.js";
 import { getOrComputeSessionSummary } from "./session-summary.js";
 import { normalizeCategory } from "./categories.js";
+import { filterDurableFacts } from "./relevance.js";
 import { logger } from "../logger.js";
 
 // Kioku's atomic-fact extraction pipeline.
@@ -243,7 +244,30 @@ export async function consolidate(
 
     if (extraction.memory.length === 0) continue;
 
-    const newTexts = extraction.memory.map((m) => m.text);
+    // Deterministic post-extraction clip of low-value / non-durable
+    // memories (greetings, affection, assistant self-narration). The
+    // extraction prompt biases against these but a stochastic model
+    // still emits them on casual chat; see ingest/relevance.ts. Default
+    // keep, benchmark-safe by the tests/relevance.test.ts contract.
+    const { kept: memory, dropped } = await filterDurableFacts(extraction.memory);
+    if (dropped.length > 0) {
+      logger.info(
+        {
+          sessionId,
+          userId,
+          runId,
+          agentId,
+          batch: batches,
+          dropped: dropped.length,
+          kept: memory.length,
+          droppedTexts: dropped.map((m) => m.text),
+        },
+        "ingest relevance filter dropped low-value memories",
+      );
+    }
+    if (memory.length === 0) continue;
+
+    const newTexts = memory.map((m) => m.text);
     let embeddings: number[][];
     try {
       const r = await embedMany({
@@ -262,8 +286,8 @@ export async function consolidate(
     }
 
     const facts: Fact[] = [];
-    for (let j = 0; j < extraction.memory.length; j++) {
-      const m = extraction.memory[j]!;
+    for (let j = 0; j < memory.length; j++) {
+      const m = memory[j]!;
       const newEmb = embeddings[j]!;
 
       // Skip if this fact is cosine-near-dup of (a) any existing in-scope

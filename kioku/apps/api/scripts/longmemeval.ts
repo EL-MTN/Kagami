@@ -34,6 +34,7 @@ interface CliArgs {
   cleanVaults: boolean;
   keepVaults: boolean;
   resume: boolean;
+  concurrency: number;
 }
 
 interface DatasetItem {
@@ -101,7 +102,8 @@ function parseArgs(): CliArgs {
   const cleanVaults = args.includes("--clean-vaults");
   const keepVaults = args.includes("--keep-vaults");
   const resume = args.includes("--resume");
-  return { limit, data, judgeModel, cleanVaults, keepVaults, resume };
+  const concurrency = Math.max(1, Number(get("--concurrency", "1")) || 1);
+  return { limit, data, judgeModel, cleanVaults, keepVaults, resume, concurrency };
 }
 
 // Per-item predictions are persisted here as the bench progresses so a
@@ -121,6 +123,25 @@ async function savePartialPredictions(predictions: WorkerResult[]): Promise<void
   await fs.writeFile(PARTIAL_PATH, JSON.stringify(predictions, null, 2));
 }
 
+// Bounded-concurrency pool. concurrency=1 reproduces the original serial
+// behavior exactly (workers pull indices in order). Items are fully
+// isolated (each its own vault DB), so parallel vs serial is
+// result-identical — purely a wall-clock win for repeated benchmarking.
+async function runPool<T>(
+  list: T[],
+  concurrency: number,
+  task: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const workers = Math.max(1, Math.min(concurrency, list.length));
+  const worker = async (): Promise<void> => {
+    for (let i = next++; i < list.length; i = next++) {
+      await task(list[i]!, i);
+    }
+  };
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+}
+
 async function main() {
   const args = parseArgs();
   const startedAt = new Date().toISOString();
@@ -134,6 +155,7 @@ async function main() {
   console.log(`Judge:    ${judgeModelId}`);
   console.log(`Data:     ${args.data}`);
   console.log(`Limit:    ${args.limit}`);
+  console.log(`Concurrency: ${args.concurrency}`);
   console.log("");
 
   const datasetRaw = await fs.readFile(args.data, "utf8");
@@ -159,35 +181,47 @@ async function main() {
     await fs.rm(PARTIAL_PATH, { force: true });
   }
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]!;
+  const total = items.length;
+  let completed = 0;
+  // Serialize checkpoint writes — concurrent tasks must not interleave
+  // writes to the single partial-predictions file.
+  let saveChain: Promise<void> = Promise.resolve();
+  const checkpoint = (): Promise<void> => {
+    saveChain = saveChain.then(() => savePartialPredictions(predictions));
+    return saveChain;
+  };
+
+  // Per-item drops share one Mongo client; pre-warm it so concurrent
+  // tasks don't race the lazy connect.
+  await ensureSharedClient();
+
+  const processItem = async (item: DatasetItem, _index: number): Promise<void> => {
     const qid = item.question_id;
     if (alreadyDone.has(qid)) {
-      console.log(`[${i + 1}/${items.length}] ${qid} (${item.question_type}) — SKIP (resumed)`);
-      console.log("");
-      continue;
+      completed += 1;
+      console.log(`[${completed}/${total}] ${qid} (${item.question_type}) — SKIP (resumed)`);
+      return;
     }
-    console.log(`[${i + 1}/${items.length}] ${qid} (${item.question_type})`);
 
     const mongoDbName = dbNameFor(qid);
-    if (!args.keepVaults) {
-      await dropMongoDb(mongoDbName);
-    }
+    if (!args.keepVaults) await dropMongoDb(mongoDbName);
 
     const itemFile = path.join(itemsTmpRoot, `${qid}.item.json`);
     const resultFile = path.join(itemsTmpRoot, `${qid}.result.json`);
     await fs.writeFile(itemFile, JSON.stringify(item));
 
+    let line: string;
     try {
       await runWorker(itemFile, resultFile, mongoDbName);
       const result = JSON.parse(await fs.readFile(resultFile, "utf8")) as WorkerResult;
       predictions.push(result);
       const tag = result.error ? "ERROR" : "OK";
-      console.log(`     ${tag}  ingest=${result.ingestion_ms}ms  query=${result.query_ms}ms`);
-      console.log(`     pred:  ${truncate(result.prediction, 160)}`);
-      console.log(`     truth: ${truncate(result.ground_truth, 160)}`);
+      line =
+        `[${(completed += 1)}/${total}] ${tag} ${qid} (${item.question_type})  ` +
+        `ingest=${result.ingestion_ms}ms query=${result.query_ms}ms\n` +
+        `     pred:  ${truncate(result.prediction, 160)}\n` +
+        `     truth: ${truncate(result.ground_truth, 160)}`;
     } catch (err) {
-      console.log(`     ERROR: ${(err as Error).message}`);
       predictions.push({
         question_id: qid,
         question_type: item.question_type,
@@ -199,17 +233,24 @@ async function main() {
         query_ms: 0,
         error: (err as Error).message,
       });
+      line = `[${(completed += 1)}/${total}] ERROR ${qid} (${item.question_type}): ${(err as Error).message}`;
     } finally {
       await fs.rm(itemFile, { force: true });
       await fs.rm(resultFile, { force: true });
-      if (args.cleanVaults) {
-        await dropMongoDb(mongoDbName);
-      }
+      if (args.cleanVaults) await dropMongoDb(mongoDbName);
       // Checkpoint after every item so killing the bench doesn't lose work.
-      await savePartialPredictions(predictions);
+      await checkpoint();
     }
-    console.log("");
-  }
+    // One atomic write so concurrent items don't interleave mid-line.
+    console.log(line + "\n");
+  };
+
+  await runPool(items, args.concurrency, processItem);
+
+  // Completion order under concurrency is nondeterministic; restore the
+  // dataset order so judging and the results JSON stay stable/reproducible.
+  const orderOf = new Map(items.map((it, idx) => [it.question_id, idx]));
+  predictions.sort((a, b) => (orderOf.get(a.question_id) ?? 0) - (orderOf.get(b.question_id) ?? 0));
 
   // Map question_id → ground-truth answer_session_ids, used to compute
   // citation recall against the retrieval-side citations returned by
@@ -329,13 +370,17 @@ function runWorker(itemFile: string, resultFile: string, mongoDbName: string): P
 // Per-item Mongo cleanup. We keep one shared MongoClient across items
 // so dropDatabase calls don't reconnect each time.
 let sharedClient: MongoClient | null = null;
-async function dropMongoDb(name: string): Promise<void> {
-  const uri = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017/kioku?directConnection=true";
+async function ensureSharedClient(): Promise<MongoClient> {
   if (!sharedClient) {
+    const uri = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017/kioku?directConnection=true";
     sharedClient = new MongoClient(uri);
     await sharedClient.connect();
   }
-  await sharedClient.db(name).dropDatabase();
+  return sharedClient;
+}
+async function dropMongoDb(name: string): Promise<void> {
+  const client = await ensureSharedClient();
+  await client.db(name).dropDatabase();
 }
 
 type Judge = (p: WorkerResult) => Promise<{ verdict: boolean; raw: string }>;
