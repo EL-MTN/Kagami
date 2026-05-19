@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The registry's behavior is governed entirely by `config` flags:
- *   - GOOGLE_OAUTH_CLIENT_ID gates email/calendar/reminders + the gated
- *     confirmation primitive.
+ *   - KAO_URL gates email/calendar/reminders + the gated confirmation
+ *     primitive (Google services are vended by Kao).
  *   - BROWSER_ENABLED gates browse + (also) the confirmation primitive.
  *   - IMAGE_GENERATION_MODEL gates sendPhoto.
  *   - TTS_PROVIDER gates sendVoice.
@@ -102,7 +102,7 @@ describe("allTools — feature flags", () => {
   });
 
   it("registers email + calendar + reminders + confirmation primitives when Google OAuth is set", () => {
-    mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
+    mockConfig.KAO_URL = "stub";
     const names = Object.keys(allTools(baseCtx));
     expect(names).toEqual(
       expect.arrayContaining([
@@ -180,7 +180,7 @@ describe("allTools — useRoutine recursion gate", () => {
 
 describe("watcherTools — read-only invariant", () => {
   it("excludes every mutating tool — sends, calendar writes, reminders, routine/watcher CRUD, confirmation primitives", () => {
-    mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
+    mockConfig.KAO_URL = "stub";
     mockConfig.BROWSER_ENABLED = true;
     mockConfig.IMAGE_GENERATION_MODEL = "stub";
     mockConfig.TTS_PROVIDER = "stub";
@@ -209,7 +209,7 @@ describe("watcherTools — read-only invariant", () => {
   });
 
   it("includes the watcher-specific terminator and read-only observation tools", () => {
-    mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
+    mockConfig.KAO_URL = "stub";
     mockConfig.BROWSER_ENABLED = true;
 
     const names = Object.keys(watcherTools(baseCtx));
@@ -236,7 +236,7 @@ describe("watcherTools — read-only invariant", () => {
 
 describe("routineToolsUnderWatcher — read-only invariant transitive", () => {
   it("returns the same read-only subset as watcherTools — minus reportWatcherResult", () => {
-    mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
+    mockConfig.KAO_URL = "stub";
     mockConfig.BROWSER_ENABLED = true;
 
     const watcher = Object.keys(watcherTools(baseCtx)).sort();
@@ -245,7 +245,7 @@ describe("routineToolsUnderWatcher — read-only invariant transitive", () => {
   });
 
   it("does not include any mutating surface", () => {
-    mockConfig.GOOGLE_OAUTH_CLIENT_ID = "stub";
+    mockConfig.KAO_URL = "stub";
     mockConfig.BROWSER_ENABLED = true;
 
     const names = Object.keys(routineToolsUnderWatcher(baseCtx));

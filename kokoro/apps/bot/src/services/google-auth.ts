@@ -1,18 +1,21 @@
 import { google } from "googleapis";
-import { config } from "@kokoro/shared";
+import { getAccessToken } from "./kao-client";
 
-let client: InstanceType<typeof google.auth.OAuth2> | null = null;
-
-export function getGoogleAuth(): InstanceType<typeof google.auth.OAuth2> {
-  if (client) return client;
-
-  if (!config.GOOGLE_OAUTH_CLIENT_ID || !config.GOOGLE_OAUTH_CLIENT_SECRET) {
-    throw new Error("Google OAuth credentials not configured");
-  }
-
-  client = new google.auth.OAuth2(config.GOOGLE_OAUTH_CLIENT_ID, config.GOOGLE_OAUTH_CLIENT_SECRET);
-
-  client.setCredentials({ refresh_token: config.GOOGLE_OAUTH_REFRESH_TOKEN });
-
+// Kokoro no longer owns Google OAuth client credentials or a refresh token.
+// Access tokens are vended by the Kao identity service (the workspace's
+// shared OAuth grant store); this module just wraps that vend in the
+// `OAuth2Client` shape that the `googleapis` library expects.
+//
+// Async: the underlying network call to Kao is async (Kao's in-process
+// cache short-circuits most calls anyway). gmail.ts / google-calendar.ts
+// `await` this and pass the result as `auth` to `google.gmail(...)` /
+// `google.calendar(...)`.
+//
+// The OAuth2Client is constructed fresh per call — it's cheap, and avoiding
+// a singleton means we never serve a stale access token after Kao re-issues.
+export async function getGoogleAuth(): Promise<InstanceType<typeof google.auth.OAuth2>> {
+  const { accessToken } = await getAccessToken();
+  const client = new google.auth.OAuth2();
+  client.setCredentials({ access_token: accessToken });
   return client;
 }

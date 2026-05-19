@@ -56,7 +56,7 @@ export function allTools(ctx: ToolContext) {
     tools.sendVoice = createSendVoiceTool(ctx.chatId, ctx.adapter);
   }
 
-  if (config.GOOGLE_OAUTH_CLIENT_ID) {
+  if (config.KAO_URL) {
     tools.checkEmail = createCheckEmailTool();
     tools.sendEmail = createSendEmailTool();
     tools.manageCalendar = createManageCalendarTool();
@@ -76,12 +76,12 @@ export function allTools(ctx: ToolContext) {
   }
 
   // Approval-gated wrappers. Registered when any gated underlying tool is
-  // available — sendEmail/manageCalendar require Google OAuth, browseAgent
-  // requires the browser, CRM writes require KIZUNA_ENABLED. The wrapper's
+  // available — sendEmail/manageCalendar require Kao (Google access),
+  // browseAgent requires the browser, CRM writes require KIZUNA_ENABLED. The wrapper's
   // enum is the same in all cases; the dispatcher fails at runtime if a
   // tool is selected whose backing service isn't configured. Behavioral
   // guidance steers the LLM correctly.
-  if (config.GOOGLE_OAUTH_CLIENT_ID || config.BROWSER_ENABLED || config.KIZUNA_ENABLED) {
+  if (config.KAO_URL || config.BROWSER_ENABLED || config.KIZUNA_ENABLED) {
     tools.requestConfirmation = createRequestConfirmationTool(ctx.chatId, ctx.adapter);
     tools.cancelConfirmation = createCancelConfirmationTool(ctx.chatId, ctx.adapter, ctx.userId);
   }
@@ -124,7 +124,7 @@ function readOnlyToolSubset(ctx: ToolContext): ToolSet {
 
   const tools: ToolSet = {};
 
-  if (config.GOOGLE_OAUTH_CLIENT_ID) {
+  if (config.KAO_URL) {
     tools.checkEmail = createCheckEmailTool();
     tools.listCalendarEvents = createManageCalendarTool({ mode: "readOnly" });
   }

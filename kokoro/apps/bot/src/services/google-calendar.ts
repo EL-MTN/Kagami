@@ -21,8 +21,8 @@ export interface CreateEventParams {
   location?: string;
 }
 
-function getCalendar() {
-  return google.calendar({ version: "v3", auth: getGoogleAuth() });
+async function getCalendar() {
+  return google.calendar({ version: "v3", auth: await getGoogleAuth() });
 }
 
 function toCalendarEvent(event: {
@@ -46,7 +46,7 @@ function toCalendarEvent(event: {
 }
 
 export async function listUpcomingEvents(daysAhead = 7, maxResults = 10): Promise<CalendarEvent[]> {
-  const calendar = getCalendar();
+  const calendar = await getCalendar();
 
   const res = await calendar.events.list({
     calendarId: "primary",
@@ -61,7 +61,7 @@ export async function listUpcomingEvents(daysAhead = 7, maxResults = 10): Promis
 }
 
 export async function createEvent(params: CreateEventParams): Promise<CalendarEvent> {
-  const calendar = getCalendar();
+  const calendar = await getCalendar();
 
   const res = await calendar.events.insert({
     calendarId: "primary",
@@ -82,7 +82,7 @@ export async function updateEvent(
   eventId: string,
   params: Partial<CreateEventParams>,
 ): Promise<CalendarEvent> {
-  const calendar = getCalendar();
+  const calendar = await getCalendar();
 
   const res = await calendar.events.patch({
     calendarId: "primary",
@@ -101,7 +101,7 @@ export async function updateEvent(
 }
 
 export async function deleteEvent(eventId: string): Promise<void> {
-  const calendar = getCalendar();
+  const calendar = await getCalendar();
 
   await calendar.events.delete({
     calendarId: "primary",

@@ -9,7 +9,7 @@
 #   --stream             force streamed [prefix] output instead of TUI
 #   -h, --help           show this help
 #
-# A <target> is either a project ("kioku" / "kokoro" / "kizuna" / "kansoku")
+# A <target> is either a project ("kioku" / "kokoro" / "kizuna" / "kansoku" / "kao")
 # or a single component ("kioku:api", "kokoro:bot", "kansoku:dashboard", ...).
 #
 # Examples:
@@ -37,7 +37,7 @@ if [[ ! -f "$ROOT/package.json" ]]; then
 fi
 
 # Canonical component list (also defines display order in the URL banner).
-ALL="kioku:api kioku:dashboard kokoro:bot kokoro:dashboard kizuna:api kizuna:dashboard kansoku:api kansoku:dashboard"
+ALL="kioku:api kioku:dashboard kokoro:bot kokoro:dashboard kizuna:api kizuna:dashboard kansoku:api kansoku:dashboard kao:api"
 
 pkg_for() {
   case "$1" in
@@ -49,6 +49,7 @@ pkg_for() {
     kizuna:dashboard)  echo @kizuna/dashboard ;;
     kansoku:api)       echo @kansoku/api ;;
     kansoku:dashboard) echo @kansoku/dashboard ;;
+    kao:api)           echo @kao/api ;;
     *) return 1 ;;
   esac
 }
@@ -62,6 +63,7 @@ url_for() {
     kizuna:dashboard)  echo "https://kizuna.localhost" ;;
     kansoku:api)       echo "https://api.kansoku.localhost" ;;
     kansoku:dashboard) echo "https://kansoku.localhost" ;;
+    kao:api)           echo "https://api.kao.localhost" ;;
     *) echo "" ;;
   esac
 }
@@ -72,6 +74,7 @@ expand() {
     kokoro)  echo "kokoro:bot kokoro:dashboard" ;;
     kizuna)  echo "kizuna:api kizuna:dashboard" ;;
     kansoku) echo "kansoku:api kansoku:dashboard" ;;
+    kao)     echo "kao:api" ;;
     *)       echo "$1" ;;
   esac
 }

@@ -35,7 +35,6 @@ All commands run from the **Kagami workspace root** (`/Kagami/`), not from `koko
 npm run kokoro:dev             # bot + dashboard (Kokoro-only)
 npm run kokoro:dev:bot         # just the bot (tsx watch)
 npm run kokoro:dev:dashboard   # just the dashboard
-npm run kokoro:auth:google     # tsx kokoro/scripts/authorize-google.ts
 ./dev-all.sh                   # boot Kioku → Kokoro + Kizuna together
 ```
 
