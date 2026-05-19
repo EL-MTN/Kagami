@@ -1,6 +1,6 @@
 import { google } from "googleapis";
 import { withFreshAuth } from "./google-auth";
-import { KaoMisconfiguredError, KaoNoGrantError } from "./kao-client";
+import { KaoMisconfiguredError, KaoNoGrantError, KaoUnreachableError } from "./kao-client";
 import { logger } from "@kokoro/shared";
 
 export interface EmailSummary {
@@ -200,10 +200,16 @@ export async function getEmailById(messageId: string): Promise<EmailDetail | nul
     });
   } catch (error) {
     // Re-throw operator-actionable identity errors so the LLM/tool layer can
-    // surface "re-consent required" or "Kao misconfigured" instead of
-    // silently returning "no email". Per-message Gmail errors (the
-    // pre-existing contract) still resolve to null.
-    if (error instanceof KaoNoGrantError || error instanceof KaoMisconfiguredError) {
+    // surface "re-consent required", "Kao misconfigured", or "Kao
+    // unreachable" instead of silently returning "no email". A downed Kao
+    // would otherwise produce an indefinite "no such email" for every call.
+    // Per-message Gmail errors (the pre-existing contract) still resolve to
+    // null.
+    if (
+      error instanceof KaoNoGrantError ||
+      error instanceof KaoMisconfiguredError ||
+      error instanceof KaoUnreachableError
+    ) {
       throw error;
     }
     logger.error({ error, messageId }, "Failed to get email by ID");

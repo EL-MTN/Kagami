@@ -129,11 +129,15 @@ describe("vend surface is bearer-gated", () => {
       },
       { upsert: true },
     );
-    const res = await request(app).get("/grants/kizuna/token").set(auth);
-    expect(res.status).toBe(409);
-    expect(res.body.error.details).toMatchObject({ code: "decrypt_failed" });
-
-    // Clean up so other tests don't see this row.
-    await db.collection("grants").deleteOne({ name: "kizuna" });
+    try {
+      const res = await request(app).get("/grants/kizuna/token").set(auth);
+      expect(res.status).toBe(409);
+      expect(res.body.error.details).toMatchObject({ code: "decrypt_failed" });
+    } finally {
+      // Always clean up — a failed assert above must not leak the bogus row
+      // into the shared `kao_test` db (used by any future mongo-touching test
+      // file under fileParallelism:false).
+      await db.collection("grants").deleteOne({ name: "kizuna" });
+    }
   });
 });

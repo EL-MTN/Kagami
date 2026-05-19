@@ -101,6 +101,16 @@ describe("kao-client", () => {
     expect((err as KaoNoGrantError).code).toBe("invalid_grant");
   });
 
+  it("maps Kao 409 decrypt_failed distinctly (key-rotation / corrupt ciphertext)", async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonError(409, { error: { code: "conflict", details: { code: "decrypt_failed" } } }),
+    );
+
+    const err = await getAccessToken().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(KaoNoGrantError);
+    expect((err as KaoNoGrantError).code).toBe("decrypt_failed");
+  });
+
   it("treats Kao 401 as a config error (bearer wrong), not transient", async () => {
     mockFetch.mockResolvedValueOnce(new Response("", { status: 401 }));
     const err = await getAccessToken().catch((e: unknown) => e);
@@ -256,6 +266,15 @@ describe("kao-client", () => {
 });
 
 describe("kao-client — misconfiguration", () => {
+  // This block re-mocks @kokoro/shared with KAO_URL/KAO_TOKEN undefined and
+  // re-imports kao-client. Restore the file-level mock state in afterEach so
+  // that adding any subsequent test below this block doesn't silently
+  // inherit the misconfig mock and produce confusing failures.
+  afterEach(() => {
+    vi.doUnmock("@kokoro/shared");
+    vi.resetModules();
+  });
+
   it("throws KaoMisconfiguredError when KAO_URL is unset", async () => {
     vi.resetModules();
     vi.doMock("@kokoro/shared", async (orig) => ({
