@@ -18,7 +18,9 @@ async function main(): Promise<void> {
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, "shutting down");
-    server.close();
+    // Await server.close — in-flight requests must finish draining before
+    // we yank the Mongo connection out from under them.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     await closeMongo();
     process.exit(0);
   };

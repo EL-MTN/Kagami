@@ -32,6 +32,10 @@ interface Cached {
   expiresAt: number;
 }
 let cache: Cached | null = null;
+// In-flight de-dup: concurrent callers on a cold cache share one HTTP call
+// instead of each firing their own (a single LLM turn can call gmail +
+// calendar back-to-back; without this they'd issue two parallel vends).
+let inflight: Promise<VendedAccessToken> | null = null;
 
 export function clearAccessTokenCache(): void {
   cache = null;
@@ -46,11 +50,22 @@ export interface VendedAccessToken {
 // expiring-soon as expired" so a refresh stays comfortably ahead of any
 // in-flight request.
 const EXPIRY_BUFFER_MS = 30_000;
+// Bound for the fetch round-trip. A hung Kao must not stall an LLM turn —
+// surface as KaoUnreachableError instead. Kao's vend path is local in dev
+// (Portless on the same host) and Kao itself caches refreshes, so the real
+// budget is just the local HTTP + a possible Google round-trip — 5s is
+// generous.
+const FETCH_TIMEOUT_MS = 5_000;
+// An access token "expires" in seconds-to-an-hour. A returned expiresAt
+// further out than this is almost certainly garbage and would pin a dead
+// token until process restart — clamp to a sane upper bound.
+const MAX_PLAUSIBLE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 export async function getAccessToken(): Promise<VendedAccessToken> {
   if (cache && cache.expiresAt > Date.now() + EXPIRY_BUFFER_MS) {
     return { accessToken: cache.token, expiresAt: cache.expiresAt };
   }
+  if (inflight) return inflight;
 
   if (!config.KAO_URL || !config.KAO_TOKEN) {
     throw new KaoMisconfiguredError(
@@ -60,13 +75,33 @@ export async function getAccessToken(): Promise<VendedAccessToken> {
 
   const base = config.KAO_URL.replace(/\/+$/, "");
   const url = `${base}/grants/kokoro/token`;
+  const bearer = config.KAO_TOKEN;
+
+  inflight = (async () => {
+    try {
+      return await fetchAndCache(url, bearer, base);
+    } finally {
+      inflight = null;
+    }
+  })();
+  return inflight;
+}
+
+async function fetchAndCache(
+  url: string,
+  bearer: string,
+  base: string,
+): Promise<VendedAccessToken> {
   let res: Response;
   try {
     res = await tracedFetch(url, {
-      headers: { Authorization: `Bearer ${config.KAO_TOKEN}` },
+      headers: { Authorization: `Bearer ${bearer}` },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    // AbortError from the timeout, network failure, DNS, etc. all surface as
+    // KaoUnreachableError — the caller treats them identically (transient).
     throw new KaoUnreachableError(`Kao token fetch failed: ${msg}`);
   }
 
@@ -95,18 +130,35 @@ export async function getAccessToken(): Promise<VendedAccessToken> {
     throw new KaoUnreachableError(`Kao returned ${res.status} for grants/kokoro/token`);
   }
 
-  const data = (await res.json()) as {
-    accessToken: string;
-    expiresAt: number;
-    scopes?: string[];
-  };
-  if (!data.accessToken || typeof data.expiresAt !== "number") {
-    throw new KaoUnreachableError("Kao returned malformed token payload");
+  // Parse + validate the success body inside the same taxonomy. A 200 with a
+  // malformed body must not escape as a generic SyntaxError.
+  let data: unknown;
+  try {
+    data = await res.json();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new KaoUnreachableError(`Kao returned malformed JSON: ${msg}`);
   }
-  cache = { token: data.accessToken, expiresAt: data.expiresAt };
+  const accessToken = (data as { accessToken?: unknown }).accessToken;
+  const expiresAt = (data as { expiresAt?: unknown }).expiresAt;
+  if (typeof accessToken !== "string" || accessToken.length === 0) {
+    throw new KaoUnreachableError("Kao returned no accessToken");
+  }
+  if (
+    typeof expiresAt !== "number" ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= Date.now() ||
+    expiresAt > Date.now() + MAX_PLAUSIBLE_EXPIRY_MS
+  ) {
+    // NaN / negative / past / wildly-future values would pin a dead token or
+    // disable the cache entirely. Treat as unreachable and skip caching.
+    throw new KaoUnreachableError(`Kao returned implausible expiresAt: ${String(expiresAt)}`);
+  }
+
+  cache = { token: accessToken, expiresAt };
   logger.debug(
-    { expiresAt: new Date(data.expiresAt).toISOString() },
+    { expiresAt: new Date(expiresAt).toISOString() },
     "fetched google access token from Kao",
   );
-  return { accessToken: data.accessToken, expiresAt: data.expiresAt };
+  return { accessToken, expiresAt };
 }

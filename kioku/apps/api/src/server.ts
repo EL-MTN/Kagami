@@ -68,10 +68,10 @@ const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     res.status(400).json({ error: "validation_error", issues: err.issues });
     return;
   }
-  req.log.error(
-    { error: err, method: req.method, url: req.originalUrl },
-    "unhandled request error",
-  );
+  // req.path (no query string) — keep query-string secrets like OAuth
+  // callback codes or CSRF state tokens out of error logs. Kioku has no
+  // OAuth callback today, but enforce the convention workspace-wide.
+  req.log.error({ error: err, method: req.method, url: req.path }, "unhandled request error");
   if (!res.headersSent) {
     res.status(500).json({ error: "internal_error" });
   }
@@ -94,7 +94,9 @@ async function main(): Promise<void> {
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, "shutting down");
-    server.close();
+    // Await server.close — in-flight requests must finish draining before
+    // we yank the Mongo connection out from under them.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     await closeMongo();
     process.exit(0);
   };

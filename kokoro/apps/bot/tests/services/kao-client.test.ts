@@ -27,6 +27,7 @@ import {
   getAccessToken,
   KaoMisconfiguredError,
   KaoNoGrantError,
+  KaoUnreachableError,
 } from "../../src/services/kao-client";
 
 function ok(body: unknown): Response {
@@ -116,6 +117,58 @@ describe("kao-client", () => {
     await expect(getAccessToken()).rejects.toBeInstanceOf(KaoNoGrantError);
     const recovered = await getAccessToken();
     expect(recovered.accessToken).toBe("ya29.recovered");
+  });
+
+  it("dedupes concurrent in-flight requests on a cold cache", async () => {
+    // A single LLM turn may hit gmail + calendar back-to-back; both call
+    // getAccessToken before either resolves. They must share one fetch.
+    let resolveFetch!: (r: Response) => void;
+    mockFetch.mockReturnValueOnce(new Promise<Response>((r) => (resolveFetch = r)));
+
+    const future = Date.now() + 10 * 60_000;
+    const a = getAccessToken();
+    const b = getAccessToken();
+    resolveFetch(ok({ accessToken: "ya29.shared", expiresAt: future }));
+
+    const [resA, resB] = await Promise.all([a, b]);
+    expect(resA.accessToken).toBe("ya29.shared");
+    expect(resB.accessToken).toBe("ya29.shared");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects malformed JSON in the success body as KaoUnreachableError", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("not json", { status: 200 }));
+    const err = await getAccessToken().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(KaoUnreachableError);
+  });
+
+  it("rejects NaN expiresAt as KaoUnreachableError (cache-poison defense)", async () => {
+    mockFetch.mockResolvedValueOnce(ok({ accessToken: "ya29.tok", expiresAt: NaN }));
+    const err = await getAccessToken().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(KaoUnreachableError);
+  });
+
+  it("rejects an expiresAt that is already in the past", async () => {
+    mockFetch.mockResolvedValueOnce(
+      ok({ accessToken: "ya29.tok", expiresAt: Date.now() - 60_000 }),
+    );
+    const err = await getAccessToken().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(KaoUnreachableError);
+  });
+
+  it("rejects an absurdly-far-future expiresAt (sanity bound)", async () => {
+    // 10 years out — would pin a dead token until process restart.
+    mockFetch.mockResolvedValueOnce(
+      ok({ accessToken: "ya29.tok", expiresAt: Date.now() + 10 * 365 * 24 * 3600 * 1000 }),
+    );
+    const err = await getAccessToken().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(KaoUnreachableError);
+  });
+
+  it("rejects an empty accessToken as KaoUnreachableError", async () => {
+    mockFetch.mockResolvedValueOnce(ok({ accessToken: "", expiresAt: Date.now() + 60_000 }));
+    const err = await getAccessToken().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(KaoUnreachableError);
   });
 });
 
