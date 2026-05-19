@@ -50,8 +50,13 @@ const cache = new Map<string, { token: string; expiresAt: number }>();
 // constructing its own OAuth2Client and racing to win the cache write).
 const inflight = new Map<string, Promise<VendedToken>>();
 
+// Clear BOTH cache and inflight for this grant. Clearing only `cache` would
+// leave a stale inflight (started before the clear, e.g. before a re-consent
+// or before Google revoked the token) to overwrite `cache` with a stale
+// result the moment it resolves — partially defeating the clear.
 export function clearAccessTokenCache(grant: string): void {
   cache.delete(grant);
+  inflight.delete(grant);
 }
 
 export interface VendedToken {
@@ -59,17 +64,38 @@ export interface VendedToken {
   expiresAt: number;
 }
 
+/**
+ * Vend an access token for the grant.
+ *
+ * `force: true` bypasses both the cache and any existing inflight Promise and
+ * starts a brand-new Google refresh. The force path is the workspace's only
+ * self-heal route: when a consumer (e.g. Kokoro) sees Google reject the
+ * vended access token with 401/403, retrying with the same token won't help —
+ * Kao would just hand back its cached value. `force=1` makes Kao actually
+ * round-trip to Google. Concurrent forced calls still dedup to a single
+ * Google refresh via the inflight slot, but they will NOT join an
+ * already-in-flight non-force refresh (which might be using a stale token).
+ */
 export async function refreshAccessToken(
   config: Config,
   grant: string,
   refreshToken: string,
+  options: { force?: boolean } = {},
 ): Promise<VendedToken> {
-  const hit = cache.get(grant);
-  if (hit && hit.expiresAt > Date.now() + 30_000) {
-    return { accessToken: hit.token, expiresAt: hit.expiresAt };
+  if (!options.force) {
+    const hit = cache.get(grant);
+    if (hit && hit.expiresAt > Date.now() + 30_000) {
+      return { accessToken: hit.token, expiresAt: hit.expiresAt };
+    }
+    const existing = inflight.get(grant);
+    if (existing) return existing;
+  } else {
+    // Force: evict cache + any non-force inflight so this caller starts fresh
+    // and other callers arriving during this refresh join THIS Google call,
+    // not a stale predecessor.
+    cache.delete(grant);
+    inflight.delete(grant);
   }
-  const existing = inflight.get(grant);
-  if (existing) return existing;
 
   const p = doRefresh(config, grant, refreshToken).finally(() => {
     inflight.delete(grant);

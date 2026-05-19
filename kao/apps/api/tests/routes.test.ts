@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
+import type { Db } from "mongodb";
 import { loadConfig, type Config } from "../src/config.js";
 import { createApp } from "../src/server.js";
 import { closeMongo, connectMongo } from "../src/storage/mongo.js";
@@ -10,6 +11,7 @@ import { SHARED_MONGO_URI_ENV } from "./global-setup.js";
 const TOKEN = "test-bearer-token-aaaaaaaaaaaa";
 let app: Express;
 let config: Config;
+let db: Db;
 
 beforeAll(async () => {
   const uri = process.env[SHARED_MONGO_URI_ENV];
@@ -22,7 +24,7 @@ beforeAll(async () => {
     KAO_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
     KAO_TOKEN: TOKEN,
   });
-  const db = await connectMongo(config);
+  db = await connectMongo(config);
   await ensureGrantIndexes(db);
   app = createApp({ db, config });
 });
@@ -104,5 +106,34 @@ describe("vend surface is bearer-gated", () => {
     const res = await request(app).delete("/grants/kokoro").set(auth);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ revoked: true, grant: "kokoro" });
+  });
+
+  it("GET /grants/:grant/token surfaces decrypt failures as 409 decrypt_failed", async () => {
+    // Insert a grant whose stored refreshToken is not a valid AES-GCM
+    // envelope (e.g. KAO_ENCRYPTION_KEY was rotated since the row was
+    // written). The vend path must return a structured 409 with code
+    // "decrypt_failed" so the operator knows re-consent is required —
+    // not a generic 500.
+    await db.collection("grants").updateOne(
+      { name: "kizuna" },
+      {
+        $set: {
+          name: "kizuna",
+          scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+          refreshToken: "not-a-valid-envelope",
+          googleSub: null,
+          grantedAt: new Date(),
+          revokedAt: null,
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true },
+    );
+    const res = await request(app).get("/grants/kizuna/token").set(auth);
+    expect(res.status).toBe(409);
+    expect(res.body.error.details).toMatchObject({ code: "decrypt_failed" });
+
+    // Clean up so other tests don't see this row.
+    await db.collection("grants").deleteOne({ name: "kizuna" });
   });
 });
