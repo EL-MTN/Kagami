@@ -17,8 +17,8 @@ export interface EmailDetail extends EmailSummary {
   messageId: string;
 }
 
-function getGmail() {
-  return google.gmail({ version: "v1", auth: getGoogleAuth() });
+async function getGmail() {
+  return google.gmail({ version: "v1", auth: await getGoogleAuth() });
 }
 
 function getHeader(
@@ -29,7 +29,7 @@ function getHeader(
 }
 
 export async function listUnreadEmails(maxResults = 10): Promise<EmailSummary[]> {
-  const gmail = getGmail();
+  const gmail = await getGmail();
 
   const res = await gmail.users.messages.list({
     userId: "me",
@@ -130,7 +130,7 @@ export async function sendEmail(
   body: string,
   options?: { threadId?: string; inReplyTo?: string },
 ): Promise<SendEmailResult> {
-  const gmail = getGmail();
+  const gmail = await getGmail();
 
   const encodedSubject = `=?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`;
   const encodedBody = Buffer.from(body).toString("base64");
@@ -169,7 +169,7 @@ export async function sendEmail(
 }
 
 export async function getEmailById(messageId: string): Promise<EmailDetail | null> {
-  const gmail = getGmail();
+  const gmail = await getGmail();
 
   try {
     const detail = await gmail.users.messages.get({

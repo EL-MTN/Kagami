@@ -61,7 +61,7 @@ export async function assemblePromptShell(): Promise<string[]> {
   const toolBehavior = await readInstruction("tool-behavior");
   if (toolBehavior) parts.push(toolBehavior);
 
-  if (config.GOOGLE_OAUTH_CLIENT_ID) {
+  if (config.KAO_URL) {
     const maid = await readInstruction("maid-service");
     if (maid) parts.push(maid);
   }

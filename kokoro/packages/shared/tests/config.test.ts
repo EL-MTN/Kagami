@@ -21,9 +21,8 @@ const RELEVANT_ENV_KEYS = [
   "OPENAI_API_KEY",
   "XAI_API_KEY",
   "GOOGLE_API_KEY",
-  "GOOGLE_OAUTH_CLIENT_ID",
-  "GOOGLE_OAUTH_CLIENT_SECRET",
-  "GOOGLE_OAUTH_REFRESH_TOKEN",
+  "KAO_URL",
+  "KAO_TOKEN",
   "IMAGE_GENERATION_MODEL",
   "TTS_PROVIDER",
   "TTS_VOICE_ID",
@@ -234,19 +233,32 @@ describe("validateConfig — BlueBubbles", () => {
   });
 });
 
-describe("validateConfig — Google OAuth", () => {
-  it("rejects partial Google OAuth (only client id set)", async () => {
-    vi.stubEnv("GOOGLE_OAUTH_CLIENT_ID", "id");
+describe("validateConfig — Kao (Google identity)", () => {
+  it("rejects partial Kao config (only URL set)", async () => {
+    vi.stubEnv("KAO_URL", "https://api.kao.localhost");
     vi.resetModules();
     const { validateConfig } = await loadConfig();
     expect(() => validateConfig()).toThrow(ProcessExitSentinel);
-    const msgs = loggedMessages();
-    expect(msgs).toMatch(/GOOGLE_OAUTH_CLIENT_SECRET is required/);
-    expect(msgs).toMatch(/GOOGLE_OAUTH_REFRESH_TOKEN is required/);
+    expect(loggedMessages()).toMatch(/KAO_TOKEN is required/);
   });
 
-  it("accepts all-or-nothing — none set is valid", async () => {
-    // (covered by the happy-path test above too, but worth being explicit)
+  it("rejects partial Kao config (only token set)", async () => {
+    vi.stubEnv("KAO_TOKEN", "x".repeat(32));
+    vi.resetModules();
+    const { validateConfig } = await loadConfig();
+    expect(() => validateConfig()).toThrow(ProcessExitSentinel);
+    expect(loggedMessages()).toMatch(/KAO_URL is required/);
+  });
+
+  it("accepts both-or-neither — none set is valid", async () => {
+    const { validateConfig } = await loadConfig();
+    expect(() => validateConfig()).not.toThrow();
+  });
+
+  it("accepts both-or-neither — both set is valid", async () => {
+    vi.stubEnv("KAO_URL", "https://api.kao.localhost");
+    vi.stubEnv("KAO_TOKEN", "x".repeat(32));
+    vi.resetModules();
     const { validateConfig } = await loadConfig();
     expect(() => validateConfig()).not.toThrow();
   });

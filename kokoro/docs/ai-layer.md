@@ -57,7 +57,7 @@ assembleSystemPrompt(chatId)
     ├─ 2. Current Mood               ← prompts.ts moodForTimeOfDay() — derived from time-of-day bucket
     ├─ 3. Datetime context           ← current time + time-of-day label
     ├─ 4. Tool behavior              ← apps/bot/context/instructions/tool-behavior.md
-    ├─ 5. Maid service               ← apps/bot/context/instructions/maid-service.md (conditional on GOOGLE_OAUTH_CLIENT_ID)
+    ├─ 5. Maid service               ← apps/bot/context/instructions/maid-service.md (conditional on KAO_URL — Google access via Kao)
     ├─ 6. Web search                 ← apps/bot/context/instructions/web-search.md (conditional on BRAVE_SEARCH_API_KEY)
     ├─ 7. Browser                    ← apps/bot/context/instructions/browser.md (conditional on BROWSER_ENABLED)
     ├─ 8. Routine behavior           ← apps/bot/context/instructions/routines.md (always)
@@ -176,9 +176,9 @@ See [memory.md](memory.md) for the full memory subsystem (session ingest, sweepe
 - **Purpose**: Check Goshujin-sama's email
 - **Parameters**: `{ maxResults?: number, emailId?: string }`
 - **Returns**: `{ success, count?, emails? }` or `{ success, email }` or `{ success: false, reason }`
-- **Behavior**: Lists unread emails or retrieves a specific email by ID. Only registered when `GOOGLE_OAUTH_CLIENT_ID` is configured.
+- **Behavior**: Lists unread emails or retrieves a specific email by ID. Only registered when `KAO_URL` is configured (Google access vended by Kao).
 
-### requestConfirmation (conditional — requires `GOOGLE_OAUTH_CLIENT_ID` or `BROWSER_ENABLED`)
+### requestConfirmation (conditional — requires `KAO_URL` or `BROWSER_ENABLED`)
 
 - **Purpose**: Persist a pending action and ask Goshujin-sama to tap [Approve] / [Deny] before it runs
 - **Parameters**: `{ summary: string, action: { tool: GatedToolName, args: Record<string, unknown> } }`
@@ -197,7 +197,7 @@ See [memory.md](memory.md) for the full memory subsystem (session ingest, sweepe
 - **Purpose**: Send an email or reply to a thread on behalf of Goshujin-sama
 - **Parameters**: `{ to: string, subject: string, body: string, threadId?: string, inReplyTo?: string }`
 - **Returns**: `{ success: true, id, threadId }` or `{ success: false, reason }`
-- **Behavior**: Composes a plain-text RFC 2822 message and sends via Gmail API. When `threadId` and `inReplyTo` are provided (from `checkEmail` results), sends as a threaded reply with proper `In-Reply-To` and `References` headers. Requires `gmail.send` OAuth scope. Only registered when `GOOGLE_OAUTH_CLIENT_ID` is configured.
+- **Behavior**: Composes a plain-text RFC 2822 message and sends via Gmail API. When `threadId` and `inReplyTo` are provided (from `checkEmail` results), sends as a threaded reply with proper `In-Reply-To` and `References` headers. Requires the `gmail.send` OAuth scope (consented under Kao's `kokoro` grant). Only registered when `KAO_URL` is configured.
 
 ### manageCalendar (conditional — requires Google OAuth)
 
