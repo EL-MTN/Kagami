@@ -16,12 +16,18 @@ import { z } from "zod";
 // as the fetch base, so an http(s) URL is enforced eagerly at module load.
 // KAO_TOKEN can't be validated eagerly because Next.js evaluates this module
 // during `next build` (when the env may be intentionally absent); see
-// `requireToken` below for the lazy check at request time.
+// `requireToken` below for the lazy check at request time. An empty string is
+// treated as 'unset' (matches the API's config.ts blankAsUndefined pattern),
+// so `KAO_API_URL=` in .env falls back to the default instead of crashing.
 const apiUrl = z
-  .string()
-  .url()
-  .refine((u) => /^https?:\/\//i.test(u), "KAO_API_URL must use http(s)")
-  .default("https://api.kao.localhost")
+  .preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z
+      .string()
+      .url()
+      .refine((u) => /^https?:\/\//i.test(u), "KAO_API_URL must use http(s)")
+      .default("https://api.kao.localhost"),
+  )
   .parse(process.env.KAO_API_URL);
 
 const API_URL = apiUrl.replace(/\/+$/, "");
@@ -71,7 +77,12 @@ function isEnvelope(value: unknown): value is ErrorEnvelope {
   if (typeof value !== "object" || value === null || !("error" in value)) return false;
   // After the `in` check TS narrows `value` to include `error: unknown` — no cast needed.
   const inner = value.error;
-  return typeof inner === "object" && inner !== null;
+  if (typeof inner !== "object" || inner === null) return false;
+  // `code` and `message` are the only fields use-sites read as strings; verify
+  // both so a malformed upstream response can't carry a non-string into
+  // `new ApiError(status, inner.message, inner.code)`.
+  const rec = inner as Record<string, unknown>;
+  return typeof rec.code === "string" && typeof rec.message === "string";
 }
 
 interface CallOptions {

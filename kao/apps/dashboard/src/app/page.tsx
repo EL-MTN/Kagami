@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { PageHeader, ErrorBlock, EmptyState } from "@/components/shell";
 import { GrantBadge } from "@/components/grant-badge";
 import { RevokeButton } from "@/components/revoke-button";
-import { listGrants, oauthStartUrl, KAO_API_BASE, type GrantStatus } from "@/lib/api";
+import { ApiError, listGrants, oauthStartUrl, KAO_API_BASE, type GrantStatus } from "@/lib/api";
 import { formatRelative } from "@/lib/format";
 
 // Always render fresh — the data shape is tiny (one row per registry grant)
@@ -16,6 +16,11 @@ export default async function OverviewPage() {
   try {
     grants = await listGrants();
   } catch (err) {
+    // Distinguish a local-misconfig miss (missing/short KAO_TOKEN, surfaced
+    // by api.ts as ApiError(0, ..., "misconfigured")) from an actual
+    // unreachable API — sending the operator chasing a network issue when
+    // they forgot to copy .env.example wastes the first five minutes.
+    const misconfigured = err instanceof ApiError && err.code === "misconfigured";
     return (
       <div className="space-y-6">
         <PageHeader
@@ -23,12 +28,21 @@ export default async function OverviewPage() {
           description="Per-consumer Google OAuth grants. Each is consented for only the scopes that consumer needs."
         />
         <ErrorBlock
-          title="Couldn't reach the Kao API"
+          title={misconfigured ? "Dashboard config incomplete" : "Couldn't reach the Kao API"}
           detail={err instanceof Error ? err.message : String(err)}
         />
         <p className="text-xs text-faint">
-          Check that <code className="font-mono">{KAO_API_BASE}</code> is up and the
-          dashboard&rsquo;s <code className="font-mono">KAO_TOKEN</code> matches the API.
+          {misconfigured ? (
+            <>
+              Copy <code className="font-mono">apps/dashboard/.env.example</code> and fill in{" "}
+              <code className="font-mono">KAO_TOKEN</code> with the same value the Kao API uses.
+            </>
+          ) : (
+            <>
+              Check that <code className="font-mono">{KAO_API_BASE}</code> is up and the
+              dashboard&rsquo;s <code className="font-mono">KAO_TOKEN</code> matches the API.
+            </>
+          )}
         </p>
       </div>
     );

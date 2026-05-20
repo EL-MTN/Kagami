@@ -217,5 +217,11 @@ function hintFor(code: string): string | null {
 
 function maskToken(token: string): string {
   if (token.length <= 8) return "•".repeat(token.length);
-  return `${token.slice(0, 4)}${"•".repeat(Math.max(0, token.length - 8))}${token.slice(-4)}`;
+  // Google access tokens are ~200 chars — a bullet-per-char mask wraps to a
+  // wall of dots, so cap the run and surface the elided length explicitly.
+  const head = token.slice(0, 4);
+  const tail = token.slice(-4);
+  const elided = token.length - 8;
+  if (elided <= 24) return `${head}${"•".repeat(elided)}${tail}`;
+  return `${head}••• ${elided} chars •••${tail}`;
 }
