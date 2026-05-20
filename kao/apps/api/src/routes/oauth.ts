@@ -10,6 +10,7 @@ import {
   makeClient,
   revokeAtGoogle,
 } from "../lib/google.js";
+import { escapeHtml } from "../lib/html.js";
 import { logger } from "../lib/logger.js";
 import { makeState, verifyState } from "../lib/oauth-state.js";
 import { decrypt, encrypt } from "../lib/encryption.js";
@@ -27,15 +28,6 @@ function googleOAuthErrorMessage(error: string): string {
   return GOOGLE_OAUTH_ERROR_CODES.has(error)
     ? `google denied consent: ${error}`
     : "google denied consent";
-}
-
-// Minimal HTML escape for the inline success page. Same pattern as home.ts;
-// stays local rather than shared because both route files are small and the
-// helper is single-use.
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
 }
 
 // The consent flow is operator-browser-driven, so it is open at localhost

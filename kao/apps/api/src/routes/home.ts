@@ -1,19 +1,14 @@
 import { Router } from "express";
 import type { Db } from "mongodb";
 import { GRANT_NAMES, scopesFor } from "../grant-registry.js";
+import { escapeHtml as esc } from "../lib/html.js";
 import { listGrants } from "../storage/grants.js";
 
-function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&quot;",
-  );
-}
-
 // Minimal operator surface, served as inline HTML from the API — same pattern
-// as the OAuth callback's inline page (Kizuna does this too). The full
-// Next.js dashboard is deliberately deferred for the standalone Kao pass.
-// Open at localhost: it triggers the consent flow, holds no secret, and the
-// vend surface it links to is bearer-gated.
+// as the OAuth callback's inline page (Kizuna does this too). Kept as a
+// fallback for when the Next.js dashboard at kao.localhost isn't running
+// (e.g. standalone-API workflows). Open at localhost: it triggers the consent
+// flow, holds no secret, and the vend surface it links to is bearer-gated.
 export function homeRouter(db: Db): Router {
   const r = Router();
   r.get("/", async (_req, res) => {

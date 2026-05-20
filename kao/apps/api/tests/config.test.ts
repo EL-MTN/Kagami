@@ -33,6 +33,20 @@ describe("config", () => {
     );
   });
 
+  it("rejects a javascript: scheme on KAO_DASHBOARD_URL", () => {
+    // KAO_DASHBOARD_URL is rendered into anchor hrefs in the inline OAuth
+    // success page — a non-http(s) scheme would be a clickable XSS vector.
+    expect(() => loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "javascript:alert(1)" })).toThrow(
+      /KAO_DASHBOARD_URL/,
+    );
+  });
+
+  it("rejects a javascript: scheme on KAO_PUBLIC_URL", () => {
+    expect(() => loadConfig({ ...baseEnv(), KAO_PUBLIC_URL: "javascript:alert(1)" })).toThrow(
+      /KAO_PUBLIC_URL/,
+    );
+  });
+
   it("rejects a missing Google client id", () => {
     const env = baseEnv();
     delete env.GOOGLE_OAUTH_CLIENT_ID;

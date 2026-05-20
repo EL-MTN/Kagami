@@ -27,10 +27,13 @@ export default async function GrantDetailPage({ params }: PageProps) {
     if (err instanceof ApiError && err.status === 404) {
       notFound();
     }
+    // Title is fixed rather than echoing `name` so a cooked path segment
+    // can't reflect attacker-controlled text into the page chrome on
+    // auth/connect failures.
     return (
       <div className="space-y-6">
         <BackLink />
-        <PageHeader title={name} />
+        <PageHeader title="Grant unavailable" />
         <ErrorBlock
           title="Couldn't load grant"
           detail={err instanceof Error ? err.message : String(err)}

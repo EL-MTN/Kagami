@@ -8,12 +8,40 @@ import { ApiError, revokeGrant, vendToken } from "@/lib/api";
 // the bearer is read inside `api.ts` from the dashboard's own env, never
 // crossing into the rendered HTML.
 
-export async function revokeGrantAction(grant: string): Promise<void> {
-  await revokeGrant(grant);
-  // Both routes display the grant; revalidate both so a revoke from anywhere
-  // updates anywhere.
-  revalidatePath("/");
-  revalidatePath(`/grants/${grant}`);
+// Structured result mirrors `ProbeResult` so the button can render failure
+// inline. Throwing out of a Server Action that's awaited inside
+// `startTransition` shows the default Next error overlay and leaves the
+// caller's transient state (e.g. "confirming") stuck — we never want that.
+export type RevokeActionResult =
+  | { ok: true; grant: string }
+  | { ok: false; grant: string; status: number; code: string; message: string };
+
+export async function revokeGrantAction(grant: string): Promise<RevokeActionResult> {
+  try {
+    await revokeGrant(grant);
+    // Both routes display the grant; revalidate both so a revoke from anywhere
+    // updates anywhere.
+    revalidatePath("/");
+    revalidatePath(`/grants/${grant}`);
+    return { ok: true, grant };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return {
+        ok: false,
+        grant,
+        status: err.status,
+        code: err.code ?? "unknown",
+        message: err.message,
+      };
+    }
+    return {
+      ok: false,
+      grant,
+      status: 0,
+      code: "unreachable",
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 // Shape rendered by the probe panel. Success returns the live access token

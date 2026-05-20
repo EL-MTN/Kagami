@@ -69,7 +69,7 @@ function GrantCard({ grant }: { grant: GrantStatus }) {
         <div>
           <div className="flex items-center gap-3">
             <Link
-              href={`/grants/${grant.name}`}
+              href={`/grants/${encodeURIComponent(grant.name)}`}
               className="group inline-flex items-baseline gap-2 font-display text-2xl text-foreground transition-colors hover:text-primary"
             >
               {grant.name}

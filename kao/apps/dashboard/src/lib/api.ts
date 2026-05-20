@@ -10,18 +10,26 @@
 // the route), and the redirect chain has to happen in the user's browser to
 // land them on Google.
 
-const API_URL = process.env.KAO_API_URL ?? "https://api.kao.localhost";
+import { z } from "zod";
 
-function bearer(): string {
-  const token = process.env.KAO_TOKEN;
-  if (!token || token.trim().length === 0) {
-    throw new ApiError(
-      0,
-      "KAO_TOKEN is not set in the dashboard's environment — copy apps/dashboard/.env.example and fill it with the same value the Kao API uses.",
-    );
-  }
-  return token;
-}
+// KAO_API_URL is rendered into anchor hrefs (oauthStartUrl) as well as used
+// as the fetch base, so an http(s) URL is enforced eagerly at module load.
+// KAO_TOKEN can't be validated eagerly because Next.js evaluates this module
+// during `next build` (when the env may be intentionally absent); see
+// `requireToken` below for the lazy check at request time.
+const apiUrl = z
+  .string()
+  .url()
+  .refine((u) => /^https?:\/\//i.test(u), "KAO_API_URL must use http(s)")
+  .default("https://api.kao.localhost")
+  .parse(process.env.KAO_API_URL);
+
+const API_URL = apiUrl.replace(/\/+$/, "");
+
+// Default upper-bound on any single API hop. The sidebar's `/healthz` probe
+// renders inside `RootLayout`, so a hung Kao without a timeout would stall
+// every page navigation; this caps that wait.
+const DEFAULT_TIMEOUT_MS = 5_000;
 
 export class ApiError extends Error {
   readonly status: number;
@@ -34,6 +42,22 @@ export class ApiError extends Error {
     this.code = code;
     this.details = details;
   }
+}
+
+// Lazy at call time so `next build` can run without a KAO_TOKEN configured.
+// Surfaces as a structured ApiError(0, …) so Server Actions can render the
+// missing-config case inline rather than crashing into Next's default error
+// overlay.
+function requireToken(): string {
+  const token = process.env.KAO_TOKEN;
+  if (!token || token.trim().length < 16) {
+    throw new ApiError(
+      0,
+      "KAO_TOKEN is not set in the dashboard's environment (or is too short). Copy apps/dashboard/.env.example and fill it with the same value the Kao API uses.",
+      "misconfigured",
+    );
+  }
+  return token;
 }
 
 // Wire shape of Kao's error envelope (lib/errors.ts). The vend route carries a
@@ -50,15 +74,23 @@ function isEnvelope(value: unknown): value is ErrorEnvelope {
   return typeof inner === "object" && inner !== null;
 }
 
-async function call<T>(method: string, path: string, init?: RequestInit): Promise<T> {
+interface CallOptions {
+  // Default true. The bearer-gated /grants/* surface needs it; the open
+  // /healthz probe must NOT pass it (otherwise a missing KAO_TOKEN would
+  // surface as "API unreachable" instead of the real config error).
+  auth?: boolean;
+  timeoutMs?: number;
+}
+
+async function call<T>(method: string, path: string, opts: CallOptions = {}): Promise<T> {
+  const { auth = true, timeoutMs = DEFAULT_TIMEOUT_MS } = opts;
+  const headers: Record<string, string> = {};
+  if (auth) headers.authorization = `Bearer ${requireToken()}`;
   const res = await fetch(`${API_URL}${path}`, {
     method,
-    headers: {
-      authorization: `Bearer ${bearer()}`,
-      ...(init?.headers ?? {}),
-    },
+    headers,
     cache: "no-store",
-    ...init,
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!res.ok) {
@@ -108,7 +140,7 @@ export interface RevokeResult {
 }
 
 export interface HealthResponse {
-  status: "ok";
+  status: string;
   service: string;
 }
 
@@ -117,10 +149,10 @@ export interface HealthResponse {
 // `force-dynamic` covers; no caching layer here.
 
 export async function getHealth(): Promise<HealthResponse> {
-  // /healthz is open at localhost, but going through `call` keeps the error
-  // shape uniform with the bearer-gated endpoints — operators don't get a
-  // surprise plain-error on this one.
-  return call<HealthResponse>("GET", "/healthz");
+  // /healthz is open at localhost — explicitly skip the bearer so a missing
+  // KAO_TOKEN doesn't surface as "API unreachable" in the sidebar. Shorter
+  // timeout because this probe runs in the layout shell on every navigation.
+  return call<HealthResponse>("GET", "/healthz", { auth: false, timeoutMs: 2_000 });
 }
 
 export async function listGrants(): Promise<GrantStatus[]> {

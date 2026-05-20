@@ -16,6 +16,7 @@ interface RevokeButtonProps {
 export function RevokeButton({ grant, granted }: RevokeButtonProps) {
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<{ code: string; message: string } | null>(null);
 
   if (!granted) {
     return (
@@ -32,13 +33,23 @@ export function RevokeButton({ grant, granted }: RevokeButtonProps) {
 
   if (!confirming) {
     return (
-      <button
-        type="button"
-        onClick={() => setConfirming(true)}
-        className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-[color:var(--color-critical)]/40 hover:text-[color:var(--color-critical)]"
-      >
-        Revoke
-      </button>
+      <span className="inline-flex flex-col items-end gap-1">
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setConfirming(true);
+          }}
+          className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-[color:var(--color-critical)]/40 hover:text-[color:var(--color-critical)]"
+        >
+          Revoke
+        </button>
+        {error && (
+          <span className="text-[10px] text-[color:var(--color-critical)]">
+            Couldn&rsquo;t revoke ({error.code}): {error.message}
+          </span>
+        )}
+      </span>
     );
   }
 
@@ -50,8 +61,17 @@ export function RevokeButton({ grant, granted }: RevokeButtonProps) {
         disabled={pending}
         onClick={() =>
           startTransition(async () => {
-            await revokeGrantAction(grant);
-            setConfirming(false);
+            const res = await revokeGrantAction(grant);
+            if (res.ok) {
+              setError(null);
+              setConfirming(false);
+            } else {
+              // Surface the structured failure inline and drop back out of the
+              // confirming state so the operator can read the message and
+              // decide whether to retry.
+              setError({ code: res.code, message: res.message });
+              setConfirming(false);
+            }
           })
         }
         className={cn(
