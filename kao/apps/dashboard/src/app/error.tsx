@@ -15,7 +15,12 @@ export default function ErrorPage({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
+    // Only echo the full Error to the browser console in development.
+    // Once Kagami moves off localhost (workspace VPS-deployment intent),
+    // .message can carry API envelope details we don't want to leak.
+    if (process.env.NODE_ENV !== "production") {
+      console.error(error);
+    }
   }, [error]);
 
   return (

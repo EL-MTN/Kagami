@@ -16,26 +16,36 @@ export default async function OverviewPage() {
   try {
     grants = await listGrants();
   } catch (err) {
-    // Distinguish a local-misconfig miss (missing/short KAO_TOKEN, surfaced
-    // by api.ts as ApiError(0, ..., "misconfigured")) from an actual
-    // unreachable API — sending the operator chasing a network issue when
-    // they forgot to copy .env.example wastes the first five minutes.
-    const misconfigured = err instanceof ApiError && err.code === "misconfigured";
+    // Distinguish three failure modes so the operator looks at the right
+    // layer: (1) missing/short KAO_TOKEN locally → 'config incomplete';
+    // (2) 401 from a wrong bearer → 'bearer rejected' (the API WAS reached);
+    // (3) anything else → 'unreachable'.
+    const apiErr = err instanceof ApiError ? err : null;
+    const misconfigured = apiErr?.code === "misconfigured";
+    const bearerRejected = apiErr?.status === 401;
+    const title = misconfigured
+      ? "Dashboard config incomplete"
+      : bearerRejected
+        ? "Kao rejected the dashboard bearer"
+        : "Couldn't reach the Kao API";
     return (
       <div className="space-y-6">
         <PageHeader
           title="Grants"
           description="Per-consumer Google OAuth grants. Each is consented for only the scopes that consumer needs."
         />
-        <ErrorBlock
-          title={misconfigured ? "Dashboard config incomplete" : "Couldn't reach the Kao API"}
-          detail={err instanceof Error ? err.message : String(err)}
-        />
+        <ErrorBlock title={title} detail={err instanceof Error ? err.message : String(err)} />
         <p className="text-xs text-faint">
           {misconfigured ? (
             <>
               Copy <code className="font-mono">apps/dashboard/.env.example</code> and fill in{" "}
               <code className="font-mono">KAO_TOKEN</code> with the same value the Kao API uses.
+            </>
+          ) : bearerRejected ? (
+            <>
+              The Kao API replied with 401 — the dashboard&rsquo;s{" "}
+              <code className="font-mono">KAO_TOKEN</code> doesn&rsquo;t match the API&rsquo;s.
+              Re-sync the value in <code className="font-mono">apps/dashboard/.env</code>.
             </>
           ) : (
             <>

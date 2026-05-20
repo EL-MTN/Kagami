@@ -197,26 +197,34 @@ export async function getHealth(): Promise<HealthResponse> {
 
 export async function listGrants(): Promise<GrantStatus[]> {
   const res = await call<{ grants: GrantStatus[] }>("GET", "/grants");
-  // Defend the page render: a malformed 200 like `{}` would crash
-  // `grants.map(...)` outside the page's try/catch, falling through to
-  // Next's default error overlay instead of the structured ErrorBlock.
-  if (!Array.isArray(res.grants)) {
-    throw new ApiError(200, "API returned /grants without a grants[] array", "malformed_response");
+  // Defend the page render: a malformed 200 like `{}` or `{grants: [{}]}`
+  // would crash GrantCard's `g.scopes.map(...)` outside the page's try/catch
+  // and fall through to Next's default error overlay instead of the
+  // structured ErrorBlock. Validate the array AND each item.
+  if (!Array.isArray(res.grants) || !res.grants.every(isGrantStatus)) {
+    throw new ApiError(200, "API returned /grants with an unexpected shape", "malformed_response");
   }
   return res.grants;
+}
+
+function isGrantStatus(value: unknown): value is GrantStatus {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.name === "string" &&
+    Array.isArray(v.scopes) &&
+    typeof v.granted === "boolean" &&
+    (v.grantedAt === null || typeof v.grantedAt === "string") &&
+    (v.revokedAt === null || typeof v.revokedAt === "string")
+  );
 }
 
 export async function getGrant(name: string): Promise<GrantStatus> {
   const res = await call<GrantStatus>("GET", `/grants/${encodeURIComponent(name)}`);
   // Parity with listGrants: defend the page render against a malformed 200
-  // (missing scopes array, non-string name) so the detail page lands in the
-  // structured catch instead of Next's default error overlay.
-  if (
-    !res ||
-    typeof res !== "object" ||
-    typeof res.name !== "string" ||
-    !Array.isArray(res.scopes)
-  ) {
+  // so the detail page lands in the structured catch instead of Next's
+  // default error overlay.
+  if (!isGrantStatus(res)) {
     throw new ApiError(200, "API returned a grant with an unexpected shape", "malformed_response");
   }
   return res;
