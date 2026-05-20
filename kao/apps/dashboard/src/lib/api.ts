@@ -207,7 +207,19 @@ export async function listGrants(): Promise<GrantStatus[]> {
 }
 
 export async function getGrant(name: string): Promise<GrantStatus> {
-  return call<GrantStatus>("GET", `/grants/${encodeURIComponent(name)}`);
+  const res = await call<GrantStatus>("GET", `/grants/${encodeURIComponent(name)}`);
+  // Parity with listGrants: defend the page render against a malformed 200
+  // (missing scopes array, non-string name) so the detail page lands in the
+  // structured catch instead of Next's default error overlay.
+  if (
+    !res ||
+    typeof res !== "object" ||
+    typeof res.name !== "string" ||
+    !Array.isArray(res.scopes)
+  ) {
+    throw new ApiError(200, "API returned a grant with an unexpected shape", "malformed_response");
+  }
+  return res;
 }
 
 export async function vendToken(name: string): Promise<VendedToken> {

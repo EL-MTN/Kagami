@@ -21,6 +21,8 @@ export function hintFor(code: string): string | null {
       return "Dashboard env is incomplete — copy apps/dashboard/.env.example and fill in KAO_TOKEN.";
     case "not_found":
       return "The Kao API no longer recognizes this grant — it may have been removed from the registry.";
+    case "malformed_response":
+      return "The Kao API returned an unexpected response body. Check the API logs and any reverse proxy in front of it.";
     default:
       return null;
   }

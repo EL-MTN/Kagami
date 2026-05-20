@@ -28,9 +28,7 @@ export function NavLink({ href, label, iconName }: NavLinkProps) {
   // section right now. Match `/grants/` with the trailing slash so a
   // hypothetical future sibling like `/grants-archive` doesn't collide.
   const active =
-    href === "/"
-      ? pathname === "/" || pathname === "/grants" || pathname.startsWith("/grants/")
-      : pathname.startsWith(href);
+    href === "/" ? pathname === "/" || pathname.startsWith("/grants/") : pathname.startsWith(href);
   const Icon: LucideIcon = iconMap[iconName];
 
   return (

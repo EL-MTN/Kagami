@@ -103,8 +103,9 @@ export default async function GrantDetailPage({ params }: PageProps) {
           </a>
           <RevokeButton grant={grant.name} granted={grant.granted} />
           <p className="ml-auto text-xs text-faint">
-            Re-consent overwrites the stored refresh token and best-effort-revokes the previous one
-            at Google.
+            {grant.granted
+              ? "Re-consent overwrites the stored refresh token and best-effort-revokes the previous one at Google."
+              : "Connect Google to request consent for this grant's scopes and store the refresh token."}
           </p>
         </div>
       </section>
