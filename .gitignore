@@ -26,3 +26,7 @@ npm-debug.log*
 *~
 
 # Husky managed dir is committed; ignored hooks are inside it
+
+# Claude Code skill artifacts (ephemeral reports)
+.claude/reports/
+
