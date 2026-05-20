@@ -11,6 +11,7 @@ throws with a per-field list before the server binds. `.env` lives at
 | `GOOGLE_OAUTH_CLIENT_ID`     | yes      | —                           | Google OAuth client id                                              |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | yes      | —                           | Google OAuth client secret                                          |
 | `KAO_PUBLIC_URL`             | no       | `https://api.kao.localhost` | public origin; the callback is `${KAO_PUBLIC_URL}/oauth/callback`   |
+| `KAO_DASHBOARD_URL`          | no       | `https://kao.localhost`     | where the OAuth callback's "back to grants" link points             |
 | `KAO_ENCRYPTION_KEY`         | yes      | —                           | base64 **32-byte** key — refresh-token AES-256-GCM                  |
 | `KAO_TOKEN`                  | yes      | —                           | bearer (≥16 chars) consumers present to `/grants/*`                 |
 | `KAO_HOST`                   | no       | `127.0.0.1`                 | standalone bind host (Portless injects otherwise)                   |
@@ -55,13 +56,29 @@ scopes).
 ## Portless
 
 `kao/portless.json` registers `apps/api` as `api.kao` →
-`https://api.kao.localhost`. `npm run kao:dev` (or `./dev-all.sh --only kao`)
-launches it under Portless; `PORT`/`KAO_HOST` only matter running outside
+`https://api.kao.localhost` **and** `apps/dashboard` as `kao` →
+`https://kao.localhost`. `npm run kao:dev` (or `./dev-all.sh --only kao`)
+launches both under Portless; `PORT`/`KAO_HOST` only matter running outside
 Portless.
+
+## Dashboard configuration (`apps/dashboard/.env`)
+
+The dashboard is a separate Next.js process with its own `.env`. Two vars,
+both server-side:
+
+| Var           | Required | Default                     | Purpose                                                           |
+| ------------- | -------- | --------------------------- | ----------------------------------------------------------------- |
+| `KAO_API_URL` | no       | `https://api.kao.localhost` | Where the Next.js server reaches the Kao API                      |
+| `KAO_TOKEN`   | yes      | —                           | Bearer presented to `/grants/*`; must match the API's `KAO_TOKEN` |
+
+`apps/dashboard/.env.example` is the template. The bearer is read at request
+time from the dashboard's server runtime and injected into every `/grants/*`
+call — it **never reaches the browser**. Server Components fetch reads;
+Server Actions handle Revoke + Token Probe.
 
 ## Production
 
-`npm run build` (`tsc -p tsconfig.build.json` → `dist/`), then
+`npm run build` (`tsc -p tsconfig.build.json` → `dist/`) for the API, then
 `npm start` (`node dist/main.js`) — the workspace's compiled-output
 convention. The compiled binary fails fast with a structured fatal log if env
-is invalid.
+is invalid. The dashboard builds via `next build` and runs with `next start`.

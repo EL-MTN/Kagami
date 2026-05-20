@@ -36,6 +36,7 @@
     "kansoku:dev:dashboard": "turbo run dev --filter=@kansoku/dashboard",
     "kao:dev": "turbo run dev --filter=\"@kao/*\"",
     "kao:dev:api": "turbo run dev --filter=@kao/api",
+    "kao:dev:dashboard": "turbo run dev --filter=@kao/dashboard",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "lint": "turbo run lint",

@@ -29,6 +29,15 @@ function googleOAuthErrorMessage(error: string): string {
     : "google denied consent";
 }
 
+// Minimal HTML escape for the inline success page. Same pattern as home.ts;
+// stays local rather than shared because both route files are small and the
+// helper is single-use.
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+  );
+}
+
 // The consent flow is operator-browser-driven, so it is open at localhost
 // (like the siblings' OAuth routes). The defense here is the signed CSRF
 // state, which also binds the grant — see lib/oauth-state.ts. The sensitive
@@ -109,15 +118,23 @@ export function makeOauthRouter(config: Config, db: Db): Router {
     });
     clearAccessTokenCache(grant);
 
+    // Link the operator back to the dashboard (kao.localhost) rather than the
+    // API's inline-HTML home — the dashboard is where they started the flow
+    // and where Revoke / Probe live. The link target is escaped because the
+    // value comes from config and is rendered into HTML.
+    const dashboard = config.KAO_DASHBOARD_URL.replace(/\/+$/, "");
+    const dashboardGrantHref = `${escapeHtml(dashboard)}/grants/${escapeHtml(grant)}`;
+    const dashboardRootHref = escapeHtml(dashboard);
     res
       .status(200)
       .type("text/html")
       .send(
         '<!doctype html><meta charset="utf-8"><title>Granted</title>' +
           '<body style="font-family:system-ui;padding:2rem;color:#18181b">' +
-          `<h1 style="font-weight:600">Google access granted for '${grant}' ✓</h1>` +
+          `<h1 style="font-weight:600">Google access granted for '${escapeHtml(grant)}' ✓</h1>` +
           "<p>You can close this window.</p>" +
-          '<p><a href="/">Back to grants</a></p>' +
+          `<p><a href="${dashboardGrantHref}">Back to ${escapeHtml(grant)} in the Kao dashboard</a> · ` +
+          `<a href="${dashboardRootHref}">All grants</a></p>` +
           "</body>",
       );
   });

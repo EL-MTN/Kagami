@@ -48,7 +48,7 @@ Kagami/                       # one git repo, one workspace
 │   └── vitest.config.ts
 │
 ├── kao/                      # identity service — per-consumer Google OAuth grants
-│   ├── apps/                 # api (no dashboard yet — inline operator page)
+│   ├── apps/                 # api, dashboard (Next.js operator UI; bearer-injected server-side)
 │   ├── docs/
 │   ├── CLAUDE.md
 │   ├── portless.json
@@ -136,6 +136,7 @@ npm run kizuna:dev:dashboard
 npm run kansoku:dev:api
 npm run kansoku:dev:dashboard
 npm run kao:dev:api
+npm run kao:dev:dashboard
 
 # Project-specific scripts
 ```
@@ -156,6 +157,7 @@ All HTTP entry points are served as HTTPS named URLs by [Portless](https://githu
 | Kizuna  | API       | `https://api.kizuna.localhost`  |
 | Kansoku | dashboard | `https://kansoku.localhost`     |
 | Kansoku | API       | `https://api.kansoku.localhost` |
+| Kao     | dashboard | `https://kao.localhost`         |
 | Kao     | API       | `https://api.kao.localhost`     |
 
 Each project keeps its own `portless.json` next to its code. Numeric `PORT` defaults inside apps only matter when running an app standalone outside Portless; normal local development should use the named HTTPS URLs above.
@@ -173,7 +175,7 @@ Other workspace-wide conventions:
 
 - **Language**: TypeScript (strict, ESM), Node ≥ 22
 - **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs are `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, `kansoku/{apps,packages}/*`, `kao/{apps,packages}/*`, and `shared/packages/*`.
-- **Apps split**: `apps/api` (or `apps/bot` for Kokoro) + `apps/dashboard` (Kao is API-only so far — minimal inline-HTML operator page instead of a Next.js dashboard)
+- **Apps split**: `apps/api` (or `apps/bot` for Kokoro) + `apps/dashboard` (Kao's dashboard injects its `KAO_TOKEN` bearer server-side; the API also still serves an inline-HTML operator page at `GET /` as a no-dashboard fallback)
 - **Local dev hosting**: Portless via stable HTTPS named `*.localhost` URLs
 - **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku and Kao)
 - **Logging**: Pino (structured) via `@kagami/logger` — ECS / OTel field names, stable service bindings, trace/span correlation; no redaction (local-trust only)

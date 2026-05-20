@@ -27,14 +27,22 @@ it still runs its own encrypted-Mongo + web-flow OAuth.
 ## Request flow
 
 ```
-Operator browser
-  GET /                         inline-HTML grant list + Connect links (open@localhost)
+Operator browser (dashboard: https://kao.localhost)
+  GET https://kao.localhost/           Next.js — grants overview (Server Component → /grants)
+  GET https://kao.localhost/grants/:n  Next.js — per-grant detail + Revoke + Token Probe
+  → Server Action revokeGrantAction    Next.js server → DELETE /grants/:n (bearer KAO_TOKEN)
+  → Server Action probeGrantAction     Next.js server → GET   /grants/:n/token?force=1
+
+Operator browser (API origin: https://api.kao.localhost)
+  GET /                         inline-HTML grant list + Connect links (open@localhost — fallback)
   GET /oauth/:grant/start       open@localhost; mint grant-bound CSRF state; 302 → Google consent
                                 (scopes pulled from grant-registry, never the request)
   Google → GET /oauth/callback  verify signed state (recovers + binds grant);
                                 exchange code; require refresh_token; AES-256-GCM
                                 encrypt; upsert grants doc; clear that grant's
-                                access-token cache; inline success page
+                                access-token cache; inline success page linking back to
+                                ${KAO_DASHBOARD_URL}/grants/:n so the round-trip ends on
+                                the dashboard
 
 Sibling service (Kokoro live; Kizuna pending)
   GET /grants/:grant/token      bearer KAO_TOKEN required; decrypt refresh;
@@ -44,6 +52,40 @@ Sibling service (Kokoro live; Kizuna pending)
   GET /grants/:grant            bearer; single status
   DELETE /grants/:grant         bearer; best-effort Google revoke + soft local revoke
 ```
+
+## Dashboard (apps/dashboard)
+
+`@kao/dashboard` is a Next.js 16 (App Router, RSC) app served by Portless at
+`https://kao.localhost`. It exists to give operators a UI for the same surface
+the inline-HTML operator page covers, plus revoke and a token probe.
+
+| Page                      | Role                                                                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `/` (`src/app/page.tsx`)  | Lists every registry grant. Inline Connect/Re-consent (anchor → `${KAO_PUBLIC_URL}/oauth/:n/start`) and a two-step Revoke.   |
+| `/grants/:grant` (detail) | Full audit timestamps + scope list + Revoke + **Token Probe** (force-refresh; surfaces live access token + expiry + scopes). |
+
+**Bearer model.** `/grants/*` is bearer-gated; the dashboard runs every call
+through its **server runtime** with `Authorization: Bearer ${KAO_TOKEN}`
+injected from `apps/dashboard/.env`. No path through the page exposes that
+bearer to the browser — Server Components fetch reads, Server Actions handle
+writes (`revokeGrantAction`, `probeGrantAction`).
+
+**OAuth consent links** are plain anchors to the API origin — the browser
+must reach Google itself, and `/oauth/:grant/start` is open@localhost
+(CSRF-state-defended). After consent succeeds, the API's inline callback page
+links back to `${KAO_DASHBOARD_URL}/grants/:n` so the operator lands on the
+dashboard's detail page (not the API's inline home).
+
+**Probe semantics.** The probe calls `/grants/:grant/token?force=1`,
+bypassing Kao's per-grant access-token cache so a green probe really means
+"Google still likes the refresh token." Structured failures
+(`no_grant` / `invalid_grant` / `decrypt_failed` / `bad_gateway`) each render
+their own next-step hint inline.
+
+**Why the inline-HTML home stays.** The API's `GET /` page is the fallback
+when the dashboard isn't running (or hasn't been spun up yet on a fresh
+checkout). It's still useful in standalone-API workflows, so it isn't being
+deleted as part of the dashboard pass.
 
 ## Module map
 
@@ -63,7 +105,8 @@ Sibling service (Kokoro live; Kizuna pending)
 | `src/routes/health.ts`   | `GET /healthz`                                                                                                                         |
 | `src/routes/oauth.ts`    | `GET /:grant/start`, `GET /callback` (open@localhost, CSRF-state-defended)                                                             |
 | `src/routes/grants.ts`   | the vend surface (mounted behind the bearer)                                                                                           |
-| `src/routes/home.ts`     | inline-HTML operator page (`GET /`)                                                                                                    |
+| `src/routes/home.ts`     | inline-HTML operator page (`GET /`) — fallback for when the Next.js dashboard isn't running                                            |
+| `apps/dashboard/`        | Next.js 16 (App Router, RSC) operator dashboard — bearer-injected server-side; see "Dashboard" below                                   |
 
 ## Data model — `grants` collection
 

@@ -18,7 +18,19 @@ describe("config", () => {
     const c = loadConfig(baseEnv());
     expect(c.KAO_DB_NAME).toBe("kao");
     expect(c.KAO_PUBLIC_URL).toBe("https://api.kao.localhost");
+    expect(c.KAO_DASHBOARD_URL).toBe("https://kao.localhost");
     expect(c.PORT).toBe(4040);
+  });
+
+  it("accepts an explicit KAO_DASHBOARD_URL override", () => {
+    const c = loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "https://kao.example.com" });
+    expect(c.KAO_DASHBOARD_URL).toBe("https://kao.example.com");
+  });
+
+  it("rejects a non-URL KAO_DASHBOARD_URL", () => {
+    expect(() => loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "not-a-url" })).toThrow(
+      /KAO_DASHBOARD_URL/,
+    );
   });
 
   it("rejects a missing Google client id", () => {

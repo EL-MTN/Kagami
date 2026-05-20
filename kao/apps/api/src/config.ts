@@ -33,6 +33,15 @@ const envSchema = z.object({
     z.string().url().default("https://api.kao.localhost"),
   ),
 
+  // Where operators land after consent succeeds. Distinct from KAO_PUBLIC_URL
+  // because the dashboard runs on a separate Portless name (kao.localhost vs
+  // api.kao.localhost). The OAuth success page links here so the consent
+  // round-trip ends back on the dashboard, not on the API's inline-HTML home.
+  KAO_DASHBOARD_URL: z.preprocess(
+    blankAsUndefined,
+    z.string().url().default("https://kao.localhost"),
+  ),
+
   KAO_ENCRYPTION_KEY: base64Key32,
 
   // The bearer sibling services present to reach /grants/* (the vend surface).
