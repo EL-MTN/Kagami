@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { revokeGrantAction } from "@/app/actions";
+import { hintFor } from "@/lib/error-hints";
 import { cn } from "@/lib/utils";
 
 interface RevokeButtonProps {
@@ -45,8 +46,13 @@ export function RevokeButton({ grant, granted }: RevokeButtonProps) {
           Revoke
         </button>
         {error && (
-          <span className="text-[10px] text-[color:var(--color-critical)]">
-            Couldn&rsquo;t revoke ({error.code}): {error.message}
+          <span className="flex max-w-[18rem] flex-col items-end gap-0.5 text-right">
+            <span className="text-[10px] text-[color:var(--color-critical)]">
+              Couldn&rsquo;t revoke ({error.code}): {error.message}
+            </span>
+            {hintFor(error.code) && (
+              <span className="text-[10px] text-muted-foreground">{hintFor(error.code)}</span>
+            )}
           </span>
         )}
       </span>

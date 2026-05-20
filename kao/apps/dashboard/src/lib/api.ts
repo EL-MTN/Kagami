@@ -13,19 +13,31 @@
 import { z } from "zod";
 
 // KAO_API_URL is rendered into anchor hrefs (oauthStartUrl) as well as used
-// as the fetch base, so an http(s) URL is enforced eagerly at module load.
-// KAO_TOKEN can't be validated eagerly because Next.js evaluates this module
-// during `next build` (when the env may be intentionally absent); see
-// `requireToken` below for the lazy check at request time. An empty string is
-// treated as 'unset' (matches the API's config.ts blankAsUndefined pattern),
-// so `KAO_API_URL=` in .env falls back to the default instead of crashing.
+// as the fetch base. Enforce the same origin-only shape the API's config.ts
+// uses for KAO_PUBLIC_URL/KAO_DASHBOARD_URL — both sides of the contract
+// agree, so composition like `${API_URL}/grants/...` can't produce a
+// malformed href if someone configures a stray path/query. KAO_TOKEN can't be
+// validated eagerly because Next.js evaluates this module during `next build`
+// (when the env may be intentionally absent); see `requireToken` below for
+// the lazy check at request time. An empty string is treated as 'unset' so
+// `KAO_API_URL=` in .env falls back to the default instead of crashing.
 const apiUrl = z
   .preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
     z
       .string()
       .url()
-      .refine((u) => /^https?:\/\//i.test(u), "KAO_API_URL must use http(s)")
+      .refine((u) => {
+        try {
+          const parsed = new URL(u);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+          if (parsed.search !== "" || parsed.hash !== "") return false;
+          if (parsed.pathname !== "" && parsed.pathname !== "/") return false;
+          return true;
+        } catch {
+          return false;
+        }
+      }, "KAO_API_URL must be an http(s) origin with no path/query/fragment")
       .default("https://api.kao.localhost"),
   )
   .parse(process.env.KAO_API_URL);
@@ -53,17 +65,20 @@ export class ApiError extends Error {
 // Lazy at call time so `next build` can run without a KAO_TOKEN configured.
 // Surfaces as a structured ApiError(0, …) so Server Actions can render the
 // missing-config case inline rather than crashing into Next's default error
-// overlay.
+// overlay. Trim before AND after the length check: the API's loadConfig
+// trims the bearer it stores (blankAsUndefined), so an operator who pasted
+// whitespace into apps/dashboard/.env would otherwise send a header with
+// leading/trailing spaces and silently 401 every /grants/* request.
 function requireToken(): string {
-  const token = process.env.KAO_TOKEN;
-  if (!token || token.trim().length < 16) {
+  const trimmed = process.env.KAO_TOKEN?.trim() ?? "";
+  if (trimmed.length < 16) {
     throw new ApiError(
       0,
       "KAO_TOKEN is not set in the dashboard's environment (or is too short). Copy apps/dashboard/.env.example and fill it with the same value the Kao API uses.",
       "misconfigured",
     );
   }
-  return token;
+  return trimmed;
 }
 
 // Wire shape of Kao's error envelope (lib/errors.ts). The vend route carries a
