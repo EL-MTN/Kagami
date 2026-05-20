@@ -25,9 +25,12 @@ export function NavLink({ href, label, iconName }: NavLinkProps) {
   const pathname = usePathname();
   // Overview matches "/" exactly; nested pages (e.g. /grants/kokoro) keep
   // Overview highlighted as the parent because Kao only has one logical
-  // section right now.
+  // section right now. Match `/grants/` with the trailing slash so a
+  // hypothetical future sibling like `/grants-archive` doesn't collide.
   const active =
-    href === "/" ? pathname === "/" || pathname.startsWith("/grants") : pathname.startsWith(href);
+    href === "/"
+      ? pathname === "/" || pathname === "/grants" || pathname.startsWith("/grants/")
+      : pathname.startsWith(href);
   const Icon: LucideIcon = iconMap[iconName];
 
   return (

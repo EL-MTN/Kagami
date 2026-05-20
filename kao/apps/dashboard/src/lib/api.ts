@@ -145,7 +145,14 @@ async function call<T>(method: string, path: string, opts: CallOptions = {}): Pr
     }
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
   }
-  return res.json() as Promise<T>;
+  // A 200 with a non-JSON body (e.g. an HTML page from a misbehaving reverse
+  // proxy) would otherwise surface as a raw SyntaxError — wrap it into the
+  // same ApiError shape every caller already handles.
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new ApiError(res.status, "API returned a non-JSON response body", "malformed_response");
+  }
 }
 
 // ── Public shapes ─────────────────────────────────────────────
@@ -190,6 +197,12 @@ export async function getHealth(): Promise<HealthResponse> {
 
 export async function listGrants(): Promise<GrantStatus[]> {
   const res = await call<{ grants: GrantStatus[] }>("GET", "/grants");
+  // Defend the page render: a malformed 200 like `{}` would crash
+  // `grants.map(...)` outside the page's try/catch, falling through to
+  // Next's default error overlay instead of the structured ErrorBlock.
+  if (!Array.isArray(res.grants)) {
+    throw new ApiError(200, "API returned /grants without a grants[] array", "malformed_response");
+  }
   return res.grants;
 }
 

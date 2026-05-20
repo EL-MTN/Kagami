@@ -33,6 +33,7 @@ export function RevokeButton({ grant, granted }: RevokeButtonProps) {
   }
 
   if (!confirming) {
+    const hint = error ? hintFor(error.code) : null;
     return (
       <span className="inline-flex flex-col items-end gap-1">
         <button
@@ -50,9 +51,7 @@ export function RevokeButton({ grant, granted }: RevokeButtonProps) {
             <span className="text-[10px] text-[color:var(--color-critical)]">
               Couldn&rsquo;t revoke ({error.code}): {error.message}
             </span>
-            {hintFor(error.code) && (
-              <span className="text-[10px] text-muted-foreground">{hintFor(error.code)}</span>
-            )}
+            {hint && <span className="text-[10px] text-muted-foreground">{hint}</span>}
           </span>
         )}
       </span>
