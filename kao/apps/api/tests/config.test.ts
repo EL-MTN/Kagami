@@ -63,10 +63,25 @@ describe("config", () => {
   });
 
   it("accepts a KAO_DASHBOARD_URL with a bare trailing slash", () => {
-    // Trailing slash is stripped at use-site (oauth.ts) — must still pass
-    // the origin-only validation.
+    // The origin-only validator accepts pathname '/' (always present on a
+    // parsed http(s) URL); use-site composes via `new URL(...)` which
+    // normalizes the join.
     const c = loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "https://kao.localhost/" });
     expect(c.KAO_DASHBOARD_URL).toBe("https://kao.localhost/");
+  });
+
+  it("rejects a KAO_PUBLIC_URL with a path", () => {
+    // Same httpOrigin validator as KAO_DASHBOARD_URL — symmetric coverage
+    // guards both fields against a future regression of the refine.
+    expect(() =>
+      loadConfig({ ...baseEnv(), KAO_PUBLIC_URL: "https://api.kao.localhost/foo" }),
+    ).toThrow(/KAO_PUBLIC_URL/);
+  });
+
+  it("rejects a KAO_PUBLIC_URL with a query string", () => {
+    expect(() =>
+      loadConfig({ ...baseEnv(), KAO_PUBLIC_URL: "https://api.kao.localhost?x=1" }),
+    ).toThrow(/KAO_PUBLIC_URL/);
   });
 
   it("rejects a missing Google client id", () => {

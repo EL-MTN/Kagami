@@ -226,11 +226,38 @@ export async function vendToken(name: string): Promise<VendedToken> {
   // `force=1` bypasses Kao's in-process access-token cache so the probe
   // genuinely round-trips to Google. Without it, a stuck/dead grant could
   // re-vend a cached access token and look fine until it 401s in production.
-  return call<VendedToken>("GET", `/grants/${encodeURIComponent(name)}/token?force=1`);
+  const res = await call<VendedToken>("GET", `/grants/${encodeURIComponent(name)}/token?force=1`);
+  // Parity with listGrants/getGrant: a malformed 200 here would flow into
+  // ProbeSuccess where maskToken(accessToken) and scopes.map() would crash
+  // outside the action's try/catch.
+  if (
+    !res ||
+    typeof res !== "object" ||
+    typeof res.accessToken !== "string" ||
+    typeof res.expiresAt !== "number" ||
+    !Array.isArray(res.scopes)
+  ) {
+    throw new ApiError(
+      200,
+      "API returned a vend response with an unexpected shape",
+      "malformed_response",
+    );
+  }
+  return res;
 }
 
 export async function revokeGrant(name: string): Promise<RevokeResult> {
-  return call<RevokeResult>("DELETE", `/grants/${encodeURIComponent(name)}`);
+  const res = await call<RevokeResult>("DELETE", `/grants/${encodeURIComponent(name)}`);
+  // Parity guard. revokeGrantAction only inspects ok-vs-throw, but a 200
+  // with an empty body would silently report success on a no-op.
+  if (!res || typeof res !== "object" || res.revoked !== true) {
+    throw new ApiError(
+      200,
+      "API returned a revoke response with an unexpected shape",
+      "malformed_response",
+    );
+  }
+  return res;
 }
 
 // ── Browser-facing helpers (no bearer needed) ──────────────────
