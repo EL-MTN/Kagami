@@ -112,11 +112,14 @@ export function makeOauthRouter(config: Config, db: Db): Router {
 
     // Link the operator back to the dashboard (kao.localhost) rather than the
     // API's inline-HTML home — the dashboard is where they started the flow
-    // and where Revoke / Probe live. The link target is escaped because the
-    // value comes from config and is rendered into HTML.
-    const dashboard = config.KAO_DASHBOARD_URL.replace(/\/+$/, "");
-    const dashboardGrantHref = `${escapeHtml(dashboard)}/grants/${escapeHtml(grant)}`;
-    const dashboardRootHref = escapeHtml(dashboard);
+    // and where Revoke / Probe live. Compose with the URL constructor so a
+    // dashboard value with a stray path/query can't slip through and yield a
+    // malformed href (config also rejects those at boot), then HTML-escape
+    // the whole string for the attribute.
+    const dashboardGrantHref = escapeHtml(
+      new URL(`/grants/${encodeURIComponent(grant)}`, config.KAO_DASHBOARD_URL).toString(),
+    );
+    const dashboardRootHref = escapeHtml(new URL("/", config.KAO_DASHBOARD_URL).toString());
     res
       .status(200)
       .type("text/html")

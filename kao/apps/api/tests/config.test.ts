@@ -47,6 +47,28 @@ describe("config", () => {
     );
   });
 
+  it("rejects a KAO_DASHBOARD_URL with a path", () => {
+    // The dashboard URL is composed as `${KAO_DASHBOARD_URL}/grants/:n` in
+    // the inline OAuth success page — a path/query/fragment here produces a
+    // malformed href. Reject at validation rather than silently rendering it.
+    expect(() =>
+      loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "https://kao.localhost/foo" }),
+    ).toThrow(/KAO_DASHBOARD_URL/);
+  });
+
+  it("rejects a KAO_DASHBOARD_URL with a query string", () => {
+    expect(() =>
+      loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "https://kao.localhost?x=1" }),
+    ).toThrow(/KAO_DASHBOARD_URL/);
+  });
+
+  it("accepts a KAO_DASHBOARD_URL with a bare trailing slash", () => {
+    // Trailing slash is stripped at use-site (oauth.ts) — must still pass
+    // the origin-only validation.
+    const c = loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "https://kao.localhost/" });
+    expect(c.KAO_DASHBOARD_URL).toBe("https://kao.localhost/");
+  });
+
   it("rejects a missing Google client id", () => {
     const env = baseEnv();
     delete env.GOOGLE_OAUTH_CLIENT_ID;

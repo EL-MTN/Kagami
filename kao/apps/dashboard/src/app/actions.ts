@@ -20,9 +20,10 @@ export async function revokeGrantAction(grant: string): Promise<RevokeActionResu
   try {
     await revokeGrant(grant);
     // Both routes display the grant; revalidate both so a revoke from anywhere
-    // updates anywhere.
+    // updates anywhere. Encode the segment for symmetry with the other path
+    // uses (api.ts), even though the API rejects non-registry names upstream.
     revalidatePath("/");
-    revalidatePath(`/grants/${grant}`);
+    revalidatePath(`/grants/${encodeURIComponent(grant)}`);
     return { ok: true, grant };
   } catch (err) {
     if (err instanceof ApiError) {

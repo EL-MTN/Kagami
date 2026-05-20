@@ -19,13 +19,24 @@ const base64Key32 = z.preprocess(
 );
 
 // Both public-facing URLs are rendered into anchor hrefs in the inline
-// operator pages, so we reject non-http(s) schemes (e.g. `javascript:`) at
-// validation time rather than rely on later sanitisation. `z.string().url()`
-// on its own would accept any RFC-compliant URI.
-const httpUrl = z
+// operator pages and composed with path suffixes (`${KAO_DASHBOARD_URL}/grants/:n`).
+// Reject non-http(s) schemes (no `javascript:`) AND non-origin URLs (no path,
+// query, or fragment) so composition can't produce a malformed href like
+// `https://kao.localhost/foo?bar/grants/kokoro`.
+const httpOrigin = z
   .string()
   .url()
-  .refine((u) => /^https?:\/\//i.test(u), "must use http:// or https://");
+  .refine((u) => {
+    try {
+      const parsed = new URL(u);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+      if (parsed.search !== "" || parsed.hash !== "") return false;
+      if (parsed.pathname !== "" && parsed.pathname !== "/") return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }, "must be an http(s) origin with no path/query/fragment");
 
 const envSchema = z.object({
   MONGODB_URI: z.string().regex(/^mongodb(\+srv)?:\/\//, "MONGODB_URI must be a mongodb:// URI"),
@@ -37,13 +48,13 @@ const envSchema = z.object({
 
   // Public origin Google redirects back to. The callback path is fixed; the
   // grant is carried in signed state, so only one redirect URI is registered.
-  KAO_PUBLIC_URL: z.preprocess(blankAsUndefined, httpUrl.default("https://api.kao.localhost")),
+  KAO_PUBLIC_URL: z.preprocess(blankAsUndefined, httpOrigin.default("https://api.kao.localhost")),
 
   // Where operators land after consent succeeds. Distinct from KAO_PUBLIC_URL
   // because the dashboard runs on a separate Portless name (kao.localhost vs
   // api.kao.localhost). The OAuth success page links here so the consent
   // round-trip ends back on the dashboard, not on the API's inline-HTML home.
-  KAO_DASHBOARD_URL: z.preprocess(blankAsUndefined, httpUrl.default("https://kao.localhost")),
+  KAO_DASHBOARD_URL: z.preprocess(blankAsUndefined, httpOrigin.default("https://kao.localhost")),
 
   KAO_ENCRYPTION_KEY: base64Key32,
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { probeGrantAction, type ProbeResult } from "@/app/actions";
 import { formatCountdown, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,16 @@ export function TokenProbe({ grant, granted }: TokenProbeProps) {
   const [result, setResult] = useState<ProbeResult | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Tracked so a rapid second Copy click doesn't have its "Copied" flash
+  // cancelled early by the prior timer, and so the timer doesn't fire on an
+  // unmounted component.
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    };
+  }, []);
 
   const run = () => {
     setCopied(false);
@@ -38,7 +48,8 @@ export function TokenProbe({ grant, granted }: TokenProbeProps) {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       // Clipboard API can be unavailable in some contexts (non-HTTPS, no
       // permission). Falling silent is fine — the token's also visible.
@@ -178,6 +189,9 @@ function ProbeFailure({ result }: { result: Extract<ProbeResult, { ok: false }> 
 
 // Mirrors Kao's vend-route taxonomy in api/src/routes/grants.ts so an operator
 // reading the panel doesn't need to also read docs to know what's actionable.
+// `misconfigured` and `not_found` are dashboard-side surfaces: the former
+// comes from api.ts when KAO_TOKEN isn't set, the latter from the API when a
+// grant disappears from the registry between page-load and probe.
 function hintFor(code: string): string | null {
   switch (code) {
     case "no_grant":
@@ -192,6 +206,10 @@ function hintFor(code: string): string | null {
       return "Dashboard bearer (KAO_TOKEN) doesn't match the API's. Check apps/dashboard/.env.";
     case "unreachable":
       return "Couldn't reach the Kao API at all. Is it running?";
+    case "misconfigured":
+      return "Dashboard env is incomplete — copy apps/dashboard/.env.example and fill in KAO_TOKEN.";
+    case "not_found":
+      return "The Kao API no longer recognizes this grant — it may have been removed from the registry.";
     default:
       return null;
   }

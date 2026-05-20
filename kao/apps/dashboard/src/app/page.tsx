@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { PageHeader, ErrorBlock } from "@/components/shell";
+import { PageHeader, ErrorBlock, EmptyState } from "@/components/shell";
 import { GrantBadge } from "@/components/grant-badge";
 import { RevokeButton } from "@/components/revoke-button";
 import { listGrants, oauthStartUrl, KAO_API_BASE, type GrantStatus } from "@/lib/api";
@@ -43,10 +43,10 @@ export default async function OverviewPage() {
 
       <section className="stagger space-y-3">
         {grants.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <EmptyState>
             The grant registry is empty. Add a consumer in{" "}
             <code className="font-mono">kao/apps/api/src/grant-registry.ts</code>.
-          </p>
+          </EmptyState>
         ) : (
           grants.map((g) => <GrantCard key={g.name} grant={g} />)
         )}
