@@ -23,7 +23,11 @@ import { z } from "zod";
 // `KAO_API_URL=` in .env falls back to the default instead of crashing.
 const apiUrl = z
   .preprocess(
-    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    (v) => {
+      if (typeof v !== "string") return v;
+      const trimmed = v.trim();
+      return trimmed === "" ? undefined : trimmed;
+    },
     z
       .string()
       .url()
@@ -32,7 +36,7 @@ const apiUrl = z
           const parsed = new URL(u);
           if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
           if (parsed.search !== "" || parsed.hash !== "") return false;
-          if (parsed.pathname !== "" && parsed.pathname !== "/") return false;
+          if (parsed.pathname !== "/") return false;
           return true;
         } catch {
           return false;
@@ -128,12 +132,15 @@ async function call<T>(method: string, path: string, opts: CallOptions = {}): Pr
     }
     if (isEnvelope(envelope)) {
       const inner = envelope.error;
-      const innerCode =
-        inner.details &&
-        typeof inner.details === "object" &&
-        "code" in (inner.details as Record<string, unknown>)
-          ? (inner.details as { code?: string }).code
-          : undefined;
+      // Vend route puts the actionable code inside details.code
+      // (no_grant / invalid_grant / decrypt_failed); promote it to
+      // ApiError.code only when it's actually a string, so a malformed
+      // future envelope can't slip a non-string into the typed surface.
+      let innerCode: string | undefined;
+      if (inner.details && typeof inner.details === "object") {
+        const maybe = (inner.details as Record<string, unknown>).code;
+        if (typeof maybe === "string") innerCode = maybe;
+      }
       throw new ApiError(res.status, inner.message, innerCode ?? inner.code, inner.details);
     }
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);

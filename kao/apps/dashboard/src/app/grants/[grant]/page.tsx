@@ -29,15 +29,24 @@ export default async function GrantDetailPage({ params }: PageProps) {
     }
     // Title is fixed rather than echoing `name` so a cooked path segment
     // can't reflect attacker-controlled text into the page chrome on
-    // auth/connect failures.
+    // auth/connect failures. Mirror the overview's misconfigured-vs-
+    // unreachable branch so an operator who forgot KAO_TOKEN sees the
+    // .env hint here too — symmetric with app/page.tsx.
+    const misconfigured = err instanceof ApiError && err.code === "misconfigured";
     return (
       <div className="space-y-6">
         <BackLink />
-        <PageHeader title="Grant unavailable" />
+        <PageHeader title={misconfigured ? "Dashboard config incomplete" : "Grant unavailable"} />
         <ErrorBlock
-          title="Couldn't load grant"
+          title={misconfigured ? "Dashboard config incomplete" : "Couldn't load grant"}
           detail={err instanceof Error ? err.message : String(err)}
         />
+        {misconfigured && (
+          <p className="text-xs text-faint">
+            Copy <code className="font-mono">apps/dashboard/.env.example</code> and fill in{" "}
+            <code className="font-mono">KAO_TOKEN</code> with the same value the Kao API uses.
+          </p>
+        )}
       </div>
     );
   }

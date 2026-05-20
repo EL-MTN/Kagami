@@ -22,7 +22,8 @@ const base64Key32 = z.preprocess(
 // operator pages and composed with path suffixes (`${KAO_DASHBOARD_URL}/grants/:n`).
 // Reject non-http(s) schemes (no `javascript:`) AND non-origin URLs (no path,
 // query, or fragment) so composition can't produce a malformed href like
-// `https://kao.localhost/foo?bar/grants/kokoro`.
+// `https://kao.localhost/foo?bar/grants/kokoro`. `new URL` always yields
+// pathname '/' for an origin-only http(s) URL, so we only check against '/'.
 const httpOrigin = z
   .string()
   .url()
@@ -31,7 +32,7 @@ const httpOrigin = z
       const parsed = new URL(u);
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
       if (parsed.search !== "" || parsed.hash !== "") return false;
-      if (parsed.pathname !== "" && parsed.pathname !== "/") return false;
+      if (parsed.pathname !== "/") return false;
       return true;
     } catch {
       return false;
