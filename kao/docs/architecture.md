@@ -78,9 +78,14 @@ dashboard's detail page (not the API's inline home).
 
 **Probe semantics.** The probe calls `/grants/:grant/token?force=1`,
 bypassing Kao's per-grant access-token cache so a green probe really means
-"Google still likes the refresh token." Structured failures
-(`no_grant` / `invalid_grant` / `decrypt_failed` / `bad_gateway`) each render
-their own next-step hint inline.
+"Google still likes the refresh token." Structured failures each render
+their own next-step hint inline via the shared `lib/error-hints.ts`
+`hintFor()` table. Codes come from two sources: the API's vend taxonomy
+(`no_grant` / `invalid_grant` / `decrypt_failed` / `bad_gateway` /
+`unauthorized` / `not_found`) and the dashboard's own client surfaces
+(`misconfigured` when `KAO_TOKEN` is missing locally, `unreachable` when
+the API can't be reached at all, and `malformed_response` when an
+otherwise-200 response has an unexpected body shape).
 
 **Why the inline-HTML home stays.** The API's `GET /` page is the fallback
 when the dashboard isn't running (or hasn't been spun up yet on a fresh
@@ -100,6 +105,7 @@ deleted as part of the dashboard pass.
 | `src/lib/google.ts`      | OAuth2Client factory, consent URL, code exchange, per-grant access-token cache, refresh with `OAuthError` taxonomy, best-effort revoke |
 | `src/lib/auth.ts`        | constant-time bearer check (SHA-256 both sides → `timingSafeEqual`, no length oracle)                                                  |
 | `src/lib/errors.ts`      | `HttpError` + `errors` factory + Express error handler (envelope `{ error: { code, message, details? } }`)                             |
+| `src/lib/html.ts`        | shared `escapeHtml` for the two inline operator pages (`home.ts` + the OAuth callback success page)                                    |
 | `src/storage/mongo.ts`   | raw driver, lazy singleton, cached connect promise                                                                                     |
 | `src/storage/grants.ts`  | `grants` collection: `getGrant`, `listGrants`, `upsertGrant`, `revokeGrant` (soft), `ensureGrantIndexes`                               |
 | `src/routes/health.ts`   | `GET /healthz`                                                                                                                         |

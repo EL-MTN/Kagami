@@ -38,7 +38,7 @@ kao/
 │   │   │   ├── server.ts           # Express app; bearer-gates /grants/*, leaves /oauth/* open@localhost
 │   │   │   ├── config.ts           # zod env schema; callbackUrl() derives the single redirect URI
 │   │   │   ├── grant-registry.ts   # version-controlled per-consumer scope map (the least-privilege source of truth)
-│   │   │   ├── lib/                # logger, errors, encryption (ported), oauth-state (ported + grant-bound), google, auth (bearer)
+│   │   │   ├── lib/                # logger, errors, encryption (ported), oauth-state (ported + grant-bound), google, auth (bearer), html (shared escapeHtml)
 │   │   │   ├── storage/            # mongo (raw driver, lazy singleton) + grants repository
 │   │   │   └── routes/             # health, oauth (consent), grants (vend), home (inline operator page)
 │   │   ├── tests/              # vitest + supertest + mongodb-memory-server
@@ -52,7 +52,7 @@ kao/
 │       │   │   ├── actions.ts          # Server Actions: revokeGrantAction, probeGrantAction
 │       │   │   └── globals.css
 │       │   ├── components/             # sidebar, nav-link, shell/, grant-badge, revoke-button, token-probe
-│       │   └── lib/                    # api (server-side bearer injection), format, utils
+│       │   └── lib/                    # api (server-side bearer injection), error-hints (shared hintFor), format, utils
 │       ├── tsconfig.json       # extends @kagami/tsconfig/nextjs.json
 │       ├── eslint.config.mjs   # imports from @kagami/eslint-config/next
 │       └── package.json        # portless "kao"; Next 16 + React 19 + Tailwind 4
