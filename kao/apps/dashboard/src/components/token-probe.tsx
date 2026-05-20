@@ -25,6 +25,10 @@ export function TokenProbe({ grant, granted }: TokenProbeProps) {
   const [result, setResult] = useState<ProbeResult | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
+  // The countdown's `expires in 58m` is computed from Date.now() at render
+  // time, so a panel left open would otherwise show a frozen value. Tick at
+  // 30s while a probe result is mounted to keep it honest.
+  const [, setTick] = useState(0);
   // Tracked so a rapid second Copy click doesn't have its "Copied" flash
   // cancelled early by the prior timer, and so the timer doesn't fire on an
   // unmounted component.
@@ -35,6 +39,12 @@ export function TokenProbe({ grant, granted }: TokenProbeProps) {
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!result?.ok) return;
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, [result]);
 
   const run = () => {
     setCopied(false);
