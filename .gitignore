@@ -25,4 +25,10 @@ npm-debug.log*
 *.swp
 *~
 
+# Claude Code per-machine state. Skills are shared workspace tooling and
+# are tracked; everything else is local-only.
+.claude/*
+!.claude/skills/
+!.claude/skills/**
+
 # Husky managed dir is committed; ignored hooks are inside it
