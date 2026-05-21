@@ -18,7 +18,70 @@ describe("config", () => {
     const c = loadConfig(baseEnv());
     expect(c.KAO_DB_NAME).toBe("kao");
     expect(c.KAO_PUBLIC_URL).toBe("https://api.kao.localhost");
+    expect(c.KAO_DASHBOARD_URL).toBe("https://kao.localhost");
     expect(c.PORT).toBe(4040);
+  });
+
+  it("accepts an explicit KAO_DASHBOARD_URL override", () => {
+    const c = loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "https://kao.example.com" });
+    expect(c.KAO_DASHBOARD_URL).toBe("https://kao.example.com");
+  });
+
+  it("rejects a non-URL KAO_DASHBOARD_URL", () => {
+    expect(() => loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "not-a-url" })).toThrow(
+      /KAO_DASHBOARD_URL/,
+    );
+  });
+
+  it("rejects a javascript: scheme on KAO_DASHBOARD_URL", () => {
+    // KAO_DASHBOARD_URL is rendered into anchor hrefs in the inline OAuth
+    // success page — a non-http(s) scheme would be a clickable XSS vector.
+    expect(() => loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "javascript:alert(1)" })).toThrow(
+      /KAO_DASHBOARD_URL/,
+    );
+  });
+
+  it("rejects a javascript: scheme on KAO_PUBLIC_URL", () => {
+    expect(() => loadConfig({ ...baseEnv(), KAO_PUBLIC_URL: "javascript:alert(1)" })).toThrow(
+      /KAO_PUBLIC_URL/,
+    );
+  });
+
+  it("rejects a KAO_DASHBOARD_URL with a path", () => {
+    // The dashboard URL is composed as `${KAO_DASHBOARD_URL}/grants/:n` in
+    // the inline OAuth success page — a path/query/fragment here produces a
+    // malformed href. Reject at validation rather than silently rendering it.
+    expect(() =>
+      loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "https://kao.localhost/foo" }),
+    ).toThrow(/KAO_DASHBOARD_URL/);
+  });
+
+  it("rejects a KAO_DASHBOARD_URL with a query string", () => {
+    expect(() =>
+      loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "https://kao.localhost?x=1" }),
+    ).toThrow(/KAO_DASHBOARD_URL/);
+  });
+
+  it("accepts a KAO_DASHBOARD_URL with a bare trailing slash", () => {
+    // The origin-only validator accepts pathname '/' (always present on a
+    // parsed http(s) URL); use-site composes via `new URL(...)` which
+    // normalizes the join.
+    const c = loadConfig({ ...baseEnv(), KAO_DASHBOARD_URL: "https://kao.localhost/" });
+    expect(c.KAO_DASHBOARD_URL).toBe("https://kao.localhost/");
+  });
+
+  it("rejects a KAO_PUBLIC_URL with a path", () => {
+    // Same httpOrigin validator as KAO_DASHBOARD_URL — symmetric coverage
+    // guards both fields against a future regression of the refine.
+    expect(() =>
+      loadConfig({ ...baseEnv(), KAO_PUBLIC_URL: "https://api.kao.localhost/foo" }),
+    ).toThrow(/KAO_PUBLIC_URL/);
+  });
+
+  it("rejects a KAO_PUBLIC_URL with a query string", () => {
+    expect(() =>
+      loadConfig({ ...baseEnv(), KAO_PUBLIC_URL: "https://api.kao.localhost?x=1" }),
+    ).toThrow(/KAO_PUBLIC_URL/);
   });
 
   it("rejects a missing Google client id", () => {

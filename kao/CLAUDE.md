@@ -32,41 +32,58 @@ from `Kagami/shared/packages/`. No top-level `package.json`/`turbo.json`.
 ```
 kao/
 ├── apps/
-│   └── api/                    # Express HTTP API (entry: src/main.ts)
+│   ├── api/                    # Express HTTP API (entry: src/main.ts)
+│   │   ├── src/
+│   │   │   ├── main.ts             # boot: loadConfig → connectMongo → ensureGrantIndexes → createApp
+│   │   │   ├── server.ts           # Express app; bearer-gates /grants/*, leaves /oauth/* open@localhost
+│   │   │   ├── config.ts           # zod env schema; callbackUrl() derives the single redirect URI
+│   │   │   ├── grant-registry.ts   # version-controlled per-consumer scope map (the least-privilege source of truth)
+│   │   │   ├── lib/                # logger, errors, encryption (ported), oauth-state (ported + grant-bound), google, auth (bearer), html (shared escapeHtml)
+│   │   │   ├── storage/            # mongo (raw driver, lazy singleton) + grants repository
+│   │   │   └── routes/             # health, oauth (consent), grants (vend), home (inline operator page)
+│   │   ├── tests/              # vitest + supertest + mongodb-memory-server
+│   │   └── tsconfig.build.json # prod build: tsc -p this → dist/ (extends @kagami/tsconfig/server.build.json)
+│   └── dashboard/              # Next.js 16 operator dashboard at https://kao.localhost
 │       ├── src/
-│       │   ├── main.ts             # boot: loadConfig → connectMongo → ensureGrantIndexes → createApp
-│       │   ├── server.ts           # Express app; bearer-gates /grants/*, leaves /oauth/* open@localhost
-│       │   ├── config.ts           # zod env schema; callbackUrl() derives the single redirect URI
-│       │   ├── grant-registry.ts   # version-controlled per-consumer scope map (the least-privilege source of truth)
-│       │   ├── lib/                # logger, errors, encryption (ported), oauth-state (ported + grant-bound), google, auth (bearer)
-│       │   ├── storage/            # mongo (raw driver, lazy singleton) + grants repository
-│       │   └── routes/             # health, oauth (consent), grants (vend), home (inline operator page)
-│       ├── tests/              # vitest + supertest + mongodb-memory-server
-│       └── tsconfig.build.json # prod build: tsc -p this → dist/ (extends @kagami/tsconfig/server.build.json)
+│       │   ├── app/
+│       │   │   ├── layout.tsx          # sidebar shell + Mashiro Daylight fonts
+│       │   │   ├── page.tsx            # grants overview (RSC; reads listGrants)
+│       │   │   ├── grants/[grant]/     # per-grant detail (audit, scopes, Revoke, Token Probe)
+│       │   │   ├── actions.ts          # Server Actions: revokeGrantAction, probeGrantAction
+│       │   │   └── globals.css
+│       │   ├── components/             # sidebar, nav-link, shell/, grant-badge, revoke-button, token-probe
+│       │   └── lib/                    # api (server-side bearer injection), error-hints (shared hintFor), format, utils
+│       ├── tsconfig.json       # extends @kagami/tsconfig/nextjs.json
+│       ├── eslint.config.mjs   # imports from @kagami/eslint-config/next
+│       └── package.json        # portless "kao"; Next 16 + React 19 + Tailwind 4
 ├── packages/                   # reserved for future Kao-only libs (currently empty)
-├── portless.json               # api.kao registration
+├── portless.json               # api.kao + kao registrations
 └── docs/
 ```
 
-There is **no `apps/dashboard`** yet — the standalone pass serves a minimal
-inline-HTML grants page from the API (`GET /`), same pattern as the OAuth
-callback page. A full Next.js dashboard (Mashiro-Daylight, matching siblings)
-is a deferred follow-up.
+The dashboard lives next to the API as `@kao/dashboard`. It exists to surface
+the same operations as the API's inline-HTML operator page — Connect / Revoke
+— plus a **Token Probe** that bypasses Kao's per-grant access-token cache to
+confirm a grant still works against Google. The inline-HTML home (`GET /` on
+the API) stays as a fallback for standalone-API workflows; the dashboard is
+the operator UI in normal local development.
 
 ## Commands
 
 All commands run from the **Kagami workspace root**.
 
 ```bash
-npm run kao:dev                 # @kao/api under Portless (https://api.kao.localhost)
-npm run kao:dev:api             # same (API is the only app)
+npm run kao:dev                 # both Kao apps under Portless (https://api.kao.localhost + https://kao.localhost)
+npm run kao:dev:api             # API only
+npm run kao:dev:dashboard       # Dashboard only
 ./dev-all.sh --only kao         # Kao alone via the multi-service launcher
 
-npx turbo run typecheck --filter=@kao/api
-npx turbo run lint     --filter=@kao/api
-npx turbo run test     --filter=@kao/api
+npx turbo run typecheck --filter="@kao/*"
+npx turbo run lint     --filter="@kao/*"
+npx turbo run test     --filter="@kao/*"
+npx turbo run build    --filter="@kao/*"   # api (tsc → dist/) + dashboard (next build)
 
-cd kao && npx vitest            # all tests via the shared vitest.config.ts
+cd kao && npx vitest            # all API tests via the shared vitest.config.ts
 cd kao && npx vitest --watch
 ```
 

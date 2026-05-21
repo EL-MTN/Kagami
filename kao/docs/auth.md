@@ -28,8 +28,28 @@ So:
 A ≥16-char shared secret consumers present. The check (`src/lib/auth.ts`)
 SHA-256s both the presented and expected token, then `timingSafeEqual`s the
 digests — equal-length, constant-time, no length oracle. Missing, malformed,
-or wrong → `401`. Rotate by updating `KAO_TOKEN` here and in each consumer's
-`.env`, then restarting.
+or wrong → `401`.
+
+### Who holds the bearer
+
+`KAO_TOKEN` lives in env on each party that calls `/grants/*`. As of the
+dashboard pass that ships in this file's history, those are:
+
+- **Kao API** itself (`apps/api/.env`) — the expected value the bearer
+  middleware compares against.
+- **`@kao/dashboard`** (`apps/dashboard/.env`) — the dashboard injects the
+  bearer server-side inside Server Components and Server Actions; it never
+  crosses into the rendered HTML (no `NEXT_PUBLIC_` prefix, no client
+  bundle reads `process.env.KAO_TOKEN`). For threat-model purposes
+  `apps/dashboard/.env` is the same sensitivity level as `apps/api/.env`.
+- **Kokoro** (the only currently-live API consumer; `kokoro/.env`).
+
+### Rotating the bearer
+
+Update **every** `KAO_TOKEN` together — the Kao API, `apps/dashboard/.env`,
+and each consumer's `.env` — then restart all three. The dashboard trims
+whitespace before sending, but a mismatch in any one place produces silent
+`401`s on the vend surface.
 
 ## CSRF state (the OAuth flow's defense)
 

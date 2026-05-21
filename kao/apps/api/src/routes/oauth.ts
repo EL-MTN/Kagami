@@ -10,6 +10,7 @@ import {
   makeClient,
   revokeAtGoogle,
 } from "../lib/google.js";
+import { escapeHtml } from "../lib/html.js";
 import { logger } from "../lib/logger.js";
 import { makeState, verifyState } from "../lib/oauth-state.js";
 import { decrypt, encrypt } from "../lib/encryption.js";
@@ -109,15 +110,26 @@ export function makeOauthRouter(config: Config, db: Db): Router {
     });
     clearAccessTokenCache(grant);
 
+    // Link the operator back to the dashboard (kao.localhost) rather than the
+    // API's inline-HTML home — the dashboard is where they started the flow
+    // and where Revoke / Probe live. Compose with the URL constructor so a
+    // dashboard value with a stray path/query can't slip through and yield a
+    // malformed href (config also rejects those at boot), then HTML-escape
+    // the whole string for the attribute.
+    const dashboardGrantHref = escapeHtml(
+      new URL(`/grants/${encodeURIComponent(grant)}`, config.KAO_DASHBOARD_URL).toString(),
+    );
+    const dashboardRootHref = escapeHtml(new URL("/", config.KAO_DASHBOARD_URL).toString());
     res
       .status(200)
       .type("text/html")
       .send(
         '<!doctype html><meta charset="utf-8"><title>Granted</title>' +
           '<body style="font-family:system-ui;padding:2rem;color:#18181b">' +
-          `<h1 style="font-weight:600">Google access granted for '${grant}' ✓</h1>` +
+          `<h1 style="font-weight:600">Google access granted for '${escapeHtml(grant)}' ✓</h1>` +
           "<p>You can close this window.</p>" +
-          '<p><a href="/">Back to grants</a></p>' +
+          `<p><a href="${dashboardGrantHref}">Back to ${escapeHtml(grant)} in the Kao dashboard</a> · ` +
+          `<a href="${dashboardRootHref}">All grants</a></p>` +
           "</body>",
       );
   });
