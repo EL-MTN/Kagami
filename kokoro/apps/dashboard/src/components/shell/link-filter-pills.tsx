@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export interface LinkFilterOption<T extends string = string> {
+interface LinkFilterOption<T extends string = string> {
   value: T;
   label: string;
   href: string;

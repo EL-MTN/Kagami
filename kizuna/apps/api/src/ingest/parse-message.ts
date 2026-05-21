@@ -1,9 +1,9 @@
 // Pure parser: Gmail "users.messages.get?format=full" JSON → normalized record.
 // No I/O; deterministic; fixture-tested.
 
-export type GmailHeader = { name: string; value: string };
+type GmailHeader = { name: string; value: string };
 
-export type GmailPart = {
+type GmailPart = {
   partId?: string;
   mimeType?: string;
   filename?: string;
@@ -23,7 +23,7 @@ export type GmailMessage = {
 
 export type ParsedAddress = { name: string | null; email: string };
 
-export type ParsedAttachment = {
+type ParsedAttachment = {
   name: string;
   mimeType: string | null;
   size: number | null;

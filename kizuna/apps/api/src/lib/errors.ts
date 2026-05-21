@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import { ZodError } from "zod";
 import { logger } from "./logger.js";
 
-export class HttpError extends Error {
+class HttpError extends Error {
   readonly status: number;
   readonly code: string;
   readonly details?: unknown;

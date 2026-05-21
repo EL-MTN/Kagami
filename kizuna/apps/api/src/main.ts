@@ -2,7 +2,6 @@ import "dotenv/config";
 import { loadConfig } from "./config.js";
 import { logger } from "./lib/logger.js";
 import { connectDb } from "./db/connect.js";
-import "./db/models/index.js";
 import { startIngestScheduler } from "./ingest/scheduler.js";
 import { createApp } from "./server.js";
 

@@ -9,7 +9,7 @@
 //     not yet migrated to Kao; Kizuna still runs its own OAuth)
 //   - kokoro: read Gmail + send + read/write Calendar (migrated; consumer
 //     code at kokoro/apps/bot/src/services/kao-client.ts)
-export const GRANT_REGISTRY = {
+const GRANT_REGISTRY = {
   kizuna: [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/calendar.readonly",
