@@ -192,11 +192,7 @@ export async function deleteWatcher(watcherId: string, chatId?: string): Promise
 }
 
 export async function archiveWatcher(watcherId: string): Promise<void> {
-  await Watcher.findByIdAndUpdate(
-    watcherId,
-    { archivedAt: new Date() },
-    { returnDocument: "before" },
-  );
+  await Watcher.updateOne({ _id: watcherId }, { archivedAt: new Date() });
 }
 
 export async function archiveExpiredWatchers(): Promise<number> {
@@ -222,7 +218,7 @@ export async function getDueWatchers(): Promise<IWatcher[]> {
 }
 
 export async function advanceWatcherNextRunAt(watcherId: string, nextRunAt: Date): Promise<void> {
-  await Watcher.findByIdAndUpdate(watcherId, { nextRunAt }, { returnDocument: "before" });
+  await Watcher.updateOne({ _id: watcherId }, { nextRunAt });
 }
 
 export async function recordWatcherObservation(
@@ -232,13 +228,9 @@ export async function recordWatcherObservation(
   const set: Record<string, unknown> = { lastState: data.newState };
   if (data.triggered) {
     set.lastFiredAt = new Date();
-    await Watcher.findByIdAndUpdate(
-      watcherId,
-      { $set: set, $inc: { fireCount: 1 } },
-      { returnDocument: "before" },
-    );
+    await Watcher.updateOne({ _id: watcherId }, { $set: set, $inc: { fireCount: 1 } });
   } else {
-    await Watcher.findByIdAndUpdate(watcherId, { $set: set }, { returnDocument: "before" });
+    await Watcher.updateOne({ _id: watcherId }, { $set: set });
   }
 }
 
@@ -249,11 +241,7 @@ export async function recordWatcherObservation(
  * forward the observation reference.
  */
 export async function recordWatcherStateOnly(watcherId: string, newState: string): Promise<void> {
-  await Watcher.findByIdAndUpdate(
-    watcherId,
-    { $set: { lastState: newState } },
-    { returnDocument: "before" },
-  );
+  await Watcher.updateOne({ _id: watcherId }, { $set: { lastState: newState } });
 }
 
 export async function requestManualWatcherRun(watcherId: string): Promise<IWatcher | null> {
@@ -304,8 +292,8 @@ export async function completeWatcherLog(
   logId: string,
   data: { triggered: boolean; suppressed?: boolean; summary: string; newState: string },
 ): Promise<void> {
-  await WatcherLog.findByIdAndUpdate(
-    logId,
+  await WatcherLog.updateOne(
+    { _id: logId },
     {
       status: "completed",
       triggered: data.triggered,
@@ -314,19 +302,17 @@ export async function completeWatcherLog(
       newState: data.newState,
       completedAt: new Date(),
     },
-    { returnDocument: "before" },
   );
 }
 
 export async function failWatcherLog(logId: string, reason: string): Promise<void> {
-  await WatcherLog.findByIdAndUpdate(
-    logId,
+  await WatcherLog.updateOne(
+    { _id: logId },
     {
       status: "failed",
       summary: reason,
       completedAt: new Date(),
     },
-    { returnDocument: "before" },
   );
 }
 

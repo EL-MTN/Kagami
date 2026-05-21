@@ -191,7 +191,7 @@ export async function getDueRoutines(): Promise<IRoutine[]> {
 }
 
 export async function advanceRoutineNextRunAt(routineId: string, nextRunAt: Date): Promise<void> {
-  await Routine.findByIdAndUpdate(routineId, { nextRunAt }, { returnDocument: "before" });
+  await Routine.updateOne({ _id: routineId }, { nextRunAt });
 }
 
 export async function requestManualRun(routineId: string): Promise<IRoutine | null> {
@@ -243,26 +243,24 @@ export async function createRoutineLog(
 }
 
 export async function completeRoutineLog(logId: string, summary: string): Promise<void> {
-  await RoutineLog.findByIdAndUpdate(
-    logId,
+  await RoutineLog.updateOne(
+    { _id: logId },
     {
       status: "completed",
       summary,
       completedAt: new Date(),
     },
-    { returnDocument: "before" },
   );
 }
 
 export async function failRoutineLog(logId: string, reason: string): Promise<void> {
-  await RoutineLog.findByIdAndUpdate(
-    logId,
+  await RoutineLog.updateOne(
+    { _id: logId },
     {
       status: "failed",
       summary: reason,
       completedAt: new Date(),
     },
-    { returnDocument: "before" },
   );
 }
 
