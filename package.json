@@ -34,6 +34,7 @@
     "kansoku:dev": "turbo run dev --filter=\"@kansoku/*\"",
     "kansoku:dev:api": "turbo run dev --filter=@kansoku/api",
     "kansoku:dev:dashboard": "turbo run dev --filter=@kansoku/dashboard",
+    "kansoku:debug": "tsx kansoku/scripts/kansoku-debug.ts",
     "kao:dev": "turbo run dev --filter=\"@kao/*\"",
     "kao:dev:api": "turbo run dev --filter=@kao/api",
     "kao:dev:dashboard": "turbo run dev --filter=@kao/dashboard",
