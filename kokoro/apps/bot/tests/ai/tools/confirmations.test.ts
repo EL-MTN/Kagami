@@ -165,7 +165,7 @@ describe("cancelConfirmation tool", () => {
   it("rejects when the confirmation belongs to a different chat", async () => {
     const row = await seedPending();
     const tool = createCancelConfirmationTool("chat-2", fakeAdapter()) as unknown as ExecutableTool;
-    const result = await tool.execute({ confirmationId: row.id as string });
+    const result = await tool.execute({ confirmationId: row.id });
     expect(result).toEqual({
       success: false,
       reason: "confirmation belongs to a different chat",
@@ -176,7 +176,7 @@ describe("cancelConfirmation tool", () => {
     const row = await seedPending();
     await PendingConfirmation.findByIdAndUpdate(row._id, { status: "approved" });
     const tool = createCancelConfirmationTool("chat-1", fakeAdapter()) as unknown as ExecutableTool;
-    const result = await tool.execute({ confirmationId: row.id as string });
+    const result = await tool.execute({ confirmationId: row.id });
     expect(result).toEqual({ success: false, reason: "already approved" });
   });
 
@@ -188,7 +188,7 @@ describe("cancelConfirmation tool", () => {
       adapter,
       // userId omitted
     ) as unknown as ExecutableTool;
-    await tool.execute({ confirmationId: row.id as string });
+    await tool.execute({ confirmationId: row.id });
     expect(mockAppendResolution).toHaveBeenCalledWith(
       "chat-1",
       "chat-1", // fallback
@@ -200,7 +200,7 @@ describe("cancelConfirmation tool", () => {
     const adapter = fakeAdapter();
     const row = await seedPending();
     const tool = createCancelConfirmationTool("chat-1", adapter) as unknown as ExecutableTool;
-    await tool.execute({ confirmationId: row.id as string });
+    await tool.execute({ confirmationId: row.id });
     expect(adapter.calls.editConfirmationPrompt).toEqual([]);
   });
 });

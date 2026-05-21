@@ -12,6 +12,7 @@ export type UsageCategory =
   | "stt-transcription";
 
 export interface ITokenUsage extends Document {
+  id: string;
   timestamp: Date;
   category: UsageCategory;
   modelName: string;

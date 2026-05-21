@@ -354,7 +354,7 @@ peopleRouter.patch("/people/:id", async (req, res) => {
   const doc = await Person.findOneAndUpdate(
     { _id: id, deletedAt: null },
     { $set: body },
-    { new: true, runValidators: true },
+    { returnDocument: "after", runValidators: true },
   ).lean();
   if (!doc) throw errors.notFound("person not found");
   res.json(serializePerson(doc));
@@ -365,7 +365,7 @@ peopleRouter.delete("/people/:id", async (req, res) => {
   const doc = await Person.findOneAndUpdate(
     { _id: id, deletedAt: null },
     { $set: { deletedAt: new Date(), suppressReingest: true } },
-    { new: true },
+    { returnDocument: "after" },
   ).lean();
   if (!doc) throw errors.notFound("person not found");
   res.status(200).json(serializePerson(doc));

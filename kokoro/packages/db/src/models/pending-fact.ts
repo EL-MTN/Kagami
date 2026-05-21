@@ -1,6 +1,7 @@
 import mongoose, { Schema, type Document } from "mongoose";
 
 export interface IPendingFact extends Document {
+  id: string;
   text: string;
   eventDate?: string;
   sourceSession: string;
