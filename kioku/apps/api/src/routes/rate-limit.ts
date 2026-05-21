@@ -18,7 +18,7 @@ export function parseRateLimitPerMinute(
   return parsed.data;
 }
 
-export const kiokuRateLimits = {
+const kiokuRateLimits = {
   windowMs: WINDOW_MS,
   bulkFactsPerMinute: parseRateLimitPerMinute("KIOKU_BULK_RATE_LIMIT_PER_MIN", 10),
   sessionIngestsPerMinute: parseRateLimitPerMinute("KIOKU_SESSION_RATE_LIMIT_PER_MIN", 5),

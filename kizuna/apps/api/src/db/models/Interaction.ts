@@ -1,4 +1,4 @@
-import { Schema, Types, model, type HydratedDocument } from "mongoose";
+import { Schema, Types, model } from "mongoose";
 import { baseSchemaOptions, provenanceFields, type Source } from "./base.js";
 
 export const CHANNEL_VALUES = [
@@ -15,7 +15,7 @@ export const PARTICIPANT_ROLES = ["from", "to", "cc", "attendee", "subject"] as 
 export const INTERACTION_STATUS = ["active", "cancelled"] as const;
 
 export type InteractionChannel = (typeof CHANNEL_VALUES)[number];
-export type ParticipantRole = (typeof PARTICIPANT_ROLES)[number];
+type ParticipantRole = (typeof PARTICIPANT_ROLES)[number];
 export type InteractionStatus = (typeof INTERACTION_STATUS)[number];
 
 export type InteractionParticipant = {
@@ -23,12 +23,12 @@ export type InteractionParticipant = {
   role: ParticipantRole;
 };
 
-export type InteractionSourceRef = {
+type InteractionSourceRef = {
   provider: "gmail" | "gcal";
   id: string;
 };
 
-export type InteractionAttachment = {
+type InteractionAttachment = {
   name: string;
   mimeType?: string;
   size?: number;
@@ -121,4 +121,3 @@ InteractionSchema.index({ title: "text", body: "text" }, { name: "interactions_t
 InteractionSchema.index({ deletedAt: 1 }, { sparse: true });
 
 export const Interaction = model<InteractionAttrs>("Interaction", InteractionSchema);
-export type InteractionDoc = HydratedDocument<InteractionAttrs>;
