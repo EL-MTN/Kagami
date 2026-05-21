@@ -151,7 +151,7 @@ function listFollowupsParams(input: ListFollowupsInput) {
   return params;
 }
 
-export function buildListFollowupsPath(input: ListFollowupsInput = {}) {
+function buildListFollowupsPath(input: ListFollowupsInput = {}) {
   return `/followups?${listFollowupsParams(input).toString()}`;
 }
 

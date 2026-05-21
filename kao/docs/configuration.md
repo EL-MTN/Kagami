@@ -47,11 +47,13 @@ Only one URI is needed because every grant flows through the single
 the Gmail API and Google Calendar API on the project (the union of all grant
 scopes).
 
-> Migration note: Kizuna's existing client registers
-> `https://api.kizuna.localhost/oauth/google/callback` and Kokoro uses the
-> out-of-band redirect. When a consumer is migrated to Kao, its standalone
-> OAuth env (`KIZUNA_OAUTH_ENCRYPTION_KEY`, Kokoro's
-> `GOOGLE_OAUTH_REFRESH_TOKEN`, etc.) is retired in that PR. Not done yet.
+> Migration note: Kokoro is migrated — its `GOOGLE_OAUTH_REFRESH_TOKEN` is
+> retired, and it now reads short-lived access tokens from
+> `${KAO_URL}/grants/kokoro/token` instead of owning a refresh token.
+> Kizuna's cutover is pending: it still runs its own encrypted-Mongo +
+> web-flow OAuth (`https://api.kizuna.localhost/oauth/google/callback`,
+> `KIZUNA_OAUTH_ENCRYPTION_KEY`, etc.), which will be retired when it moves
+> to `${KAO_URL}/grants/kizuna/token`.
 
 ## Portless
 

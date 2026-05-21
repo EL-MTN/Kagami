@@ -47,7 +47,7 @@ export async function readInstruction(name: string): Promise<string | null> {
   return readContextFile(`instructions/${name}.md`);
 }
 
-export async function assemblePromptShell(): Promise<string[]> {
+async function assemblePromptShell(): Promise<string[]> {
   const parts: string[] = [];
   const now = new Date();
 

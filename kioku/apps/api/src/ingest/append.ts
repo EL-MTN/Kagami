@@ -29,7 +29,7 @@ function withAppendLock<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-export interface AppendFactInput {
+interface AppendFactInput {
   text: string;
   event_date?: string; // YYYY-MM-DD; defaults to today
   source_session?: string; // free-form caller-supplied tag
@@ -40,9 +40,9 @@ export interface AppendFactInput {
   category?: string; // optional; not auto-categorized for raw adds
 }
 
-export type AppendStatus = "added" | "duplicate";
+type AppendStatus = "added" | "duplicate";
 
-export interface AppendFactResult {
+interface AppendFactResult {
   id: string;
   status: AppendStatus;
   similarity?: number;

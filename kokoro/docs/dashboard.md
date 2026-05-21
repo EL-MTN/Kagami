@@ -177,7 +177,6 @@ This allows the dashboard to import `@kokoro/db` → `@kokoro/shared` without `p
 | `confirmation-card.tsx`              | Server         | Pending or resolved confirmation row — origin icon, summary, tool name, expandable args/result, expiry countdown or status pill             |
 | `watchers/state-timeline.tsx`        | Server         | Vertical timeline of distinct watcher state observations (collapsed against `prevState`) with triggered/silenced/observation tones          |
 | `stat-card.tsx`                      | Server         | Reusable stats card (icon, label, value)                                                                                                    |
-| `emotional-indicator.tsx`            | Server         | Trend badge (rising/falling/stable)                                                                                                         |
 | `activity-feed.tsx`                  | Server         | Recent conversations + memories interleaved by time                                                                                         |
 | `message-bubble.tsx`                 | Server         | Chat message with role-based styling, tool call display                                                                                     |
 | `pagination.tsx`                     | Server         | Simple prev/next page links                                                                                                                 |

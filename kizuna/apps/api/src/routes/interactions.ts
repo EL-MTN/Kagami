@@ -28,7 +28,7 @@ const AttachmentInput = z
   })
   .strict();
 
-export const InteractionCreateBody = z
+const InteractionCreateBody = z
   .object({
     occurredAt: DateInput,
     channel: z.enum(CHANNEL_VALUES),

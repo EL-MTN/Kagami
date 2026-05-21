@@ -1,0 +1,41 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["dev-all.sh"]
+    },
+    "kioku/apps/api": {
+      "entry": ["src/server.ts"]
+    },
+    "kioku/apps/dashboard": {},
+    "kokoro/apps/bot": {
+      "entry": ["src/index.ts", "build.ts"]
+    },
+    "kokoro/apps/dashboard": {},
+    "kokoro/packages/*": {
+      "entry": ["src/index.ts"]
+    },
+    "kizuna/apps/api": {
+      "entry": ["src/main.ts"]
+    },
+    "kizuna/apps/dashboard": {},
+    "kansoku/apps/api": {
+      "entry": ["src/server.ts"]
+    },
+    "kansoku/apps/dashboard": {},
+    "kao/apps/api": {
+      "entry": ["src/main.ts"]
+    },
+    "shared/packages/llm": {
+      "entry": ["src/index.ts"]
+    },
+    "shared/packages/logger": {
+      "entry": ["src/index.ts"]
+    },
+    "shared/packages/eslint-config": {
+      "entry": ["base.js", "next.js"]
+    }
+  },
+  "ignoreWorkspaces": ["shared/packages/tsconfig"],
+  "ignoreDependencies": ["@kagami/tsconfig"]
+}
