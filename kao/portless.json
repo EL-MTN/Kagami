@@ -1,5 +1,6 @@
 {
   "apps": {
+    "apps/dashboard": { "name": "kao" },
     "apps/api": { "name": "api.kao" }
   }
 }

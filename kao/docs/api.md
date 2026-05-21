@@ -28,8 +28,9 @@ migrating to Kao keeps identical capability — no scope drift.
 ### `GET /`
 
 Inline-HTML operator page: every registry grant with granted/not-granted
-status and a Connect / Re-consent link. Holds no secret. The standalone
-substitute for a Next.js dashboard.
+status and a Connect / Re-consent link. Holds no secret. Fallback for when
+the Next.js dashboard at `https://kao.localhost` isn't running (or hasn't
+been spun up yet on a fresh checkout).
 
 ### `GET /oauth/:grant/start`
 
@@ -47,7 +48,10 @@ Single shared callback. Recovers the grant from the signed state.
 - Google returned no `refresh_token` → `400 bad_request` (re-consent with
   `prompt=consent` required)
 - success → AES-256-GCM-encrypt the refresh token, upsert the grant, clear
-  that grant's access-token cache, return an inline success page.
+  that grant's access-token cache, return an inline success page that links
+  the operator back to `${KAO_DASHBOARD_URL}/grants/:n` (per-grant detail)
+  and `${KAO_DASHBOARD_URL}/` (all grants) so the consent round-trip ends
+  on the dashboard rather than the API's inline `GET /` home.
 
 `prompt=consent` is non-negotiable: Google only returns a `refresh_token` on
 a fresh consent.
