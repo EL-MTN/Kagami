@@ -4,6 +4,7 @@ export type PendingConfirmationStatus = "pending" | "approved" | "denied" | "exp
 export type PendingConfirmationOrigin = "conversation" | "routine" | "watcher";
 
 export interface IPendingConfirmation extends Document {
+  id: string;
   chatId: string;
   summary: string;
   action: {
@@ -87,7 +88,11 @@ export async function getPendingConfirmation(id: string): Promise<IPendingConfir
 }
 
 export async function setPromptMessageId(id: string, messageId: string): Promise<void> {
-  await PendingConfirmation.findByIdAndUpdate(id, { promptMessageId: messageId });
+  await PendingConfirmation.findByIdAndUpdate(
+    id,
+    { promptMessageId: messageId },
+    { returnDocument: "before" },
+  );
 }
 
 /**
@@ -112,12 +117,12 @@ export async function resolvePendingConfirmation(
       resolvedAt: new Date(),
       ...(resultText !== undefined ? { resultText } : {}),
     },
-    { new: true },
+    { returnDocument: "after" },
   );
 }
 
 export async function attachResultText(id: string, resultText: string): Promise<void> {
-  await PendingConfirmation.findByIdAndUpdate(id, { resultText });
+  await PendingConfirmation.findByIdAndUpdate(id, { resultText }, { returnDocument: "before" });
 }
 
 /**

@@ -67,15 +67,15 @@ describe("createRoutine + listRoutinesForChat", () => {
     );
     const b = await createRoutine("chat-1", { ...baseInput, name: "b" });
     const rows = await listRoutinesForChat("chat-1");
-    expect(rows.map((s) => s.id as string)).toEqual([b.id, a.id]);
+    expect(rows.map((s) => s.id)).toEqual([b.id, a.id]);
   });
 });
 
 describe("getRoutineById / getRoutineByName", () => {
   it("getRoutineById is chat-scoped when chatId is supplied", async () => {
     const s = await createRoutine("chat-1", baseInput);
-    expect(await getRoutineById(s.id as string, "chat-1")).not.toBeNull();
-    expect(await getRoutineById(s.id as string, "chat-2")).toBeNull();
+    expect(await getRoutineById(s.id, "chat-1")).not.toBeNull();
+    expect(await getRoutineById(s.id, "chat-2")).toBeNull();
   });
 
   it("getRoutineByName returns null for non-matching chat", async () => {
@@ -87,21 +87,21 @@ describe("getRoutineById / getRoutineByName", () => {
 describe("updateRoutine", () => {
   it("patches and returns the new doc", async () => {
     const s = await createRoutine("chat-1", baseInput);
-    const out = await updateRoutine(s.id as string, { description: "new" });
+    const out = await updateRoutine(s.id, { description: "new" });
     expect(out?.description).toBe("new");
   });
 
   it("respects chatId scoping", async () => {
     const s = await createRoutine("chat-1", baseInput);
-    expect(await updateRoutine(s.id as string, { description: "hijack" }, "chat-2")).toBeNull();
+    expect(await updateRoutine(s.id, { description: "hijack" }, "chat-2")).toBeNull();
   });
 });
 
 describe("deleteRoutine", () => {
   it("removes routine and cascades to its logs", async () => {
     const s = await createRoutine("chat-1", baseInput);
-    await createRoutineLog(s.id as string, "manual");
-    await deleteRoutine(s.id as string);
+    await createRoutineLog(s.id, "manual");
+    await deleteRoutine(s.id);
     expect(await Routine.findById(s.id)).toBeNull();
     expect(await RoutineLog.countDocuments({ routineId: s._id })).toBe(0);
   });
@@ -139,14 +139,14 @@ describe("getDueRoutines + advanceRoutineNextRunAt", () => {
     });
 
     const rows = await getDueRoutines();
-    expect(rows.map((r) => r.id as string)).toEqual([due.id]);
+    expect(rows.map((r) => r.id)).toEqual([due.id]);
   });
 
   it("advanceRoutineNextRunAt patches nextRunAt", async () => {
     const s = await createRoutine("chat-1", { ...baseInput, cronSchedule: "0 * * * *" });
     const target = new Date(Date.now() + 60_000);
-    await advanceRoutineNextRunAt(s.id as string, target);
-    const reloaded = await getRoutineById(s.id as string);
+    await advanceRoutineNextRunAt(s.id, target);
+    const reloaded = await getRoutineById(s.id);
     expect(reloaded?.nextRunAt?.getTime()).toBe(target.getTime());
   });
 });
@@ -154,13 +154,13 @@ describe("getDueRoutines + advanceRoutineNextRunAt", () => {
 describe("manual run lifecycle", () => {
   it("requestManualRun stamps manualRunRequestedAt", async () => {
     const s = await createRoutine("chat-1", baseInput);
-    const out = await requestManualRun(s.id as string);
+    const out = await requestManualRun(s.id);
     expect(out?.manualRunRequestedAt).toBeInstanceOf(Date);
   });
 
   it("claimPendingManualRun is atomic — exactly one concurrent claimer wins", async () => {
     const s = await createRoutine("chat-1", baseInput);
-    await requestManualRun(s.id as string);
+    await requestManualRun(s.id);
     const results = await Promise.all([
       claimPendingManualRun(),
       claimPendingManualRun(),
@@ -168,13 +168,13 @@ describe("manual run lifecycle", () => {
     ]);
     const winners = results.filter((r) => r !== null);
     expect(winners).toHaveLength(1);
-    const reloaded = await getRoutineById(s.id as string);
+    const reloaded = await getRoutineById(s.id);
     expect(reloaded?.manualRunRequestedAt).toBeNull();
   });
 
   it("claimPendingManualRun ignores disabled rows", async () => {
     const s = await createRoutine("chat-1", { ...baseInput, enabled: false });
-    await requestManualRun(s.id as string);
+    await requestManualRun(s.id);
     expect(await claimPendingManualRun()).toBeNull();
   });
 
@@ -187,10 +187,10 @@ describe("manual run lifecycle", () => {
 describe("routine logs", () => {
   it("createRoutineLog → completeRoutineLog roundtrip", async () => {
     const s = await createRoutine("chat-1", baseInput);
-    const log = await createRoutineLog(s.id as string, "cron");
+    const log = await createRoutineLog(s.id, "cron");
     expect(log.status).toBe("running");
-    await completeRoutineLog(log.id as string, "ok");
-    const [reloaded] = await getRoutineLogs(s.id as string);
+    await completeRoutineLog(log.id, "ok");
+    const [reloaded] = await getRoutineLogs(s.id);
     expect(reloaded?.status).toBe("completed");
     expect(reloaded?.summary).toBe("ok");
   });
@@ -198,9 +198,9 @@ describe("routine logs", () => {
   it("createRoutineLog with parentLogId records the parent reference", async () => {
     const parentRoutine = await createRoutine("chat-1", { ...baseInput, name: "parent" });
     const childRoutine = await createRoutine("chat-1", { ...baseInput, name: "child" });
-    const parentLog = await createRoutineLog(parentRoutine.id as string, "manual");
-    const childLog = await createRoutineLog(childRoutine.id as string, "routine", {
-      parentLogId: parentLog.id as string,
+    const parentLog = await createRoutineLog(parentRoutine.id, "manual");
+    const childLog = await createRoutineLog(childRoutine.id, "routine", {
+      parentLogId: parentLog.id,
       parameters: { x: 1 },
     });
     expect(childLog.parentLogId?.toString()).toBe(parentLog._id?.toString());
@@ -209,34 +209,34 @@ describe("routine logs", () => {
 
   it("failRoutineLog records the failure reason", async () => {
     const s = await createRoutine("chat-1", baseInput);
-    const log = await createRoutineLog(s.id as string, "manual");
-    await failRoutineLog(log.id as string, "boom");
-    const [reloaded] = await getRoutineLogs(s.id as string);
+    const log = await createRoutineLog(s.id, "manual");
+    await failRoutineLog(log.id, "boom");
+    const [reloaded] = await getRoutineLogs(s.id);
     expect(reloaded?.status).toBe("failed");
     expect(reloaded?.summary).toBe("boom");
   });
 
   it("isRoutineRunning reflects the running window", async () => {
     const s = await createRoutine("chat-1", baseInput);
-    expect(await isRoutineRunning(s.id as string)).toBe(false);
-    await createRoutineLog(s.id as string, "cron");
-    expect(await isRoutineRunning(s.id as string)).toBe(true);
+    expect(await isRoutineRunning(s.id)).toBe(false);
+    await createRoutineLog(s.id, "cron");
+    expect(await isRoutineRunning(s.id)).toBe(true);
   });
 
   it("isRoutineRunning is false past the 15 min stale threshold", async () => {
     const s = await createRoutine("chat-1", baseInput);
-    const log = await createRoutineLog(s.id as string, "cron");
+    const log = await createRoutineLog(s.id, "cron");
     await RoutineLog.collection.updateOne(
       { _id: log._id },
       { $set: { startedAt: new Date(Date.now() - 20 * 60 * 1000) } },
     );
-    expect(await isRoutineRunning(s.id as string)).toBe(false);
+    expect(await isRoutineRunning(s.id)).toBe(false);
   });
 
   it("resetStaleRunningRoutineLogs flips stale running rows to failed", async () => {
     const s = await createRoutine("chat-1", baseInput);
-    const fresh = await createRoutineLog(s.id as string, "cron");
-    const stale = await createRoutineLog(s.id as string, "cron");
+    const fresh = await createRoutineLog(s.id, "cron");
+    const stale = await createRoutineLog(s.id, "cron");
     await RoutineLog.collection.updateOne(
       { _id: stale._id },
       { $set: { startedAt: new Date(Date.now() - 20 * 60 * 1000) } },
@@ -249,14 +249,14 @@ describe("routine logs", () => {
 
   it("cleanupOldRoutineLogs deletes only non-running old rows", async () => {
     const s = await createRoutine("chat-1", baseInput);
-    const old = await createRoutineLog(s.id as string, "cron");
-    await completeRoutineLog(old.id as string, "ok");
+    const old = await createRoutineLog(s.id, "cron");
+    await completeRoutineLog(old.id, "ok");
     await RoutineLog.collection.updateOne(
       { _id: old._id },
       { $set: { startedAt: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000) } },
     );
-    const recent = await createRoutineLog(s.id as string, "cron");
-    await completeRoutineLog(recent.id as string, "ok");
+    const recent = await createRoutineLog(s.id, "cron");
+    await completeRoutineLog(recent.id, "ok");
     const removed = await cleanupOldRoutineLogs(90);
     expect(removed).toBe(1);
     expect(await RoutineLog.findById(old._id)).toBeNull();

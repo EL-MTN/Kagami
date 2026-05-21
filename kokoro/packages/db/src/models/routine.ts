@@ -32,6 +32,7 @@ const routineParameterSchema = new Schema<IRoutineParameter>(
 export type RoutinePurity = "read" | "action";
 
 export interface IRoutine extends Document {
+  id: string;
   chatId: string;
   name: string;
   description: string;
@@ -86,6 +87,7 @@ export const Routine =
 // --- Routine Log ---
 
 export interface IRoutineLog extends Document {
+  id: string;
   routineId: Types.ObjectId;
   trigger: "cron" | "manual" | "routine";
   parentLogId?: Types.ObjectId;
@@ -167,7 +169,7 @@ export async function updateRoutine(
 ): Promise<IRoutine | null> {
   const filter: Record<string, unknown> = { _id: routineId };
   if (chatId) filter.chatId = chatId;
-  return Routine.findOneAndUpdate(filter, patch, { new: true });
+  return Routine.findOneAndUpdate(filter, patch, { returnDocument: "after" });
 }
 
 export async function deleteRoutine(routineId: string, chatId?: string): Promise<boolean> {
@@ -189,11 +191,15 @@ export async function getDueRoutines(): Promise<IRoutine[]> {
 }
 
 export async function advanceRoutineNextRunAt(routineId: string, nextRunAt: Date): Promise<void> {
-  await Routine.findByIdAndUpdate(routineId, { nextRunAt });
+  await Routine.findByIdAndUpdate(routineId, { nextRunAt }, { returnDocument: "before" });
 }
 
 export async function requestManualRun(routineId: string): Promise<IRoutine | null> {
-  return Routine.findByIdAndUpdate(routineId, { manualRunRequestedAt: new Date() }, { new: true });
+  return Routine.findByIdAndUpdate(
+    routineId,
+    { manualRunRequestedAt: new Date() },
+    { returnDocument: "after" },
+  );
 }
 
 /**
@@ -204,7 +210,7 @@ export async function claimPendingManualRun(): Promise<IRoutine | null> {
   return Routine.findOneAndUpdate(
     { manualRunRequestedAt: { $ne: null }, enabled: true },
     { manualRunRequestedAt: null },
-    { sort: { manualRunRequestedAt: 1 }, new: false },
+    { sort: { manualRunRequestedAt: 1 }, returnDocument: "before" },
   );
 }
 
@@ -237,19 +243,27 @@ export async function createRoutineLog(
 }
 
 export async function completeRoutineLog(logId: string, summary: string): Promise<void> {
-  await RoutineLog.findByIdAndUpdate(logId, {
-    status: "completed",
-    summary,
-    completedAt: new Date(),
-  });
+  await RoutineLog.findByIdAndUpdate(
+    logId,
+    {
+      status: "completed",
+      summary,
+      completedAt: new Date(),
+    },
+    { returnDocument: "before" },
+  );
 }
 
 export async function failRoutineLog(logId: string, reason: string): Promise<void> {
-  await RoutineLog.findByIdAndUpdate(logId, {
-    status: "failed",
-    summary: reason,
-    completedAt: new Date(),
-  });
+  await RoutineLog.findByIdAndUpdate(
+    logId,
+    {
+      status: "failed",
+      summary: reason,
+      completedAt: new Date(),
+    },
+    { returnDocument: "before" },
+  );
 }
 
 export async function getRoutineLogs(routineId: string, limit = 50): Promise<IRoutineLog[]> {

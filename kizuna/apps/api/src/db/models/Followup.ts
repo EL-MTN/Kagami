@@ -27,9 +27,8 @@ const FollowupSchema = new Schema(
   baseSchemaOptions,
 );
 
-FollowupSchema.pre("validate", function setDuePriorityBucket(next) {
+FollowupSchema.pre("validate", function setDuePriorityBucket() {
   this.set("duePriorityBucket", this.get("dueAt") ? 0 : 1);
-  next();
 });
 
 FollowupSchema.index({ status: 1, dueAt: 1 });

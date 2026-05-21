@@ -182,7 +182,7 @@ interactionsRouter.delete("/interactions/:id", async (req, res) => {
   const doc = await Interaction.findOneAndUpdate(
     { _id: id, deletedAt: null },
     { $set: { deletedAt: new Date() } },
-    { new: true },
+    { returnDocument: "after" },
   ).lean();
   if (!doc) throw errors.notFound("interaction not found");
   res.status(200).json(serializeInteraction(doc));

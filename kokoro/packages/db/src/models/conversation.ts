@@ -19,6 +19,7 @@ export interface IMessage {
 }
 
 export interface IConversation extends Document {
+  id: string;
   chatId: string;
   userId: string;
   platform: string;

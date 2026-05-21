@@ -1,6 +1,7 @@
 import mongoose, { Schema, type Document } from "mongoose";
 
 export interface ISchedulerState extends Document {
+  id: string;
   chatId: string;
   nextProactiveAt: Date;
 }
@@ -23,5 +24,9 @@ export async function getNextProactiveAt(chatId: string): Promise<Date | null> {
 }
 
 export async function setNextProactiveAt(chatId: string, nextAt: Date): Promise<void> {
-  await SchedulerState.findOneAndUpdate({ chatId }, { nextProactiveAt: nextAt }, { upsert: true });
+  await SchedulerState.findOneAndUpdate(
+    { chatId },
+    { nextProactiveAt: nextAt },
+    { upsert: true, returnDocument: "before" },
+  );
 }

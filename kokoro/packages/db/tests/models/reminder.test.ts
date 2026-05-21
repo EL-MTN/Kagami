@@ -31,12 +31,12 @@ describe("getPendingReminders", () => {
     const rows = await getPendingReminders();
     expect(rows.map((r) => r.message)).toEqual(["older", "old"]);
     // Sanity:
-    expect(rows.map((r) => r.id as string)).toEqual([past2.id, past.id]);
+    expect(rows.map((r) => r.id)).toEqual([past2.id, past.id]);
   });
 
   it("excludes already-fired reminders", async () => {
     const r = await createReminder("chat-1", "old", new Date(Date.now() - 60_000));
-    await markReminderFired(r.id as string);
+    await markReminderFired(r.id);
     expect(await getPendingReminders()).toEqual([]);
   });
 
@@ -50,7 +50,7 @@ describe("getPendingReminders", () => {
 describe("markReminderFired", () => {
   it("flips fired=true", async () => {
     const r = await createReminder("chat-1", "x", new Date());
-    await markReminderFired(r.id as string);
+    await markReminderFired(r.id);
     const reread = await Reminder.findById(r._id);
     expect(reread?.fired).toBe(true);
   });
@@ -62,10 +62,10 @@ describe("listRemindersForChat", () => {
     const sooner = await createReminder("chat-1", "sooner", new Date("2026-06-01T12:00:00Z"));
     await createReminder("chat-2", "other-chat", new Date("2026-06-01T13:00:00Z"));
     const fired = await createReminder("chat-1", "fired", new Date("2026-06-01T11:00:00Z"));
-    await markReminderFired(fired.id as string);
+    await markReminderFired(fired.id);
 
     const rows = await listRemindersForChat("chat-1");
-    expect(rows.map((r) => r.id as string)).toEqual([sooner.id, later.id]);
+    expect(rows.map((r) => r.id)).toEqual([sooner.id, later.id]);
   });
 
   it("returns [] for a chat with no reminders", async () => {
@@ -81,26 +81,26 @@ describe("getRecentlyFiredReminders", () => {
       "older",
       new Date(Date.now() - 30 * 60 * 60 * 1000),
     );
-    await markReminderFired(recent.id as string);
-    await markReminderFired(older.id as string);
+    await markReminderFired(recent.id);
+    await markReminderFired(older.id);
 
     const rows = await getRecentlyFiredReminders("chat-1", 12);
-    expect(rows.map((r) => r.id as string)).toEqual([recent.id]);
+    expect(rows.map((r) => r.id)).toEqual([recent.id]);
   });
 
   it("scopes to chatId", async () => {
     const a = await createReminder("chat-1", "a", new Date(Date.now() - 60_000));
     const b = await createReminder("chat-2", "b", new Date(Date.now() - 60_000));
-    await markReminderFired(a.id as string);
-    await markReminderFired(b.id as string);
-    expect((await getRecentlyFiredReminders("chat-1")).map((r) => r.id as string)).toEqual([a.id]);
+    await markReminderFired(a.id);
+    await markReminderFired(b.id);
+    expect((await getRecentlyFiredReminders("chat-1")).map((r) => r.id)).toEqual([a.id]);
   });
 });
 
 describe("deleteReminder", () => {
   it("returns true for an existing row, removes it", async () => {
     const r = await createReminder("chat-1", "x", new Date());
-    expect(await deleteReminder(r.id as string)).toBe(true);
+    expect(await deleteReminder(r.id)).toBe(true);
     expect(await Reminder.findById(r._id)).toBeNull();
   });
 
@@ -116,9 +116,9 @@ describe("cleanupFiredReminders", () => {
       "old",
       new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
     );
-    await markReminderFired(old.id as string);
+    await markReminderFired(old.id);
     const recent = await createReminder("chat-1", "recent", new Date(Date.now() - 60_000));
-    await markReminderFired(recent.id as string);
+    await markReminderFired(recent.id);
     const oldUnfired = await createReminder(
       "chat-1",
       "old-but-unfired",
