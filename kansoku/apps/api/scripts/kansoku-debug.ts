@@ -23,9 +23,12 @@
 //
 // Examples:
 //   npm run kansoku:debug -- trace 7a4e9b3c5d6f1a8e2b0c4d5f6a7b8c9d
-//   npm run kansoku:debug -- logs --service kokoro --level error --limit 50
-//   npm run kansoku:debug -- errors --service kioku
+//   npm run kansoku:debug -- logs --service kokoro-bot --level error --limit 50
+//   npm run kansoku:debug -- errors --service kioku-api
 //   npm run kansoku:debug -- services --window 6
+//
+// Note: --service is an exact-match filter, not a prefix. Use the full
+// stored name: kokoro-bot, kioku-api, kizuna-api, kansoku-api, kao-api.
 //
 // Notes:
 // - Query endpoints are currently unauthenticated. Acceptable today because
@@ -112,9 +115,12 @@ Subcommands:
 
 Examples:
   npm run kansoku:debug -- trace 7a4e9b3c5d6f1a8e2b0c4d5f6a7b8c9d
-  npm run kansoku:debug -- logs --service kokoro --level error --limit 50
-  npm run kansoku:debug -- errors --service kioku
+  npm run kansoku:debug -- logs --service kokoro-bot --level error --limit 50
+  npm run kansoku:debug -- errors --service kioku-api
   npm run kansoku:debug -- services --window 6
+
+Service names are exact-match (no prefix):
+  kokoro-bot, kioku-api, kizuna-api, kansoku-api, kao-api
 `;
   process.stdout.write(text);
   process.exit(exitCode);

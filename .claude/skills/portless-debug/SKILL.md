@@ -74,7 +74,7 @@ Node uses its own bundled CA list, NOT the macOS keychain. So `fetch("https://ap
 
 Three workarounds, in order of preference:
 
-1. **Per-request TLS bypass via `node:https`** — preferred. Disable verification only on the request, scoped to `.localhost` hosts. Pattern (see `kansoku/scripts/kansoku-debug.ts` for a complete example):
+1. **Per-request TLS bypass via `node:https`** — preferred. Disable verification only on the request, scoped to `.localhost` hosts. Pattern (see `kansoku/apps/api/scripts/kansoku-debug.ts` for a complete example):
    ```ts
    import https from "node:https";
    https.request({ hostname, path, rejectUnauthorized: false }, ...);
