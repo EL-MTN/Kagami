@@ -7,7 +7,8 @@
 //   npm run kansoku:debug -- <subcommand> [...]
 //
 // Subcommands:
-//   trace <traceId>                       Full trace (waterfall + log timeline)
+//   trace <traceId>                       Full trace by 32-hex-char ID
+//                                         (waterfall + log timeline)
 //   logs [filters]                        Search logs
 //     --service S  --level L  --since ISO  --until ISO
 //     --limit N (default 100, max 1000)
@@ -617,7 +618,14 @@ async function main(): Promise<void> {
         usage(2);
     }
   } catch (err) {
-    process.stderr.write(`kansoku-debug: ${(err as Error).message}\n`);
+    const e = err as Error & { cause?: unknown };
+    process.stderr.write(`kansoku-debug: ${e.message}\n`);
+    // Surface the wrapped cause if present (apiGet attaches the underlying
+    // network or SyntaxError via { cause: err }). Stack traces get noisy on
+    // a CLI; print just the cause message.
+    if (e.cause instanceof Error) {
+      process.stderr.write(`  caused by: ${e.cause.message}\n`);
+    }
     process.exit(1);
   }
 }
