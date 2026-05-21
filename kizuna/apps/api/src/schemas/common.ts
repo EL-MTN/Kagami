@@ -4,8 +4,6 @@ export const ObjectIdString = z.string().regex(/^[a-f0-9]{24}$/i, "must be a 24-
 
 export const IdParam = z.object({ id: ObjectIdString });
 
-export const ISODateString = z.string().datetime({ offset: true });
-
 export const DateInput = z
   .string()
   .min(1)

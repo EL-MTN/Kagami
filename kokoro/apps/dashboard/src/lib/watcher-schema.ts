@@ -24,8 +24,6 @@ export const watcherCreateSchema = z.object({
   cooldownMs: z.number().int().nonnegative().nullable().default(null),
 });
 
-export type WatcherCreateInput = z.infer<typeof watcherCreateSchema>;
-
 // --- Patch ---
 
 export const watcherPatchSchema = z.object({
@@ -46,11 +44,9 @@ export const watcherPatchSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
-export type WatcherPatchInput = z.infer<typeof watcherPatchSchema>;
-
 // --- Export/Import ---
 
-export const watcherImportItemSchema = z.object({
+const watcherImportItemSchema = z.object({
   name: z
     .string()
     .min(1)
@@ -65,8 +61,6 @@ export const watcherImportItemSchema = z.object({
   expiresAt: isoDatetime.nullable().default(null),
   enabled: z.boolean().default(true),
 });
-
-export type WatcherImportItem = z.infer<typeof watcherImportItemSchema>;
 
 export const watcherExportBundleSchema = z.object({
   version: z.literal(1),

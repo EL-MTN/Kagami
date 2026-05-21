@@ -198,7 +198,7 @@ const PROPER_RE =
 const QUOTED_RE =
   /"([^"\n]+)"|[“”]([^“”\n]+)[“”]|‘([^’\n]+)’|(?<=^|[\s([])'([^'\n]+?)'(?=$|[\s).,!?;:\]])/g;
 
-export type EntityType = "PROPER" | "QUOTED";
+type EntityType = "PROPER" | "QUOTED";
 export interface Entity {
   type: EntityType;
   text: string;

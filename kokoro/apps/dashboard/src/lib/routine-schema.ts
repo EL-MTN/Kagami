@@ -4,7 +4,7 @@ import { z } from "zod";
 
 export const routineParameterTypes = ["string", "number", "boolean", "array", "object"] as const;
 
-export const routineParameterSchema = z.object({
+const routineParameterSchema = z.object({
   name: z.string().min(1, "Parameter name is required"),
   type: z.enum(routineParameterTypes),
   description: z.string().min(1, "Parameter description is required"),
@@ -43,8 +43,6 @@ export const routineCreateSchema = z
     },
   );
 
-export type RoutineCreateInput = z.infer<typeof routineCreateSchema>;
-
 // --- Patch ---
 
 export const routinePatchSchema = z
@@ -77,11 +75,9 @@ export const routinePatchSchema = z
     },
   );
 
-export type RoutinePatchInput = z.infer<typeof routinePatchSchema>;
-
 // --- Export/Import ---
 
-export const routineImportItemSchema = z.object({
+const routineImportItemSchema = z.object({
   name: z
     .string()
     .min(1)
@@ -95,8 +91,6 @@ export const routineImportItemSchema = z.object({
   purity: z.enum(["read", "action"]).default("action"),
   enabled: z.boolean().default(true),
 });
-
-export type RoutineImportItem = z.infer<typeof routineImportItemSchema>;
 
 export const routineExportBundleSchema = z.object({
   version: z.literal(1),
