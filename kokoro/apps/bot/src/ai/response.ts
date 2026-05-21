@@ -1,9 +1,8 @@
-import type { StepResult } from "ai";
+import type { StepResult, ToolSet } from "ai";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { logger } from "@kokoro/shared";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Step = StepResult<any>;
+type Step = StepResult<ToolSet>;
 
 /**
  * Walk steps in reverse to find the last one with text.
