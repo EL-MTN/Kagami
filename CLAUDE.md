@@ -139,6 +139,8 @@ npm run kao:dev:api
 npm run kao:dev:dashboard
 
 # Project-specific scripts
+npm run kansoku:debug -- <subcommand>   # read-only Kansoku CLI for agents
+                                        # (trace | logs | errors | services)
 ```
 
 `npm install` is hoisted at the Kagami root. There is no per-project `package.json` and no per-project `node_modules` install step.

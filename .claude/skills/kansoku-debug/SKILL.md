@@ -35,17 +35,21 @@ Override the base URL via `--url <baseUrl>` or the `KANSOKU_URL` env var if you 
 All commands run from the Kagami workspace root. Pass `--` before flags so npm doesn't eat them.
 
 ```bash
-# Fetch one trace by its 32-hex-char ID. Shows waterfall + log timeline + error stacks.
+# Fetch one trace by its 32-hex-char ID. Shows waterfall + log timeline.
+# Error fields (type, message, stack) appear inline in the timeline,
+# truncated at 240 chars per log line.
 npm run kansoku:debug -- trace <traceId>
 
 # Search logs. Any subset of filters; --since/--until are ISO timestamps.
-# --service: kokoro-bot | kioku-api | kizuna-api | kansoku-api | kao-api (or matching prefix)
+# --service: exact match on the stored service name. Valid values:
+#            kokoro-bot | kioku-api | kizuna-api | kansoku-api | kao-api.
 # --level:   trace | debug | info | warn | error | fatal
 npm run kansoku:debug -- logs --service kokoro-bot --level error --limit 100
 npm run kansoku:debug -- logs --since 2026-05-20T14:00:00Z --until 2026-05-20T15:00:00Z
 
-# Fingerprinted error registry. Each row carries `recentTraceIds` (up to 20)
-# so you can pivot straight to `trace <id>`.
+# Fingerprinted error registry. Server stores up to 20 recent trace IDs per
+# fingerprint; the pretty-printed output shows the last 5 — use --json to
+# see all of them.
 npm run kansoku:debug -- errors --service kioku-api
 
 # Per-service summary: counts of logs / errors / warns in a window.
@@ -82,8 +86,8 @@ npm run kansoku:debug -- trace <id> --json | jq '.spans'
 ## Interpreting the output
 
 - **Waterfall**: each bar's offset = wall-clock start within the trace, width = duration. `=` is healthy, `!` means the span ended in error. The "real" tag means spans came from `runWithSpan` lifecycle events; "log-derived" means durations were approximated from log min/max timestamps.
-- **Service names** follow `<workspace>-<component>`: `kokoro-bot`, `kioku-api`, `kizuna-api`, `kansoku-api`, `kao-api`. The `--service` filter wants the full name.
-- **Trace ID format**: 32 lowercase hex chars. Anything else gets rejected with `invalid_trace_id`.
+- **Service names** follow `<workspace>-<component>`: `kokoro-bot`, `kioku-api`, `kizuna-api`, `kansoku-api`, `kao-api`. The `--service` filter is exact-match (no prefix), so a bare `kokoro` returns nothing.
+- **Trace ID format**: 32 hex chars, case-insensitive (server normalizes to lowercase). The CLI rejects malformed IDs locally with `trace: invalid trace id (must be 32 hex chars): <id>` on stderr; the API would return `{error: "invalid_trace_id"}` if the regex were ever bypassed.
 - **Retention**: time-series TTL defaults to 30 days. Older traces are gone — Mongo expired them. If `trace <id>` returns "no records found", retention is the likely cause.
 - **Fingerprints**: 16 hex chars. The errors registry deduplicates by fingerprint, so `count > 1` means recurrence.
 
@@ -91,7 +95,7 @@ npm run kansoku:debug -- trace <id> --json | jq '.spans'
 
 - **404 from Portless** (HTML body): API isn't running. `npm run kansoku:dev:api`.
 - **`Network failure ... ECONNREFUSED`**: API process died. Restart it.
-- **`invalid_trace_id`**: the ID isn't 32 hex chars. Check whether you copied a span ID (16 chars) or a fingerprint (16 chars) by mistake.
+- **`trace: invalid trace id (must be 32 hex chars)`**: the ID isn't 32 hex chars. Check whether you copied a span ID (16 chars) or a fingerprint (16 chars) by mistake.
 - **Empty trace result on a known-real ID**: TTL evicted it. Tell the user the trace is past retention.
 
 ## Output discipline

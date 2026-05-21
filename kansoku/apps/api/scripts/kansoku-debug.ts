@@ -28,7 +28,9 @@
 //   npm run kansoku:debug -- services --window 6
 //
 // Notes:
-// - Query endpoints are currently unauthenticated; no token is required.
+// - Query endpoints are currently unauthenticated. Acceptable today because
+//   the API only binds to 127.0.0.1 under Portless. Before any VPS exposure
+//   the read surface must be gated — see ARCHITECTURE.md.
 // - Portless serves the API behind a locally-trusted CA that Node does NOT
 //   include in its bundled CA list. For *.localhost targets we issue requests
 //   through node:https with rejectUnauthorized:false (request-scoped, not
@@ -123,6 +125,13 @@ interface ParsedArgs {
   flags: Record<string, string | boolean>;
 }
 
+// Flags that take no value. Listed explicitly because the parser otherwise
+// has no way to tell `--json trace <id>` (where `trace` is the subcommand,
+// not the flag's value) from `--service kokoro-bot` (where the next token
+// IS the value). Without this set, `--json trace <id>` would silently turn
+// into flags.json="trace" and the subcommand would be lost.
+const BOOLEAN_FLAGS: ReadonlySet<string> = new Set(["json"]);
+
 function parseArgs(argv: string[]): ParsedArgs {
   const positional: string[] = [];
   const flags: Record<string, string | boolean> = {};
@@ -130,6 +139,10 @@ function parseArgs(argv: string[]): ParsedArgs {
     const a = argv[i]!;
     if (a.startsWith("--")) {
       const key = a.slice(2);
+      if (BOOLEAN_FLAGS.has(key)) {
+        flags[key] = true;
+        continue;
+      }
       const next = argv[i + 1];
       if (next !== undefined && !next.startsWith("--")) {
         flags[key] = next;
