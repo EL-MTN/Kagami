@@ -1,5 +1,3 @@
-export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal" | (string & {});
-
 export function formatTimestamp(input: string | Date): string {
   const d = typeof input === "string" ? new Date(input) : input;
   const hh = String(d.getHours()).padStart(2, "0");

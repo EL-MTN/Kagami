@@ -8,7 +8,7 @@ import { errors } from "../lib/errors.js";
 import { serializeOrganization } from "../lib/serialize.js";
 import { BoolFlag, IdParam, Pagination } from "../schemas/common.js";
 
-export const OrganizationCreateBody = z
+const OrganizationCreateBody = z
   .object({
     name: z.string().min(1),
     domain: z.string().toLowerCase().optional(),
@@ -18,9 +18,9 @@ export const OrganizationCreateBody = z
   })
   .strict();
 
-export const OrganizationUpdateBody = OrganizationCreateBody.partial().strict();
+const OrganizationUpdateBody = OrganizationCreateBody.partial().strict();
 
-export const ListOrganizationsQuery = Pagination.extend({
+const ListOrganizationsQuery = Pagination.extend({
   query: z.string().optional(),
   domain: z.string().toLowerCase().optional(),
   source: z.enum(SOURCE_VALUES).optional(),

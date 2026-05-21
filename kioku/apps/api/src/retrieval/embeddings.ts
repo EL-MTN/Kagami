@@ -25,7 +25,7 @@ export interface MemoryFilters {
   metadata?: Record<string, string | number | boolean>;
 }
 
-export interface RankerOptions {
+interface RankerOptions {
   filters?: MemoryFilters;
 }
 

@@ -178,7 +178,7 @@ function parseEnvelope(obj: unknown): ParseResult {
 // Permissive on the wire (either shape, passthrough); the real contract is
 // enforced in `parseEnvelope` so a malformed batch still fails closed with
 // 400 rather than throwing a 500 out of the normalizer.
-export const LogEnvelope = z
+const LogEnvelope = z
   .object({})
   .passthrough()
   .superRefine((obj, ctx) => {

@@ -25,14 +25,9 @@
     "@kokoro/memory": "*",
     "@kokoro/shared": "*",
     "ai": "^6.0.175",
-    "cron-parser": "^5.5.0",
     "date-fns": "^4.1.0",
-    "dotenv": "^17.4.2",
     "googleapis": "^171.4.0",
     "grammy": "^1.42.0",
-    "gray-matter": "^4.0.3",
-    "mongoose": "^8.9.0",
-    "pino": "^10.3.1",
     "zod": "^4.0.0"
   },
   "devDependencies": {

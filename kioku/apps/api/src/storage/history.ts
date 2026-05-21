@@ -14,7 +14,7 @@ import { getDb } from "./mongo.js";
 // Indexed by { memory_id, created_at desc } via ensureIndexes() so a
 // fact's full journal is one cheap range scan.
 
-export type HistoryEventKind = "ADD" | "UPDATE" | "DELETE";
+type HistoryEventKind = "ADD" | "UPDATE" | "DELETE";
 
 interface HistoryEvent {
   id: string;

@@ -2,7 +2,12 @@ import { randomBytes } from "node:crypto";
 import type { Express } from "express";
 import { loadConfig } from "../../src/config.js";
 import { connectDb, type DbHandle } from "../../src/db/connect.js";
-import "../../src/db/models/index.js";
+import "../../src/db/models/Person.js";
+import "../../src/db/models/Organization.js";
+import "../../src/db/models/Interaction.js";
+import "../../src/db/models/Followup.js";
+import "../../src/db/models/SyncState.js";
+import "../../src/db/models/OAuthToken.js";
 import { createApp } from "../../src/server.js";
 import { SHARED_MONGO_URI_ENV } from "../global-setup.js";
 

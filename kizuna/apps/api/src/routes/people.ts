@@ -17,7 +17,7 @@ const Birthday = z.union([
 
 const HandlesInput = z.record(z.string(), z.string());
 
-export const PersonCreateBody = z
+const PersonCreateBody = z
   .object({
     displayName: z.string().min(1),
     primaryEmail: z.string().email().toLowerCase().optional(),
@@ -32,9 +32,9 @@ export const PersonCreateBody = z
   })
   .strict();
 
-export const PersonUpdateBody = PersonCreateBody.partial().strict();
+const PersonUpdateBody = PersonCreateBody.partial().strict();
 
-export const ListPeopleQuery = Pagination.extend({
+const ListPeopleQuery = Pagination.extend({
   query: z.string().optional(),
   identityQuery: z.string().trim().min(1).max(200).optional(),
   orgId: ObjectIdString.optional(),
