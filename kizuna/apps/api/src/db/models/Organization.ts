@@ -17,4 +17,3 @@ OrganizationSchema.index({ domain: 1 }, { unique: true, sparse: true });
 OrganizationSchema.index({ deletedAt: 1 }, { sparse: true });
 
 export const Organization = model("Organization", OrganizationSchema);
-export type OrganizationDoc = ReturnType<(typeof Organization)["hydrate"]>;

@@ -1,6 +1,6 @@
 "use client";
 
-export interface FilterPillOption<T extends string = string> {
+interface FilterPillOption<T extends string = string> {
   value: T;
   label: string;
   /** Optional count badge shown after label. */

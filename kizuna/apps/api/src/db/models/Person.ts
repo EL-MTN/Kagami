@@ -39,4 +39,3 @@ PersonSchema.index({ displayName: "text", notes: "text", tags: "text" }, { name:
 PersonSchema.index({ deletedAt: 1 }, { sparse: true });
 
 export const Person = model("Person", PersonSchema);
-export type PersonDoc = ReturnType<(typeof Person)["hydrate"]>;

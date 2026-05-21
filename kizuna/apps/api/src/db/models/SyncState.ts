@@ -23,4 +23,3 @@ const SyncStateSchema = new Schema(
 SyncStateSchema.index({ deletedAt: 1 }, { sparse: true });
 
 export const SyncState = model("SyncState", SyncStateSchema);
-export type SyncStateDoc = ReturnType<(typeof SyncState)["hydrate"]>;

@@ -15,4 +15,3 @@ const OAuthTokenSchema = new Schema(
 OAuthTokenSchema.index({ deletedAt: 1 }, { sparse: true });
 
 export const OAuthToken = model("OAuthToken", OAuthTokenSchema);
-export type OAuthTokenDoc = ReturnType<(typeof OAuthToken)["hydrate"]>;
