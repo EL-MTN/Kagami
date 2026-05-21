@@ -38,7 +38,7 @@ export async function getPendingReminders(): Promise<IReminder[]> {
 }
 
 export async function markReminderFired(reminderId: string): Promise<void> {
-  await Reminder.findByIdAndUpdate(reminderId, { fired: true }, { returnDocument: "before" });
+  await Reminder.updateOne({ _id: reminderId }, { fired: true });
 }
 
 export async function listRemindersForChat(chatId: string): Promise<IReminder[]> {

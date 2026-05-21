@@ -24,9 +24,5 @@ export async function getNextProactiveAt(chatId: string): Promise<Date | null> {
 }
 
 export async function setNextProactiveAt(chatId: string, nextAt: Date): Promise<void> {
-  await SchedulerState.findOneAndUpdate(
-    { chatId },
-    { nextProactiveAt: nextAt },
-    { upsert: true, returnDocument: "before" },
-  );
+  await SchedulerState.updateOne({ chatId }, { nextProactiveAt: nextAt }, { upsert: true });
 }

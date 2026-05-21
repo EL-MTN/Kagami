@@ -88,11 +88,7 @@ export async function getPendingConfirmation(id: string): Promise<IPendingConfir
 }
 
 export async function setPromptMessageId(id: string, messageId: string): Promise<void> {
-  await PendingConfirmation.findByIdAndUpdate(
-    id,
-    { promptMessageId: messageId },
-    { returnDocument: "before" },
-  );
+  await PendingConfirmation.updateOne({ _id: id }, { promptMessageId: messageId });
 }
 
 /**
@@ -122,7 +118,7 @@ export async function resolvePendingConfirmation(
 }
 
 export async function attachResultText(id: string, resultText: string): Promise<void> {
-  await PendingConfirmation.findByIdAndUpdate(id, { resultText }, { returnDocument: "before" });
+  await PendingConfirmation.updateOne({ _id: id }, { resultText });
 }
 
 /**
