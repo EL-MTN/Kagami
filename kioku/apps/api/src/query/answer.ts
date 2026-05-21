@@ -17,12 +17,12 @@ import { logger } from "../logger.js";
 // <mem_thinking>...</mem_thinking> reasoning block which we strip
 // before returning.
 
-export interface QueryResult {
+interface QueryResult {
   answer: string;
   citations: string[];
 }
 
-export interface QueryDeps {
+interface QueryDeps {
   factRank?: FactRanker;
   topK?: number;
   filters?: MemoryFilters;

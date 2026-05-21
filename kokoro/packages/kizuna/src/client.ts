@@ -38,7 +38,7 @@ function baseUrl(): string {
   return config.KIZUNA_URL.replace(/\/+$/, "");
 }
 
-export function createKizunaDeadline(): Deadline {
+function createKizunaDeadline(): Deadline {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), KIZUNA_TIMEOUT_MS);
   return {

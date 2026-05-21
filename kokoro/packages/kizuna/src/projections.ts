@@ -8,9 +8,9 @@ import type {
   PersonWire,
 } from "./schemas";
 
-export const EXCERPT_MAX_CHARS = 600;
+const EXCERPT_MAX_CHARS = 600;
 
-export function excerpt(value: string | null | undefined, maxChars = EXCERPT_MAX_CHARS) {
+function excerpt(value: string | null | undefined, maxChars = EXCERPT_MAX_CHARS) {
   const normalized = (value ?? "").replace(/\s+/g, " ").trim();
   if (!normalized) return { excerpt: null, truncated: false };
   return {

@@ -22,19 +22,19 @@ export interface RankedFact extends Fact {
   entity_boost?: number;
 }
 
-export interface FactsListResponse {
+interface FactsListResponse {
   total: number;
   limit: number;
   offset: number;
   facts: Fact[];
 }
 
-export interface RecallResponse {
+interface RecallResponse {
   facts: RankedFact[];
   total: number;
 }
 
-export interface QueryResponse {
+interface QueryResponse {
   answer: string;
   citations?: string[];
   /** Optional — populated only if the backend has been extended to return supporting facts. */

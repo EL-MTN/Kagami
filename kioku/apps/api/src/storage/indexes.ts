@@ -365,7 +365,7 @@ function isSearchUnsupportedError(err: unknown): boolean {
   );
 }
 
-export interface EnsureIndexesOptions {
+interface EnsureIndexesOptions {
   // When true, skip $search/$vectorSearch index creation if the server
   // doesn't support them (vanilla mongo / mongodb-memory-server). Default
   // false — production must have atlas-local.

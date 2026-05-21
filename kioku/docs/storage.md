@@ -117,7 +117,7 @@ Embeddings are projected out by `routes/facts.ts::publicFact` on list/detail res
 
 #### Writes
 
-- `appendFacts(facts, actor?)` — `insertMany({ ordered: false })`. Tolerates code-11000 duplicate-key errors. Records ADD events via `recordEvents` only for indices Mongo confirmed inserted (`insertedIds` keyed by input index — surviving partial-failure semantics).
+- `appendFacts(facts, actor?)` — `insertMany({ ordered: false })`, then records an ADD event in `history` for every input fact via `recordEvents`. There is no storage-layer dedup index (dedup is enforced upstream by cosine checks in `append.ts` / `consolidate.ts`), so a duplicate-key error here would be an `_id` collision — a programming error worth surfacing rather than swallowing.
 
 ### `entities`
 

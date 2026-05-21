@@ -8,7 +8,7 @@ import { clearAccessTokenCache, getAccessToken } from "./kao-client";
 // self-healing retry for the case where Google revokes Kokoro's access
 // mid-cache-window (operator pulled the plug at Google, token rotated).
 
-export async function getGoogleAuth(
+async function getGoogleAuth(
   options: { force?: boolean } = {},
 ): Promise<InstanceType<typeof google.auth.OAuth2>> {
   const { accessToken } = await getAccessToken(options);

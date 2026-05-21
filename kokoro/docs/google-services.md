@@ -161,7 +161,6 @@ When `KAO_URL` (and `KAO_TOKEN`) are configured:
 
 - Four new tools are added to `allTools()` (`apps/bot/src/ai/tools/index.ts`)
 - The maid-service instructions in `apps/bot/context/instructions/maid-service.md` are loaded by `assemblePromptShell()` (`apps/bot/src/ai/context-assembler.ts`) and injected into the system prompt
-- The curator formats tool calls for the new tools (`apps/bot/src/memory/curator.ts`)
 
 When `KAO_URL` is NOT configured, none of the above happens — the bot operates normally without maid capabilities. The same gate also drives a "no external observation tools" warning when creating watchers (`apps/bot/src/ai/tools/watchers.ts`).
 
