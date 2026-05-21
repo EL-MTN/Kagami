@@ -17,7 +17,7 @@
     "@kagami/logger": "*",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "google-auth-library": "^9.15.0",
+    "google-auth-library": "^10.6.2",
     "mongodb": "^7.2.0",
     "zod": "^4.0.0"
   },
