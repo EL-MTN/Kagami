@@ -36,8 +36,9 @@ All commands run from the Kagami workspace root. Pass `--` before flags so npm d
 
 ```bash
 # Fetch one trace by its 32-hex-char ID. Shows waterfall + log timeline.
-# Error fields (type, message, stack) appear inline in the timeline,
-# truncated at 240 chars per log line.
+# Error fields (type, message, stack) appear inline in the timeline; the
+# per-line extra-fields JSON blob is capped at 240 chars (rest of the line
+# — timestamp, level, service, span, msg — is unaffected).
 npm run kansoku:debug -- trace <traceId>
 
 # Search logs. Any subset of filters; --since/--until are ISO timestamps.
