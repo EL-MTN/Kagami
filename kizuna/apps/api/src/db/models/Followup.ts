@@ -45,4 +45,3 @@ FollowupSchema.index(
 FollowupSchema.index({ deletedAt: 1 }, { sparse: true });
 
 export const Followup = model("Followup", FollowupSchema);
-export type FollowupDoc = ReturnType<(typeof Followup)["hydrate"]>;

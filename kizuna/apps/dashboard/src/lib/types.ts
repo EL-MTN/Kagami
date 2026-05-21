@@ -86,7 +86,7 @@ export type Followup = {
   updatedAt: string;
 };
 
-export type DigestPerson = {
+type DigestPerson = {
   id: string;
   displayName: string;
   primaryEmail: string | null;
