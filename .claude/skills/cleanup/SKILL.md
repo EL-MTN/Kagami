@@ -53,10 +53,10 @@ Use the `Agent` tool with `subagent_type: "general-purpose"`, sending all calls 
 
 Each subagent's prompt should include:
 
-- The slice of the knip JSON that pertains to its project (filter by `path` prefix)
-- An instruction to run the doc scanner: `node .claude/skills/cleanup/scripts/doc-scan.mjs <projectRoot>`
+- The slice of the knip JSON that pertains to its project (filter by `path` prefix), pre-written to `/tmp/knip-<project>.json`
+- An instruction to run the doc scanner: `node .claude/skills/cleanup/scripts/doc-scan.mjs <projectRoot>` (or pre-write its output to `/tmp/doc-scan-<project>.json`)
 - The verification checklist below
-- The output contract: write findings to `.claude/reports/_partial-<project>.md` and return a short summary
+- **The output contract**: return findings inline as the final assistant message, in the per-project Markdown shape shown in step 4. Subagents may not be able to write to `.claude/reports/` (sandbox), and the main agent aggregates everything anyway — keep all output in the response body.
 
 #### Subagent verification checklist
 
@@ -74,9 +74,9 @@ Confidence ratings the subagent should attach to each finding:
 - **MEDIUM** — knip says unused, but it's an exported symbol from a `shared/*` package, OR a file that _might_ be dynamically loaded. Needs human eyes.
 - **LOW** — heuristic hit, but the subagent isn't confident.
 
-### 4. Aggregate — main agent merges partials into the final report
+### 4. Aggregate — main agent merges subagent replies into the final report
 
-After all subagents return, read `.claude/reports/_partial-<project>.md` for each project and assemble them into `.claude/reports/dead-code-YYYY-MM-DD.md` with this structure:
+After all subagents return, parse the findings out of each one's reply text and assemble them into `.claude/reports/dead-code-YYYY-MM-DD.md` with this structure:
 
 ```markdown
 # Dead code & doc rot — <date>
@@ -111,7 +111,7 @@ After all subagents return, read `.claude/reports/_partial-<project>.md` for eac
 Re-run with `/cleanup --apply` to delete HIGH-confidence findings automatically.
 ```
 
-Then delete the partial files.
+(There are no partial files to delete — subagents return inline.)
 
 ### 5. Apply mode (only if invoked with `--apply`)
 
@@ -151,3 +151,18 @@ End with a 1-2 sentence summary: total HIGH/MEDIUM/LOW counts, where the report 
 
 - New microservice → add a `workspaces["<project>/apps/foo"]` entry to `knip.json` naming the real entrypoint (knip's auto-detect handles Next.js / Vitest but not custom server `main.ts` / `server.ts` names).
 - Tweak doc-scanner heuristics (extension list, identifier shape, exclusions) directly in `doc-scan.mjs`. The scanner is intentionally simple and dependency-free.
+
+## Known knip false-positive patterns (consider adding to per-workspace `entry` lists)
+
+These flag in every project but are always live — tuning `knip.json` to include them suppresses noise:
+
+- `vitest.config.ts` (auto-loaded by `vitest`)
+- `apps/*/tests/{setup,global-setup}.ts` (referenced as strings in `vitest.config.ts`)
+- `apps/*/scripts/*.ts` (invoked via `npx tsx scripts/<name>.ts`)
+- `apps/*/dashboard/postcss.config.mjs` (used by Next.js / Tailwind v4 build)
+- `tsx` devDep in any package that has a `dev` or `scripts/` invocation using `tsx`
+- `pino-pretty` anywhere `@kagami/logger` is a transitive dep (the pretty transport is loaded dynamically by the logger factory)
+
+## Semantic doc-rot (optional second pass)
+
+The deterministic `doc-scan.mjs` catches **reference rot** — symbols and file paths that no longer exist. It cannot catch **semantic drift** — when a doc claims behavior that no longer matches the code (e.g. "X reads from REST" when X now uses gRPC, or "Y is pending migration" after Y migrated). For deeper audits, instruct the subagents to additionally skim their project's `CLAUDE.md` for claims that contradict what they observed during knip verification, and report contradictions as HIGH-confidence doc rot.
