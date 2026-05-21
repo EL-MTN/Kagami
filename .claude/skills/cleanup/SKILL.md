@@ -63,7 +63,10 @@ Each subagent's prompt should include:
 Knip and the doc scanner can flag things that are intentionally alive. Before including a finding in the partial report, the subagent must:
 
 - **Unused exports**: confirm no sibling project imports the symbol. Cross-check with `rg "from ['\\\"]@<scope>/<package>['\\\"]"` across the whole repo. Public package APIs (anything in `shared/packages/*` that's documented in `ARCHITECTURE.md` or the package's own `CLAUDE.md`) get downgraded to LOW confidence.
-- **Unused files**: confirm the file is not a route loaded dynamically (Next.js dashboards), a script invoked from `package.json` scripts, or a Telegram/iMessage handler registered by side effect. Check `apps/*/package.json` scripts and any registration files (`index.ts` of platform/services modules).
+- **Intra-directory imports**: before dropping `export` on a file in `routes/`, `services/`, `lib/`, or any directory where siblings often import each other, run `rg "from ['\\\"]\\./<basename>" <project>/<dir>/`. If a sibling file imports the symbol, keep the `export`. (Without this check, `routes/people.ts` importing `ListInteractionsQuery` from `routes/interactions.ts` will be missed by the "no cross-workspace import" rule.)
+- **Unused files (barrels)**: when an `index.ts` is flagged unused, confirm that _every_ re-export inside it is also unused. Barrels can be globally orphaned while individual members are still live — this is the easiest false-HIGH to ship. If only some members are dead, flag the dead members individually, not the whole barrel.
+- **Unused files (general)**: confirm the file is not a route loaded dynamically (Next.js dashboards), a script invoked from `package.json` scripts, or a Telegram/iMessage handler registered by side effect. Check `apps/*/package.json` scripts and any registration files (`index.ts` of platform/services modules).
+- **Pair dependent deletions**: if deleting file X would orphan a `from "./X"` re-export in a sibling barrel, the finding must list BOTH edits together. Apply mode will refuse to delete a file whose re-export hasn't also been queued for removal.
 - **Unused dependencies**: confirm the dep isn't referenced via dynamic require, a CLI subcommand, or as a peer of a built tool (e.g. `eslint` plugins). Per-app `package.json` is the source of truth, not the workspace root.
 - **Doc-rot file refs**: open the markdown line and check whether the path was always conceptual (e.g. an example, a placeholder like `<contract>.test.ts`). Skip if the surrounding prose makes it clear.
 - **Doc-rot symbol refs**: confirm the symbol genuinely doesn't appear anywhere in source. The scanner is permissive (it accepts any token occurrence), so any hits it reports are strong signal.
@@ -115,21 +118,20 @@ Re-run with `/cleanup --apply` to delete HIGH-confidence findings automatically.
 
 ### 5. Apply mode (only if invoked with `--apply`)
 
-After writing the report, delete HIGH-confidence findings in this order:
+After writing the report, delete HIGH-confidence findings **in category-sized batches**, running typecheck between batches so a failure is attributed to a specific category and only that category is rolled back:
 
-1. **Unused imports & unused locals** — run `npx eslint --fix --rule '{"@typescript-eslint/no-unused-vars": "error"}' <files>`, scoped to the files knip flagged.
-2. **Unused exports of _internal_ (non-`shared/*`) symbols** — Edit the file to remove the `export` keyword, or delete the symbol entirely if knip also lists it as an unused member.
-3. **Unused files** — `git rm` each file knip listed as unused, provided no MEDIUM finding overlaps.
-4. **Unused dependencies** — Edit the relevant `package.json` to remove the entry. Do not run `npm install` — leave that to the user.
+1. **Unused imports & unused locals** — run `npx eslint --fix --rule '{"@typescript-eslint/no-unused-vars": "error"}' <files>`, scoped to the files knip flagged. → `npx turbo run typecheck` → if fail, `git restore <files>`.
+2. **Unused exports of _internal_ (non-`shared/*`) symbols** — Edit the file to remove the `export` keyword, or delete the symbol entirely if knip also lists it as an unused member. → typecheck → revert that batch on fail.
+3. **Unused files** — for each file, before deletion, run `rg "from ['\\\"]\\.\\.?/<basename>['\\\"]" <project>/` to find any re-export. If a sibling barrel re-exports the file, edit the barrel to remove the line AS PART OF THE SAME BATCH; otherwise the deletion will break the build. Then `git rm` each file. → typecheck → revert on fail.
+4. **Unused dependencies** — Edit the relevant `package.json` to remove the entry. Do not run `npm install` — leave that to the user. → typecheck → revert on fail.
 
-After applying, run:
+After all batches, run lint as a final gate:
 
 ```bash
-npm run typecheck
 npm run lint
 ```
 
-If either fails, **revert all `--apply` changes** (`git checkout -- .` for unstaged, `git restore --staged .` for staged) and add a "rollback" section to the report explaining what failed. Do not push.
+If lint fails on a specific batch's files, revert only those files. Do not push.
 
 Never auto-apply to:
 
