@@ -9,9 +9,10 @@
 // Subcommands:
 //   trace <traceId>                       Full trace (waterfall + log timeline)
 //   logs [filters]                        Search logs
-//     --service S  --level L  --since ISO  --until ISO  --limit N (≤1000)
+//     --service S  --level L  --since ISO  --until ISO
+//     --limit N (default 100, max 1000)
 //   errors [filters]                      Fingerprinted error registry
-//     --service S  --limit N (≤500)
+//     --service S  --limit N (default 100, max 500)
 //   services [--window H]                 Per-service summary (default 24h)
 //   help                                  Print this usage
 //
@@ -109,7 +110,8 @@ Subcommands:
                                    --since ISO  --until ISO
                                    --limit N (default 100, max 1000)
   errors [filters]               Fingerprinted error registry:
-                                   --service S  --limit N (max 500)
+                                   --service S
+                                   --limit N (default 100, max 500)
   services [--window H]          Per-service summary (default window 24h)
   help                           Print this usage
 
@@ -227,7 +229,7 @@ async function apiGet<T>(baseUrl: string, path: string): Promise<T> {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     const detail = code ?? (err as Error).message;
-    throw new Error(`Network failure calling ${url}: ${detail}`);
+    throw new Error(`Network failure calling ${url}: ${detail}`, { cause: err });
   }
   if (!res.ok) {
     const snippet = res.body.slice(0, 300);
@@ -235,8 +237,10 @@ async function apiGet<T>(baseUrl: string, path: string): Promise<T> {
   }
   try {
     return JSON.parse(res.body) as T;
-  } catch {
-    throw new Error(`${url}: response was not JSON (first 200 chars: ${res.body.slice(0, 200)})`);
+  } catch (err) {
+    throw new Error(`${url}: response was not JSON (first 200 chars: ${res.body.slice(0, 200)})`, {
+      cause: err,
+    });
   }
 }
 
