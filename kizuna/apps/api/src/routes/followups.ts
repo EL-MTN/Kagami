@@ -162,7 +162,7 @@ followupsRouter.patch("/followups/:id", async (req, res) => {
   const doc = await Followup.findOneAndUpdate(
     { _id: id, deletedAt: null },
     { $set: update },
-    { new: true, runValidators: true },
+    { returnDocument: "after", runValidators: true },
   ).lean();
   if (!doc) throw errors.notFound("followup not found");
   res.json(serializeFollowup(doc));
@@ -173,7 +173,7 @@ followupsRouter.delete("/followups/:id", async (req, res) => {
   const doc = await Followup.findOneAndUpdate(
     { _id: id, deletedAt: null },
     { $set: { deletedAt: new Date() } },
-    { new: true },
+    { returnDocument: "after" },
   ).lean();
   if (!doc) throw errors.notFound("followup not found");
   res.status(200).json(serializeFollowup(doc));

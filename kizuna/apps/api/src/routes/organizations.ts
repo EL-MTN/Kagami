@@ -76,7 +76,7 @@ organizationsRouter.patch("/organizations/:id", async (req, res) => {
   const doc = await Organization.findOneAndUpdate(
     { _id: id, deletedAt: null },
     { $set: body },
-    { new: true, runValidators: true },
+    { returnDocument: "after", runValidators: true },
   ).lean();
   if (!doc) throw errors.notFound("organization not found");
   res.json(serializeOrganization(doc));
@@ -87,7 +87,7 @@ organizationsRouter.delete("/organizations/:id", async (req, res) => {
   const doc = await Organization.findOneAndUpdate(
     { _id: id, deletedAt: null },
     { $set: { deletedAt: new Date() } },
-    { new: true },
+    { returnDocument: "after" },
   ).lean();
   if (!doc) throw errors.notFound("organization not found");
   res.status(200).json(serializeOrganization(doc));

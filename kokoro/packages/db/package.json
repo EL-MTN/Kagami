@@ -14,13 +14,13 @@
   },
   "dependencies": {
     "@kokoro/shared": "*",
-    "mongoose": "^8.9.0"
+    "mongoose": "^9.6.2"
   },
   "devDependencies": {
     "@kagami/eslint-config": "*",
     "@kagami/tsconfig": "*",
     "@types/node": "^22.10.0",
     "eslint": "^10.3.0",
-    "typescript": "^5.7.0"
+    "typescript": "^6.0.3"
   }
 }
