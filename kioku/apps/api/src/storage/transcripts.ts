@@ -28,7 +28,7 @@ async function transcriptsCol(): Promise<Collection<TranscriptDoc>> {
   return db.collection<TranscriptDoc>("transcripts");
 }
 
-export interface UpsertTranscriptInput {
+interface UpsertTranscriptInput {
   transcript: Transcript;
   user_id?: string;
   run_id?: string;
@@ -56,4 +56,3 @@ export async function upsertTranscript(input: UpsertTranscriptInput): Promise<vo
     { upsert: true },
   );
 }
-

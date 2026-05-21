@@ -59,8 +59,3 @@ export function subscribeLogs(listener: (doc: StoredLog) => void): (() => void) 
     emitter.off("log", listener);
   };
 }
-
-/** Diagnostics — used by /health-ish surfaces and tests. */
-export function subscriberStats(): { count: number; max: number } {
-  return { count: subscriberCount, max: MAX_SUBSCRIBERS };
-}

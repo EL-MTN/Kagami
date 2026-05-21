@@ -16,7 +16,7 @@ import { getDb } from "./mongo.js";
 
 export type HistoryEventKind = "ADD" | "UPDATE" | "DELETE";
 
-export interface HistoryEvent {
+interface HistoryEvent {
   id: string;
   memory_id: string;
   event: HistoryEventKind;

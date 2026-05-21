@@ -4,7 +4,7 @@ import { z } from "zod";
 import { Interaction } from "../db/models/Interaction.js";
 import { ObjectIdString } from "../schemas/common.js";
 
-export const ListContextsQuery = z.object({
+const ListContextsQuery = z.object({
   personId: ObjectIdString.optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(200),
 });

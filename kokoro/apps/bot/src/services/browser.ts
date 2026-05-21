@@ -7,7 +7,7 @@ const isCloud = config.BROWSER_ENV === "cloud";
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_ACTION_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes — circuit breaker, not an SLO
 
-export interface BrowserLockOptions {
+interface BrowserLockOptions {
   /** Wall-clock cap for the inner fn. Defaults to 2 minutes; agent flows pass longer. */
   timeoutMs?: number;
   /** Label included in the timeout error message for log triage. */
@@ -102,7 +102,7 @@ function parseGeolocation(): { latitude: number; longitude: number } | undefined
  * Stagehand reads API keys from env (ANTHROPIC_API_KEY, OPENAI_API_KEY) automatically —
  * only xAI needs explicit baseURL/apiKey since Stagehand doesn't support it natively.
  */
-export function getStagehandModelConfig():
+function getStagehandModelConfig():
   | string
   | { modelName: string; apiKey: string; baseURL: string } {
   // Explicit override — return as-is (Stagehand reads API keys from env)
