@@ -1,4 +1,4 @@
-import { getJson, sendJson, appendParam, clampLimit, withKizunaDeadline } from "./client";
+import { getJson, sendJson, clampLimit, withKizunaDeadline } from "./client";
 import { listFollowupsForPerson } from "./followups";
 import { listInteractionsForPerson } from "./interactions";
 import { personContextSummary, personSummary, followupSummary } from "./projections";
@@ -108,11 +108,4 @@ export async function getPersonWithSignal(
     PersonWireSchema,
     signal,
   );
-}
-
-export function buildPeopleSearchPath(input: { query: string; limit?: number }) {
-  const params = new URLSearchParams();
-  appendParam(params, "identityQuery", input.query);
-  params.set("limit", String(clampLimit(input.limit, 10, 1, 20)));
-  return `/people?${params.toString()}`;
 }

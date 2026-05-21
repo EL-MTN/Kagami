@@ -73,7 +73,7 @@ export async function readFacts(): Promise<Fact[]> {
 // candidates) doesn't bleed across user/run/agent boundaries. Mongo
 // treats absent fields as null, matching the semantics the writer uses
 // when scope fields are unset.
-export interface ScopeFilter {
+interface ScopeFilter {
   user_id?: string;
   run_id?: string;
   agent_id?: string;

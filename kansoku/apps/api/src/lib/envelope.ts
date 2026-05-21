@@ -190,7 +190,7 @@ export const LogEnvelope = z
     }
   });
 
-export type LogEnvelopeInput = Record<string, unknown>;
+type LogEnvelopeInput = Record<string, unknown>;
 
 export const LogBatch = z.array(LogEnvelope).min(1).max(1000);
 

@@ -35,7 +35,7 @@ export async function recentInteractions(
   return withKizunaDeadline((signal) => recentInteractionsWithSignal(input, signal));
 }
 
-export async function recentInteractionsWithSignal(
+async function recentInteractionsWithSignal(
   input: RecentInteractionsInput,
   signal: AbortSignal,
 ): Promise<ListEnvelope<InteractionSummary>> {
@@ -94,7 +94,7 @@ export async function logInteraction(input: LogInteractionInput): Promise<Intera
   });
 }
 
-export function buildRecentInteractionsPath(input: RecentInteractionsInput) {
+function buildRecentInteractionsPath(input: RecentInteractionsInput) {
   const params = new URLSearchParams();
   params.set("personId", input.personId);
   appendParam(params, "channel", input.channel);

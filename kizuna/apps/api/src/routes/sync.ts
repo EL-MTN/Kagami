@@ -6,7 +6,7 @@ import { runCalendarSyncOnce } from "../ingest/calendar.js";
 import { runGmailSyncOnce } from "../ingest/gmail.js";
 import { errors } from "../lib/errors.js";
 
-export const RunSyncBody = z.object({ force: z.boolean().optional() }).strict();
+const RunSyncBody = z.object({ force: z.boolean().optional() }).strict();
 
 export function makeSyncRouter(config: Config): Router {
   const r = Router();

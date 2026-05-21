@@ -115,7 +115,7 @@ gateway owns the OpenAI-compatible client construction.
 | `KIOKU_BULK_RATE_LIMIT_PER_MIN`    | `10`    | `POST /facts/bulk` |
 | `KIOKU_SESSION_RATE_LIMIT_PER_MIN` | `5`     | `POST /sessions`   |
 
-Rate-limited requests return `429 { error: "rate_limited", limit, window_seconds: 60 }` with standard `RateLimit` headers.
+Rate-limited requests return `429 { error: "rate_limited", limit, window_seconds: 60 }` with the IETF draft-8 `RateLimit-*` headers (via `express-rate-limit`). The env vars above are parsed once at boot by `parseRateLimitPerMinute` and surfaced through the `kiokuRateLimits` constant in `apps/api/src/routes/rate-limit.ts`.
 
 ## Embedding-model swaps
 
@@ -171,4 +171,4 @@ Default Kioku URLs across the Kagami workspace:
 | Kokoro bot      | `KIOKU_URL`     | `https://api.kioku.localhost` |
 | Kioku dashboard | `KIOKU_API_URL` | `https://api.kioku.localhost` |
 
-See `Kagami/ARCHITECTURE.md` for the full cross-service map.
+See [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) for the full cross-service map.

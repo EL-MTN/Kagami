@@ -9,7 +9,7 @@ import { appendAnd } from "../lib/query.js";
 import { serializeFollowup } from "../lib/serialize.js";
 import { BoolFlag, DateInput, IdParam, ObjectIdString, Pagination } from "../schemas/common.js";
 
-export const FollowupCreateBody = z
+const FollowupCreateBody = z
   .object({
     personId: ObjectIdString,
     direction: z.enum(FOLLOWUP_DIRECTIONS),
@@ -19,7 +19,7 @@ export const FollowupCreateBody = z
   })
   .strict();
 
-export const FollowupUpdateBody = z
+const FollowupUpdateBody = z
   .object({
     status: z.enum(FOLLOWUP_STATUSES),
     dueAt: DateInput.optional(),
@@ -27,7 +27,7 @@ export const FollowupUpdateBody = z
   })
   .strict();
 
-export const ListFollowupsQuery = Pagination.extend({
+const ListFollowupsQuery = Pagination.extend({
   personId: ObjectIdString.optional(),
   direction: z.enum(FOLLOWUP_DIRECTIONS).optional(),
   status: z.enum(FOLLOWUP_STATUSES).default("open"),

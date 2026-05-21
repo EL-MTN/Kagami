@@ -339,6 +339,6 @@ across all three services.
 
 ## Open questions
 
-- **Large-binary defense.** Phase 1 adds `imageData` (and one level of nesting) to `@kagami/logger`'s `DEFAULT_REDACT_PATHS` with a custom censor that replaces base64 with `"[base64 omitted, ~Nb]"` so the payload size is still observable without the bytes. A generic `omitOverSize` walk (replace any string > N bytes) is deferred — the redact list covers the realistic shapes we ship today.
+- **Large-binary defense.** `@kagami/logger` currently ships no redaction or size-cap walk — the workspace is local-trust only, so the previous `imageData` base64-censor and any generic `omitOverSize` walker have been removed. Before any non-localhost exposure, reintroduce both: a path-based redact list (at minimum `imageData` and one level of nesting, with a base64-aware censor that preserves observed payload size) plus a generic string-length cap on `fields`.
 - **Mongo isolation.** Phase 1 reuses the existing workspace Mongo instance with a dedicated `kansoku` database. If volume grows or blast-radius isolation becomes a concern, move Kansoku to a separate cluster.
 - **Real-time latency.** Phase 1 targets near-real-time (~500 ms log → durable). If sustained rates exceed ~5k logs/sec, a Redis Streams buffer in front of Mongo becomes necessary — not built day one.
