@@ -2,6 +2,7 @@ import mongoose, { Schema, type Document } from "mongoose";
 import { haversineMeters } from "@kokoro/shared";
 
 export interface ILocationHistory extends Document {
+  id: string;
   chatId: string;
   latitude: number;
   longitude: number;

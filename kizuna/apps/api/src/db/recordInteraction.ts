@@ -113,7 +113,7 @@ export async function upsertInteractionBySourceRef(input: RecordInteractionInput
     { $set: set },
     {
       upsert: true,
-      new: true,
+      returnDocument: "after",
       runValidators: true,
       setDefaultsOnInsert: true,
     },

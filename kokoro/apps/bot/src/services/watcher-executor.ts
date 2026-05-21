@@ -1,4 +1,4 @@
-import { generateText, hasToolCall, stepCountIs, type StepResult } from "ai";
+import { generateText, hasToolCall, stepCountIs, type StepResult, type ToolSet } from "ai";
 import { getModel, getModelName } from "../ai/provider";
 import { watcherTools, type ToolContext } from "../ai/tools/index";
 import {
@@ -54,8 +54,7 @@ function assembleWatcherSystemPrompt(watcher: IWatcher): string {
   return parts.join("\n\n---\n\n");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Step = StepResult<any>;
+type Step = StepResult<ToolSet>;
 
 function extractWatcherResult(steps: Step[]): WatcherResult | null {
   // Walk in reverse — use the latest reportWatcherResult call if multiple exist.

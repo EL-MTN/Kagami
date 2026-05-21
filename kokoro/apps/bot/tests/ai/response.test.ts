@@ -26,7 +26,7 @@ import {
 } from "../../src/ai/response";
 
 /**
- * Build a minimal Step-shaped fixture. `StepResult<any>` from the AI SDK has
+ * Build a minimal Step-shaped fixture. `StepResult<ToolSet>` from the AI SDK has
  * many fields the helpers don't read, so we cast through `unknown` and only
  * populate what the function actually accesses.
  */

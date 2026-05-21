@@ -28,6 +28,6 @@
     "eslint": "^10.3.0",
     "portless": "^0.12.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^6.0.3"
   }
 }

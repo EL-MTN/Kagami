@@ -1,6 +1,7 @@
 import mongoose, { Schema, type Document } from "mongoose";
 
 export interface IReminder extends Document {
+  id: string;
   chatId: string;
   message: string;
   fireAt: Date;
@@ -37,7 +38,7 @@ export async function getPendingReminders(): Promise<IReminder[]> {
 }
 
 export async function markReminderFired(reminderId: string): Promise<void> {
-  await Reminder.findByIdAndUpdate(reminderId, { fired: true });
+  await Reminder.updateOne({ _id: reminderId }, { fired: true });
 }
 
 export async function listRemindersForChat(chatId: string): Promise<IReminder[]> {
