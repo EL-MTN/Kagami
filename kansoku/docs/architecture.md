@@ -323,6 +323,27 @@ trace wrap on the BlueBubbles webhook) and Kizuna (Express middleware in
 from `@kokoro/shared`, so a Telegram message can be followed end-to-end
 across all three services.
 
+## Debug CLI (`kansoku-debug`)
+
+A read-only CLI at `apps/api/scripts/kansoku-debug.ts` mirrors the dashboard's query surfaces for terminal use — designed for Claude Code agents and humans who want to inspect a trace, search logs, or scan recent errors without standing up the dashboard. Invoked from the workspace root as `npm run kansoku:debug -- <subcommand>`.
+
+Subcommands map 1:1 onto the API:
+
+| Subcommand            | Endpoint             | Output                                                              |
+| --------------------- | -------------------- | ------------------------------------------------------------------- |
+| `trace <id>`          | `GET /v1/traces/:id` | Span-tree waterfall (ASCII) + log timeline with inline error fields |
+| `logs [filters]`      | `GET /v1/logs`       | Newest-first log table + unique-trace-IDs footer for drill-in       |
+| `errors [filters]`    | `GET /v1/errors`     | Fingerprint registry with the last 5 of up to 20 `recentTraceIds`   |
+| `services [--window]` | `GET /v1/services`   | Per-service log/error/warn counts in a time window                  |
+
+Global flags: `--json` (raw API payload), `--url BASE` (override `KANSOKU_URL`, default `https://api.kansoku.localhost`).
+
+TLS posture: the CLI uses `node:https` with per-request `rejectUnauthorized:false` scoped to `.localhost` hostnames — no global env var, no Node TLS warning. Public URLs keep full verification.
+
+Auth posture: the CLI consumes the existing unauthenticated read surface. This is acceptable today because the API only binds to 127.0.0.1 under Portless. Before any VPS exposure the read surface must be gated; see [Authentication](#authentication) and the open questions below.
+
+The `.claude/skills/kansoku-debug/SKILL.md` skill teaches future Claude Code sessions the typical workflows (`errors → trace`, `logs → trace`, "did my fix take") that this CLI supports.
+
 ## Phased delivery
 
 | Phase | Scope                                                                                                                                                                                                                                           | Status      |

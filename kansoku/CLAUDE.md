@@ -69,6 +69,7 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │   │   │   ├── server.ts        # createApp() + main() boot
 │   │   │   └── logger.ts        # @kagami/logger wrapper
 │   │   ├── tests/               # vitest + mongodb-memory-server harness
+│   │   ├── scripts/             # kansoku-debug CLI (read-only observability window)
 │   │   ├── tsconfig.json        # extends @kagami/tsconfig/server.json
 │   │   ├── tsconfig.build.json  # prod build: tsc -p this → dist/ (extends @kagami/tsconfig/server.build.json)
 │   │   ├── eslint.config.js
@@ -121,6 +122,32 @@ npx turbo run build    --filter="@kansoku/*"
 ```
 
 Apps run under [Portless](https://github.com/vercel-labs/portless) at `https://kansoku.localhost` (dashboard) and `https://api.kansoku.localhost` (API). Portless injects `PORT`; `7779` is the standalone fallback for the API (chosen to avoid Kioku's `7777`).
+
+## Debugging from the command line
+
+`scripts/kansoku-debug.ts` is an agent-friendly read-only CLI over the Kansoku query surface — use it when you have a trace ID, an error message, or a time window and want to inspect what happened without opening the dashboard. Requires `npm run kansoku:dev:api` to be running.
+
+```bash
+# Full trace by 32-hex-char ID (waterfall + log timeline; error stacks
+# appear inline in the timeline, truncated)
+npm run kansoku:debug -- trace <traceId>
+
+# Search logs. --service takes the exact stored name (kokoro-bot, kioku-api,
+# kizuna-api, kansoku-api, kao-api), not a prefix. --since/--until are ISO.
+npm run kansoku:debug -- logs --service kokoro-bot --level error --limit 50
+
+# Fingerprinted error registry. CLI prints the last 5 recent trace IDs per
+# fingerprint; use --json for all (up to 20 are stored server-side).
+npm run kansoku:debug -- errors --service kioku-api
+
+# Per-service log/error/warn counts (default window 24h)
+npm run kansoku:debug -- services --window 6
+
+# Add --json to any subcommand for raw API output
+# Override the base URL with --url or the KANSOKU_URL env var
+```
+
+Typical agent debugging flow: `errors` → pick a fingerprint → `trace <recentTraceId>` for the full picture. Or: `logs --service X --level error --since …` → cross-reference the surfaced trace IDs.
 
 ## Dependency Graph
 
