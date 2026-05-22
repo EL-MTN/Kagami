@@ -78,6 +78,7 @@ export interface IngestSessionResult {
   sessionId: string;
   added: number;
   batches: number;
+  failed: number; // batches that errored; a total failure (failed === batches) is a 500
 }
 
 function baseUrl(): string {

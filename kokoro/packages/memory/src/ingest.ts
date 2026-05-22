@@ -31,6 +31,7 @@ async function runIngest(convo: IConversation): Promise<void> {
         chatId: convo.chatId,
         added: result.added,
         batches: result.batches,
+        failed: result.failed,
         durationMs: Date.now() - startedAt,
       },
       "kioku ingest: done",

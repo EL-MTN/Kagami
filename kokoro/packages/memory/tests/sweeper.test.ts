@@ -83,7 +83,7 @@ describe("sweepPendingIngests", () => {
       ),
       http.post(`${KIOKU_BASE}/sessions`, () => {
         sessionsCalls += 1;
-        return HttpResponse.json({ sessionId: "x", added: 0, batches: 0 });
+        return HttpResponse.json({ sessionId: "x", added: 0, batches: 0, failed: 0 });
       }),
     );
 
@@ -106,7 +106,7 @@ describe("sweepPendingIngests", () => {
         HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
       ),
       http.post(`${KIOKU_BASE}/sessions`, () =>
-        HttpResponse.json({ sessionId: "x", added: 5, batches: 2 }, { status: 201 }),
+        HttpResponse.json({ sessionId: "x", added: 5, batches: 2, failed: 0 }, { status: 201 }),
       ),
     );
 
@@ -177,7 +177,7 @@ describe("sweepPendingIngests", () => {
     server.use(
       http.get(`${KIOKU_BASE}/facts`, () => HttpResponse.json({ error: "boom" }, { status: 503 })),
       http.post(`${KIOKU_BASE}/sessions`, () =>
-        HttpResponse.json({ sessionId: "x", added: 1, batches: 1 }, { status: 201 }),
+        HttpResponse.json({ sessionId: "x", added: 1, batches: 1, failed: 0 }, { status: 201 }),
       ),
     );
 
