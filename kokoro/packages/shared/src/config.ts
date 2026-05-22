@@ -32,6 +32,10 @@ const baseSchema = z.object({
   LLM_MODEL: z.string().default("claude-sonnet-4-6"),
   LLM_MODEL_FAST: z.string().optional(),
   LLM_MODEL_SMART: z.string().optional(),
+  // Per-attempt deadline for chat calls (the @kagami/llm gateway retries the
+  // attempt on timeout). Bounds a hung/slow provider response so it fails over
+  // fast instead of eating the whole conversational turn budget. Default 30s.
+  LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
 
   XAI_API_KEY: z.string().optional(),
 
