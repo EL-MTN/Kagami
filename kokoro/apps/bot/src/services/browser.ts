@@ -24,26 +24,38 @@ const STAGEHAND_VERBOSE: 0 | 1 | 2 =
   config.LOG_LEVEL === "debug" || config.LOG_LEVEL === "trace" ? 2 : 1;
 
 function stagehandLogger(line: LogLine): void {
-  const aux: Record<string, string> = {};
-  if (line.auxiliary) {
-    for (const [key, entry] of Object.entries(line.auxiliary)) {
-      aux[key] =
-        entry.value.length > AUX_VALUE_CAP
-          ? `${entry.value.slice(0, AUX_VALUE_CAP)}…[truncated ${entry.value.length - AUX_VALUE_CAP}]`
-          : entry.value;
+  // This bridge must NEVER throw: Stagehand invokes it synchronously from
+  // inside act/extract/agent/init via StagehandLogger.log() → externalLogger(),
+  // and that call site is not guarded — a throw here would surface as a
+  // spurious browser failure on the affected step. `auxiliary[k].value` is
+  // typed `string` but Stagehand fills it from model output that can be null
+  // (e.g. tool-call responses with `content: null`), so coerce defensively.
+  try {
+    const aux: Record<string, string> = {};
+    if (line.auxiliary) {
+      for (const [key, entry] of Object.entries(line.auxiliary)) {
+        const value = typeof entry?.value === "string" ? entry.value : String(entry?.value ?? "");
+        aux[key] =
+          value.length > AUX_VALUE_CAP
+            ? `${value.slice(0, AUX_VALUE_CAP)}…[truncated ${value.length - AUX_VALUE_CAP}]`
+            : value;
+      }
     }
-  }
-  const fields = { browser: { category: line.category ?? "stagehand", ...aux } };
-  const message = `browser: ${line.message}`;
-  switch (line.level) {
-    case 0:
-      logger.warn(fields, message);
-      break;
-    case 2:
-      logger.debug(fields, message);
-      break;
-    default: // 1 or undefined
-      logger.info(fields, message);
+    // category last so a stray auxiliary key named "category" can't shadow it.
+    const fields = { browser: { ...aux, category: line.category ?? "stagehand" } };
+    const message = `browser: ${line.message ?? ""}`;
+    switch (line.level) {
+      case 0:
+        logger.warn(fields, message);
+        break;
+      case 2:
+        logger.debug(fields, message);
+        break;
+      default: // 1 or undefined
+        logger.info(fields, message);
+    }
+  } catch {
+    // swallow — a logging-bridge bug must not break a browse step
   }
 }
 
