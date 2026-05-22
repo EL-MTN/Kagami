@@ -15,10 +15,10 @@ apps/api/src/ingest/
 
 Two entry points are exposed to clients:
 
-| Entry                     | Reaches                                       | When to use                                                                                          |
-| ------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `ingestSessionFromString` | `parseTranscript` → `consolidate` → summary   | A full transcript with frontmatter and `## t-N` turns. The MCP `ingest_session` tool and `POST /sessions`. |
-| `appendSingleFact` / `appendFactsBulk` | direct write, no LLM extraction      | Caller already decided this is a fact worth keeping. The MCP `append_fact` / `append_facts` tools and `POST /facts`, `POST /facts/bulk`. |
+| Entry                                  | Reaches                                     | When to use                                                                                                                              |
+| -------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `ingestSessionFromString`              | `parseTranscript` → `consolidate` → summary | A full transcript with frontmatter and `## t-N` turns. The MCP `ingest_session` tool and `POST /sessions`.                               |
+| `appendSingleFact` / `appendFactsBulk` | direct write, no LLM extraction             | Caller already decided this is a fact worth keeping. The MCP `append_fact` / `append_facts` tools and `POST /facts`, `POST /facts/bulk`. |
 
 ## Transcript format (`transcript.ts`)
 
@@ -45,12 +45,12 @@ How was the trip? Did you visit anyone?
 
 The core ingest. Constants:
 
-| Constant                     | Value | Purpose                                                                       |
-| ---------------------------- | ----- | ----------------------------------------------------------------------------- |
-| `BATCH_SIZE`                 | 2     | Messages per extraction call (one user + one assistant turn).                  |
-| `TOP_K_EXISTING`             | 10    | Cosine-nearest existing facts shown to the extractor as dedup context.        |
-| `RECENTLY_EXTRACTED_LIMIT`   | 20    | Tail of in-run extracted facts also shown for cross-batch coherence.           |
-| `LAST_K_MESSAGES`            | 20    | Conversation context preceding the batch, fed into the prompt.                 |
+| Constant                   | Value | Purpose                                                                |
+| -------------------------- | ----- | ---------------------------------------------------------------------- |
+| `BATCH_SIZE`               | 2     | Messages per extraction call (one user + one assistant turn).          |
+| `TOP_K_EXISTING`           | 10    | Cosine-nearest existing facts shown to the extractor as dedup context. |
+| `RECENTLY_EXTRACTED_LIMIT` | 20    | Tail of in-run extracted facts also shown for cross-batch coherence.   |
+| `LAST_K_MESSAGES`          | 20    | Conversation context preceding the batch, fed into the prompt.         |
 
 Per `consolidate(transcript, opts)`:
 
@@ -62,15 +62,15 @@ Per `consolidate(transcript, opts)`:
    - Build the user prompt sections: Summary, Last k Messages, Recently Extracted, Existing Memories, New Messages, Observation Date, Current Date.
    - `generateObject(model, ExtractionResult)` against `prompts/extraction.md` — schema is `{ memory: [{ id, text, category }] }`. `temperature: 0`, 120 s timeout. The reasoning-to-content middleware in `llm.ts` salvages output for thinking-mode models that emit into `reasoning_content`.
    - `embedMany(extracted texts)` (30 s timeout) → one embedding per extracted memory.
-   - **Cosine dedup** (`NEAR_DUPE_COSINE = 0.92`): for each extracted memory's embedding, skip if cosine ≥ threshold against any (a) existing in-scope fact, (b) earlier-batch extraction in this run (`recentlyExtracted`), or (c) earlier-accepted fact in *this* batch. Survivors get `normalizeCategory(raw)` applied (unknown → `"misc"`).
+   - **Cosine dedup** (`NEAR_DUPE_COSINE = 0.97`): for each extracted memory's embedding, skip if cosine ≥ threshold against any (a) existing in-scope fact, (b) earlier-batch extraction in this run (`recentlyExtracted`), or (c) earlier-accepted fact in _this_ batch. Survivors get `normalizeCategory(raw)` applied (unknown → `"misc"`).
    - Build `Fact` rows with `id = randomUUID()`, `created_at = now`, `event_date = sessionDate`, `source_session = "raw/<sessionId>"`.
    - `appendFacts(rows)` → `insertMany({ ordered: false })`. No storage-layer dedup index — dedup already happened above.
    - `upsertEntitiesFromFacts(rows)` to keep the entity-boost ranker fed.
    - Append rows to `recentlyExtracted` so the next batch's cosine top-10 and dedup pass include them.
 
-Returns `{ added, batches }`.
+Returns `{ added, batches, failed }`. `batches` counts content-bearing batches attempted; `failed` counts those that errored out (embed/extraction/fact-embed). A batch that legitimately produces nothing (empty extraction, all relevance-filtered, all dupes) is neither — so `failed` lets the caller tell "nothing to remember" apart from "the pipeline broke."
 
-The 0.92 threshold is intentionally lower than `append.ts`'s 0.97 because batch-extraction LLMs produce sloppier near-duplicates than caller-curated single facts; paraphrased restatements of the same fact often land at 0.92–0.96.
+The threshold matches `append.ts`'s 0.97. The original 0.92 (chosen on the assumption that batch-extraction LLMs produce sloppier near-duplicates than caller-curated single facts) over-merged on LongMemEval — multi-session recall dropped 7.5pp and temporal-reasoning 5pp — because legitimately distinct facts about the same entity often land at 0.92–0.96 even when their content is materially different.
 
 ### Categories
 
@@ -86,8 +86,9 @@ user_preferences · misc
 
 ### Failure modes
 
-- Embed call fails: log + `continue` (skip this batch). The next batch is independent.
-- Extraction call fails: log + `continue`.
+- Embed call fails: log + `continue` (skip this batch) + `failed += 1`. The next batch is independent.
+- Extraction call fails: log + `continue` + `failed += 1`.
+- **Every** content-bearing batch fails (`failed === batches`, `added === 0`): the transcript was already persisted (step 0) but no facts could be extracted — `sessions.ts` throws `IngestExtractionError` so the HTTP route returns 500 and the MCP tool reports failure, instead of a silent zero-fact "success" that leaves an orphaned transcript with no signal to the caller. Re-ingest is idempotent (transcript upserts, summary is cached, surviving facts cosine-dedup), so the failure is safely retryable. A _partial_ failure (some batches succeed) keeps the facts it got and is observable via the returned `failed` count.
 - Entity upsert fails: log + proceed. Facts are durable; entity boost is best-effort.
 - Mongo `insertMany` errors propagate. There is no longer a storage-layer hash dedup index, so any `code 11000` would be an `_id` collision (a programming bug) rather than expected dedup behavior — surfacing it is intentional.
 
@@ -125,7 +126,8 @@ ingestSessionFromString({ transcript, user_id, run_id, agent_id, metadata })
   ├─ parseTranscript(transcript)
   ├─ upsertTranscript(parsed, scope)              ← transcripts collection (source-of-truth)
   ├─ consolidate(parsed, scope, metadata)         ← atomic facts
-  └─ return { sessionId, added, batches }
+  ├─ if (batches > 0 && failed === batches) throw IngestExtractionError   ← all batches failed
+  └─ return { sessionId, added, batches, failed }
 ```
 
 The narrative session summary (4–8 sentences) generated by `generateNarrativeSummary` in `session-summary.ts` is a separate artifact: it lives in the `session_summaries` collection keyed by `source_session` and is fed into every batch's extraction prompt to ground entities and references. It is **not** stored as a fact. The previous "summary fact" (a keyword-rich clause persisted as `On <date>, conversation covered: <topics>.`) was removed — those clauses behaved as low-IDF retrieval noise that matched almost any query.

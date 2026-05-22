@@ -43,7 +43,7 @@ app.use("/mcp", mcpRouter);
 | GET    | `/facts/:id/history` | —                                                                                              | `{ id, events: HistoryEvent[] }` (newest first; today only ADD events are written)                                                                 |
 | POST   | `/recall`            | `{ query, k?, since?, until?, filters? }`                                                      | `{ facts: RecalledFact[], total }`                                                                                                                 |
 | POST   | `/query`             | `{ question, k?, filters? }`                                                                   | `{ answer, citations: string[] }` — citations are the deduped source session ids of the top-K retrieved facts (rank order, `raw/` prefix stripped) |
-| POST   | `/sessions`          | `{ transcript, user_id?, run_id?, agent_id?, metadata? }`                                      | `201 { sessionId, added, batches }`                                                                                                                |
+| POST   | `/sessions`          | `{ transcript, user_id?, run_id?, agent_id?, metadata? }`                                      | `201 { sessionId, added, batches, failed }` — `500` if every batch errored (transcript persisted; retryable)                                       |
 
 `AppendBody` shape (from `apps/api/src/routes/facts.ts`):
 
@@ -107,7 +107,7 @@ See [retrieval.md](retrieval.md) for the ranking formula.
 | `query`          | `{ question, filters? }`                                                                     | `{ answer, citations }` — same as `POST /query`. Use this when you want a synthesized answer; use `recall` for raw facts.            |
 | `append_fact`    | `{ text, event_date?, source_session?, user_id?, run_id?, agent_id?, metadata?, category? }` | `{ id, status: "added" \| "duplicate", reason?, similarity? }`                                                                       |
 | `append_facts`   | `{ facts: AppendBody[] }` (1–500)                                                            | `{ results, added, duplicates }`. Equivalent to mem0 `add(infer=False)` — store N caller-supplied facts verbatim, no LLM extraction. |
-| `ingest_session` | `{ transcript, user_id?, run_id?, agent_id?, metadata? }`                                    | `{ sessionId, added, batches }`                                                                                                      |
+| `ingest_session` | `{ transcript, user_id?, run_id?, agent_id?, metadata? }`                                    | `{ sessionId, added, batches, failed }` — errors if every batch fails (transcript persisted; retryable)                              |
 | `fact_count`     | `{}`                                                                                         | The integer count, as a string in the text content block.                                                                            |
 | `fact_history`   | `{ id }`                                                                                     | `{ id, events }`                                                                                                                     |
 

@@ -125,7 +125,7 @@ Indexed by `{ status, ingestStatus, closedAt }` for the sweeper query.
 
 ## Observability
 
-- `kioku ingest: starting` / `kioku ingest: done` / `kioku ingest: failed` — per-session ingest log lines from `@kokoro/memory`. Includes `sessionId`, `chatId`, `added`, `batches`, `durationMs`.
+- `kioku ingest: starting` / `kioku ingest: done` / `kioku ingest: failed` — per-session ingest log lines from `@kokoro/memory`. The `done` line includes `sessionId`, `chatId`, `added`, `batches`, `failed`, `durationMs`. A total Kioku-side extraction failure (every batch errored) now returns 500, so it lands on the `failed` line and the session stays `pending` for the sweeper to retry — previously it returned 200 with `added:0` and was marked `done`, orphaning the transcript.
 - `kioku sweeper: pending ingest sweep finished` — per-tick summary `{scanned, reconciled, ingested, failed}`.
 - `kioku sweeper: closed stale active sessions` — fires when the active sweep closes anything.
 - `Tool: searchMemory` / `Tool: rememberFact` — tool invocation log lines (info level). Watch the rate to detect prompt regressions where Mashiro stops calling memory.

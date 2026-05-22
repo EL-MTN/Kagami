@@ -173,6 +173,7 @@ describe("ingestSession", () => {
             sessionId: "s1",
             added: 3,
             batches: 2,
+            failed: 0,
           },
           { status: 201 },
         );
@@ -188,6 +189,7 @@ describe("ingestSession", () => {
       sessionId: "s1",
       added: 3,
       batches: 2,
+      failed: 0,
     });
   });
 });

@@ -112,12 +112,13 @@ The two apps share **no in-process code**. The dashboard's contract with the API
        │   │     - top-10 cosine candidates from existing facts (in-scope) → fed into prompt
        │   │     - generateObject(extraction prompt, schema={memory:[{id,text,category}]})
        │   │     - embedMany(extracted texts)
-       │   │     - cosine dedup vs (existing in-scope + prior-batches' extractions + this-batch accepted) at NEAR_DUPE_COSINE = 0.92
+       │   │     - cosine dedup vs (existing in-scope + prior-batches' extractions + this-batch accepted) at NEAR_DUPE_COSINE = 0.97
        │   │     - appendFacts (insertMany, ordered:false)
        │   │     - upsertEntitiesFromFacts (per-entity $setOnInsert + $addToSet)
-       │   └─ returns { added, batches }
+       │   └─ returns { added, batches, failed }
+       │   (if every batch failed: sessions.ts throws IngestExtractionError → 500)
        │
-5. Response: { sessionId, added, batches }
+5. Response: { sessionId, added, batches, failed }
 ```
 
 ### Recall (`POST /recall` and the MCP `recall` tool)
@@ -182,7 +183,7 @@ If `ensureIndexes()` throws, the process exits and logs `kioku startup failed` w
 ## Key Design Decisions
 
 - **One Mongo, all collections.** `facts`, `entities`, `transcripts`, `session_summaries`, `history` — a single `mongodb-atlas-local` container handles dense vector search, BM25, the audit log, and the source-of-truth for ingest. Replaces what mem0 OSS splits across Qdrant + SQLite.
-- **State lives entirely in Mongo — no filesystem-backed vault.** Transcripts are persisted in the `transcripts` collection on first ingest; re-ingest of the same `sessionId` does not duplicate facts because cosine dedup against existing in-scope facts catches re-extracted material (threshold 0.92 in consolidate).
+- **State lives entirely in Mongo — no filesystem-backed vault.** Transcripts are persisted in the `transcripts` collection on first ingest; re-ingest of the same `sessionId` does not duplicate facts because cosine dedup against existing in-scope facts catches re-extracted material (threshold 0.97 in consolidate).
 - **Embeddings persisted at write time.** Query is one embed call. The dense pre-pass uses `$vectorSearch` (HNSW); cosine is recomputed in app over the candidate union to preserve the existing `SEMANTIC_THRESHOLD = 0.1` contract (Atlas's `vectorSearchScore` uses `(1 + cos) / 2` which would shift the threshold meaning).
 - **Whole-corpus BM25.** `$search` runs against the whole corpus, not a cosine-prefiltered window. A fact strong on keywords but weak on cosine can still enter the top-K. The sigmoid that normalizes raw BM25 into the additive fusion is calibrated against Lucene's score range; refit via `scripts/probe-bm25-scores.ts`.
 - **Atomic facts are write-once.** No UPDATE / DELETE / soft-archival on `facts`. Corrections happen by appending newer facts with later `event_date`; the answerer prompt resolves contradictions newest-wins (`prompts/answer.md`). Every mutation leaves a row in `history` for postmortem.
