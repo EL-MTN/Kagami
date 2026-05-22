@@ -80,16 +80,18 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
       // Agent runs are budgeted longer than the default circuit-breaker.
       const timeoutMs = action === "agent" ? AGENT_TIMEOUT_MS : undefined;
       return withBrowserLock(
-        () =>
-          runWithSpan(`browse.${action}`, async () => {
-            let acquired = false;
-            let keepAlive = false;
-            let resetDone = false;
-            try {
-              const stagehand = await acquireBrowser();
-              acquired = true;
-              const page = stagehand.context.pages()[0];
+        async () => {
+          let acquired = false;
+          let keepAlive = false;
+          let resetDone = false;
+          try {
+            const stagehand = await acquireBrowser();
+            acquired = true;
+            const page = stagehand.context.pages()[0];
 
+            // Span only the work, so a thrown failure marks the span "error"
+            // (the catch below converts it to a {success:false} result).
+            return await runWithSpan(`browse.${action}`, async () => {
               switch (action) {
                 case "search": {
                   if (!query) return { success: false, reason: "query is required for search" };
@@ -186,20 +188,21 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
                   };
                 }
               }
-            } catch (error) {
-              const message = error instanceof Error ? error.message : "Browser operation failed";
-              logger.error({ error: error, action }, `Tool: ${logPrefix} failed`);
-              if (isFatalBrowserError(message)) {
-                resetBrowser();
-                resetDone = true;
-              }
-              return { success: false, reason: message };
-            } finally {
-              if (acquired && !keepAlive && !resetDone) {
-                releaseBrowser();
-              }
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Browser operation failed";
+            logger.error({ error: error, action }, `Tool: ${logPrefix} failed`);
+            if (isFatalBrowserError(message)) {
+              resetBrowser();
+              resetDone = true;
             }
-          }),
+            return { success: false, reason: message };
+          } finally {
+            if (acquired && !keepAlive && !resetDone) {
+              releaseBrowser();
+            }
+          }
+        },
         { timeoutMs, label: `${logPrefix}:${action}` },
       );
     },
