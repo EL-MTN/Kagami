@@ -123,14 +123,14 @@ describe("sweepPendingIngests", () => {
     expect(fresh?.ingestStatus).toBe("done");
   });
 
-  it("leaves status pending and counts as failed when Kioku ingest errors", async () => {
+  it("charges an attempt and stays pending on a deterministic error below the cap", async () => {
     const convo = await makeConvo({ withMessages: true });
     server.use(
       http.get(`${KIOKU_BASE}/facts`, () =>
         HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
       ),
       http.post(`${KIOKU_BASE}/sessions`, () =>
-        HttpResponse.json({ error: "boom" }, { status: 503 }),
+        HttpResponse.json({ error: "boom" }, { status: 500 }),
       ),
     );
 
@@ -177,6 +177,28 @@ describe("sweepPendingIngests", () => {
         HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
       ),
       http.post(`${KIOKU_BASE}/sessions`, () => HttpResponse.error()),
+    );
+
+    const result = await sweepPendingIngests();
+
+    expect(result.abandoned).toBe(0);
+    expect(result.failed).toBe(1);
+    const fresh = await Conversation.findById(convo._id);
+    expect(fresh?.ingestStatus).toBe("pending");
+    expect(fresh?.ingestAttempts).toBe(MAX_INGEST_ATTEMPTS - 1); // not charged
+  });
+
+  it("does NOT charge an attempt on a 429 — rate-limiting must not burn the cap", async () => {
+    // Kioku's /sessions limiter is 5/min, shared across the client; a sweep
+    // burst can 429 a perfectly-good transcript. It must stay retryable.
+    const convo = await makeConvo({ withMessages: true, ingestAttempts: MAX_INGEST_ATTEMPTS - 1 });
+    server.use(
+      http.get(`${KIOKU_BASE}/facts`, () =>
+        HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
+      ),
+      http.post(`${KIOKU_BASE}/sessions`, () =>
+        HttpResponse.json({ error: "rate limited" }, { status: 429 }),
+      ),
     );
 
     const result = await sweepPendingIngests();

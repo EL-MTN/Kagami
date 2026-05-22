@@ -3,13 +3,29 @@ import { logger } from "@kokoro/shared";
 import { ingestSession, KiokuClientError } from "./index";
 import { buildTranscript, transcriptHasContent } from "./transcript";
 
-// Give up on a transcript after this many attempts in which Kioku *responded*
-// with an error (e.g. a 500 because every extraction batch failed). Re-running
-// the identical transcript through the identical pipeline won't self-heal, so
-// past this it's marked terminally "failed" rather than retried by the sweeper
-// forever. Outage/timeout errors (Kioku unreachable) don't count toward this —
-// those stay "pending" for unbounded retry until Kioku comes back.
+// Give up on a transcript after this many failures that re-running it won't
+// fix. Past this it's marked terminally "failed" rather than retried by the
+// sweeper forever. See countsTowardIngestCap for which failures count.
 export const MAX_INGEST_ATTEMPTS = 5;
+
+// Whether an ingest failure should count toward the abandonment cap. The cap
+// exists to stop retrying a transcript that will never succeed — NOT to give
+// up during a transient outage. So:
+//   - count   HTTP errors that are deterministic for this transcript: a 500
+//             (every extraction batch failed) or a 4xx like 400 (malformed),
+//     and   a client-side request timeout (Kioku was reachable but too slow —
+//             re-running the same transcript won't be faster).
+//   - skip    transient signals: connection/transport failures (Kioku down →
+//             no status, not a timeout), and 429/503 ("retry later", which a
+//             single 5/min-limited client hits in normal sweep bursts). These
+//             stay "pending" for unbounded retry until Kioku recovers.
+export function countsTowardIngestCap(err: unknown): boolean {
+  if (!(err instanceof KiokuClientError)) return false;
+  if (err.timedOut) return true;
+  if (err.status === undefined) return false; // connection/transport failure
+  if (err.status === 429 || err.status === 503) return false; // transient backpressure
+  return true;
+}
 
 // Background ingest of a closed Kokoro conversation into Kioku. Two
 // callers: the four session-rollover sites (latency optimization), and
@@ -45,16 +61,12 @@ async function runIngest(convo: IConversation): Promise<void> {
       "kioku ingest: done",
     );
   } catch (err) {
-    // Only charge an attempt — and eventually give up — when Kioku actually
-    // responded (KiokuClientError carries a status only for HTTP error
-    // responses; timeouts and transport errors leave it undefined). A
-    // responded error (e.g. 500 from a total extraction failure) is
-    // deterministic for this transcript and won't self-heal on retry, so it
-    // counts toward the cap. An unreachable Kioku leaves the session
-    // "pending" with no attempt charged, so a Kioku outage recovers via
-    // unbounded sweeper retries once it comes back — it never burns the cap.
-    const kiokuResponded = err instanceof KiokuClientError && err.status !== undefined;
-    if (kiokuResponded) {
+    // Only charge an attempt — and eventually give up — for failures that
+    // re-running this transcript won't fix (deterministic HTTP errors + client
+    // timeouts). Transient signals (outage, 429/503) leave the session
+    // "pending" for unbounded retry so a recovering Kioku still drains it.
+    const countsTowardCap = countsTowardIngestCap(err);
+    if (countsTowardCap) {
       convo.ingestAttempts = (convo.ingestAttempts ?? 0) + 1;
       if (convo.ingestAttempts >= MAX_INGEST_ATTEMPTS) {
         convo.ingestStatus = "failed";
@@ -75,7 +87,7 @@ async function runIngest(convo: IConversation): Promise<void> {
         chatId: convo.chatId,
         attempts: convo.ingestAttempts,
         ingestStatus: convo.ingestStatus,
-        kiokuResponded,
+        countsTowardCap,
         durationMs: Date.now() - startedAt,
       },
       "kioku ingest: failed",
