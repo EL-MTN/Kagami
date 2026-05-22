@@ -134,7 +134,7 @@ export interface ConsolidateOptions {
 export async function consolidate(
   transcript: Transcript,
   opts: ConsolidateOptions = {},
-): Promise<{ added: number; batches: number }> {
+): Promise<{ added: number; batches: number; failed: number }> {
   const sessionId = transcript.frontmatter.id;
   const sessionDate = String(transcript.frontmatter.started_at).slice(0, 10);
   const currentDate = new Date().toISOString().slice(0, 10);
@@ -173,6 +173,12 @@ export async function consolidate(
 
   let added = 0;
   let batches = 0;
+  // Batches that errored out (embed/extraction/fact-embed). Distinct from
+  // batches that legitimately produced nothing (empty extraction, all
+  // filtered, all dupes). Surfaced so the caller can tell "nothing to
+  // remember" apart from "every batch failed" — the latter otherwise looks
+  // like a successful zero-fact ingest and leaves an orphaned transcript.
+  let failed = 0;
   for (let i = 0; i < messages.length; i += BATCH_SIZE) {
     const batch = messages.slice(i, i + BATCH_SIZE);
     if (batch.every((m) => !m.content.trim())) continue;
@@ -194,6 +200,7 @@ export async function consolidate(
         { error, sessionId, userId, runId, agentId, batch: batches },
         "ingest batch embed failed",
       );
+      failed += 1;
       continue;
     }
 
@@ -239,6 +246,7 @@ export async function consolidate(
         { error, sessionId, userId, runId, agentId, batch: batches },
         "ingest extraction failed",
       );
+      failed += 1;
       continue;
     }
 
@@ -282,6 +290,7 @@ export async function consolidate(
         { error, sessionId, userId, runId, agentId, batch: batches },
         "ingest fact embed failed",
       );
+      failed += 1;
       continue;
     }
 
@@ -340,5 +349,5 @@ export async function consolidate(
     added += facts.length;
   }
 
-  return { added, batches };
+  return { added, batches, failed };
 }

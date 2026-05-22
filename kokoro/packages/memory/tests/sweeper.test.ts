@@ -9,6 +9,7 @@ import {
   sweepPendingIngests,
   sweepStaleActiveSessions,
 } from "../src/sweeper";
+import { MAX_INGEST_ATTEMPTS } from "../src/ingest";
 
 withTestDb();
 
@@ -32,7 +33,8 @@ afterAll(() => {
 });
 
 interface ConvoOverrides {
-  ingestStatus?: "pending" | "done";
+  ingestStatus?: "pending" | "done" | "failed";
+  ingestAttempts?: number;
   status?: "active" | "closed";
   closedAt?: Date;
   updatedAt?: Date;
@@ -47,6 +49,7 @@ async function makeConvo(overrides: ConvoOverrides = {}): Promise<IConversation>
     status: overrides.status ?? "closed",
     closedAt: overrides.closedAt ?? new Date(Date.now() - 10 * 60_000),
     ingestStatus: overrides.ingestStatus ?? "pending",
+    ingestAttempts: overrides.ingestAttempts ?? 0,
     messages: overrides.withMessages
       ? [
           { role: "user", content: "hi", timestamp: new Date() },
@@ -83,7 +86,7 @@ describe("sweepPendingIngests", () => {
       ),
       http.post(`${KIOKU_BASE}/sessions`, () => {
         sessionsCalls += 1;
-        return HttpResponse.json({ sessionId: "x", added: 0, batches: 0 });
+        return HttpResponse.json({ sessionId: "x", added: 0, batches: 0, failed: 0 });
       }),
     );
 
@@ -106,7 +109,7 @@ describe("sweepPendingIngests", () => {
         HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
       ),
       http.post(`${KIOKU_BASE}/sessions`, () =>
-        HttpResponse.json({ sessionId: "x", added: 5, batches: 2 }, { status: 201 }),
+        HttpResponse.json({ sessionId: "x", added: 5, batches: 2, failed: 0 }, { status: 201 }),
       ),
     );
 
@@ -120,14 +123,14 @@ describe("sweepPendingIngests", () => {
     expect(fresh?.ingestStatus).toBe("done");
   });
 
-  it("leaves status pending and counts as failed when Kioku ingest errors", async () => {
+  it("charges an attempt and stays pending on a deterministic error below the cap", async () => {
     const convo = await makeConvo({ withMessages: true });
     server.use(
       http.get(`${KIOKU_BASE}/facts`, () =>
         HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
       ),
       http.post(`${KIOKU_BASE}/sessions`, () =>
-        HttpResponse.json({ error: "boom" }, { status: 503 }),
+        HttpResponse.json({ error: "boom" }, { status: 500 }),
       ),
     );
 
@@ -137,6 +140,74 @@ describe("sweepPendingIngests", () => {
     const fresh = await Conversation.findById(convo._id);
     expect(fresh?.ingestStatus).toBe("pending");
     expect(fresh?.ingestAttempts).toBe(1);
+  });
+
+  it("abandons a session (terminal 'failed') once a reachable Kioku has errored MAX_INGEST_ATTEMPTS times, and never re-sweeps it", async () => {
+    // One attempt away from the cap; Kioku is reachable (probe returns 0
+    // facts) but /sessions deterministically 500s — the poison-pill case.
+    const convo = await makeConvo({ withMessages: true, ingestAttempts: MAX_INGEST_ATTEMPTS - 1 });
+    server.use(
+      http.get(`${KIOKU_BASE}/facts`, () =>
+        HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
+      ),
+      http.post(`${KIOKU_BASE}/sessions`, () =>
+        HttpResponse.json({ error: "all batches failed" }, { status: 500 }),
+      ),
+    );
+
+    const result = await sweepPendingIngests();
+
+    expect(result.abandoned).toBe(1);
+    expect(result.failed).toBe(0);
+    const fresh = await Conversation.findById(convo._id);
+    expect(fresh?.ingestStatus).toBe("failed");
+    expect(fresh?.ingestAttempts).toBe(MAX_INGEST_ATTEMPTS);
+
+    // A second sweep must not pick it up again — terminal means terminal.
+    const again = await sweepPendingIngests();
+    expect(again.scanned).toBe(0);
+  });
+
+  it("does NOT charge an attempt when Kioku is unreachable, so an outage keeps retrying unbounded", async () => {
+    // Already near the cap, but a transport error (Kioku down) must not push
+    // it over — outages recover via unbounded retry, not abandonment.
+    const convo = await makeConvo({ withMessages: true, ingestAttempts: MAX_INGEST_ATTEMPTS - 1 });
+    server.use(
+      http.get(`${KIOKU_BASE}/facts`, () =>
+        HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
+      ),
+      http.post(`${KIOKU_BASE}/sessions`, () => HttpResponse.error()),
+    );
+
+    const result = await sweepPendingIngests();
+
+    expect(result.abandoned).toBe(0);
+    expect(result.failed).toBe(1);
+    const fresh = await Conversation.findById(convo._id);
+    expect(fresh?.ingestStatus).toBe("pending");
+    expect(fresh?.ingestAttempts).toBe(MAX_INGEST_ATTEMPTS - 1); // not charged
+  });
+
+  it("does NOT charge an attempt on a 429 — rate-limiting must not burn the cap", async () => {
+    // Kioku's /sessions limiter is 5/min, shared across the client; a sweep
+    // burst can 429 a perfectly-good transcript. It must stay retryable.
+    const convo = await makeConvo({ withMessages: true, ingestAttempts: MAX_INGEST_ATTEMPTS - 1 });
+    server.use(
+      http.get(`${KIOKU_BASE}/facts`, () =>
+        HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
+      ),
+      http.post(`${KIOKU_BASE}/sessions`, () =>
+        HttpResponse.json({ error: "rate limited" }, { status: 429 }),
+      ),
+    );
+
+    const result = await sweepPendingIngests();
+
+    expect(result.abandoned).toBe(0);
+    expect(result.failed).toBe(1);
+    const fresh = await Conversation.findById(convo._id);
+    expect(fresh?.ingestStatus).toBe("pending");
+    expect(fresh?.ingestAttempts).toBe(MAX_INGEST_ATTEMPTS - 1); // not charged
   });
 
   it("skips sessions closed within the staleness window so the immediate trigger has time to land", async () => {
@@ -177,7 +248,7 @@ describe("sweepPendingIngests", () => {
     server.use(
       http.get(`${KIOKU_BASE}/facts`, () => HttpResponse.json({ error: "boom" }, { status: 503 })),
       http.post(`${KIOKU_BASE}/sessions`, () =>
-        HttpResponse.json({ sessionId: "x", added: 1, batches: 1 }, { status: 201 }),
+        HttpResponse.json({ sessionId: "x", added: 1, batches: 1, failed: 0 }, { status: 201 }),
       ),
     );
 

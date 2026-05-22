@@ -63,7 +63,7 @@ When `getOrCreateSession` rolls over a stale session (>1h idle) and a new messag
 - `apps/bot/src/scheduler/proactive.ts` — proactive messages
 - `apps/bot/src/services/confirmation-events.ts` — when a tap-to-approve resolves
 
-Each calls `ingestClosedSession(convo)` — fire-and-forget. The new turn doesn't wait. The helper short-circuits when the closed conversation has no **user** content (proactive-only sessions where the user never replied — `transcriptHasContent` requires at least one user turn so the extractor doesn't invent "the assistant offered…" facts from a one-sided transcript). On short-circuit it flips `ingestStatus` to `done` so the sweeper doesn't pick it up; otherwise it serializes via `buildTranscript` and calls Kioku's `POST /sessions`. On success the conversation's `ingestStatus` flips `pending → done` and `ingestedAt` is recorded; on failure `ingestAttempts` is bumped and the sweeper takes over.
+Each calls `ingestClosedSession(convo)` — fire-and-forget. The new turn doesn't wait. The helper short-circuits when the closed conversation has no **user** content (proactive-only sessions where the user never replied — `transcriptHasContent` requires at least one user turn so the extractor doesn't invent "the assistant offered…" facts from a one-sided transcript). On short-circuit it flips `ingestStatus` to `done` so the sweeper doesn't pick it up; otherwise it serializes via `buildTranscript` and calls Kioku's `POST /sessions`. On success the conversation's `ingestStatus` flips `pending → done` and `ingestedAt` is recorded. On failure, the handling depends on whether re-running the transcript could help (`countsTowardIngestCap`): a **deterministic** failure — an HTTP 500 (every extraction batch failed), a 4xx like 400 (malformed), or a client-side request timeout (Kioku reachable but too slow) — bumps `ingestAttempts` and, past `MAX_INGEST_ATTEMPTS` (5), flips the status to terminal `failed`. A **transient** failure — a connection/transport error (Kioku down), or a 429/503 ("retry later"; the 5/min `/sessions` limiter makes 429 routine during sweep bursts) — charges no attempt and leaves the status `pending`, so an outage or rate-limit recovers via unbounded sweeper retries. Either way the sweeper takes over.
 
 The transcript shape (see `packages/memory/src/transcript.ts`) is YAML-frontmatter markdown — `id`, `started_at`, then `## t-N user` / `## t-N assistant` blocks. System and tool messages are dropped; only user/assistant turns with non-empty content are emitted.
 
@@ -71,7 +71,7 @@ The transcript shape (see `packages/memory/src/transcript.ts`) is YAML-frontmatt
 
 Every 5 minutes the maintenance scheduler (`apps/bot/src/scheduler/maintenance.ts`, started from `apps/bot/src/index.ts`) runs Kioku recovery on the same tick — stale-active first, pending session-ingest second, pending one-off facts third:
 
-- **`sweepPendingIngests`** — finds `{closed && (ingestStatus pending or absent) && closedAt < now-60s}` (default `stalenessMs: 60_000`, `maxPerSweep: 10`, ordered oldest-first by `closedAt`). For each match it probes Kioku via `hasFactsForSession("raw/<sessionId>")` and, if facts already exist, marks the conversation `done` ("reconciled"). Otherwise it calls `ingestClosedSessionAwaited`. Matches legacy documents that pre-date the `ingestStatus` field via `$or: [{ ingestStatus: "pending" }, { ingestStatus: { $exists: false } }]`.
+- **`sweepPendingIngests`** — finds `{closed && (ingestStatus pending or absent) && closedAt < now-60s}` (default `stalenessMs: 60_000`, `maxPerSweep: 10`, ordered oldest-first by `closedAt`). For each match it probes Kioku via `hasFactsForSession("raw/<sessionId>")` and, if facts already exist, marks the conversation `done` ("reconciled"). Otherwise it calls `ingestClosedSessionAwaited`, which gives up (terminal `failed`, counted as `abandoned`) once a reachable Kioku has errored `MAX_INGEST_ATTEMPTS` times — so a transcript that deterministically fails extraction stops being re-run every tick, and the terminal status drops out of this query. Matches legacy documents that pre-date the `ingestStatus` field via `$or: [{ ingestStatus: "pending" }, { ingestStatus: { $exists: false } }]`.
 - **`sweepPendingFacts`** — drains one-off facts queued by `rememberFact` and place-learning when Kioku append fails. It processes due `PendingFact` rows (default `maxPerSweep: 25`), retries with exponential backoff (5 minutes → 10 → 20 → 40 → max 60), and marks rows `failed` after 5 attempts.
 - **`sweepStaleActiveSessions`** — finds `{active && updatedAt < now-6h}` (default `idleHours: 6`, `maxPerSweep: 50`), flips them to `closed` with a fresh `closedAt`, and explicitly sets `ingestStatus: "pending"` so the next pending sweep picks them up. Catches sessions where the user idled for days and never returned.
 
@@ -93,25 +93,26 @@ When Mashiro decides a fact is worth keeping across sessions, she calls `remembe
 
 `IConversation` (in `@kokoro/db`) has three new fields tracking the ingest lifecycle:
 
-| Field            | Type                    | Default     | Purpose                                                   |
-| ---------------- | ----------------------- | ----------- | --------------------------------------------------------- |
-| `ingestStatus`   | `"pending"` \| `"done"` | `"pending"` | Lifecycle of session-close ingest. Sweeper drives → done. |
-| `ingestedAt`     | `Date?`                 | —           | Timestamp when Kioku confirmed extraction.                |
-| `ingestAttempts` | `number`                | `0`         | Bumped on each failed attempt (observability).            |
+| Field            | Type                                  | Default     | Purpose                                                                                                                                                                                                             |
+| ---------------- | ------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ingestStatus`   | `"pending"` \| `"done"` \| `"failed"` | `"pending"` | Lifecycle of session-close ingest. Sweeper drives → done; → terminal `failed` after `MAX_INGEST_ATTEMPTS` reachable errors.                                                                                         |
+| `ingestedAt`     | `Date?`                               | —           | Timestamp when Kioku confirmed extraction.                                                                                                                                                                          |
+| `ingestAttempts` | `number`                              | `0`         | Bumped on each failure that re-running can't fix (`countsTowardIngestCap`: 5xx/4xx + client timeout); at `MAX_INGEST_ATTEMPTS` the status goes terminal `failed`. Transient failures (outage, 429/503) don't count. |
 
 Indexed by `{ status, ingestStatus, closedAt }` for the sweeper query.
 
 ## Failure modes and recovery
 
-| Failure                                            | Recovery                                                                                                       |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Kioku unreachable on session rollover              | Trigger throws but is caught internally; `ingestStatus` stays `pending`. Sweeper retries in ≤5 min.            |
-| Crash mid-trigger before status update             | Same as above. Sweeper probes Kioku first; if facts already landed, just flips status to `done`.               |
-| User idles for days; session never rolls over      | `sweepStaleActiveSessions` closes after 6h. Next pending sweep ingests.                                        |
-| Legacy session pre-dates `ingestStatus` field      | Pending-sweep query matches `{ ingestStatus: { $exists: false } }` too.                                        |
-| LLM extraction text drifts on retry                | Pre-ingest probe via `hasFactsForSession` skips re-ingest if any facts already match the session.              |
-| Kioku returns 5xx on `searchMemory`                | `searchMemory` returns `{degraded: true, facts: []}`. Bot responds without memory context.                     |
-| Kioku unreachable on `rememberFact`/place-learning | Fact is queued in `PendingFact`; `sweepPendingFacts` retries with backoff and marks failed after max attempts. |
+| Failure                                                                                   | Recovery                                                                                                                                                                           |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kioku unreachable on session rollover                                                     | Trigger throws but is caught internally; `ingestStatus` stays `pending`. Sweeper retries in ≤5 min.                                                                                |
+| Crash mid-trigger before status update                                                    | Same as above. Sweeper probes Kioku first; if facts already landed, just flips status to `done`.                                                                                   |
+| User idles for days; session never rolls over                                             | `sweepStaleActiveSessions` closes after 6h. Next pending sweep ingests.                                                                                                            |
+| Legacy session pre-dates `ingestStatus` field                                             | Pending-sweep query matches `{ ingestStatus: { $exists: false } }` too.                                                                                                            |
+| LLM extraction text drifts on retry                                                       | Pre-ingest probe via `hasFactsForSession` skips re-ingest if any facts already match the session.                                                                                  |
+| Kioku returns 5xx on `searchMemory`                                                       | `searchMemory` returns `{degraded: true, facts: []}`. Bot responds without memory context.                                                                                         |
+| Kioku unreachable on `rememberFact`/place-learning                                        | Fact is queued in `PendingFact`; `sweepPendingFacts` retries with backoff and marks failed after max attempts.                                                                     |
+| Transcript deterministically fails extraction (Kioku reachable, every batch errors → 500) | `ingestAttempts` climbs; after `MAX_INGEST_ATTEMPTS` reachable errors the session is marked terminal `failed` so the sweeper stops re-running the LLM pipeline against it forever. |
 
 ## What's deliberately not here
 
@@ -125,8 +126,8 @@ Indexed by `{ status, ingestStatus, closedAt }` for the sweeper query.
 
 ## Observability
 
-- `kioku ingest: starting` / `kioku ingest: done` / `kioku ingest: failed` — per-session ingest log lines from `@kokoro/memory`. Includes `sessionId`, `chatId`, `added`, `batches`, `durationMs`.
-- `kioku sweeper: pending ingest sweep finished` — per-tick summary `{scanned, reconciled, ingested, failed}`.
+- `kioku ingest: starting` / `kioku ingest: done` / `kioku ingest: failed` — per-session ingest log lines from `@kokoro/memory`. The `done` line includes `sessionId`, `chatId`, `added`, `batches`, `failed`, `durationMs`; the `failed` line adds `attempts`, `ingestStatus`, and `countsTowardCap`. A total Kioku-side extraction failure (every batch errored) now returns 500, so it lands on the `failed` line and the session stays `pending` for the sweeper to retry — until it crosses `MAX_INGEST_ATTEMPTS`, after which it goes terminal `failed`. Previously the same case returned 200 with `added:0` and was marked `done`, orphaning the transcript.
+- `kioku sweeper: pending ingest sweep finished` — per-tick summary `{scanned, reconciled, ingested, failed, abandoned}` (`abandoned` = sessions just driven to terminal `failed`).
 - `kioku sweeper: closed stale active sessions` — fires when the active sweep closes anything.
 - `Tool: searchMemory` / `Tool: rememberFact` — tool invocation log lines (info level). Watch the rate to detect prompt regressions where Mashiro stops calling memory.
 

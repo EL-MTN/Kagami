@@ -20,7 +20,8 @@ export interface SweepPendingResult {
   scanned: number;
   reconciled: number; // already in Kioku, just updated status
   ingested: number; // actually ran ingest
-  failed: number;
+  failed: number; // attempt failed, left pending for a future retry
+  abandoned: number; // hit the attempt cap, marked terminally "failed"
 }
 
 const DEFAULT_STALENESS_MS = 60_000;
@@ -67,6 +68,7 @@ export async function sweepPendingIngests(
     reconciled: 0,
     ingested: 0,
     failed: 0,
+    abandoned: 0,
   };
 
   for (const convo of stale) {
@@ -99,6 +101,18 @@ export async function sweepPendingIngests(
     await ingestClosedSessionAwaited(convo);
     if (convo.ingestStatus === "done") {
       result.ingested += 1;
+    } else if (convo.ingestStatus === "failed") {
+      // runIngest hit the attempt cap on a reachable Kioku — terminal, the
+      // query won't pick it up again.
+      result.abandoned += 1;
+      logger.warn(
+        {
+          sessionId: convo.sessionId,
+          chatId: convo.chatId,
+          attempts: convo.ingestAttempts,
+        },
+        "kioku sweeper: abandoned ingest after max attempts",
+      );
     } else {
       result.failed += 1;
       logger.warn(
