@@ -35,6 +35,7 @@ afterAll(() => {
 interface ConvoOverrides {
   ingestStatus?: "pending" | "done" | "failed";
   ingestAttempts?: number;
+  ingestLeaseUntil?: Date;
   status?: "active" | "closed";
   closedAt?: Date;
   updatedAt?: Date;
@@ -50,6 +51,7 @@ async function makeConvo(overrides: ConvoOverrides = {}): Promise<IConversation>
     closedAt: overrides.closedAt ?? new Date(Date.now() - 10 * 60_000),
     ingestStatus: overrides.ingestStatus ?? "pending",
     ingestAttempts: overrides.ingestAttempts ?? 0,
+    ...(overrides.ingestLeaseUntil ? { ingestLeaseUntil: overrides.ingestLeaseUntil } : {}),
     messages: overrides.withMessages
       ? [
           { role: "user", content: "hi", timestamp: new Date() },
@@ -208,6 +210,60 @@ describe("sweepPendingIngests", () => {
     const fresh = await Conversation.findById(convo._id);
     expect(fresh?.ingestStatus).toBe("pending");
     expect(fresh?.ingestAttempts).toBe(MAX_INGEST_ATTEMPTS - 1); // not charged
+  });
+
+  it("does NOT ingest a session whose lease is held by another worker", async () => {
+    // An active (future) lease means another worker is mid-ingest. The sweeper
+    // must not start a second concurrent ingest (which would double-write facts).
+    const convo = await makeConvo({
+      withMessages: true,
+      ingestLeaseUntil: new Date(Date.now() + 60_000),
+    });
+    let sessionsCalls = 0;
+    server.use(
+      http.get(`${KIOKU_BASE}/facts`, () =>
+        HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
+      ),
+      http.post(`${KIOKU_BASE}/sessions`, () => {
+        sessionsCalls += 1;
+        return HttpResponse.json(
+          { sessionId: "x", added: 1, batches: 1, failed: 0 },
+          { status: 201 },
+        );
+      }),
+    );
+
+    const result = await sweepPendingIngests();
+
+    expect(sessionsCalls).toBe(0); // claim refused → no ingest
+    expect(result.ingested).toBe(0);
+    expect(result.failed).toBe(0);
+    const fresh = await Conversation.findById(convo._id);
+    expect(fresh?.ingestStatus).toBe("pending"); // still claimable once the lease expires
+  });
+
+  it("reclaims and ingests a session whose lease has expired (crashed mid-ingest)", async () => {
+    // A past lease means the worker that claimed it never finished (e.g.
+    // crashed). The session must become re-ingestable, not stuck forever.
+    const convo = await makeConvo({
+      withMessages: true,
+      ingestLeaseUntil: new Date(Date.now() - 60_000),
+    });
+    server.use(
+      http.get(`${KIOKU_BASE}/facts`, () =>
+        HttpResponse.json({ total: 0, limit: 1, offset: 0, facts: [] }),
+      ),
+      http.post(`${KIOKU_BASE}/sessions`, () =>
+        HttpResponse.json({ sessionId: "x", added: 2, batches: 1, failed: 0 }, { status: 201 }),
+      ),
+    );
+
+    const result = await sweepPendingIngests();
+
+    expect(result.ingested).toBe(1);
+    const fresh = await Conversation.findById(convo._id);
+    expect(fresh?.ingestStatus).toBe("done");
+    expect(fresh?.ingestLeaseUntil ?? null).toBeNull(); // lease released
   });
 
   it("skips sessions closed within the staleness window so the immediate trigger has time to land", async () => {

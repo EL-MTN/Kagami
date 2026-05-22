@@ -22,8 +22,6 @@ function normalizeUrl(raw: string): string {
   return raw;
 }
 
-const AGENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 min — autonomous 25-step runs can be slow
-
 function isFatalBrowserError(message: string): boolean {
   return (
     message.includes("Target closed") ||
@@ -76,9 +74,11 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
         .describe("High-level goal for autonomous multi-step browsing (for agent action)"),
     }),
     execute: async ({ action, query, url, instruction, goal }) => {
-      // Serialize browser access — parallel tool calls share one page.
-      // Agent runs are budgeted longer than the default circuit-breaker.
-      const timeoutMs = action === "agent" ? AGENT_TIMEOUT_MS : undefined;
+      // Serialize browser access — parallel tool calls share one page. Every
+      // action (including the inline `agent`) uses the default per-action
+      // timeout, which sits below the conversational turn budget; long
+      // autonomous runs go through the confirmation-gated `browseAgent` path,
+      // which dispatches outside the turn with its own longer budget.
       return withBrowserLock(
         async () => {
           let acquired = false;
@@ -203,7 +203,7 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
             }
           }
         },
-        { timeoutMs, label: `${logPrefix}:${action}` },
+        { label: `${logPrefix}:${action}` },
       );
     },
   });
