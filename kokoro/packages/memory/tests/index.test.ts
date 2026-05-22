@@ -10,6 +10,7 @@ import {
   ingestSession,
   recall,
 } from "../src";
+import { countsTowardIngestCap } from "../src/ingest";
 
 // Pin KIOKU_URL so MSW handlers match deterministically regardless of
 // the developer's local .env. Restored in afterAll.
@@ -199,5 +200,22 @@ describe("error surface", () => {
     server.use(http.post(`${KIOKU_BASE}/recall`, () => HttpResponse.error()));
 
     await expect(recall("q")).rejects.toBeInstanceOf(KiokuClientError);
+  });
+});
+
+describe("countsTowardIngestCap", () => {
+  // The ingest abandonment cap must fire on deterministic failures but never
+  // on transient ones (an outage or 429/503 must not burn the cap and drop a
+  // perfectly-good transcript).
+  it.each([
+    ["500 total extraction failure", new KiokuClientError("boom", 500), true],
+    ["400 malformed transcript", new KiokuClientError("bad", 400), true],
+    ["client-side timeout", new KiokuClientError("slow", undefined, undefined, true), true],
+    ["429 rate limited", new KiokuClientError("slow down", 429), false],
+    ["503 service unavailable", new KiokuClientError("busy", 503), false],
+    ["connection/transport failure (no status)", new KiokuClientError("ECONNREFUSED"), false],
+    ["non-Kioku error", new Error("something else"), false],
+  ])("%s → %s", (_label, err, expected) => {
+    expect(countsTowardIngestCap(err)).toBe(expected);
   });
 });
