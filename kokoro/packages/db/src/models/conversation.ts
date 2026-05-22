@@ -29,9 +29,12 @@ export interface IConversation extends Document {
   // Lifecycle of the closed-session → Kioku ingest. Default "pending"; set
   // to "done" when the transcript has been extracted into Kioku. The
   // sweeper in @kokoro/memory drives any stuck "pending" rows to "done"
-  // (or back-off retries them on Kioku outage), so callers don't have to
-  // worry about whether the immediate fire-and-forget trigger succeeded.
-  ingestStatus: "pending" | "done";
+  // (or retries them on Kioku outage), so callers don't have to worry about
+  // whether the immediate fire-and-forget trigger succeeded. "failed" is
+  // terminal: Kioku stayed reachable but extraction kept erroring for this
+  // transcript past the attempt cap — re-running it won't self-heal, so the
+  // sweeper stops retrying it (an operator can reset it to "pending").
+  ingestStatus: "pending" | "done" | "failed";
   ingestedAt?: Date;
   ingestAttempts: number;
   messages: IMessage[];
@@ -68,7 +71,7 @@ const conversationSchema = new Schema<IConversation>(
     sessionId: { type: String, required: true, default: () => crypto.randomUUID() },
     status: { type: String, enum: ["active", "closed"], default: "active" },
     closedAt: { type: Date },
-    ingestStatus: { type: String, enum: ["pending", "done"], default: "pending" },
+    ingestStatus: { type: String, enum: ["pending", "done", "failed"], default: "pending" },
     ingestedAt: { type: Date },
     ingestAttempts: { type: Number, default: 0 },
     messages: [messageSchema],

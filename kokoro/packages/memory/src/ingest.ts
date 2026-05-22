@@ -1,7 +1,15 @@
 import type { IConversation } from "@kokoro/db";
 import { logger } from "@kokoro/shared";
-import { ingestSession } from "./index";
+import { ingestSession, KiokuClientError } from "./index";
 import { buildTranscript, transcriptHasContent } from "./transcript";
+
+// Give up on a transcript after this many attempts in which Kioku *responded*
+// with an error (e.g. a 500 because every extraction batch failed). Re-running
+// the identical transcript through the identical pipeline won't self-heal, so
+// past this it's marked terminally "failed" rather than retried by the sweeper
+// forever. Outage/timeout errors (Kioku unreachable) don't count toward this —
+// those stay "pending" for unbounded retry until Kioku comes back.
+export const MAX_INGEST_ATTEMPTS = 5;
 
 // Background ingest of a closed Kokoro conversation into Kioku. Two
 // callers: the four session-rollover sites (latency optimization), and
@@ -37,7 +45,21 @@ async function runIngest(convo: IConversation): Promise<void> {
       "kioku ingest: done",
     );
   } catch (err) {
-    convo.ingestAttempts = (convo.ingestAttempts ?? 0) + 1;
+    // Only charge an attempt — and eventually give up — when Kioku actually
+    // responded (KiokuClientError carries a status only for HTTP error
+    // responses; timeouts and transport errors leave it undefined). A
+    // responded error (e.g. 500 from a total extraction failure) is
+    // deterministic for this transcript and won't self-heal on retry, so it
+    // counts toward the cap. An unreachable Kioku leaves the session
+    // "pending" with no attempt charged, so a Kioku outage recovers via
+    // unbounded sweeper retries once it comes back — it never burns the cap.
+    const kiokuResponded = err instanceof KiokuClientError && err.status !== undefined;
+    if (kiokuResponded) {
+      convo.ingestAttempts = (convo.ingestAttempts ?? 0) + 1;
+      if (convo.ingestAttempts >= MAX_INGEST_ATTEMPTS) {
+        convo.ingestStatus = "failed";
+      }
+    }
     try {
       await convo.save();
     } catch (saveErr) {
@@ -52,6 +74,8 @@ async function runIngest(convo: IConversation): Promise<void> {
         sessionId: convo.sessionId,
         chatId: convo.chatId,
         attempts: convo.ingestAttempts,
+        ingestStatus: convo.ingestStatus,
+        kiokuResponded,
         durationMs: Date.now() - startedAt,
       },
       "kioku ingest: failed",
