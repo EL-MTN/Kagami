@@ -158,7 +158,7 @@ function buildServer(): McpServer {
     "ingest_session",
     {
       description:
-        "Extract atomic facts from a raw transcript string. Returns {sessionId, added, batches}.",
+        "Extract atomic facts from a raw transcript string. Returns {sessionId, added, batches, failed}. Errors if every batch fails (transcript persisted; safe to retry).",
       inputSchema: {
         transcript: z.string(),
         user_id: z.string().optional(),

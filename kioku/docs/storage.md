@@ -168,7 +168,7 @@ Race-safe under concurrent ingest: two writers touching the same entity converge
 }
 ```
 
-Source-of-truth for the messages a session was extracted from. Re-ingest is filesystem-free: `consolidate()` reads from this collection and runs extraction; cosine dedup against existing in-scope facts short-circuits writes for material the LLM extracts identically (or close enough at threshold 0.92).
+Source-of-truth for the messages a session was extracted from. Re-ingest is filesystem-free: `consolidate()` reads from this collection and runs extraction; cosine dedup against existing in-scope facts short-circuits writes for material the LLM extracts identically (or close enough at threshold 0.97).
 
 `upsertTranscript(input)` uses `$set` for the body fields and `$setOnInsert: { created_at }` so subsequent re-ingests just refresh `updated_at`.
 

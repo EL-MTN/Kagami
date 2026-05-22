@@ -14,6 +14,10 @@ export class KiokuClientError extends Error {
     message: string,
     public readonly status?: number,
     public readonly body?: unknown,
+    // True when the request reached its client-side timeout (Kioku was
+    // reachable but too slow) — distinct from a connection/transport failure,
+    // which leaves both status and timedOut unset.
+    public readonly timedOut: boolean = false,
   ) {
     super(message);
     this.name = "KiokuClientError";
@@ -78,6 +82,7 @@ export interface IngestSessionResult {
   sessionId: string;
   added: number;
   batches: number;
+  failed: number; // batches that errored; a total failure (failed === batches) is a 500
 }
 
 function baseUrl(): string {
@@ -121,6 +126,9 @@ async function request<T>(
     if ((err as Error).name === "AbortError") {
       throw new KiokuClientError(
         `Kioku ${method} ${pathAndQuery} timed out after ${opts.timeoutMs}ms`,
+        undefined,
+        undefined,
+        true,
       );
     }
     logger.error({ error: err, url }, "kioku request transport error");
