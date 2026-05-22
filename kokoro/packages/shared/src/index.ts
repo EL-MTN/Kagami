@@ -16,6 +16,7 @@ export {
   getTraceContext,
   newTraceContext,
   parseTraceparent,
+  runWithSpan,
   runWithTrace,
   withRootTrace,
 } from "@kagami/logger/trace";

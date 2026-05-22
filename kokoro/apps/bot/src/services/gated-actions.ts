@@ -9,7 +9,7 @@ import {
   resolveFollowupInputSchema,
   updatePersonInputSchema,
 } from "../ai/tools/crm";
-import { logger } from "@kokoro/shared";
+import { logger, runWithSpan } from "@kokoro/shared";
 
 /**
  * Tools that the LLM must wrap in a `requestConfirmation` call rather than
@@ -160,9 +160,11 @@ export async function dispatchGatedAction(tool: string, rawArgs: unknown): Promi
             try {
               const stagehand = await acquireBrowser();
               acquired = true;
-              const agent = stagehand.agent();
-              const result = await agent.execute({ instruction: args.goal, maxSteps: 25 });
-              const text = typeof result === "string" ? result : JSON.stringify(result);
+              const text = await runWithSpan("browse.agent", async () => {
+                const agent = stagehand.agent();
+                const result = await agent.execute({ instruction: args.goal, maxSteps: 25 });
+                return typeof result === "string" ? result : JSON.stringify(result);
+              });
               return {
                 success: true,
                 summary: `agent finished: ${text.slice(0, 200)}`,

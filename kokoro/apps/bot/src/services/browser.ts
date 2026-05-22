@@ -1,11 +1,63 @@
-import { Stagehand } from "@browserbasehq/stagehand";
-import { config, logger } from "@kokoro/shared";
+import { Stagehand, type LogLine } from "@browserbasehq/stagehand";
+import { config, logger, runWithSpan } from "@kokoro/shared";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const isCloud = config.BROWSER_ENV === "cloud";
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_ACTION_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes — circuit breaker, not an SLO
+
+// --- Stagehand → Kansoku observability bridge ---
+//
+// Stagehand's own steps (act/observe/extract/agent inference, DOM work) are
+// invisible by default (`verbose: 0, disablePino: true`). We route its
+// internal logger into `@kokoro/shared`'s logger instead, so every browser
+// step ships to Kansoku correlated with the active trace/span (the pino mixin
+// stamps trace.id/span.id from AsyncLocalStorage at log time, and the browse
+// action runs inside a `runWithSpan`). The prompts/responses/DOM live in
+// `auxiliary`; each value is capped so a full-page DOM dump can't bloat ingest.
+const AUX_VALUE_CAP = 4000;
+
+// verbose 2 (full prompts/DOM) only when debugging; verbose 1 (step-level)
+// otherwise. Stagehand levels: 0 = error/warn, 1 = info, 2 = debug.
+const STAGEHAND_VERBOSE: 0 | 1 | 2 =
+  config.LOG_LEVEL === "debug" || config.LOG_LEVEL === "trace" ? 2 : 1;
+
+function stagehandLogger(line: LogLine): void {
+  // This bridge must NEVER throw: Stagehand invokes it synchronously from
+  // inside act/extract/agent/init via StagehandLogger.log() → externalLogger(),
+  // and that call site is not guarded — a throw here would surface as a
+  // spurious browser failure on the affected step. `auxiliary[k].value` is
+  // typed `string` but Stagehand fills it from model output that can be null
+  // (e.g. tool-call responses with `content: null`), so coerce defensively.
+  try {
+    const aux: Record<string, string> = {};
+    if (line.auxiliary) {
+      for (const [key, entry] of Object.entries(line.auxiliary)) {
+        const value = typeof entry?.value === "string" ? entry.value : String(entry?.value ?? "");
+        aux[key] =
+          value.length > AUX_VALUE_CAP
+            ? `${value.slice(0, AUX_VALUE_CAP)}…[truncated ${value.length - AUX_VALUE_CAP}]`
+            : value;
+      }
+    }
+    // category last so a stray auxiliary key named "category" can't shadow it.
+    const fields = { browser: { ...aux, category: line.category ?? "stagehand" } };
+    const message = `browser: ${line.message ?? ""}`;
+    switch (line.level) {
+      case 0:
+        logger.warn(fields, message);
+        break;
+      case 2:
+        logger.debug(fields, message);
+        break;
+      default: // 1 or undefined
+        logger.info(fields, message);
+    }
+  } catch {
+    // swallow — a logging-bridge bug must not break a browse step
+  }
+}
 
 interface BrowserLockOptions {
   /** Wall-clock cap for the inner fn. Defaults to 2 minutes; agent flows pass longer. */
@@ -139,10 +191,11 @@ async function createInstance(): Promise<Stagehand> {
       model: modelConfig,
       selfHeal: true,
       disablePino: true,
-      verbose: 0,
+      verbose: STAGEHAND_VERBOSE,
+      logger: stagehandLogger,
     });
 
-    await stagehand.init();
+    await runWithSpan("browser.init", () => stagehand.init());
     logger.info("Browser initialized (Browserbase cloud)");
     return stagehand;
   }
@@ -169,11 +222,12 @@ async function createInstance(): Promise<Stagehand> {
     selfHeal: true,
     cacheDir,
     disablePino: true,
-    verbose: 0,
+    verbose: STAGEHAND_VERBOSE,
+    logger: stagehandLogger,
     localBrowserLaunchOptions: launchOptions,
   });
 
-  await stagehand.init();
+  await runWithSpan("browser.init", () => stagehand.init());
 
   if (geolocation) {
     logger.info({ geolocation }, "Browser geolocation set");
