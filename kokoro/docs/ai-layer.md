@@ -239,6 +239,8 @@ See [memory.md](memory.md) for the full memory subsystem (session ingest, sweepe
 
 **Architecture**: Two independent LLM streams — Kokoro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_ENV` (`local`/`cloud`), `BROWSER_DATA_DIR`, `BROWSER_HEADLESS`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
 
+**Observability (Kansoku)**: Each action runs inside `runWithSpan(\`browse.<action>\`)`and browser init inside`runWithSpan("browser.init")`, so a browse turn renders as a real waterfall (per-action durations, nested under the conversation trace) in Kansoku. Stagehand's own steps are bridged into the `@kokoro/shared`logger via its`logger(line)` hook (`stagehandLogger`in`browser.ts`): each `LogLine`ships as a`browser: …`log line tagged with its`category` (`init`/`extraction`/`act`/`aisdk`/…) and auto-correlated to the active trace/span. Stagehand `verbose`is gated on log level —`1`(step-level) normally,`2`(full prompts/responses/DOM, the`aisdk`lines) when`LOG_LEVEL=debug`— and`auxiliary`values are truncated (~4 KB) so a DOM dump can't bloat ingest. Net: to deep-debug a browse turn, run the bot at`LOG_LEVEL=debug` and open its trace in Kansoku.
+
 ### searchRoutines
 
 - **Purpose**: Search and discover available routines by keyword
