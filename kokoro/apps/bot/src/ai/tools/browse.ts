@@ -6,7 +6,7 @@ import {
   resetBrowser,
   withBrowserLock,
 } from "../../services/browser";
-import { logger } from "@kokoro/shared";
+import { logger, runWithSpan } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
 
 const SearchResultSchema = z.array(
@@ -89,97 +89,106 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
             acquired = true;
             const page = stagehand.context.pages()[0];
 
-            switch (action) {
-              case "search": {
-                if (!query) return { success: false, reason: "query is required for search" };
-                logger.debug({ query }, `Tool: ${logPrefix} (search)`);
-                const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-                await page.goto(searchUrl);
-                const results = await stagehand.extract(
-                  "Extract all search results with their title, URL, and snippet/description text",
-                  SearchResultSchema,
-                );
-                return { success: true, query, results: results.slice(0, 10) };
-              }
-
-              case "visit": {
-                if (!url) return { success: false, reason: "url is required for visit" };
-                const visitUrl = normalizeUrl(url);
-                logger.debug({ url: visitUrl }, `Tool: ${logPrefix} (visit)`);
-                await page.goto(visitUrl, { waitUntil: "domcontentloaded" });
-                const pageText = await page.evaluate(() => document.body.innerText).catch(() => "");
-                const truncated = pageText.slice(0, 4000);
-                return {
-                  success: true,
-                  url: visitUrl,
-                  text: truncated,
-                  truncated: pageText.length > 4000,
-                };
-              }
-
-              case "extract": {
-                if (!instruction)
-                  return { success: false, reason: "instruction is required for extract" };
-                logger.debug({ instruction }, `Tool: ${logPrefix} (extract)`);
-                const result = (await stagehand.extract(instruction)) as { extraction?: string };
-                return { success: true, extraction: result.extraction ?? "" };
-              }
-
-              case "act": {
-                if (!instruction)
-                  return { success: false, reason: "instruction is required for act" };
-                logger.debug({ instruction }, `Tool: ${logPrefix} (act)`);
-                await stagehand.act(instruction);
-                return { success: true, performed: instruction };
-              }
-
-              case "screenshot": {
-                // The public createBrowseTool wrapper is the only caller that
-                // includes "screenshot" in allowedActions today, and it
-                // requires chatId/adapter as positional args. There's no
-                // type-level link between the action set and these fields,
-                // so this runtime check catches any future caller that
-                // builds allowedActions directly without supplying them.
-                if (!chatId || !adapter) {
-                  return { success: false, reason: "screenshot is not available in this context" };
+            // Span only the work, so a thrown failure marks the span "error"
+            // (the catch below converts it to a {success:false} result).
+            return await runWithSpan(`browse.${action}`, async () => {
+              switch (action) {
+                case "search": {
+                  if (!query) return { success: false, reason: "query is required for search" };
+                  logger.debug({ query }, `Tool: ${logPrefix} (search)`);
+                  const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+                  await page.goto(searchUrl);
+                  const results = await stagehand.extract(
+                    "Extract all search results with their title, URL, and snippet/description text",
+                    SearchResultSchema,
+                  );
+                  return { success: true, query, results: results.slice(0, 10) };
                 }
-                logger.debug(`Tool: ${logPrefix} (screenshot)`);
-                const buffer = await page.screenshot();
-                await adapter.sendPhotoBuffer(chatId, Buffer.from(buffer));
-                return { success: true, sent: true };
-              }
 
-              case "agent": {
-                if (!goal) return { success: false, reason: "goal is required for agent" };
-                logger.debug({ goal }, `Tool: ${logPrefix} (agent)`);
-                const agent = stagehand.agent();
-                const result = await agent.execute({
-                  instruction: goal,
-                  maxSteps: 25,
-                });
-                const summary = typeof result === "string" ? result : JSON.stringify(result);
-                return { success: true, goal, result: summary.slice(0, 4000) };
-              }
+                case "visit": {
+                  if (!url) return { success: false, reason: "url is required for visit" };
+                  const visitUrl = normalizeUrl(url);
+                  logger.debug({ url: visitUrl }, `Tool: ${logPrefix} (visit)`);
+                  await page.goto(visitUrl, { waitUntil: "domcontentloaded" });
+                  const pageText = await page
+                    .evaluate(() => document.body.innerText)
+                    .catch(() => "");
+                  const truncated = pageText.slice(0, 4000);
+                  return {
+                    success: true,
+                    url: visitUrl,
+                    text: truncated,
+                    truncated: pageText.length > 4000,
+                  };
+                }
 
-              case "login": {
-                if (!url) return { success: false, reason: "url is required for login" };
-                const loginUrl = normalizeUrl(url);
-                logger.debug({ url: loginUrl }, `Tool: ${logPrefix} (login)`);
-                await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
-                const title = await page.evaluate(() => document.title).catch(() => "");
-                // Keep the browser alive while the user enters credentials —
-                // skip the idle-shutdown timer that releaseBrowser would arm.
-                keepAlive = true;
-                return {
-                  success: true,
-                  url: loginUrl,
-                  title,
-                  waitingForUser: true,
-                  message:
-                    "Login page opened in the browser window. Waiting for manual credential entry.",
-                };
+                case "extract": {
+                  if (!instruction)
+                    return { success: false, reason: "instruction is required for extract" };
+                  logger.debug({ instruction }, `Tool: ${logPrefix} (extract)`);
+                  const result = (await stagehand.extract(instruction)) as { extraction?: string };
+                  return { success: true, extraction: result.extraction ?? "" };
+                }
+
+                case "act": {
+                  if (!instruction)
+                    return { success: false, reason: "instruction is required for act" };
+                  logger.debug({ instruction }, `Tool: ${logPrefix} (act)`);
+                  await stagehand.act(instruction);
+                  return { success: true, performed: instruction };
+                }
+
+                case "screenshot": {
+                  // The public createBrowseTool wrapper is the only caller that
+                  // includes "screenshot" in allowedActions today, and it
+                  // requires chatId/adapter as positional args. There's no
+                  // type-level link between the action set and these fields,
+                  // so this runtime check catches any future caller that
+                  // builds allowedActions directly without supplying them.
+                  if (!chatId || !adapter) {
+                    return {
+                      success: false,
+                      reason: "screenshot is not available in this context",
+                    };
+                  }
+                  logger.debug(`Tool: ${logPrefix} (screenshot)`);
+                  const buffer = await page.screenshot();
+                  await adapter.sendPhotoBuffer(chatId, Buffer.from(buffer));
+                  return { success: true, sent: true };
+                }
+
+                case "agent": {
+                  if (!goal) return { success: false, reason: "goal is required for agent" };
+                  logger.debug({ goal }, `Tool: ${logPrefix} (agent)`);
+                  const agent = stagehand.agent();
+                  const result = await agent.execute({
+                    instruction: goal,
+                    maxSteps: 25,
+                  });
+                  const summary = typeof result === "string" ? result : JSON.stringify(result);
+                  return { success: true, goal, result: summary.slice(0, 4000) };
+                }
+
+                case "login": {
+                  if (!url) return { success: false, reason: "url is required for login" };
+                  const loginUrl = normalizeUrl(url);
+                  logger.debug({ url: loginUrl }, `Tool: ${logPrefix} (login)`);
+                  await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
+                  const title = await page.evaluate(() => document.title).catch(() => "");
+                  // Keep the browser alive while the user enters credentials —
+                  // skip the idle-shutdown timer that releaseBrowser would arm.
+                  keepAlive = true;
+                  return {
+                    success: true,
+                    url: loginUrl,
+                    title,
+                    waitingForUser: true,
+                    message:
+                      "Login page opened in the browser window. Waiting for manual credential entry.",
+                  };
+                }
               }
-            }
+            });
           } catch (error) {
             const message = error instanceof Error ? error.message : "Browser operation failed";
             logger.error({ error: error, action }, `Tool: ${logPrefix} failed`);
