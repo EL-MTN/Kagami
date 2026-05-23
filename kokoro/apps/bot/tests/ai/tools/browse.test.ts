@@ -138,20 +138,9 @@ describe("browse — full mode", () => {
     expect(adapter.calls.sendPhotoBuffer[0].chatId).toBe("chat-1");
   });
 
-  it("agent runs the autonomous flow and truncates the result to 4000 chars", async () => {
-    const sh = fakeStagehand();
-    const longResult = "a".repeat(5000);
-    sh.agent = () => ({
-      execute: vi.fn(() => Promise.resolve(longResult)),
-    });
-    mockAcquireBrowser.mockResolvedValue(sh);
-    const tool = createBrowseTool("chat-1", fakeAdapter()) as unknown as ExecutableTool;
-
-    const result = await tool.execute({ action: "agent", goal: "find a deal" });
-    expect(result.success).toBe(true);
-    expect(result.goal).toBe("find a deal");
-    expect((result.result as string).length).toBe(4000);
-  });
+  // Inline autonomous `agent` was removed — a 25-step run can't fit the
+  // per-action timeout. Autonomous browsing is the confirmation-gated
+  // `browseAgent` (services/gated-actions.ts), covered by its own tests.
 
   it("login keeps the browser alive and returns waitingForUser:true", async () => {
     const sh = fakeStagehand();
@@ -177,7 +166,6 @@ describe("browse — full mode", () => {
     expect(await tool.execute({ action: "visit" })).toMatchObject({ success: false });
     expect(await tool.execute({ action: "extract" })).toMatchObject({ success: false });
     expect(await tool.execute({ action: "act" })).toMatchObject({ success: false });
-    expect(await tool.execute({ action: "agent" })).toMatchObject({ success: false });
     expect(await tool.execute({ action: "login" })).toMatchObject({ success: false });
   });
 });

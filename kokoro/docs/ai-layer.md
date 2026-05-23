@@ -123,7 +123,7 @@ watcherTools(ctx) → { searchMemory, findPeople?, getPersonContext?, recentInte
 Two distinct tool sets are assembled depending on the calling context:
 
 - **`allTools(ctx)`** — full surface available to Mashiro in conversation and inside routine executors. Includes side-effecting tools (`sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, etc.) plus CRM lookup tools when `KIZUNA_ENABLED` is true.
-- **`watcherTools(ctx)`** — read-only subset for watcher executor ticks (`apps/bot/src/services/watcher-executor.ts`). Watchers observe; they never mutate external state. `searchMemory` and the Kizuna CRM **read** tools are included; `rememberFact` and the Kizuna CRM **write** tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are excluded. The browse tool is the `createReadOnlyBrowseTool()` variant, which restricts actions to `search`/`visit`/`extract` and excludes `screenshot` (sends a photo), `act` (mutates page state), `agent`, and `login`. The calendar variant is `createManageCalendarTool({ mode: "readOnly" })`. `manageWatchers` is also excluded — watchers cannot create watchers.
+- **`watcherTools(ctx)`** — read-only subset for watcher executor ticks (`apps/bot/src/services/watcher-executor.ts`). Watchers observe; they never mutate external state. `searchMemory` and the Kizuna CRM **read** tools are included; `rememberFact` and the Kizuna CRM **write** tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are excluded. The browse tool is the `createReadOnlyBrowseTool()` variant, which restricts actions to `search`/`visit`/`extract` and excludes `screenshot` (sends a photo), `act` (mutates page state), and `login`. The calendar variant is `createManageCalendarTool({ mode: "readOnly" })`. `manageWatchers` is also excluded — watchers cannot create watchers.
 
 ### searchMemory
 
@@ -222,8 +222,8 @@ See [memory.md](memory.md) for the full memory subsystem (session ingest, sweepe
 
 ### browse (conditional — requires BROWSER_ENABLED=true)
 
-- **Purpose**: Browse the web — visit pages, extract data, interact with elements, take screenshots, or complete multi-step autonomous tasks. When `BRAVE_SEARCH_API_KEY` is also set, the `search` action is dropped from the action enum so the LLM uses `webSearch` for lookups instead.
-- **Parameters**: `{ action: "search"?|"visit"|"extract"|"act"|"screenshot"|"agent"|"login", query?, url?, instruction?, goal? }`
+- **Purpose**: Browse the web — visit pages, extract data, interact with elements, or take screenshots. (Autonomous multi-step browsing is **not** an inline action — it can't fit the per-action timeout; it lives in the confirmation-gated `browseAgent`.) When `BRAVE_SEARCH_API_KEY` is also set, the `search` action is dropped from the action enum so the LLM uses `webSearch` for lookups instead.
+- **Parameters**: `{ action: "search"?|"visit"|"extract"|"act"|"screenshot"|"login", query?, url?, instruction? }`
 - **Returns**: Varies by action. Always includes `{ success: boolean }`.
 - **Behavior**: Uses Stagehand (LLM-driven browser automation on accessibility tree). Supports two environments controlled by `BROWSER_ENV`: `local` runs a singleton Chromium instance with a persistent user profile, `cloud` delegates to Browserbase (requires `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID`). Lazy-initialized on first call, auto-shuts down after 5 minutes idle. Every inline action is wrapped in `withBrowserLock` with a **60 s** wall-clock timeout — deliberately below the conversational turn budget (`generate.ts` `LLM_TIMEOUT_MS` = 120 s) so a slow browse fails fast as a `{success:false}` tool result the LLM can answer around, rather than the turn-level abort killing the whole turn. On timeout the singleton is reset so the next call re-inits. Long autonomous runs don't belong inline — they go through the confirmation-gated `browseAgent` (`services/gated-actions.ts`), which dispatches outside the turn with its own 10-min budget.
 
@@ -234,8 +234,9 @@ See [memory.md](memory.md) for the full memory subsystem (session ingest, sweepe
 | `extract`    | `instruction`  | Structured extraction from current page                                                     | `stagehand.extract(instruction)`            |
 | `act`        | `instruction`  | Interact with page (click, type, scroll)                                                    | `stagehand.act(instruction)`                |
 | `screenshot` | —              | Capture page → send as photo                                                                | `page.screenshot()`                         |
-| `agent`      | `goal`         | Autonomous multi-step task (up to 25 steps)                                                 | `stagehand.agent().execute()`               |
 | `login`      | `url`          | Opens login page for manual credential entry                                                | `page.goto()` (no browser release)          |
+
+Autonomous multi-step browsing (`stagehand.agent().execute()`, up to 25 steps) is the separate confirmation-gated `browseAgent` action, dispatched outside the conversational turn — see `services/gated-actions.ts`.
 
 **Architecture**: Two independent LLM streams — Kokoro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_ENV` (`local`/`cloud`), `BROWSER_DATA_DIR`, `BROWSER_HEADLESS`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
 
