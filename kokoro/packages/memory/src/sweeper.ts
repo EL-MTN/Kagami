@@ -97,31 +97,30 @@ export async function sweepPendingIngests(
       );
     }
 
-    const before = convo.ingestStatus;
-    await ingestClosedSessionAwaited(convo);
-    if (convo.ingestStatus === "done") {
+    // Account by the returned outcome rather than re-reading convo: runIngest
+    // operates on a freshly-claimed document, so the in-hand convo may be stale.
+    const outcome = await ingestClosedSessionAwaited(convo);
+    if (outcome === "done") {
       result.ingested += 1;
-    } else if (convo.ingestStatus === "failed") {
-      // runIngest hit the attempt cap on a reachable Kioku — terminal, the
-      // query won't pick it up again.
+    } else if (outcome === "abandoned") {
+      // hit the attempt cap on a reachable Kioku — terminal, the query won't
+      // pick it up again.
       result.abandoned += 1;
       logger.warn(
-        {
-          sessionId: convo.sessionId,
-          chatId: convo.chatId,
-          attempts: convo.ingestAttempts,
-        },
+        { sessionId: convo.sessionId, chatId: convo.chatId },
         "kioku sweeper: abandoned ingest after max attempts",
       );
+    } else if (outcome === "skipped") {
+      // another worker holds the ingest lease — leave it to them, don't count.
+      logger.debug(
+        { sessionId: convo.sessionId, chatId: convo.chatId },
+        "kioku sweeper: ingest claimed by another worker, skipping",
+      );
     } else {
+      // "retry": failed but left pending for a future sweep.
       result.failed += 1;
       logger.warn(
-        {
-          sessionId: convo.sessionId,
-          chatId: convo.chatId,
-          before,
-          attempts: convo.ingestAttempts,
-        },
+        { sessionId: convo.sessionId, chatId: convo.chatId },
         "kioku sweeper: ingest still pending after attempt",
       );
     }

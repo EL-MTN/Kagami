@@ -32,6 +32,16 @@ const baseSchema = z.object({
   LLM_MODEL: z.string().default("claude-sonnet-4-6"),
   LLM_MODEL_FAST: z.string().optional(),
   LLM_MODEL_SMART: z.string().optional(),
+  // Per-attempt deadline for chat calls (the @kagami/llm gateway retries the
+  // attempt on timeout). Bounds a hung/slow provider response so it fails over
+  // fast instead of eating the whole conversational turn budget. NOT the turn
+  // budget itself — that's the per-call-site `LLM_TIMEOUT_MS` constants
+  // (generate.ts 120s, acknowledge.ts 60s, watcher/routine 180s). Empty string
+  // → default (matches the KANSOKU_URL/KAO_URL empty-handling below). Default 30s.
+  LLM_ATTEMPT_TIMEOUT_MS: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.coerce.number().int().positive().default(30_000),
+  ),
 
   XAI_API_KEY: z.string().optional(),
 

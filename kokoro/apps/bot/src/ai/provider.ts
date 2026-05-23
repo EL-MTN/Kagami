@@ -88,6 +88,7 @@ const inference = createInference({
     vendor: config.LLM_PROVIDER,
     model: config.LLM_MODEL,
     models: tierModels,
+    timeoutMs: config.LLM_ATTEMPT_TIMEOUT_MS,
   },
 });
 

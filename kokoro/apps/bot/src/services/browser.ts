@@ -5,7 +5,11 @@ import { resolve } from "node:path";
 
 const isCloud = config.BROWSER_ENV === "cloud";
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const DEFAULT_ACTION_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes — circuit breaker, not an SLO
+// Per-action circuit breaker. Kept BELOW the conversational turn budget
+// (ai/generate.ts LLM_TIMEOUT_MS = 120s) so a slow browse fails fast as a
+// {success:false} tool result the LLM can react to within the turn, instead of
+// the turn-level AbortSignal killing the whole turn with a generic timeout.
+const DEFAULT_ACTION_TIMEOUT_MS = 60 * 1000; // 60s
 
 // --- Stagehand → Kansoku observability bridge ---
 //

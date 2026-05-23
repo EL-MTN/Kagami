@@ -1,4 +1,4 @@
-import type { IConversation } from "@kokoro/db";
+import { Conversation, type IConversation } from "@kokoro/db";
 import { logger } from "@kokoro/shared";
 import { ingestSession, KiokuClientError } from "./index";
 import { buildTranscript, transcriptHasContent } from "./transcript";
@@ -7,6 +7,21 @@ import { buildTranscript, transcriptHasContent } from "./transcript";
 // fix. Past this it's marked terminally "failed" rather than retried by the
 // sweeper forever. See countsTowardIngestCap for which failures count.
 export const MAX_INGEST_ATTEMPTS = 5;
+
+// How long a claim on a session's ingest is held. Comfortably longer than the
+// 180s ingest client timeout so a legitimately in-flight ingest is never
+// double-run; short enough that a worker that crashed mid-ingest frees the
+// session for retry reasonably soon.
+const INGEST_LEASE_MS = 5 * 60 * 1000;
+
+// Outcome of an ingest attempt, so the sweeper can account accurately without
+// re-reading the (possibly concurrently-updated) conversation document.
+//   done      — facts extracted, status "done"
+//   retry     — failed but left "pending" for a future sweep (transient, or
+//               deterministic-but-below-cap)
+//   abandoned — deterministic failure crossed the cap, status terminal "failed"
+//   skipped   — another worker holds the lease; we did nothing
+export type IngestOutcome = "done" | "retry" | "abandoned" | "skipped";
 
 // Whether an ingest failure should count toward the abandonment cap. The cap
 // exists to stop retrying a transcript that will never succeed — NOT to give
@@ -31,28 +46,68 @@ export function countsTowardIngestCap(err: unknown): boolean {
 // callers: the four session-rollover sites (latency optimization), and
 // the sweeper (correctness safety net).
 //
-// On success: marks `ingestStatus: "done"` and records `ingestedAt`.
-// On failure: leaves status as `"pending"` and bumps `ingestAttempts`;
-// the sweeper retries on a future tick. Kioku is idempotent on retry
-// (md5 dedup catches byte-identical extractions), and the sweeper
-// probes `source_session` before re-ingesting to avoid creating
-// paraphrased duplicates if the extraction LLM produces different
-// wording the second time.
+// Claims the session via an atomic lease so the immediate trigger and the
+// sweeper never ingest it concurrently. On success: "done" + `ingestedAt`. On
+// failure: releases the lease and either leaves it "pending" (transient or
+// below-cap) or marks it terminal "failed" (deterministic, past the cap). The
+// sweeper retries pending ones; Kioku is idempotent on retry and the sweeper
+// also probes `source_session` first.
 //
 // Throws nothing. The chat path must never break because of memory.
 
-async function runIngest(convo: IConversation): Promise<void> {
-  const startedAt = Date.now();
-  logger.info({ sessionId: convo.sessionId, chatId: convo.chatId }, "kioku ingest: starting");
+// Atomically claim the session for ingest: only transitions a claimable row
+// (pending/unset status AND a free/expired lease) to a fresh lease. Returns the
+// claimed document, or null if another worker already holds it (or it's no
+// longer pending). The conditional update is the serialization point.
+async function claimForIngest(convo: IConversation): Promise<IConversation | null> {
+  const now = new Date();
+  return Conversation.findOneAndUpdate(
+    {
+      _id: convo._id,
+      ingestStatus: { $in: ["pending", null] },
+      $or: [
+        { ingestLeaseUntil: { $exists: false } },
+        { ingestLeaseUntil: null },
+        { ingestLeaseUntil: { $lt: now } },
+      ],
+    },
+    { $set: { ingestLeaseUntil: new Date(now.getTime() + INGEST_LEASE_MS) } },
+    { returnDocument: "after" },
+  );
+}
+
+async function runIngest(convo: IConversation): Promise<IngestOutcome> {
+  // The claim is a DB call and must not escape: runIngest is called
+  // fire-and-forget from the chat path (`void runIngest`), where an unhandled
+  // rejection trips the process-level handler and shuts the bot down. A
+  // transient Mongo error here leaves the session pending for the next sweep.
+  let claimed: IConversation | null;
   try {
-    const result = await ingestSession({ transcript: buildTranscript(convo) });
-    convo.ingestStatus = "done";
-    convo.ingestedAt = new Date();
-    await convo.save();
+    claimed = await claimForIngest(convo);
+  } catch (err) {
+    logger.error({ error: err, sessionId: convo.sessionId }, "kioku ingest: claim failed");
+    return "retry";
+  }
+  if (!claimed) {
+    logger.debug(
+      { sessionId: convo.sessionId },
+      "kioku ingest: lease held by another worker (or no longer pending), skipping",
+    );
+    return "skipped";
+  }
+
+  const startedAt = Date.now();
+  logger.info({ sessionId: claimed.sessionId, chatId: claimed.chatId }, "kioku ingest: starting");
+  try {
+    const result = await ingestSession({ transcript: buildTranscript(claimed) });
+    claimed.ingestStatus = "done";
+    claimed.ingestedAt = new Date();
+    claimed.ingestLeaseUntil = null;
+    await claimed.save();
     logger.info(
       {
-        sessionId: convo.sessionId,
-        chatId: convo.chatId,
+        sessionId: claimed.sessionId,
+        chatId: claimed.chatId,
         added: result.added,
         batches: result.batches,
         failed: result.failed,
@@ -60,38 +115,46 @@ async function runIngest(convo: IConversation): Promise<void> {
       },
       "kioku ingest: done",
     );
+    return "done";
   } catch (err) {
     // Only charge an attempt — and eventually give up — for failures that
     // re-running this transcript won't fix (deterministic HTTP errors + client
     // timeouts). Transient signals (outage, 429/503) leave the session
-    // "pending" for unbounded retry so a recovering Kioku still drains it.
+    // "pending" for unbounded retry so a recovering Kioku still drains it. We
+    // hold the lease, so this read-modify-write is race-free.
     const countsTowardCap = countsTowardIngestCap(err);
+    let outcome: IngestOutcome = "retry";
     if (countsTowardCap) {
-      convo.ingestAttempts = (convo.ingestAttempts ?? 0) + 1;
-      if (convo.ingestAttempts >= MAX_INGEST_ATTEMPTS) {
-        convo.ingestStatus = "failed";
+      claimed.ingestAttempts = (claimed.ingestAttempts ?? 0) + 1;
+      if (claimed.ingestAttempts >= MAX_INGEST_ATTEMPTS) {
+        claimed.ingestStatus = "failed";
+        outcome = "abandoned";
       }
     }
+    // Release the lease so a still-"pending" session is immediately re-claimable
+    // on the next sweep rather than waiting for the lease to expire.
+    claimed.ingestLeaseUntil = null;
     try {
-      await convo.save();
+      await claimed.save();
     } catch (saveErr) {
       logger.warn(
-        { error: saveErr, sessionId: convo.sessionId },
-        "kioku ingest: failed to update ingestAttempts after error",
+        { error: saveErr, sessionId: claimed.sessionId },
+        "kioku ingest: failed to update conversation after error",
       );
     }
     logger.error(
       {
         error: err,
-        sessionId: convo.sessionId,
-        chatId: convo.chatId,
-        attempts: convo.ingestAttempts,
-        ingestStatus: convo.ingestStatus,
+        sessionId: claimed.sessionId,
+        chatId: claimed.chatId,
+        attempts: claimed.ingestAttempts,
+        ingestStatus: claimed.ingestStatus,
         countsTowardCap,
         durationMs: Date.now() - startedAt,
       },
       "kioku ingest: failed",
     );
+    return outcome;
   }
 }
 
@@ -124,12 +187,13 @@ export function ingestClosedSession(convo: IConversation): void {
   void runIngest(convo);
 }
 
-// Awaited variant for the sweeper, which isn't latency-sensitive and
-// wants to know when each ingest finishes so it can rate-limit.
-export async function ingestClosedSessionAwaited(convo: IConversation): Promise<void> {
+// Awaited variant for the sweeper, which isn't latency-sensitive and wants the
+// outcome so it can account accurately and rate-limit. Empty sessions are
+// marked done with no Kioku call → "done".
+export async function ingestClosedSessionAwaited(convo: IConversation): Promise<IngestOutcome> {
   if (!transcriptHasContent(convo)) {
     await markEmptyAsDone(convo);
-    return;
+    return "done";
   }
-  await runIngest(convo);
+  return runIngest(convo);
 }
