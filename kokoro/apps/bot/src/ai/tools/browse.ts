@@ -67,10 +67,10 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
     }),
     execute: async ({ action, query, url, instruction }) => {
       // Serialize browser access — parallel tool calls share one page. Every
-      // action (including the inline `agent`) uses the default per-action
-      // timeout, which sits below the conversational turn budget; long
-      // autonomous runs go through the confirmation-gated `browseAgent` path,
-      // which dispatches outside the turn with its own longer budget.
+      // action uses the default per-action timeout, which sits below the
+      // conversational turn budget; long autonomous runs go through the
+      // confirmation-gated `browseAgent` path, which dispatches outside the
+      // turn with its own longer budget.
       return withBrowserLock(
         async () => {
           let acquired = false;
