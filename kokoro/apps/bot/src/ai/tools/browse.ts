@@ -30,15 +30,11 @@ function isFatalBrowserError(message: string): boolean {
   );
 }
 
-const ALL_BROWSE_ACTIONS = [
-  "search",
-  "visit",
-  "extract",
-  "act",
-  "screenshot",
-  "agent",
-  "login",
-] as const;
+// No inline `agent` action: a 25-step autonomous run can't fit the per-action
+// timeout (which sits below the conversational turn budget), so it would always
+// time out. Autonomous browsing goes through the confirmation-gated
+// `browseAgent` (services/gated-actions.ts), which dispatches outside the turn.
+const ALL_BROWSE_ACTIONS = ["search", "visit", "extract", "act", "screenshot", "login"] as const;
 type BrowseAction = (typeof ALL_BROWSE_ACTIONS)[number];
 
 const READ_ONLY_ACTIONS = ["search", "visit", "extract"] as const satisfies readonly BrowseAction[];
@@ -68,12 +64,8 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
         .string()
         .optional()
         .describe("Natural language instruction (for extract/act actions)"),
-      goal: z
-        .string()
-        .optional()
-        .describe("High-level goal for autonomous multi-step browsing (for agent action)"),
     }),
-    execute: async ({ action, query, url, instruction, goal }) => {
+    execute: async ({ action, query, url, instruction }) => {
       // Serialize browser access — parallel tool calls share one page. Every
       // action (including the inline `agent`) uses the default per-action
       // timeout, which sits below the conversational turn budget; long
@@ -155,18 +147,6 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
                   const buffer = await page.screenshot();
                   await adapter.sendPhotoBuffer(chatId, Buffer.from(buffer));
                   return { success: true, sent: true };
-                }
-
-                case "agent": {
-                  if (!goal) return { success: false, reason: "goal is required for agent" };
-                  logger.debug({ goal }, `Tool: ${logPrefix} (agent)`);
-                  const agent = stagehand.agent();
-                  const result = await agent.execute({
-                    instruction: goal,
-                    maxSteps: 25,
-                  });
-                  const summary = typeof result === "string" ? result : JSON.stringify(result);
-                  return { success: true, goal, result: summary.slice(0, 4000) };
                 }
 
                 case "login": {
@@ -251,8 +231,8 @@ export function createBrowseTool(
   return createBrowseToolImpl({
     allowedActions: pickActions(ALL_BROWSE_ACTIONS, includeSearch),
     description: includeSearch
-      ? "Browse the web. Search for information, visit pages, extract data, interact with elements, take screenshots, or complete multi-step tasks autonomously."
-      : "Browse the web. Visit pages, extract data, interact with elements, take screenshots, or complete multi-step tasks autonomously. For lookups, use `webSearch`.",
+      ? "Browse the web. Search for information, visit pages, extract data, interact with elements, or take screenshots."
+      : "Browse the web. Visit pages, extract data, interact with elements, or take screenshots. For lookups, use `webSearch`.",
     logPrefix: "browse",
     chatId,
     adapter,

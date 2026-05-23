@@ -72,12 +72,22 @@ async function claimForIngest(convo: IConversation): Promise<IConversation | nul
       ],
     },
     { $set: { ingestLeaseUntil: new Date(now.getTime() + INGEST_LEASE_MS) } },
-    { new: true },
+    { returnDocument: "after" },
   );
 }
 
 async function runIngest(convo: IConversation): Promise<IngestOutcome> {
-  const claimed = await claimForIngest(convo);
+  // The claim is a DB call and must not escape: runIngest is called
+  // fire-and-forget from the chat path (`void runIngest`), where an unhandled
+  // rejection trips the process-level handler and shuts the bot down. A
+  // transient Mongo error here leaves the session pending for the next sweep.
+  let claimed: IConversation | null;
+  try {
+    claimed = await claimForIngest(convo);
+  } catch (err) {
+    logger.error({ error: err, sessionId: convo.sessionId }, "kioku ingest: claim failed");
+    return "retry";
+  }
   if (!claimed) {
     logger.debug(
       { sessionId: convo.sessionId },
