@@ -37,6 +37,12 @@ export interface IConversation extends Document {
   ingestStatus: "pending" | "done" | "failed";
   ingestedAt?: Date;
   ingestAttempts: number;
+  // Lease held by the worker currently ingesting this session, so the
+  // immediate fire-and-forget trigger and the sweeper can't ingest it
+  // concurrently (which would double-write paraphrased facts and race
+  // ingestAttempts). Expires on its own so a crashed worker's session is
+  // re-claimable. Null/absent/past = free to claim.
+  ingestLeaseUntil?: Date | null;
   messages: IMessage[];
   createdAt: Date;
   updatedAt: Date;
@@ -74,6 +80,7 @@ const conversationSchema = new Schema<IConversation>(
     ingestStatus: { type: String, enum: ["pending", "done", "failed"], default: "pending" },
     ingestedAt: { type: Date },
     ingestAttempts: { type: Number, default: 0 },
+    ingestLeaseUntil: { type: Date },
     messages: [messageSchema],
   },
   { timestamps: true },

@@ -57,6 +57,10 @@ const modelName = process.env.LLM_MODEL ?? process.env.MODEL ?? "";
 if (process.env.LLM_MODEL === undefined && process.env.MODEL !== undefined) {
   deprecated.MODEL = "LLM_MODEL";
 }
+// The default is the local LM Studio embedding model — coherent with the
+// `lmstudio` base-URL default in resolveEndpoint, so a no-env checkout is a
+// working local-dev setup. The deployed config sets EMBEDDING_MODEL (+ base
+// URL / key) to OpenAI `text-embedding-3-small` via .env; see .env.example.
 export const embeddingModelName =
   process.env.EMBEDDING_MODEL ?? "text-embedding-nomic-embed-text-v1.5";
 
