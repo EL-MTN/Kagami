@@ -10,7 +10,6 @@ import type {
   ListOrganizationsQuery,
   ListPeopleQuery,
   ListResp,
-  OAuthStatus,
   Organization,
   Person,
   RunCalendarSyncResult,
@@ -19,6 +18,9 @@ import type {
 } from "./types";
 
 const API_URL = process.env.KIZUNA_API_URL ?? "https://api.kizuna.localhost";
+// Used by the Sync page to link operators to Kao for (re-)consenting Google
+// access. Kao now owns the OAuth flow for the 'kizuna' grant.
+const KAO_URL = process.env.KAO_URL ?? "https://api.kao.localhost";
 
 export class ApiError extends Error {
   status: number;
@@ -85,7 +87,6 @@ export const api = {
     kz<ListResp<Organization>>(`/organizations${qs(q)}`),
   getOrganization: (id: string) => kz<Organization>(`/organizations/${id}`),
   listContexts: (q?: ListContextsQuery) => kz<{ items: ContextRow[] }>(`/contexts${qs(q)}`),
-  oauthStatus: () => kz<OAuthStatus>("/oauth/google/status"),
   gmailSyncState: () => kz<SyncState>("/sync/gmail/state"),
   runGmailSync: (force?: boolean) =>
     kz<RunSyncResult>("/sync/gmail/run", {
@@ -102,8 +103,17 @@ export const api = {
     }),
 };
 
-export function oauthStartUrl(): string {
-  return `${API_URL}/oauth/google/start`;
+// Where the operator goes to (re-)consent Google access for the Kizuna grant.
+// Kao owns the consent flow; this dashboard only links out to it.
+export function kaoConsentUrl(): string {
+  return `${KAO_URL.replace(/\/+$/, "")}/oauth/kizuna/start`;
+}
+
+export function kaoDashboardUrl(): string {
+  // ${KAO_URL} points at the Kao API origin (api.kao.localhost). The operator
+  // dashboard lives at the same hostname with the `api.` prefix stripped —
+  // mirrors how Kao itself derives KAO_DASHBOARD_URL from KAO_PUBLIC_URL.
+  return KAO_URL.replace(/\/+$/, "").replace(/(^https?:\/\/)api\./, "$1");
 }
 
 export const config = {

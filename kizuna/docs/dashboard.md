@@ -83,7 +83,7 @@ api.gcalSyncState()
 api.runGcalSync(force?)
 ```
 
-`oauthStartUrl()` returns `${KIZUNA_API_URL}/oauth/google/start` so the "Connect Google" button is a plain `<a href>`.
+`kaoConsentUrl()` returns `${KAO_URL}/oauth/kizuna/start` so the "Grant / re-consent in Kao" button on the `/sync` page is a plain `<a href>` link out to the Kao identity service (which owns the OAuth flow). `kaoDashboardUrl()` derives the operator dashboard URL from the API origin (strips the `api.` prefix) for the secondary "Open Kao dashboard" link.
 
 The exported `config` object also reads `process.env.USER_EMAILS` at module scope so per-person pages can mark interactions as "outbound" (sender's primaryEmail ∈ USER_EMAILS) vs "inbound."
 
@@ -193,9 +193,8 @@ The dashboard hits the same REST endpoints documented in [api.md](api.md):
 - `GET /people`, `/people/:id`, `/people/:id/interactions`
 - `GET /interactions`, `/followups`, `/organizations`, `/contexts`, `/digest`
 - `PATCH /followups/:id`, `DELETE /followups/:id` (resolve + tombstone from `/followups`)
-- `GET /oauth/google/status`
 - `GET /sync/{gmail,gcal}/state`
-- `POST /sync/{gmail,gcal}/run` (force optional)
+- `POST /sync/{gmail,gcal}/run` (force optional — also drops the Kao-vended access-token cache)
 
 The dashboard does not write People / Interactions / Organizations / Contexts — those mutations stay in the concierge agent. Followup `PATCH`/`DELETE` are the only CRM writes the dashboard performs.
 

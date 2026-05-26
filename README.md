@@ -250,19 +250,17 @@ Kokoro reaches Kizuna through `KIZUNA_URL`, which defaults to
 `https://api.kizuna.localhost`. The read-only CRM tools are enabled by default; set
 `KIZUNA_ENABLED=false` in `kokoro/apps/bot/.env` to omit them from every tool palette.
 
-For Google tools, set:
+For Google tools (email/calendar/reminders), Kokoro vends access tokens from the Kao identity
+service in the same workspace — it no longer owns a refresh token. Set:
 
 ```bash
-GOOGLE_OAUTH_CLIENT_ID=your_client_id_here
-GOOGLE_OAUTH_CLIENT_SECRET=your_client_secret_here
-GOOGLE_OAUTH_REFRESH_TOKEN=your_refresh_token_here
+KAO_URL=https://api.kao.localhost
+KAO_TOKEN=<same value as Kao's KAO_TOKEN>
 ```
 
-To generate the refresh token from the root workspace:
-
-```bash
-npm run kokoro:auth:google
-```
+Stand up Kao first (`kao/CLAUDE.md`), then consent at `${KAO_URL}/oauth/kokoro/start` (operator
+browser). Without both `KAO_URL` and `KAO_TOKEN`, the maid-service tools and system-prompt
+section are dropped entirely.
 
 The Kokoro dashboard defaults to `mongodb://localhost:27017/kokoro`. Set
 `DASHBOARD_PASSWORD` in `kokoro/apps/dashboard/.env.local` to enable basic auth in front of the
@@ -275,29 +273,26 @@ Kizuna API config lives in `kizuna/apps/api/.env`.
 Common local fields:
 
 ```bash
-MONGO_URI=mongodb://127.0.0.1:27017/kizuna
+MONGODB_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com
-GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback
+KAO_URL=https://api.kao.localhost
+KAO_TOKEN=<same value as Kao's KAO_TOKEN>
 KIZUNA_INGEST_INTERVAL_SEC=0
 ```
 
-Generate the OAuth token encryption key with:
+Kizuna no longer owns a Google refresh token — it asks the Kao identity service for short-lived
+access tokens via `${KAO_URL}/grants/kizuna/token`. Stand up Kao (`kao/CLAUDE.md`) first, then
+use the same `KAO_TOKEN` value here. Consent for the `kizuna` grant (read-only Gmail + Calendar)
+is granted at `${KAO_URL}/oauth/kizuna/start` (operator browser, or the dashboard's
+"Grant / re-consent in Kao" button on `/sync`).
 
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
-
-Then set:
-
-```bash
-KIZUNA_OAUTH_ENCRYPTION_KEY=generated_base64_value
-```
-
-The dashboard config points at the API and reuses `USER_EMAILS` for local-user classification:
+The dashboard config points at the API, reuses `USER_EMAILS` for local-user classification, and
+needs `KAO_URL` purely to build the consent link:
 
 ```bash
 KIZUNA_API_URL=https://api.kizuna.localhost
 USER_EMAILS=you@example.com
+KAO_URL=https://api.kao.localhost
 ```
 
 Set `KIZUNA_INGEST_INTERVAL_SEC=300` for a five-minute Gmail/Calendar ingest loop during local
@@ -538,9 +533,8 @@ Important runtime notes:
 - Kizuna resource routes are open at single-user localhost; there is no bearer token on local API calls.
 - The dashboard sends no API auth header and has no login layer.
 - `USER_EMAILS` identifies the local user's addresses for ingest and dashboard classification.
-- `KIZUNA_OAUTH_ENCRYPTION_KEY` must decode to exactly 32 bytes.
-- Kizuna has no outbound runtime dependency on Kioku or Kokoro; Kokoro can consume Kizuna's
-  read-only CRM API.
+- Google access is vended on demand by the Kao identity service (`${KAO_URL}/grants/kizuna/token`); Kizuna no longer owns a refresh token. `KAO_TOKEN` is the shared bearer required at runtime.
+- Kizuna has no outbound runtime dependency on Kioku or Kokoro; its only outbound calls are to Google (Gmail/Calendar) and Kao (token vend). Kokoro can consume Kizuna's read-only CRM API.
 
 Key docs:
 
@@ -703,18 +697,25 @@ Confirm Kioku is running at `https://api.kioku.localhost`, or override `KIOKU_UR
 chat. Closed-session transcript ingest is retried later; ad hoc fact writes are not currently
 backfilled.
 
-### Google OAuth fails
+### Google access fails
 
-For Kokoro, make sure all three `GOOGLE_OAUTH_*` fields are present together in
-`kokoro/apps/bot/.env`.
+Both Kokoro and Kizuna get Google access tokens from the Kao identity service now; neither
+holds a refresh token. If the email/calendar tools (Kokoro) or Gmail/Calendar ingest (Kizuna)
+fails:
 
-For Kizuna, make sure the Google Cloud OAuth redirect URI exactly matches:
-
-```text
-https://api.kizuna.localhost/oauth/google/callback
-```
-
-Also confirm `KIZUNA_OAUTH_ENCRYPTION_KEY` is a base64-encoded 32-byte value.
+1. Make sure `KAO_URL` and `KAO_TOKEN` are both set in the consumer's `.env`
+   (`kokoro/apps/bot/.env` for Kokoro, `kizuna/apps/api/.env` for Kizuna), and `KAO_TOKEN`
+   matches Kao's `KAO_TOKEN`. Without `KAO_TOKEN`, the vend surfaces as `refresh_failed` /
+   `KaoMisconfiguredError` (Kokoro: chat continues with the maid tools dropped; Kizuna: sync
+   records an error and retries next tick).
+2. If the consumer reports `invalid_grant` or `no_grant`, the operator needs to re-consent at
+   `${KAO_URL}/oauth/kokoro/start` or `${KAO_URL}/oauth/kizuna/start` respectively. After
+   re-consenting, force-refresh: Kokoro re-vends on its next tool call; Kizuna's `/sync` page
+   has a "Force-run (clear pause)" button that drops the cached token and asks Kao to bypass
+   its cache too (`?force=1`).
+3. The Google Cloud OAuth redirect URI is configured on the Kao Web client and must match
+   `${KAO_PUBLIC_URL}/oauth/callback` (default `https://api.kao.localhost/oauth/callback`).
+   See [`kao/CLAUDE.md`](kao/CLAUDE.md) for Kao setup.
 
 ## Further Reading
 

@@ -13,9 +13,6 @@ const blankAsUndefined = (value: unknown): unknown => {
   return trimmed === "" ? undefined : trimmed;
 };
 
-const optionalString = z.preprocess(blankAsUndefined, z.string().min(1).optional());
-const optionalUrl = z.preprocess(blankAsUndefined, z.string().url().optional());
-
 const envSchema = z.object({
   MONGODB_URI: z.string().regex(/^mongodb(\+srv)?:\/\//, "MONGODB_URI must be a mongodb:// URI"),
   USER_EMAILS: z
@@ -23,22 +20,13 @@ const envSchema = z.object({
     .min(1, "USER_EMAILS must list at least one address")
     .transform((s) => csv(s).map((e) => e.toLowerCase()))
     .pipe(z.array(z.string().email()).min(1)),
-  GOOGLE_OAUTH_CLIENT_ID: optionalString,
-  GOOGLE_OAUTH_CLIENT_SECRET: optionalString,
-  GOOGLE_OAUTH_REDIRECT_URI: optionalUrl,
-  KIZUNA_OAUTH_ENCRYPTION_KEY: z.preprocess(
-    blankAsUndefined,
-    z
-      .string()
-      .refine((s) => {
-        try {
-          return Buffer.from(s, "base64").length === 32;
-        } catch {
-          return false;
-        }
-      }, "must be a base64-encoded 32-byte key")
-      .optional(),
-  ),
+  // Google access is vended by the Kao identity service — Kizuna no longer
+  // owns a refresh token or runs its own consent flow. KAO_URL has a sensible
+  // localhost default; KAO_TOKEN is a secret with no default. Without
+  // KAO_TOKEN the ingest workers can't authenticate against Kao and surface
+  // the sync as a `refresh_failed` error (vs. pausing).
+  KAO_URL: z.preprocess(blankAsUndefined, z.string().url().default("https://api.kao.localhost")),
+  KAO_TOKEN: z.preprocess(blankAsUndefined, z.string().min(16).optional()),
   NEWSLETTER_DOMAIN_BLOCKLIST: z
     .string()
     .optional()

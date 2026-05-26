@@ -17,7 +17,7 @@ kizuna/
 │   │   │   ├── db/             # Mongoose connect + models + recordInteraction writer
 │   │   │   ├── ingest/         # Gmail + Calendar workers, parsers, scheduler
 │   │   │   ├── routes/         # per-resource Express routers
-│   │   │   ├── lib/            # errors, encryption, oauth-state, google-auth, cursor, duration, serialize, logger
+│   │   │   ├── lib/            # errors, kao-client (Google access vended by Kao), cursor, duration, serialize, logger
 │   │   │   └── schemas/        # shared zod (Pagination, IdParam, ISODateString, …)
 │   │   ├── tests/          # vitest + supertest + mongodb-memory-server (real Mongo, no Docker)
 │   │   ├── scripts/        # import-vcards.ts (vCard → POST /people)
@@ -88,8 +88,8 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 - **Mongoose `strict: 'throw'` everywhere** — every model uses `baseSchemaOptions = { timestamps: true, strict: 'throw', versionKey: false }`. Unknown fields on write reject the insert, which the error handler turns into a `400 bad_request`. Combined with zod-strict request bodies, this is two layers of contract enforcement.
 - **Provenance fields on every doc** — every model spreads `provenanceFields = { source, sourceVersion?, deletedAt: null }` from `db/models/base.ts`. `source` is one of `'concierge' | 'gmail-sync' | 'gcal-sync' | 'manual' | 'import'`.
 - **Soft delete via `deletedAt`** — DELETE handlers never remove rows; they `findOneAndUpdate` with `{ deletedAt: new Date() }`. List endpoints filter `deletedAt: null` unless `?includeTombstoned=true`. Person tombstones additionally set `suppressReingest: true` so the upsert path won't recreate them.
-- **AES-256-GCM for OAuth tokens** — Google refresh tokens are encrypted at rest with `KIZUNA_OAUTH_ENCRYPTION_KEY` (a base64 32-byte key). See `apps/api/src/lib/encryption.ts`. The IV is random per write, the auth tag is appended, and the envelope is `base64(iv ‖ tag ‖ ciphertext)`.
-- **No API auth at single-user localhost** — resource routes are open; the OS user is the trust boundary. The OAuth callback is still CSRF-protected by an HMAC-signed state token whose secret is process-local (`randomBytes(32)` at module load in `apps/api/src/lib/oauth-state.ts`). See [docs/auth.md](docs/auth.md) for the threat model.
+- **Identity delegated to Kao** — Kizuna does not own a Google refresh token. Gmail/Calendar ingest gets access tokens on demand from `${KAO_URL}/grants/kizuna/token` via `apps/api/src/lib/kao-client.ts` (30 s-buffer cache, in-flight de-dup, force-refresh for recovery after re-consent). The `OAuthError` taxonomy (`no_grant`/`invalid_grant`/`refresh_failed`) is preserved so the ingest workers' branch logic is unchanged. Consent (and re-consent on `invalid_grant`) happens at `${KAO_URL}/oauth/kizuna/start`.
+- **No API auth at single-user localhost** — resource routes are open; the OS user is the trust boundary. There is no Kizuna-owned OAuth surface anymore (it moved to Kao). See [docs/auth.md](docs/auth.md) for the threat model.
 - **Cross-package imports** — `@kagami/eslint-config`, `@kagami/tsconfig` only (no project-internal packages today). The API's `eslint.config.js` imports from `@kagami/eslint-config/base`; the dashboard's `eslint.config.mjs` imports from `@kagami/eslint-config/next`.
 - **Within-package imports (API)** — relative paths with explicit `.js` extensions (NodeNext requirement).
 - **Within-package imports (dashboard)** — `@/*` path aliases (e.g. `@/lib/api`, `@/components/ui/button`); no extensions.
@@ -105,9 +105,9 @@ See `/docs` for:
 
 - [architecture.md](docs/architecture.md) — system overview, request flow, dependency graph, boot sequence, design decisions
 - [api.md](docs/api.md) — REST surface, OAuth, auth model, error envelope, request/response shapes
-- [data-model.md](docs/data-model.md) — Mongoose models (Person, Interaction, Followup, Organization, OAuthToken, SyncState), indexes, the `recordInteraction` writer
+- [data-model.md](docs/data-model.md) — Mongoose models (Person, Interaction, Followup, Organization, SyncState), indexes, the `recordInteraction` writer
 - [sync.md](docs/sync.md) — Gmail + Calendar ingest pipeline (state machines, cursors, dedup via `sourceRef`, scheduler)
-- [auth.md](docs/auth.md) — single-user-localhost trust model, USER_EMAILS allowlist, AES-256-GCM refresh-token encryption, signed CSRF state on the OAuth callback, threat model
+- [auth.md](docs/auth.md) — single-user-localhost trust model, USER_EMAILS allowlist, Google access vended by Kao, threat model
 - [dashboard.md](docs/dashboard.md) — Next.js inspector pages, design system ("Mashiro Daylight"), data flow
 - [configuration.md](docs/configuration.md) — env vars, encryption-key generation, common setups, Portless
 - [testing.md](docs/testing.md) — vitest + supertest + mongodb-memory-server harness, what's covered, patterns

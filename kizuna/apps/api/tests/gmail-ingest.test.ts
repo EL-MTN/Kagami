@@ -14,10 +14,6 @@ function makeConfig(overrides: Record<string, string> = {}): Config {
   return loadConfig({
     MONGODB_URI: h.uri,
     USER_EMAILS: "me@example.com",
-    KIZUNA_OAUTH_ENCRYPTION_KEY: h.encryptionKey,
-    GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
-    GOOGLE_OAUTH_CLIENT_SECRET: "test-client-secret",
-    GOOGLE_OAUTH_REDIRECT_URI: "https://api.kizuna.localhost/oauth/google/callback",
     ...overrides,
   });
 }

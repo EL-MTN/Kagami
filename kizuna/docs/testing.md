@@ -36,10 +36,9 @@ apps/api/tests/
 ├── fixtures/
 │   └── gmail/                # (raw JSON fixtures slot, currently empty)
 ├── setup.ts                  # LOG_LEVEL=silent default
-├── config.test.ts            # loadConfig branches (zod parse, defaults, CSV transforms)
+├── config.test.ts            # loadConfig branches (zod parse, defaults, CSV transforms, KAO_URL/KAO_TOKEN)
 ├── duration.test.ts          # parseDurationMs (ISO + short forms)
-├── encryption.test.ts        # AES-256-GCM round-trip + tamper / wrong-key / size checks
-├── oauth-state.test.ts       # signed state issue + verify + tamper + TTL
+├── kao-client.test.ts        # Kao vend client — caching, in-flight de-dup, force, full error-code mapping (stubs globalThis.fetch)
 ├── parse-message.test.ts     # parseGmailMessage + parseAddress[List] + senderDomain
 ├── parse-event.test.ts       # parseCalendarEvent (organizer dedup, all-day, cancelled)
 ├── upsert-person.test.ts     # find-or-create semantics; suppressReingest; un-tombstone
@@ -48,7 +47,6 @@ apps/api/tests/
 ├── contexts.test.ts          # /contexts aggregation + personId scoping
 ├── health.test.ts            # /health + resource-route no-auth contract
 ├── kokoro-contract.test.ts   # read-only CRM API contract consumed by Kokoro
-├── oauth.test.ts             # /oauth/google/{start,callback,status}
 ├── crud.test.ts              # CRUD endpoints across people, organizations, interactions, followups
 ├── gmail-ingest.test.ts      # bootstrap + incremental + skip-self + newsletter + pause
 ├── gcal-ingest.test.ts       # bootstrap + incremental + 410 SyncTokenExpired + cancellation
@@ -66,15 +64,14 @@ export async function startHarness(): Promise<TestHarness> {
 
   const dbName = `kizuna_test_${randomBytes(6).toString("hex")}`;
   const uri = baseUri.replace(/\/?$/, `/${dbName}`);
-  const encryptionKey = randomBytes(32).toString("base64");
 
+  // No Google-OAuth / encryption envs needed — Kizuna delegates identity to
+  // Kao. Tests that exercise the ingest workers inject a fake Gmail/Calendar
+  // client so they never hit the Kao vend path; kao-client has its own unit
+  // test that stubs globalThis.fetch directly.
   const config = loadConfig({
     MONGODB_URI: uri,
     USER_EMAILS: "test@example.com",
-    GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
-    GOOGLE_OAUTH_CLIENT_SECRET: "test-client-secret",
-    GOOGLE_OAUTH_REDIRECT_URI: "https://api.kizuna.localhost/oauth/google/callback",
-    KIZUNA_OAUTH_ENCRYPTION_KEY: encryptionKey,
   });
 
   const db = await connectDb(config.MONGODB_URI);
@@ -131,23 +128,13 @@ it("creates a person with source=concierge and firstSeen set", async () => {
 });
 ```
 
-### Spying on Google clients
+### Stubbing the Kao vend
 
-```ts
-const spy = vi.spyOn(OAuth2Client.prototype, "getToken") as unknown as {
-  mockResolvedValue: (v: unknown) => unknown;
-};
-spy.mockResolvedValue({
-  tokens: {
-    refresh_token: "1//refresh-fake",
-    scope: "gmail.readonly calendar.readonly",
-    expiry_date: Date.now() + 3_500_000,
-  },
-  res: null,
-});
-```
+`kao-client.test.ts` stubs `globalThis.fetch` directly (via `vi.stubGlobal('fetch', mockFetch)`) rather than mocking `@kagami/logger/traced-fetch`. `tracedFetch` just calls `fetch` when no trace context is active (the case in unit tests), and stubbing the global is robust against the workspace's built-package module-resolution layout. Each test queues `mockFetch.mockResolvedValueOnce(new Response(...))` for the Kao response it wants to simulate; the `OAuthError` mapping (status code → `.code`) is asserted explicitly so the ingest workers' branch logic stays covered.
 
-The dashboard never appears in tests. The OAuth callback is exercised by minting a valid signed state from `GET /oauth/google/start`, then issuing the callback request with a mocked `getToken`.
+The ingest tests themselves never go through the Kao client at all — they inject a `FakeGmailClient` / `FakeCalendarClient` straight into `runGmailSync` / `runCalendarSync` (see below), so the token vend path is exercised exactly once, in `kao-client.test.ts`, and only `runGmailSyncOnce` / `runCalendarSyncOnce` (the production wire-up) close over it.
+
+The dashboard never appears in tests.
 
 ### Fake Google ingest clients
 
@@ -190,7 +177,7 @@ cd apps/api && npm run test:watch     # vitest watch
 LOG_LEVEL=debug cd apps/api && npm test   # surface pino logs while triaging
 ```
 
-The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (~150 MB, one time). Subsequent runs reuse it. The full suite runs in ~4 s on a warm cache; pure-helper tests (`config`, `duration`, `encryption`, `oauth-state`, `parse-message`, `parse-event`) skip the harness entirely and finish in milliseconds.
+The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (~150 MB, one time). Subsequent runs reuse it. The full suite runs in ~4 s on a warm cache; pure-helper tests (`config`, `duration`, `kao-client`, `parse-message`, `parse-event`) skip the harness entirely and finish in milliseconds.
 
 ## What's covered
 
@@ -198,8 +185,7 @@ The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `config.ts` env parsing                        | `config.test.ts`                                                                                                      |
 | `duration.ts` (ISO + short forms)              | `duration.test.ts`                                                                                                    |
-| `encryption.ts` (AES-256-GCM)                  | `encryption.test.ts`                                                                                                  |
-| `oauth-state.ts` (signed CSRF state)           | `oauth-state.test.ts`                                                                                                 |
+| `kao-client.ts` (Kao vend + cache + force)     | `kao-client.test.ts` — caching, in-flight de-dup, race-safety on force, full `OAuthError` mapping from Kao HTTP codes |
 | `parse-message.ts` (Gmail parser)              | `parse-message.test.ts`                                                                                               |
 | `parse-event.ts` (Calendar parser)             | `parse-event.test.ts`                                                                                                 |
 | `upsertPerson` semantics                       | `upsert-person.test.ts` — find-or-create, suppressReingest, un-tombstone                                              |
@@ -207,7 +193,6 @@ The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (
 | `/digest`                                      | `digest.test.ts`                                                                                                      |
 | `/contexts`                                    | `contexts.test.ts`                                                                                                    |
 | `/health` + resource-route no-auth contract    | `health.test.ts`                                                                                                      |
-| OAuth start/callback/status                    | `oauth.test.ts` — including refresh-token encryption-at-rest verification                                             |
 | CRUD across people/orgs/interactions/followups | `crud.test.ts`                                                                                                        |
 | Gmail ingest end-to-end                        | `gmail-ingest.test.ts` — bootstrap, incremental, skip-self, newsletter blocklist, dedup via `sourceRef`, pause/resume |
 | Calendar ingest end-to-end                     | `gcal-ingest.test.ts` — bootstrap, incremental, 410 → re-bootstrap, cancellation, edit reconciliation                 |

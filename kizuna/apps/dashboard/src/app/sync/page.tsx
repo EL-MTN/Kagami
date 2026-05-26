@@ -1,9 +1,9 @@
 import { revalidatePath } from "next/cache";
-import { api, oauthStartUrl } from "@/lib/api";
+import { api, kaoConsentUrl, kaoDashboardUrl } from "@/lib/api";
 import { fmtDateTime, fmtRelative } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import type { SyncState } from "@/lib/types";
-import { Badge, Card, CardHeader, Empty, ErrorBlock, Mono, PageHeader } from "../ui";
+import { Badge, Card, CardHeader, ErrorBlock, Mono, PageHeader } from "../ui";
 
 export const dynamic = "force-dynamic";
 
@@ -22,13 +22,9 @@ async function runGcalSyncAction(formData: FormData) {
 }
 
 export default async function SyncPage() {
-  let oauth, gmailState, gcalState;
+  let gmailState, gcalState;
   try {
-    [oauth, gmailState, gcalState] = await Promise.all([
-      api.oauthStatus(),
-      api.gmailSyncState(),
-      api.gcalSyncState(),
-    ]);
+    [gmailState, gcalState] = await Promise.all([api.gmailSyncState(), api.gcalSyncState()]);
   } catch (err) {
     return (
       <div className="space-y-6">
@@ -43,51 +39,31 @@ export default async function SyncPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Sync" description="Google OAuth grant + Gmail / Calendar ingest state." />
+      <PageHeader
+        title="Sync"
+        description="Gmail / Calendar ingest state. Google access is vended by Kao."
+      />
 
       <Card>
-        <CardHeader>Google OAuth</CardHeader>
+        <CardHeader>Google access</CardHeader>
         <div className="space-y-3 px-5 py-4 text-sm">
-          {oauth.granted ? (
-            <>
-              <div className="flex items-center gap-2">
-                <Badge tone="green">granted</Badge>
-                <span className="text-muted-foreground tabular-nums">
-                  on {fmtDateTime(oauth.grantedAt)}
-                </span>
-              </div>
-              <div className="kicker">scopes</div>
-              <ul className="space-y-1">
-                {oauth.scopes.map((s) => (
-                  <li key={s}>
-                    <Mono>{s}</Mono>
-                  </li>
-                ))}
-              </ul>
-              <div className="pt-2">
-                <Button variant="outline" asChild>
-                  <a href={oauthStartUrl()}>Re-authorize</a>
-                </Button>
-                <p className="mt-1.5 text-xs text-faint">
-                  Use this if Google revoked access (<Mono>invalid_grant</Mono>) or to add scopes.
-                </p>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-2">
-                <Badge tone="amber">not granted</Badge>
-                <span className="text-muted-foreground">
-                  Connect a Google account to enable Gmail + Calendar ingest.
-                </span>
-              </div>
-              <div className="pt-2">
-                <Button asChild>
-                  <a href={oauthStartUrl()}>Connect Google</a>
-                </Button>
-              </div>
-            </>
-          )}
+          <p className="text-muted-foreground">
+            Managed by the <Mono>Kao</Mono> identity service. Kizuna no longer owns a Google refresh
+            token — it fetches short-lived access tokens from Kao on each ingest run. Grant /
+            re-grant happens there.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button asChild>
+              <a href={kaoConsentUrl()}>Grant / re-consent in Kao →</a>
+            </Button>
+            <Button variant="outline" asChild>
+              <a href={kaoDashboardUrl()}>Open Kao dashboard</a>
+            </Button>
+          </div>
+          <p className="text-xs text-faint">
+            If an ingest run below shows <Mono>invalid_grant</Mono>, re-consent at Kao and then
+            click Force-run on that worker to drop the stale cached token.
+          </p>
         </div>
       </Card>
 
@@ -96,7 +72,6 @@ export default async function SyncPage() {
         state={gmailState}
         cursorLabel="History cursor"
         cursorValue={gmailState.historyId}
-        granted={oauth.granted}
         action={runGmailSyncAction}
       />
 
@@ -105,7 +80,6 @@ export default async function SyncPage() {
         state={gcalState}
         cursorLabel="Sync token"
         cursorValue={gcalState.syncToken}
-        granted={oauth.granted}
         action={runGcalSyncAction}
       />
     </div>
@@ -117,14 +91,12 @@ function IngestCard({
   state,
   cursorLabel,
   cursorValue,
-  granted,
   action,
 }: {
   title: string;
   state: SyncState;
   cursorLabel: string;
   cursorValue: string | null;
-  granted: boolean;
   action: (fd: FormData) => Promise<void>;
 }) {
   const isBootstrapped = Boolean(cursorValue);
@@ -176,23 +148,28 @@ function IngestCard({
           ) : null}
         </dl>
 
-        {granted ? (
-          <form action={action} className="flex items-center gap-2">
-            {state.pausedAt ? (
-              <>
-                <input type="hidden" name="force" value="true" />
-                <Button type="submit" variant="outline">
-                  Force-run (clear pause)
-                </Button>
-                <span className="text-xs text-faint">Try after a Re-authorize.</span>
-              </>
-            ) : (
-              <Button type="submit">Run sync now</Button>
-            )}
-          </form>
-        ) : (
-          <Empty>Connect Google above before running ingest.</Empty>
-        )}
+        {/*
+          Ingest buttons are no longer gated on a dashboard-known "granted"
+          flag — Kizuna can't cheaply know grant status now that Kao owns it.
+          Runs without a valid grant surface as a no_grant / refresh_failed
+          line in `lastError` above, which is the same signal the operator
+          would have acted on anyway.
+        */}
+        <form action={action} className="flex items-center gap-2">
+          {state.pausedAt ? (
+            <>
+              <input type="hidden" name="force" value="true" />
+              <Button type="submit" variant="outline">
+                Force-run (clear pause)
+              </Button>
+              <span className="text-xs text-faint">
+                Try after re-consenting at Kao. Force-run also drops the cached access token.
+              </span>
+            </>
+          ) : (
+            <Button type="submit">Run sync now</Button>
+          )}
+        </form>
       </div>
     </Card>
   );

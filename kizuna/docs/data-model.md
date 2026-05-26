@@ -13,7 +13,6 @@ apps/api/src/db/
 │   ├── Organization.ts
 │   ├── Interaction.ts
 │   ├── Followup.ts
-│   ├── OAuthToken.ts          # encrypted refresh token
 │   ├── SyncState.ts           # per-provider sync cursor + pause state
 │   └── index.ts               # registers every model so syncIndexes finds them
 └── recordInteraction.ts       # the only insert path for `interactions`
@@ -211,43 +210,6 @@ Indexes:
 | `deletedAt_1`                        | `{ deletedAt: 1 }` (sparse)                                                         | Tombstone scan                                                                     |
 
 `duePriorityBucket` is derived, not caller-controlled: `0` when `dueAt` is present and `1` when it is absent. This lets the API sort dated followups first while keeping undated reminders paginable.
-
-### `oauthtokens`
-
-`apps/api/src/db/models/OAuthToken.ts`. Single-row-per-provider table; only `'google'` is registered today.
-
-```ts
-{
-  _id:           ObjectId
-  provider:      'google'                    // required, unique (one row per provider)
-  refreshToken:  string                      // AES-256-GCM envelope, base64-encoded
-  scopes:        string[]
-  grantedAt:     Date                        // required
-  source:        ...                         // 'concierge' on grant
-  sourceVersion: string?
-  deletedAt:     Date | null
-  createdAt, updatedAt
-}
-```
-
-Encryption is in `apps/api/src/lib/encryption.ts`:
-
-- Algorithm: `aes-256-gcm`
-- Key: `KIZUNA_OAUTH_ENCRYPTION_KEY` (base64 32 bytes)
-- IV: `randomBytes(12)` per write
-- Tag: 16 bytes
-- Envelope: `base64(iv ‖ tag ‖ ciphertext)`
-
-`encrypt` and `decrypt` round-trip the value; tampering or wrong-key decryption throws (the GCM tag is verified on `final`). The `KIZUNA_OAUTH_ENCRYPTION_KEY` is decoded once per call rather than cached, on the theory that the operation is rare and the key shouldn't sit in long-lived process memory beyond what `Buffer.from` already requires.
-
-The decrypted refresh token is exchanged for an access token by `getAccessToken(config)` in `lib/google-auth.ts`, which caches the access token in module scope until `expiresAt < now + 30 s`. `clearAccessTokenCache()` is called from the OAuth callback so a re-grant invalidates immediately.
-
-Indexes:
-
-| Name          | Key                         | Purpose                                                                                                   |
-| ------------- | --------------------------- | --------------------------------------------------------------------------------------------------------- |
-| (auto)        | `{ provider: 1 }` (unique)  | One token per provider                                                                                    |
-| `deletedAt_1` | `{ deletedAt: 1 }` (sparse) | (Tombstone scan; not currently exercised — token revocation is via re-grant + `findOneAndUpdate` upsert.) |
 
 ### `syncstates`
 

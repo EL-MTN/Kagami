@@ -15,11 +15,11 @@ Kao consolidates the two pre-existing, divergent OAuth implementations:
 - **Kokoro** — `googleapis`, CLI out-of-band paste, refresh token in
   **plaintext `.env`**.
 
-> **Status: Kokoro migrated, Kizuna pending.** Kokoro now reads short-lived
-> access tokens from `${KAO_URL}/grants/kokoro/token` (the only previously-
-> plaintext Google refresh token in Kagami is gone). Kizuna still runs its
-> own encrypted-Mongo + web-flow OAuth; its cutover to
-> `${KAO_URL}/grants/kizuna/token` is the remaining follow-up.
+> **Status: both consumers migrated.** Kokoro reads short-lived access
+> tokens from `${KAO_URL}/grants/kokoro/token`; Kizuna reads from
+> `${KAO_URL}/grants/kizuna/token`. Neither owns a refresh token anymore —
+> the previously-plaintext Kokoro one and the previously-encrypted-Mongo
+> Kizuna one are both gone. The identity-consolidation work is complete.
 > **Kioku has no Google OAuth and is not a consumer** (an earlier
 > `ARCHITECTURE.md` revision misattributed it — corrected).
 

@@ -10,7 +10,6 @@ import { interactionsRouter } from "./routes/interactions.js";
 import { followupsRouter } from "./routes/followups.js";
 import { contextsRouter } from "./routes/contexts.js";
 import { digestRouter } from "./routes/digest.js";
-import { makeOauthRouter } from "./routes/oauth.js";
 import { makeSyncRouter } from "./routes/sync.js";
 
 export type ServerDeps = {
@@ -30,9 +29,8 @@ export function createApp({ db, config }: ServerDeps): Express {
 
   app.use(healthRouter(db));
 
-  // /oauth/* — open at localhost. The OS user is the trust boundary;
-  // the callback is still CSRF-protected by signed state.
-  app.use("/oauth", makeOauthRouter(config));
+  // No /oauth router — Google access is vended by the Kao identity service
+  // (see lib/kao-client.ts). Re-consent happens at ${KAO_URL}/oauth/kizuna/start.
 
   app.use(peopleRouter);
   app.use(organizationsRouter);

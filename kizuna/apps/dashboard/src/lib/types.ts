@@ -154,10 +154,6 @@ export type ListFollowupsQuery = {
   sort?: "_id:-1" | "duePriority:1";
 };
 
-export type OAuthStatus =
-  | { granted: false }
-  | { granted: true; scopes: string[]; grantedAt: string };
-
 export type SyncState = {
   provider: "gmail" | "gcal";
   historyId: string | null;

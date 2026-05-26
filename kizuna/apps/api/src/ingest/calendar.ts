@@ -4,7 +4,7 @@ import {
   upsertInteractionBySourceRef,
   type RecordInteractionInput,
 } from "../db/recordInteraction.js";
-import { OAuthError } from "../lib/google-auth.js";
+import { OAuthError } from "../lib/kao-client.js";
 import { logger } from "../lib/logger.js";
 import { CalendarHttpError, SyncTokenExpired, type CalendarClient } from "./calendar-client.js";
 import { GoogleRequestTimeoutError } from "./google-timeout.js";
@@ -301,9 +301,15 @@ export async function runCalendarSync(args: {
   }
 }
 
-export async function runCalendarSyncOnce(config: Config): Promise<CalendarSyncResult> {
+// Wire-up: build a real client backed by a Kao-vended access token. See
+// runGmailSyncOnce for why `force` flows into both runCalendarSync and
+// getAccessToken (operator recovery after re-consent at Kao).
+export async function runCalendarSyncOnce(
+  config: Config,
+  opts: { force?: boolean } = {},
+): Promise<CalendarSyncResult> {
   const { makeCalendarClient } = await import("./calendar-client.js");
-  const { getAccessToken } = await import("../lib/google-auth.js");
-  const client = makeCalendarClient(() => getAccessToken(config));
-  return runCalendarSync({ config, client });
+  const { getAccessToken } = await import("../lib/kao-client.js");
+  const client = makeCalendarClient(() => getAccessToken(config, { force: opts.force }));
+  return runCalendarSync({ config, client, force: opts.force });
 }

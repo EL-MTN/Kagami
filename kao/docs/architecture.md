@@ -19,10 +19,10 @@ Kioku has **no** Google OAuth (no deps, no creds) — it never did. Kao
 consolidates Kizuna + Kokoro only. It ports Kizuna's encryption and CSRF-state
 modules (the stronger implementation) and replaces Kokoro's plaintext storage.
 
-**Current status:** **Kokoro migrated, Kizuna pending.** Kokoro now vends
-its Google access tokens from Kao (the only previously-plaintext refresh
-token in the workspace is gone). Kizuna's cutover is the next migration PR;
-it still runs its own encrypted-Mongo + web-flow OAuth.
+**Current status:** **Both consumers migrated.** Kokoro and Kizuna both vend
+their Google access tokens from Kao now — the previously-plaintext
+(Kokoro's) and previously-encrypted-Mongo (Kizuna's) refresh tokens are
+both gone from the workspace. Identity consolidation is complete.
 
 ## Request flow
 
@@ -44,7 +44,7 @@ Operator browser (API origin: https://api.kao.localhost)
                                 ${KAO_DASHBOARD_URL}/grants/:n so the round-trip ends on
                                 the dashboard
 
-Sibling service (Kokoro live; Kizuna pending)
+Sibling service (Kokoro + Kizuna live)
   GET /grants/:grant/token      bearer KAO_TOKEN required; decrypt refresh;
                                 refresh via google-auth-library (per-grant
                                 30s-buffer cache); → { accessToken, expiresAt, scopes }

@@ -12,6 +12,8 @@ describe("loadConfig", () => {
     expect(c.USER_EMAILS).toEqual(["me@example.com", "you@example.com"]);
     expect(c.PORT).toBe(3000);
     expect(c.KIZUNA_HOST).toBe("127.0.0.1");
+    expect(c.KAO_URL).toBe("https://api.kao.localhost");
+    expect(c.KAO_TOKEN).toBeUndefined();
     expect(c.NEWSLETTER_DOMAIN_BLOCKLIST).toEqual([]);
   });
 
@@ -38,35 +40,27 @@ describe("loadConfig", () => {
     expect(c.KIZUNA_HOST).toBe("0.0.0.0");
   });
 
-  it("treats blank optional strings as unset", () => {
+  it("treats blank optional strings as unset (falling back to defaults)", () => {
     const c = loadConfig({
       ...validEnv,
-      GOOGLE_OAUTH_CLIENT_ID: "",
-      GOOGLE_OAUTH_CLIENT_SECRET: "   ",
-      GOOGLE_OAUTH_REDIRECT_URI: "",
-      KIZUNA_OAUTH_ENCRYPTION_KEY: "",
+      KAO_URL: "",
+      KAO_TOKEN: "   ",
       KIZUNA_HOST: "",
     });
-    expect(c.GOOGLE_OAUTH_CLIENT_ID).toBeUndefined();
-    expect(c.GOOGLE_OAUTH_CLIENT_SECRET).toBeUndefined();
-    expect(c.GOOGLE_OAUTH_REDIRECT_URI).toBeUndefined();
-    expect(c.KIZUNA_OAUTH_ENCRYPTION_KEY).toBeUndefined();
+    // KAO_URL falls back to its default; KAO_TOKEN has no default.
+    expect(c.KAO_URL).toBe("https://api.kao.localhost");
+    expect(c.KAO_TOKEN).toBeUndefined();
     expect(c.KIZUNA_HOST).toBe("127.0.0.1");
   });
 
   it("trims optional string values", () => {
-    const key = Buffer.alloc(32, 1).toString("base64");
     const c = loadConfig({
       ...validEnv,
-      GOOGLE_OAUTH_CLIENT_ID: "  client-id  ",
-      GOOGLE_OAUTH_CLIENT_SECRET: "  client-secret  ",
-      GOOGLE_OAUTH_REDIRECT_URI: "  https://api.kizuna.localhost/oauth/google/callback  ",
-      KIZUNA_OAUTH_ENCRYPTION_KEY: `  ${key}  `,
+      KAO_URL: "  https://api.kao.example  ",
+      KAO_TOKEN: "  this-is-a-real-bearer  ",
     });
-    expect(c.GOOGLE_OAUTH_CLIENT_ID).toBe("client-id");
-    expect(c.GOOGLE_OAUTH_CLIENT_SECRET).toBe("client-secret");
-    expect(c.GOOGLE_OAUTH_REDIRECT_URI).toBe("https://api.kizuna.localhost/oauth/google/callback");
-    expect(c.KIZUNA_OAUTH_ENCRYPTION_KEY).toBe(key);
+    expect(c.KAO_URL).toBe("https://api.kao.example");
+    expect(c.KAO_TOKEN).toBe("this-is-a-real-bearer");
   });
 
   it("rejects a non-mongodb URI", () => {
@@ -77,18 +71,13 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...validEnv, USER_EMAILS: "not-an-email" })).toThrow();
   });
 
-  it("rejects malformed non-empty optional values", () => {
-    expect(() =>
-      loadConfig({
-        ...validEnv,
-        GOOGLE_OAUTH_REDIRECT_URI: "not-a-url",
-      }),
-    ).toThrow();
-    expect(() =>
-      loadConfig({
-        ...validEnv,
-        KIZUNA_OAUTH_ENCRYPTION_KEY: "not-32-bytes",
-      }),
-    ).toThrow();
+  it("rejects a non-URL KAO_URL", () => {
+    expect(() => loadConfig({ ...validEnv, KAO_URL: "not-a-url" })).toThrow();
+  });
+
+  it("rejects a too-short KAO_TOKEN", () => {
+    // The bearer is a shared secret with Kao — fail fast on something that
+    // obviously isn't a real token rather than 401'ing at vend time.
+    expect(() => loadConfig({ ...validEnv, KAO_TOKEN: "short" })).toThrow();
   });
 });

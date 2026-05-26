@@ -1,6 +1,6 @@
 # API
 
-One surface: REST at `https://api.kizuna.localhost` (Portless). The API is open at single-user localhost — no bearer auth on resource routes, no auth on `/oauth/google/{start,status}`. The OAuth callback is still CSRF-protected by a process-local HMAC state token.
+One surface: REST at `https://api.kizuna.localhost` (Portless). The API is open at single-user localhost — no bearer auth on resource routes. There is no OAuth surface on Kizuna anymore; Google access is vended on demand from the Kao identity service (see [auth.md](auth.md), [sync.md](sync.md)).
 
 ## Mount order
 
@@ -9,7 +9,7 @@ One surface: REST at `https://api.kizuna.localhost` (Portless). The API is open 
 ```ts
 app.use(express.json({ limit: '1mb' }));
 app.use(healthRouter(db));            // GET /health
-app.use('/oauth', makeOauthRouter(config));  // /oauth/google/{start,callback,status}
+// no /oauth router — consent + grant status live in Kao
 app.use('', peopleRouter);
 app.use('', organizationsRouter);
 app.use('', interactionsRouter);
@@ -32,13 +32,12 @@ app.use(makeErrorHandler());          // ZodError / HttpError / mongoose / E1100
 
 ## Auth
 
-| Layer                    | Mechanism                                                                             | File                              |
-| ------------------------ | ------------------------------------------------------------------------------------- | --------------------------------- |
-| resource routes          | none — open at localhost                                                              | —                                 |
-| `/oauth/google/start`    | none — open at localhost                                                              | `apps/api/src/routes/oauth.ts`    |
-| `/oauth/google/callback` | HMAC-signed state token (10-min TTL, process-local secret); no credential on the wire | `apps/api/src/lib/oauth-state.ts` |
-| `/oauth/google/status`   | none — open at localhost                                                              | `apps/api/src/routes/oauth.ts`    |
-| Dashboard sessions       | none — dashboard is open at localhost                                                 | —                                 |
+| Layer                | Mechanism                                                                                              | File                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------- |
+| resource routes      | none — open at localhost                                                                               | —                                |
+| Google OAuth consent | delegated to the Kao identity service at `${KAO_URL}/oauth/kizuna/start`                               | (none in Kizuna)                 |
+| Google access tokens | vended on demand from `${KAO_URL}/grants/kizuna/token` (bearer `KAO_TOKEN`); cached in-process for TTL | `apps/api/src/lib/kao-client.ts` |
+| Dashboard sessions   | none — dashboard is open at localhost                                                                  | —                                |
 
 See [auth.md](auth.md) for the full model.
 
@@ -231,20 +230,9 @@ The duration parser (`apps/api/src/lib/duration.ts`) supports a subset of ISO 86
 
 `force: true` clears `pausedAt` if the worker is currently paused (`invalid_grant`) and runs again. See [sync.md](sync.md).
 
-### OAuth (`apps/api/src/routes/oauth.ts`)
+### OAuth (delegated to Kao)
 
-| Method | Path                     | Auth               | Behavior                                                                                                                                                                                                                                                                                    |
-| ------ | ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/oauth/google/start`    | none               | 302 to Google with `access_type=offline`, `prompt=consent`, `scope=gmail.readonly+calendar.readonly`, `state` = signed CSRF token                                                                                                                                                           |
-| GET    | `/oauth/google/callback` | Signed state token | Exchanges code, encrypts refresh token with `KIZUNA_OAUTH_ENCRYPTION_KEY`, upserts `OAuthToken{ provider:'google' }`, unpauses workers, clears access-token cache, returns 200 text/html "Granted ✓"; whitelisted Google OAuth errors return 400, unexpected `error=` values are not echoed |
-| GET    | `/oauth/google/status`   | none               | `{ granted: false }` or `{ granted: true, scopes: string[], grantedAt: ISODateString }`                                                                                                                                                                                                     |
-
-Scopes (constant in `apps/api/src/lib/google-auth.ts`):
-
-```
-https://www.googleapis.com/auth/gmail.readonly
-https://www.googleapis.com/auth/calendar.readonly
-```
+Kizuna no longer hosts an OAuth surface. Consent for the `kizuna` grant (`gmail.readonly` + `calendar.readonly`) lives at `${KAO_URL}/oauth/kizuna/start`, owned by the Kao identity service. The Kizuna API simply vends access tokens via `GET ${KAO_URL}/grants/kizuna/token` (bearer `KAO_TOKEN`) when an ingest run needs one — see [`apps/api/src/lib/kao-client.ts`](../apps/api/src/lib/kao-client.ts), [auth.md](auth.md), and [sync.md](sync.md). The dashboard's `/sync` page links out to Kao for grant/re-grant.
 
 ### Health (`apps/api/src/routes/health.ts`)
 

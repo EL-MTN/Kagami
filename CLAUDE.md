@@ -4,7 +4,7 @@
 
 Kagami ("mirror") is a personal-AI workspace. It contains five sibling TypeScript projects in one nested monorepo: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind), **Kansoku** (観測, observation), and **Kao** (顔, face/identity). They share tooling, a single `package.json` install, and a unified Turborepo pipeline, but each project is bounded — its apps, internal packages, docs, and `CLAUDE.md` live under its own subdirectory.
 
-> **Kao status:** **Kokoro migrated, Kizuna pending.** Kokoro reads short-lived Google access tokens from Kao at runtime (the only previously-plaintext refresh token in the workspace is gone). Kizuna still runs its own encrypted-Mongo + web-flow OAuth; its cutover to `${KAO_URL}/grants/kizuna/token` is the remaining identity-consolidation work.
+> **Kao status:** **Both consumers migrated.** Kokoro and Kizuna both fetch short-lived Google access tokens from Kao at runtime; neither owns a refresh token anymore. The previously-plaintext (Kokoro's `GOOGLE_OAUTH_REFRESH_TOKEN`) and previously-encrypted-Mongo (Kizuna's `OAuthToken` + `KIZUNA_OAUTH_ENCRYPTION_KEY`) Google credentials are both gone from the workspace.
 
 This file is the workspace-level guide. Each project has its own deeper `CLAUDE.md` and `docs/` — start here for cross-cutting context, then descend.
 
@@ -88,9 +88,11 @@ Kokoro ──HTTP──► Kao              LIVE. Fetches a fresh Google access 
                                   from /grants/kokoro/token (bearer KAO_TOKEN)
                                   instead of owning a refresh token. Plaintext
                                   GOOGLE_OAUTH_REFRESH_TOKEN is gone.
-Kizuna ──HTTP──► Kao              PLANNED, not wired. Will replace Kizuna's
-                                  encrypted-Mongo + web-flow OAuth with the
-                                  same /grants/kizuna/token contract.
+Kizuna ──HTTP──► Kao              LIVE. Fetches a fresh Google access token
+                                  from /grants/kizuna/token (bearer KAO_TOKEN)
+                                  instead of owning a refresh token. The
+                                  encrypted-Mongo OAuthToken model +
+                                  KIZUNA_OAUTH_ENCRYPTION_KEY are gone.
                                   Kioku has no Google OAuth, ever.
 Kao    ────X──── anything         Vend-only-in. Outbound only to Google
                                   (token exchange/refresh/revoke).
