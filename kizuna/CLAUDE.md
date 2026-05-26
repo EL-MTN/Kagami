@@ -17,7 +17,7 @@ kizuna/
 │   │   │   ├── db/             # Mongoose connect + models + recordInteraction writer
 │   │   │   ├── ingest/         # Gmail + Calendar workers, parsers, scheduler
 │   │   │   ├── routes/         # per-resource Express routers
-│   │   │   ├── lib/            # errors, encryption, oauth-state, google-auth, cursor, duration, serialize, logger
+│   │   │   ├── lib/            # errors, kao-client, cursor, duration, serialize, logger
 │   │   │   └── schemas/        # shared zod (Pagination, IdParam, ISODateString, …)
 │   │   ├── tests/          # vitest + supertest + mongodb-memory-server (real Mongo, no Docker)
 │   │   ├── scripts/        # import-vcards.ts (vCard → POST /people)
@@ -84,12 +84,12 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 - **Zod at boundaries** — every request body / query / params parsed by zod in the route handler; the global error handler maps `ZodError` to `400 { error: { code: "bad_request", message: "invalid input", details } }`. Internal modules trust their inputs.
 - **Pino logging** — singleton in `apps/api/src/lib/logger.ts`, built from the workspace-shared `@kagami/logger` factory (ECS / OTel field names — `log.level`, `@timestamp`, `service.*`, `trace.id`, `error.{type,message,stack_trace}`; an `error`-key serializer that preserves stacks; **no secret/PII redaction** — removed, local-trust only); `pino-pretty` only on an interactive TTY or `LOG_PRETTY=1`, raw NDJSON otherwise. `logger.info({ context }, "message")` pattern. When `KANSOKU_URL` and `KANSOKU_INGEST_TOKEN` are set, logs also stream to the workspace's Kansoku service via a fail-open in-process shipper. There is no `pino-http` middleware today; route logging is request-scoped only via thrown errors hitting `makeErrorHandler`.
 - **Trace context** — `createApp` mounts `traceMiddleware` from `@kagami/logger/express-trace` before any route. Incoming W3C `traceparent` headers open a child span; absence mints a fresh trace. The pino mixin then auto-tags every log line inside the request with `traceId`/`spanId`.
-- **No classes for services** — routers, ingest workers, parsers are all standalone exported functions. The only classes are `HttpError`, `OAuthError`, `GmailHttpError`, `CalendarHttpError`, and `SyncTokenExpired` — all error envelopes.
+- **No classes for services** — routers, ingest workers, parsers are all standalone exported functions. The only classes are `HttpError`, `OAuthError` (translated boundary), `KaoNoGrantError`/`KaoUnreachableError`/`KaoMisconfiguredError` (internal to `kao-client.ts`), `GmailHttpError`, `CalendarHttpError`, and `SyncTokenExpired` — all error envelopes.
 - **Mongoose `strict: 'throw'` everywhere** — every model uses `baseSchemaOptions = { timestamps: true, strict: 'throw', versionKey: false }`. Unknown fields on write reject the insert, which the error handler turns into a `400 bad_request`. Combined with zod-strict request bodies, this is two layers of contract enforcement.
 - **Provenance fields on every doc** — every model spreads `provenanceFields = { source, sourceVersion?, deletedAt: null }` from `db/models/base.ts`. `source` is one of `'concierge' | 'gmail-sync' | 'gcal-sync' | 'manual' | 'import'`.
 - **Soft delete via `deletedAt`** — DELETE handlers never remove rows; they `findOneAndUpdate` with `{ deletedAt: new Date() }`. List endpoints filter `deletedAt: null` unless `?includeTombstoned=true`. Person tombstones additionally set `suppressReingest: true` so the upsert path won't recreate them.
-- **AES-256-GCM for OAuth tokens** — Google refresh tokens are encrypted at rest with `KIZUNA_OAUTH_ENCRYPTION_KEY` (a base64 32-byte key). See `apps/api/src/lib/encryption.ts`. The IV is random per write, the auth tag is appended, and the envelope is `base64(iv ‖ tag ‖ ciphertext)`.
-- **No API auth at single-user localhost** — resource routes are open; the OS user is the trust boundary. The OAuth callback is still CSRF-protected by an HMAC-signed state token whose secret is process-local (`randomBytes(32)` at module load in `apps/api/src/lib/oauth-state.ts`). See [docs/auth.md](docs/auth.md) for the threat model.
+- **Google identity is delegated to Kao** — Kizuna does not own a Google refresh token. `apps/api/src/lib/kao-client.ts` vends short-lived access tokens from `${KAO_URL}/grants/kizuna/token` (bearer `KAO_TOKEN`) and reshapes `${KAO_URL}/grants/kizuna` into the legacy `OAuthStatus` envelope. Encryption, CSRF state, and the Google client creds all live in Kao now. The gmail/calendar clients self-heal on a Google 401 by calling `getAccessToken({ force: true })` (which propagates `?force=1` to Kao) and retrying once.
+- **No API auth at single-user localhost** — resource routes are open; the OS user is the trust boundary. The OAuth consent flow itself is hosted by Kao with HMAC-signed CSRF state bound to the grant name. See [docs/auth.md](docs/auth.md) for the threat model.
 - **Cross-package imports** — `@kagami/eslint-config`, `@kagami/tsconfig` only (no project-internal packages today). The API's `eslint.config.js` imports from `@kagami/eslint-config/base`; the dashboard's `eslint.config.mjs` imports from `@kagami/eslint-config/next`.
 - **Within-package imports (API)** — relative paths with explicit `.js` extensions (NodeNext requirement).
 - **Within-package imports (dashboard)** — `@/*` path aliases (e.g. `@/lib/api`, `@/components/ui/button`); no extensions.
@@ -105,9 +105,9 @@ See `/docs` for:
 
 - [architecture.md](docs/architecture.md) — system overview, request flow, dependency graph, boot sequence, design decisions
 - [api.md](docs/api.md) — REST surface, OAuth, auth model, error envelope, request/response shapes
-- [data-model.md](docs/data-model.md) — Mongoose models (Person, Interaction, Followup, Organization, OAuthToken, SyncState), indexes, the `recordInteraction` writer
+- [data-model.md](docs/data-model.md) — Mongoose models (Person, Interaction, Followup, Organization, SyncState), indexes, the `recordInteraction` writer
 - [sync.md](docs/sync.md) — Gmail + Calendar ingest pipeline (state machines, cursors, dedup via `sourceRef`, scheduler)
-- [auth.md](docs/auth.md) — single-user-localhost trust model, USER_EMAILS allowlist, AES-256-GCM refresh-token encryption, signed CSRF state on the OAuth callback, threat model
+- [auth.md](docs/auth.md) — single-user-localhost trust model, USER_EMAILS allowlist, Kao-delegated Google identity (KAO_URL/KAO_TOKEN), threat model
 - [dashboard.md](docs/dashboard.md) — Next.js inspector pages, design system ("Mashiro Daylight"), data flow
 - [configuration.md](docs/configuration.md) — env vars, encryption-key generation, common setups, Portless
 - [testing.md](docs/testing.md) — vitest + supertest + mongodb-memory-server harness, what's covered, patterns

@@ -4,7 +4,7 @@ import {
   upsertInteractionBySourceRef,
   type RecordInteractionInput,
 } from "../db/recordInteraction.js";
-import { OAuthError } from "../lib/google-auth.js";
+import { OAuthError } from "../lib/kao-client.js";
 import { logger } from "../lib/logger.js";
 import { CalendarHttpError, SyncTokenExpired, type CalendarClient } from "./calendar-client.js";
 import { GoogleRequestTimeoutError } from "./google-timeout.js";
@@ -303,7 +303,7 @@ export async function runCalendarSync(args: {
 
 export async function runCalendarSyncOnce(config: Config): Promise<CalendarSyncResult> {
   const { makeCalendarClient } = await import("./calendar-client.js");
-  const { getAccessToken } = await import("../lib/google-auth.js");
-  const client = makeCalendarClient(() => getAccessToken(config));
+  const { getAccessToken } = await import("../lib/kao-client.js");
+  const client = makeCalendarClient((options) => getAccessToken(config, options));
   return runCalendarSync({ config, client });
 }

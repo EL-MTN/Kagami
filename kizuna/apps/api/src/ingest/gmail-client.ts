@@ -57,12 +57,27 @@ export class GmailHttpError extends Error {
   }
 }
 
-export function makeGmailClient(getAccessToken: () => Promise<string>): GmailClient {
+// `getAccessToken` accepts `{ force }` so the client can recover from a
+// Google-side revocation mid-cache-window. On a 401/403 the client clears
+// its access-token cache (`force: true`) and retries once; if Google still
+// rejects, the GmailHttpError(401) escapes and the worker maps it to
+// `OAuthError('invalid_grant')` for the pause path.
+export type AccessTokenGetter = (options?: { force?: boolean }) => Promise<string>;
+
+export function makeGmailClient(getAccessToken: AccessTokenGetter): GmailClient {
   async function call<T>(
     path: string,
     query: Record<string, string | number | undefined> = {},
   ): Promise<T> {
-    const token = await getAccessToken();
+    return doCall<T>(path, query, false);
+  }
+
+  async function doCall<T>(
+    path: string,
+    query: Record<string, string | number | undefined>,
+    force: boolean,
+  ): Promise<T> {
+    const token = await getAccessToken({ force });
     const sp = new URLSearchParams();
     for (const [k, v] of Object.entries(query)) {
       if (v === undefined) continue;
@@ -78,6 +93,13 @@ export function makeGmailClient(getAccessToken: () => Promise<string>): GmailCli
     } catch (err) {
       if (isAbortSignalTimeout(err)) throw new GoogleRequestTimeoutError("gmail");
       throw err;
+    }
+    if ((res.status === 401 || res.status === 403) && !force) {
+      // Google rejected the cached access token. Force Kao to bypass its
+      // cache and re-derive from the refresh token, then retry exactly once.
+      // If Google rejects the fresh token too, the second attempt's 401
+      // escapes and the worker pauses on `invalid_grant`.
+      return doCall<T>(path, query, true);
     }
     if (!res.ok) {
       const text = await res.text().catch(() => "");

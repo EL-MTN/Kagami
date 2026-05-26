@@ -11,6 +11,14 @@ const RunSyncBody = z.object({ force: z.boolean().optional() }).strict();
 export function makeSyncRouter(config: Config): Router {
   const r = Router();
 
+  function requireKao(): void {
+    if (!config.KAO_URL || !config.KAO_TOKEN) {
+      throw errors.badRequest(
+        "Kao is not configured: set KAO_URL and KAO_TOKEN to run Google ingest",
+      );
+    }
+  }
+
   r.get("/sync/gmail/state", async (_req, res) => {
     const doc = await SyncState.findOne({ provider: "gmail" }).lean();
     if (!doc) {
@@ -38,11 +46,7 @@ export function makeSyncRouter(config: Config): Router {
 
   r.post("/sync/gmail/run", async (req, res) => {
     const body = RunSyncBody.parse(req.body ?? {});
-    if (!config.KIZUNA_OAUTH_ENCRYPTION_KEY) {
-      throw errors.badRequest(
-        "KIZUNA_OAUTH_ENCRYPTION_KEY is not set; cannot decrypt refresh token",
-      );
-    }
+    requireKao();
     const result = await runGmailSyncOnce(config);
     if (body.force && result.status === "paused") {
       await SyncState.updateOne({ provider: "gmail" }, { $set: { pausedAt: null } });
@@ -80,11 +84,7 @@ export function makeSyncRouter(config: Config): Router {
 
   r.post("/sync/gcal/run", async (req, res) => {
     const body = RunSyncBody.parse(req.body ?? {});
-    if (!config.KIZUNA_OAUTH_ENCRYPTION_KEY) {
-      throw errors.badRequest(
-        "KIZUNA_OAUTH_ENCRYPTION_KEY is not set; cannot decrypt refresh token",
-      );
-    }
+    requireKao();
     const result = await runCalendarSyncOnce(config);
     if (body.force && result.status === "paused") {
       await SyncState.updateOne({ provider: "gcal" }, { $set: { pausedAt: null } });

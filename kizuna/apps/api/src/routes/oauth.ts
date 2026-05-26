@@ -1,112 +1,37 @@
 import { Router } from "express";
 import type { Config } from "../config.js";
-import { OAuthToken } from "../db/models/OAuthToken.js";
-import { SyncState } from "../db/models/SyncState.js";
-import { clearAccessTokenCache } from "../lib/google-auth.js";
-import {
-  GOOGLE_SCOPES,
-  buildAuthUrl,
-  exchangeCode,
-  makeClient,
-  persistRefreshToken,
-} from "../lib/google-auth.js";
+import { fetchGrantStatus } from "../lib/kao-client.js";
 import { errors } from "../lib/errors.js";
-import { makeState, verifyState } from "../lib/oauth-state.js";
 
-const GOOGLE_OAUTH_ERROR_CODES = new Set([
-  "access_denied",
-  "server_error",
-  "invalid_scope",
-  "temporarily_unavailable",
-  "interaction_required",
-]);
-
-function googleOAuthErrorMessage(error: string): string {
-  return GOOGLE_OAUTH_ERROR_CODES.has(error)
-    ? `google denied consent: ${error}`
-    : "google denied consent";
-}
-
+// OAuth surface is now a thin proxy in front of Kao — the dashboard's
+// contract (`/oauth/google/start` and `/oauth/google/status`) is preserved
+// verbatim so no dashboard changes are needed. The Google refresh token, the
+// CSRF state, the AES key, and the inline-HTML consent landing page all live
+// in Kao now (see `kao/apps/api/src/routes/oauth.ts`).
 export function makeOauthRouter(config: Config): Router {
   const r = Router();
 
-  // Initiate the consent flow. Open at localhost — the trust boundary is the
-  // OS user, not a bearer token. The callback is still CSRF-protected.
+  // Bounce the dashboard's "Connect Google" / "Re-authorize" button into
+  // Kao's per-grant consent URL. Kao mints the CSRF state and registers a
+  // single callback URI in the Google Cloud client — Kizuna doesn't see the
+  // OAuth response at all.
   r.get("/google/start", (_req, res) => {
-    if (!config.KIZUNA_OAUTH_ENCRYPTION_KEY) {
+    if (!config.KAO_URL || !config.KAO_TOKEN) {
       throw errors.badRequest(
-        "KIZUNA_OAUTH_ENCRYPTION_KEY is not set; refresh token storage requires it",
+        "Kao is not configured: set KAO_URL and KAO_TOKEN to use Google ingest",
       );
     }
-    const client = makeClient(config);
-    const state = makeState();
-    res.redirect(302, buildAuthUrl(client, state));
+    const base = config.KAO_URL.replace(/\/+$/, "");
+    res.redirect(302, `${base}/oauth/kizuna/start`);
   });
 
-  // Google redirects here after consent. Protected by the signed CSRF state.
-  r.get("/google/callback", async (req, res) => {
-    const code = typeof req.query.code === "string" ? req.query.code : undefined;
-    const state = typeof req.query.state === "string" ? req.query.state : undefined;
-    const error = typeof req.query.error === "string" ? req.query.error : undefined;
-
-    if (error) {
-      throw errors.badRequest(googleOAuthErrorMessage(error));
-    }
-    if (!code || !state) {
-      throw errors.badRequest("missing code or state");
-    }
-    if (!verifyState(state)) {
-      throw errors.unauthorized("invalid or expired state");
-    }
-    if (!config.KIZUNA_OAUTH_ENCRYPTION_KEY) {
-      throw errors.badRequest("KIZUNA_OAUTH_ENCRYPTION_KEY is not set");
-    }
-
-    const client = makeClient(config);
-    const tokens = await exchangeCode(client, code);
-    if (!tokens.refresh_token) {
-      throw errors.badRequest(
-        "Google did not return a refresh_token (re-consent with prompt=consent required)",
-      );
-    }
-    const scopes = tokens.scope?.split(" ") ?? GOOGLE_SCOPES;
-    await persistRefreshToken(tokens.refresh_token, scopes, config.KIZUNA_OAUTH_ENCRYPTION_KEY);
-
-    // A successful re-grant unpauses any worker that was paused on
-    // invalid_grant, and invalidates the cached access token.
-    await SyncState.updateMany(
-      { pausedAt: { $ne: null } },
-      { $set: { pausedAt: null, lastError: null } },
-    );
-    clearAccessTokenCache();
-
-    res
-      .status(200)
-      .type("text/html")
-      .send(
-        '<!doctype html><meta charset="utf-8"><title>Granted</title>' +
-          '<body style="font-family:system-ui;padding:2rem;color:#18181b">' +
-          '<h1 style="font-weight:600">Google access granted ✓</h1>' +
-          "<p>You can close this window. Kizuna can now read Gmail and Calendar.</p>" +
-          "</body>",
-      );
-  });
-
-  // Status — returns whether a token is on file.
+  // Re-shape Kao's grant status into the OAuthStatus envelope the dashboard
+  // already understands. Kao is consulted with bearer auth; failure or
+  // missing config collapses to `{ granted: false }` rather than 5xx — the
+  // dashboard's UX in that case is "Connect Google".
   r.get("/google/status", async (_req, res) => {
-    const doc = await OAuthToken.findOne({
-      provider: "google",
-      deletedAt: null,
-    }).lean();
-    if (!doc) {
-      res.json({ granted: false });
-      return;
-    }
-    res.json({
-      granted: true,
-      scopes: (doc.scopes as unknown as string[] | undefined) ?? [],
-      grantedAt: doc.grantedAt,
-    });
+    const status = await fetchGrantStatus(config);
+    res.json(status);
   });
 
   return r;

@@ -3,7 +3,7 @@ import type { Config } from "../config.js";
 import { SyncState } from "../db/models/SyncState.js";
 import { recordInteraction, type RecordInteractionInput } from "../db/recordInteraction.js";
 import { logger } from "../lib/logger.js";
-import { OAuthError } from "../lib/google-auth.js";
+import { OAuthError } from "../lib/kao-client.js";
 import type { GmailClient } from "./gmail-client.js";
 import { GmailHttpError } from "./gmail-client.js";
 import { GoogleRequestTimeoutError } from "./google-timeout.js";
@@ -344,10 +344,11 @@ export async function runGmailSync(args: {
   }
 }
 
-// Wire-up: build a real client backed by getAccessToken from step 4.
+// Wire-up: vend Google access tokens via Kao. The `{ force }` hop lets the
+// client recover from a mid-window Google revocation without restarting.
 export async function runGmailSyncOnce(config: Config): Promise<SyncResult> {
   const { makeGmailClient } = await import("./gmail-client.js");
-  const { getAccessToken } = await import("../lib/google-auth.js");
-  const client = makeGmailClient(() => getAccessToken(config));
+  const { getAccessToken } = await import("../lib/kao-client.js");
+  const client = makeGmailClient((options) => getAccessToken(config, options));
   return runGmailSync({ config, client });
 }
