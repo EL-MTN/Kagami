@@ -15,7 +15,7 @@ function makeConfig(overrides: Record<string, string> = {}): Config {
     MONGODB_URI: h.uri,
     USER_EMAILS: "me@example.com",
     KAO_URL: "https://api.kao.localhost",
-    KAO_TOKEN: "test-kao-bearer",
+    KAO_TOKEN: "test-kao-bearer-16chars",
     ...overrides,
   });
 }

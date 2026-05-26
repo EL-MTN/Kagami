@@ -58,9 +58,12 @@ export class GmailHttpError extends Error {
 }
 
 // `getAccessToken` accepts `{ force }` so the client can recover from a
-// Google-side revocation mid-cache-window. On a 401/403 the client clears
-// its access-token cache (`force: true`) and retries once; if Google still
-// rejects, the GmailHttpError(401) escapes and the worker maps it to
+// Google-side revocation mid-cache-window. Only 401 triggers the retry: a
+// 403 from Google is usually permanent (insufficient scope, quota,
+// dailyLimitExceeded) and a fresh access token won't help — retrying would
+// burn an extra Kao→Google token exchange per tick to get the same 403
+// back. If Google rejects the freshly-vended token with another 401,
+// GmailHttpError(401) escapes and the worker maps it to
 // `OAuthError('invalid_grant')` for the pause path.
 export type AccessTokenGetter = (options?: { force?: boolean }) => Promise<string>;
 
@@ -94,7 +97,7 @@ export function makeGmailClient(getAccessToken: AccessTokenGetter): GmailClient 
       if (isAbortSignalTimeout(err)) throw new GoogleRequestTimeoutError("gmail");
       throw err;
     }
-    if ((res.status === 401 || res.status === 403) && !force) {
+    if (res.status === 401 && !force) {
       // Google rejected the cached access token. Force Kao to bypass its
       // cache and re-derive from the refresh token, then retry exactly once.
       // If Google rejects the fresh token too, the second attempt's 401

@@ -40,6 +40,15 @@ export function startIngestScheduler(args: { config: Config }): Scheduler {
     logger.info("ingest scheduler disabled (KIZUNA_INGEST_INTERVAL_SEC=0)");
     return { stop() {} };
   }
+  // Mirror the requireKao() guard on /sync routes. Without this, every tick
+  // would burn through getAccessToken → OAuthError('refresh_failed') →
+  // recordFailedRun, inflating errorCount indefinitely and writing a stale
+  // KAO_URL-missing message to lastError. Idle quietly until the operator
+  // wires Kao up.
+  if (!config.KAO_URL || !config.KAO_TOKEN) {
+    logger.info("ingest scheduler disabled (KAO_URL/KAO_TOKEN unset)");
+    return { stop() {} };
+  }
 
   let running = false;
   const tick = async (): Promise<void> => {

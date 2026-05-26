@@ -102,6 +102,13 @@ async function processMessageIds(
       result.fetched++;
     } catch (err) {
       if (err instanceof GoogleRequestTimeoutError) throw err;
+      // OAuthError can now bubble up from the client's self-heal retry
+      // (getAccessToken({force:true}) → Kao 409/network → OAuthError).
+      // It must propagate to the outer try-catch so the worker pauses or
+      // returns no_grant cleanly — without this re-throw, every remaining
+      // message in the batch would re-trigger the same OAuthError and
+      // silently inflate `result.errors` while the run reports status:'ok'.
+      if (err instanceof OAuthError) throw err;
       result.errors++;
       logger.warn({ error: err, id }, "gmail: failed to fetch message");
       if (err instanceof GmailHttpError && err.status === 401) {

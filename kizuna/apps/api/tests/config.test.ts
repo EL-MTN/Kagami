@@ -54,10 +54,36 @@ describe("loadConfig", () => {
     const c = loadConfig({
       ...validEnv,
       KAO_URL: "  https://api.kao.localhost  ",
-      KAO_TOKEN: "  bearer-value  ",
+      KAO_TOKEN: "  bearer-value-16chars  ",
     });
     expect(c.KAO_URL).toBe("https://api.kao.localhost");
-    expect(c.KAO_TOKEN).toBe("bearer-value");
+    expect(c.KAO_TOKEN).toBe("bearer-value-16chars");
+  });
+
+  it("rejects a short KAO_TOKEN", () => {
+    expect(() =>
+      loadConfig({ ...validEnv, KAO_URL: "https://api.kao.localhost", KAO_TOKEN: "too-short" }),
+    ).toThrow(/at least 16 characters/);
+  });
+
+  it("rejects a KAO_URL with a path component", () => {
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        KAO_URL: "https://api.kao.localhost/api",
+        KAO_TOKEN: "bearer-value-16chars",
+      }),
+    ).toThrow(/host-only/);
+  });
+
+  it("rejects a KAO_URL with a query string", () => {
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        KAO_URL: "https://api.kao.localhost?debug=1",
+        KAO_TOKEN: "bearer-value-16chars",
+      }),
+    ).toThrow(/host-only/);
   });
 
   it("rejects a non-mongodb URI", () => {
@@ -79,7 +105,7 @@ describe("loadConfig", () => {
   });
 
   it("rejects half-configured Kao (token without URL)", () => {
-    expect(() => loadConfig({ ...validEnv, KAO_TOKEN: "bearer" })).toThrow(
+    expect(() => loadConfig({ ...validEnv, KAO_TOKEN: "bearer-value-16chars" })).toThrow(
       /KAO_URL and KAO_TOKEN must be set together/,
     );
   });

@@ -49,7 +49,15 @@ export function makeSyncRouter(config: Config): Router {
     requireKao();
     const result = await runGmailSyncOnce(config);
     if (body.force && result.status === "paused") {
-      await SyncState.updateOne({ provider: "gmail" }, { $set: { pausedAt: null } });
+      // Clear both `pausedAt` and `lastError` so a successful second run
+      // doesn't leave the dashboard showing a stale "invalid_grant" error.
+      // recordSuccessfulRun will overwrite both on success; if the second
+      // run fails for a different reason, recordFailedRun captures the new
+      // error message rather than masking it with the old one.
+      await SyncState.updateOne(
+        { provider: "gmail" },
+        { $set: { pausedAt: null, lastError: null } },
+      );
       const second = await runGmailSyncOnce(config);
       res.json(second);
       return;
@@ -87,7 +95,10 @@ export function makeSyncRouter(config: Config): Router {
     requireKao();
     const result = await runCalendarSyncOnce(config);
     if (body.force && result.status === "paused") {
-      await SyncState.updateOne({ provider: "gcal" }, { $set: { pausedAt: null } });
+      await SyncState.updateOne(
+        { provider: "gcal" },
+        { $set: { pausedAt: null, lastError: null } },
+      );
       const second = await runCalendarSyncOnce(config);
       res.json(second);
       return;

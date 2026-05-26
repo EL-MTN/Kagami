@@ -13,9 +13,6 @@ const blankAsUndefined = (value: unknown): unknown => {
   return trimmed === "" ? undefined : trimmed;
 };
 
-const optionalString = z.preprocess(blankAsUndefined, z.string().min(1).optional());
-const optionalUrl = z.preprocess(blankAsUndefined, z.string().url().optional());
-
 const envSchema = z
   .object({
     MONGODB_URI: z.string().regex(/^mongodb(\+srv)?:\/\//, "MONGODB_URI must be a mongodb:// URI"),
@@ -28,8 +25,33 @@ const envSchema = z
     // owns a refresh token. Set both vars together; consent is granted at
     // ${KAO_URL}/oauth/kizuna/start. The 'kizuna' grant in Kao's registry is
     // consented for gmail.readonly + calendar.readonly.
-    KAO_URL: optionalUrl,
-    KAO_TOKEN: optionalString,
+    KAO_URL: z.preprocess(
+      blankAsUndefined,
+      z
+        .string()
+        .url()
+        // Host-only URL. A KAO_URL that smuggles in a path/query/fragment
+        // (e.g. a copy-paste from a curl command with `?debug=1` still
+        // appended) would interpolate into malformed downstream URLs like
+        // `https://api.kao.localhost?debug=1/grants/kizuna/token`. Caught
+        // at startup with a clear message instead of as an opaque Kao 404
+        // at first ingest.
+        .refine((s) => {
+          try {
+            const u = new URL(s);
+            return (u.pathname === "" || u.pathname === "/") && u.search === "" && u.hash === "";
+          } catch {
+            return false;
+          }
+        }, "KAO_URL must be host-only (no path, query, or fragment)")
+        .optional(),
+    ),
+    // Kao's own config enforces `min(16)` on the same bearer; mirror it here
+    // so a truncated/typo'd token fails at boot instead of as a runtime 401.
+    KAO_TOKEN: z.preprocess(
+      blankAsUndefined,
+      z.string().min(16, "KAO_TOKEN must be at least 16 characters").optional(),
+    ),
     NEWSLETTER_DOMAIN_BLOCKLIST: z
       .string()
       .optional()

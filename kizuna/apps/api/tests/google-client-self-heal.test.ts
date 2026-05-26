@@ -61,15 +61,18 @@ describe("makeGmailClient — self-heal on 401", () => {
     expect(getter).toHaveBeenCalledTimes(2);
   });
 
-  it("does not retry on 403 → 403 (escapes after second attempt)", async () => {
+  it("does not retry on 403 — 403 escapes after the first attempt", async () => {
+    // 403 from Google is usually permanent (insufficient scope, quota,
+    // dailyLimitExceeded). A fresh access token won't help, so the client
+    // does NOT trigger the force-refresh path — the 403 escapes immediately
+    // as GmailHttpError and the worker records it via recordFailedRun.
     const getter = vi.fn(async () => "any-token");
-    vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(res(403, {}))
-      .mockResolvedValueOnce(res(403, {}));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(res(403, {}));
 
     const client = makeGmailClient(getter);
     await expect(client.getProfile()).rejects.toMatchObject({ status: 403 });
-    expect(getter).toHaveBeenCalledTimes(2);
+    expect(getter).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
 

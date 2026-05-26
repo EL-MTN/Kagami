@@ -70,9 +70,10 @@ export function makeCalendarClient(getAccessToken: AccessTokenGetter): CalendarC
       throw err;
     }
     if (res.status === 410) throw new SyncTokenExpired();
-    if ((res.status === 401 || res.status === 403) && !force) {
+    if (res.status === 401 && !force) {
       // Google rejected the cached access token — force-refresh via Kao
-      // and retry exactly once. See gmail-client.ts for the full rationale.
+      // and retry exactly once. 403 is intentionally NOT retried; see
+      // gmail-client.ts for the full rationale.
       return listEventsOnce(params, true);
     }
     if (!res.ok) {
