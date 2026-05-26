@@ -300,12 +300,6 @@ describe("fetchGrantStatus", () => {
     expect(await fetchGrantStatus(config)).toEqual({ granted: false });
   });
 
-  it("falls back to { granted: false } on Kao failures", async () => {
-    const config = configWith();
-    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("ECONNREFUSED"));
-    expect(await fetchGrantStatus(config)).toEqual({ granted: false });
-  });
-
   it("emits grantedAt:null when Kao returns granted:true with grantedAt:null", async () => {
     // The dashboard renders null as "—" via fmtDateTime; an ISO epoch
     // ("1970-01-01T00:00:00.000Z") would render as "Dec 31, 1969, 7:00 PM"
@@ -345,6 +339,50 @@ describe("fetchGrantStatus", () => {
     }
   });
 
+  it("rejects date-only grantedAt like '1970-01-01' (would render as Dec 31, 1969)", async () => {
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(200, {
+        name: "kizuna",
+        granted: true,
+        scopes: [],
+        grantedAt: "1970-01-01",
+      }),
+    );
+    const status = await fetchGrantStatus(config);
+    expect(status.granted).toBe(true);
+    if (status.granted) {
+      // Bare date strings get `new Date(...).getTime() === 0`, finite —
+      // but render as misleading concrete dates. The strict ISO-datetime
+      // regex rejects them.
+      expect(status.grantedAt).toBeNull();
+    }
+  });
+
+  it("rejects loose strings that JS Date accepts (e.g. '1999', 'abc 1999')", async () => {
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse(200, { name: "kizuna", granted: true, scopes: [], grantedAt: "1999" }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          name: "kizuna",
+          granted: true,
+          scopes: [],
+          grantedAt: "abc 1999",
+        }),
+      );
+
+    let status = await fetchGrantStatus(config);
+    expect(status.granted).toBe(true);
+    if (status.granted) expect(status.grantedAt).toBeNull();
+
+    status = await fetchGrantStatus(config);
+    expect(status.granted).toBe(true);
+    if (status.granted) expect(status.grantedAt).toBeNull();
+  });
+
   it("rejects truthy non-boolean granted (Kao contract drift defense)", async () => {
     const config = configWith();
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
@@ -358,5 +396,36 @@ describe("fetchGrantStatus", () => {
     // Strict-equality check rejects "yes" — would otherwise lie to the
     // dashboard about the grant's status.
     expect(await fetchGrantStatus(config)).toEqual({ granted: false });
+  });
+
+  it("surfaces reason:'kao_unauthorized' when Kao 401s the status call", async () => {
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("unauthorized", { status: 401 }),
+    );
+    // Distinguishes "wrong KAO_TOKEN" from "no consent yet" so the
+    // dashboard can render a specific hint instead of looping the
+    // operator through Connect-Google clicks that won't help.
+    expect(await fetchGrantStatus(config)).toEqual({
+      granted: false,
+      reason: "kao_unauthorized",
+    });
+  });
+
+  it("surfaces reason:'kao_unreachable' on Kao 5xx / network failure", async () => {
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("server error", { status: 503 }),
+    );
+    expect(await fetchGrantStatus(config)).toEqual({
+      granted: false,
+      reason: "kao_unreachable",
+    });
+
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    expect(await fetchGrantStatus(config)).toEqual({
+      granted: false,
+      reason: "kao_unreachable",
+    });
   });
 });

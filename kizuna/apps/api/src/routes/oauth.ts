@@ -21,28 +21,46 @@ import { errors } from "../lib/errors.js";
 export function makeOauthRouter(config: Config): Router {
   const r = Router();
 
-  r.post("/google/start", async (_req, res) => {
+  // Allow-list of Origins that may POST to /oauth/google/start. The
+  // dashboard form submission carries `Origin: https://kizuna.localhost`
+  // (browsers send Origin automatically for cross-origin form POSTs).
+  // Programmatic callers (curl, supertest) typically don't send Origin
+  // and are allowed through — they're inherently OS-user-trusted on the
+  // localhost-only deployment. The check defends against CSRF from a
+  // malicious tab that issues a hidden cross-origin form POST.
+  const allowedOrigins = new Set(["https://kizuna.localhost", "https://api.kizuna.localhost"]);
+
+  r.post("/google/start", async (req, res) => {
     if (!config.KAO_URL || !config.KAO_TOKEN) {
       throw errors.badRequest(
         "Kao is not configured: set KAO_URL and KAO_TOKEN to use Google ingest",
       );
     }
+    const origin = req.headers.origin;
+    if (typeof origin === "string" && origin.length > 0 && !allowedOrigins.has(origin)) {
+      throw errors.unauthorized(`origin '${origin}' not allowed`);
+    }
     // Operator is about to re-consent at Kao. Reset the operator-visible
     // failure counters on paused workers and drop the local access-token
     // cache so the next ingest tick uses the fresh refresh token Kao stores.
     // `lastError` is intentionally NOT cleared here — recordSuccessfulRun
-    // will clear it on the next successful tick, and recordFailedRun will
-    // overwrite it on a fresh failure. Preemptively wiping it would erase
-    // the operator's diagnostic history before any human reviewed it.
+    // will clear it on the next successful tick (recordIdleRun on no_grant),
+    // and recordFailedRun will overwrite it on a fresh failure.
     //
     // If the DB write fails (transient Mongo issue), log it but proceed
     // with the redirect — the next ingest tick will simply re-pause on the
     // same invalid_grant if Kao consent doesn't take. Blocking the redirect
     // on a Mongo blip would strand the operator with a generic 500 and no
     // way to even attempt re-consent.
+    //
+    // Match docs via `pausedAt: { $type: "date" }` rather than `$ne: null`
+    // — the latter also matches docs where the field is missing entirely,
+    // which would cause this cleanup to mutate workers that were never
+    // paused. Schema default is `null`, so Mongoose-created docs would
+    // never trigger that path, but a raw `insertOne` from a script could.
     try {
       const { modifiedCount } = await SyncState.updateMany(
-        { pausedAt: { $ne: null } },
+        { pausedAt: { $type: "date" } },
         { $set: { pausedAt: null, errorCount: 0 } },
       );
       if (modifiedCount > 0) {

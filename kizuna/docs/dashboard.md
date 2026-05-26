@@ -83,7 +83,7 @@ api.gcalSyncState()
 api.runGcalSync(force?)
 ```
 
-`oauthStartUrl()` returns `${KIZUNA_API_URL}/oauth/google/start` so the "Connect Google" button is a plain `<a href>`.
+`oauthStartUrl()` returns `${KIZUNA_API_URL}/oauth/google/start`. The "Connect Google" / "Re-authorize" buttons render as `<form action={oauthStartUrl()} method="post">` wrappers around a `<Button type="submit">` so the click triggers a POST (GET would be reachable by preloaders / link unfurlers and would silently wipe paused-worker state). The API's Origin allowlist accepts `https://kizuna.localhost`, which is what the browser sends for cross-origin form posts from the dashboard. When `oauth.reason` is `'kao_unauthorized'`, the dashboard hints at the `KAO_TOKEN` misconfiguration rather than looping the operator through Connect-Google clicks.
 
 The exported `config` object also reads `process.env.USER_EMAILS` at module scope so per-person pages can mark interactions as "outbound" (sender's primaryEmail ∈ USER_EMAILS) vs "inbound."
 

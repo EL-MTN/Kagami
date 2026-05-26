@@ -78,6 +78,14 @@ async function recordFailedRun(message: string): Promise<void> {
   );
 }
 
+// See gmail.ts for the recordIdleRun rationale.
+async function recordIdleRun(): Promise<void> {
+  await SyncState.updateOne(
+    { provider: "gcal" },
+    { $set: { lastError: null, lastRunAt: new Date() } },
+  );
+}
+
 async function clearSyncToken(): Promise<void> {
   await SyncState.updateOne({ provider: "gcal" }, { $set: { syncToken: null } });
 }
@@ -267,6 +275,7 @@ export async function runCalendarSync(args: {
         };
       }
       if (err.code === "no_grant") {
+        await recordIdleRun();
         return {
           ...result,
           status: "no_grant",

@@ -32,13 +32,13 @@ app.use(makeErrorHandler());          // ZodError / HttpError / mongoose / E1100
 
 ## Auth
 
-| Layer                  | Mechanism                                                                            | File                           |
-| ---------------------- | ------------------------------------------------------------------------------------ | ------------------------------ |
-| resource routes        | none — open at localhost                                                             | —                              |
-| `/oauth/google/start`  | 302 → `${KAO_URL}/oauth/kizuna/start` (consent flow + CSRF state live in Kao)        | `apps/api/src/routes/oauth.ts` |
-| `/oauth/google/status` | server-side GET `${KAO_URL}/grants/kizuna` with `Authorization: Bearer ${KAO_TOKEN}` | `apps/api/src/routes/oauth.ts` |
-| `/sync/*/run`          | none, but rejects with 400 when `KAO_URL`/`KAO_TOKEN` are unset                      | `apps/api/src/routes/sync.ts`  |
-| Dashboard sessions     | none — dashboard is open at localhost                                                | —                              |
+| Layer                      | Mechanism                                                                                     | File                           |
+| -------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------ |
+| resource routes            | none — open at localhost                                                                      | —                              |
+| `POST /oauth/google/start` | 303 → `${KAO_URL}/oauth/kizuna/start` (consent flow + CSRF state live in Kao; Origin-checked) | `apps/api/src/routes/oauth.ts` |
+| `GET /oauth/google/status` | server-side GET `${KAO_URL}/grants/kizuna` with `Authorization: Bearer ${KAO_TOKEN}`          | `apps/api/src/routes/oauth.ts` |
+| `/sync/*/run`              | none, but rejects with 400 when `KAO_URL`/`KAO_TOKEN` are unset                               | `apps/api/src/routes/sync.ts`  |
+| Dashboard sessions         | none — dashboard is open at localhost                                                         | —                              |
 
 See [auth.md](auth.md) for the full model.
 
@@ -233,10 +233,10 @@ The duration parser (`apps/api/src/lib/duration.ts`) supports a subset of ISO 86
 
 ### OAuth (`apps/api/src/routes/oauth.ts`)
 
-| Method | Path                   | Auth | Behavior                                                                                                                             |
-| ------ | ---------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| GET    | `/oauth/google/start`  | none | 302 → `${KAO_URL}/oauth/kizuna/start` (Kao mints the CSRF state and runs the Google consent flow). 400 if Kao is not configured.     |
-| GET    | `/oauth/google/status` | none | Server-side GET `${KAO_URL}/grants/kizuna` with `Authorization: Bearer ${KAO_TOKEN}`, reshaped to `{ granted, scopes?, grantedAt? }` |
+| Method | Path                   | Auth             | Behavior                                                                                                                                                                                                                                                                                        |
+| ------ | ---------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/oauth/google/start`  | Origin-allowlist | 303 → `${KAO_URL}/oauth/kizuna/start`. 400 if Kao is not configured. 401 if the `Origin` header is present but not `https://kizuna.localhost` / `https://api.kizuna.localhost`. Side effect: clears `pausedAt`+`errorCount` on rows with `{pausedAt:{$type:"date"}}` and drops the local cache. |
+| GET    | `/oauth/google/status` | none             | Server-side GET `${KAO_URL}/grants/kizuna`. Reshaped to `{granted, scopes?, grantedAt?, reason?}`. `reason` is `kao_unauthorized` (Kao 401 — wrong `KAO_TOKEN`), `kao_unreachable` (5xx / network), or absent. `grantedAt` is `null` when Kao has no parseable ISO-8601 timestamp.              |
 
 The Google consent flow itself — code exchange, refresh-token encryption, CSRF state, the "Granted ✓" landing page — lives in Kao (`kao/apps/api/src/routes/oauth.ts`). Kizuna never sees the refresh token. Scopes for the `kizuna` grant are version-controlled in Kao's registry:
 

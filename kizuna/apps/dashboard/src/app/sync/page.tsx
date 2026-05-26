@@ -52,9 +52,13 @@ export default async function SyncPage() {
             <>
               <div className="flex items-center gap-2">
                 <Badge tone="green">granted</Badge>
-                <span className="text-muted-foreground tabular-nums">
-                  on {fmtDateTime(oauth.grantedAt)}
-                </span>
+                {oauth.grantedAt ? (
+                  <span className="text-muted-foreground tabular-nums">
+                    on {fmtDateTime(oauth.grantedAt)}
+                  </span>
+                ) : (
+                  <span className="text-faint italic">timestamp unknown</span>
+                )}
               </div>
               <div className="kicker">scopes</div>
               <ul className="space-y-1">
@@ -83,13 +87,25 @@ export default async function SyncPage() {
               <div className="flex items-center gap-2">
                 <Badge tone="amber">not granted</Badge>
                 <span className="text-muted-foreground">
-                  Connect a Google account to enable Gmail + Calendar ingest.
+                  {oauth.reason === "kao_unauthorized"
+                    ? "Kao rejected our bearer — check KAO_TOKEN in apps/api/.env."
+                    : oauth.reason === "kao_unreachable"
+                      ? "Kao is unreachable — verify the service is running and KAO_URL is correct."
+                      : "Connect a Google account to enable Gmail + Calendar ingest."}
                 </span>
               </div>
               <div className="pt-2">
                 <form action={oauthStartUrl()} method="post">
-                  <Button type="submit">Connect Google</Button>
+                  <Button type="submit" disabled={oauth.reason === "kao_unauthorized"}>
+                    Connect Google
+                  </Button>
                 </form>
+                {oauth.reason === "kao_unauthorized" ? (
+                  <p className="mt-1.5 text-xs text-faint">
+                    Clicking Connect won&apos;t help until <Mono>KAO_TOKEN</Mono> is fixed — Kizuna
+                    still couldn&apos;t vend tokens.
+                  </p>
+                ) : null}
               </div>
             </>
           )}

@@ -104,7 +104,7 @@ Per ID:
 ### Pause + resume semantics
 
 - On `OAuthError('invalid_grant')` or a Gmail 401 outside `getMessage` → `pauseWith(message)`: log at `error` (`"<provider> ingest paused — re-grant required"`, with `provider` + `reason` — pausing freezes ingest until a manual re-grant, so it is not a silent state mutation), then set `pausedAt: now`, increment `errorCount`, write `lastError`. Subsequent runs short-circuit with `{ status: 'paused' }` until either:
-  - The user re-authorizes via `/oauth/google/start` → `/callback`, which calls `SyncState.updateMany({ pausedAt: { $ne: null } }, { pausedAt: null, lastError: null })`; or
+  - The operator re-authorizes via `POST /oauth/google/start`, which 303s to Kao's consent flow and (before redirecting) clears `pausedAt` + resets `errorCount` on rows with `pausedAt: {$type: "date"}`. `lastError` is preserved until the next tick (cleared by recordSuccessfulRun on success or recordIdleRun on no_grant); or
   - The caller passes `force: true` to `POST /sync/gmail/run`, which clears `pausedAt` and runs once.
 - On any other error → write `lastError` + bump `errorCount` (without setting `pausedAt`). Next tick retries.
 - On Google request timeout → write `gmail_request_timeout` to `lastError` + bump `errorCount` (without setting `pausedAt`). Next tick retries from the previous cursor.
