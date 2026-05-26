@@ -111,7 +111,7 @@ Common tasks → files. When a task touches multiple files, all are listed.
 | Add an env var                                         | `apps/api/src/config.ts` (Zod schema) + `apps/api/.env.example`                                                                        |
 | Kao identity client (calls `/grants/kizuna/token`)     | `apps/api/src/lib/kao-client.ts`                                                                                                       |
 | Interaction writer (the canonical `recordInteraction`) | `apps/api/src/db/recordInteraction.ts`                                                                                                 |
-| Dashboard page                                         | `apps/dashboard/app/(app)/<route>/page.tsx`; API client at `apps/dashboard/lib/api.ts`                                                 |
+| Dashboard page                                         | `apps/dashboard/src/app/<route>/page.tsx`; API client at `apps/dashboard/src/lib/api.ts`                                               |
 | Logger init                                            | `apps/api/src/lib/logger.ts`                                                                                                           |
 | API server entrypoint                                  | `apps/api/src/main.ts` (boot: `loadConfig → connectDb → createApp → ingestScheduler`); Express app builder in `apps/api/src/server.ts` |
 | Shared Zod schemas (pagination, IdParam, ISO date)     | `apps/api/src/schemas/`                                                                                                                |

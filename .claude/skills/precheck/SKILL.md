@@ -23,9 +23,17 @@ Runs typecheck and lint on **only the projects you've touched**, via Turborepo f
 
 ### 1. Determine which projects have changes
 
+Resolve a comparison base, then list everything that has changed against it plus the working tree:
+
 ```bash
-{ git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u
+BASE=$(git rev-parse --verify --quiet '@{upstream}' 2>/dev/null \
+    || git rev-parse --verify --quiet origin/main 2>/dev/null \
+    || git rev-parse --verify --quiet main 2>/dev/null \
+    || echo HEAD)
+{ git diff --name-only "$BASE"; git ls-files --others --exclude-standard; } | sort -u
 ```
+
+Using only `git diff --name-only HEAD` would miss the case where the changes are already committed on the feature branch but not yet pushed — which is the most common pre-push moment for this skill.
 
 Map each path to a project by its top-level directory:
 
@@ -61,7 +69,7 @@ If no projects are detected as changed (clean tree) report "no changes detected 
 ### 4. Report
 
 - **Pass** → one line: `precheck passed: <project-list>` (e.g. `precheck passed: kokoro, kizuna`).
-- **Fail** → surface only the first failing task's stderr tail (last ~20 lines), then say: `Run \`npm run typecheck\` / \`npm run lint\` (or \`npx turbo run <task> --filter=@<project>/\*\`) for full output.`
+- **Fail** → surface only the first failing task's stderr tail (last ~20 lines), then point the user at the full command — `npm run typecheck` / `npm run lint`, or `npx turbo run <task> --filter='@<project>/*'` for project-scoped output. Use single quotes around the filter so shells with `failglob` (zsh, opt-in bash) don't try to expand `*`.
 
 Do not paste the full turbo output back to the user — it's noisy. Keep the response under ~15 lines.
 

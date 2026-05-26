@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["dev-all.sh", "vitest.config.ts"]
+      "entry": ["dev-all.sh"]
     },
     "kioku/apps/api": {
       "entry": ["src/server.ts"]

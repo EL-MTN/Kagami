@@ -40,7 +40,6 @@
     "kao:dev:dashboard": "turbo run dev --filter=@kao/dashboard",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "test:all": "vitest run",
     "lint": "turbo run lint",
     "lint:fix": "turbo run lint:fix",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
