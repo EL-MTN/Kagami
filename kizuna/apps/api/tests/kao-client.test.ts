@@ -125,13 +125,12 @@ describe("getAccessToken", () => {
     });
   });
 
-  it("translates Kao 404 (grant unknown) → OAuthError(no_grant)", async () => {
-    // 404 means Kao has no 'kizuna' entry in GRANT_NAMES. Semantically
-    // "operator hasn't registered the grant yet" — should idle cleanly, not
-    // inflate errorCount via refresh_failed.
+  it("translates Kao 404 with Kao-shaped envelope → OAuthError(no_grant)", async () => {
+    // 404 with the Kao error envelope means Kao itself said the grant is
+    // unregistered. Idle cleanly via no_grant, not refresh_failed.
     const config = configWith();
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      jsonResponse(404, { error: { message: "unknown grant" } }),
+      jsonResponse(404, { error: { code: "not_found", message: "unknown grant 'kizuna'" } }),
     );
     try {
       await getAccessToken(config);
@@ -139,6 +138,44 @@ describe("getAccessToken", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(OAuthError);
       expect((err as OAuthError).code).toBe("no_grant");
+    }
+  });
+
+  it("translates 404 from a non-Kao host → OAuthError(refresh_failed)", async () => {
+    // A wrong-host KAO_URL that 404s with HTML/plaintext should surface as
+    // misconfiguration, not silently idle as no_grant. Otherwise the
+    // operator sees 'Connect Google' instead of an actionable wrong-URL
+    // signal.
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("<html><body>Not Found</body></html>", {
+        status: 404,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+    try {
+      await getAccessToken(config);
+      throw new Error("expected rejection");
+    } catch (err) {
+      expect(err).toBeInstanceOf(OAuthError);
+      expect((err as OAuthError).code).toBe("refresh_failed");
+    }
+  });
+
+  it("treats 404 with JSON body of wrong shape as refresh_failed", async () => {
+    // Another JSON API on the wrong host could 404 with its own envelope
+    // (e.g. `{message: "..."}`); only Kao's `{error: {...}}` shape counts
+    // as confirmation that we hit Kao itself.
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(404, { message: "not found", status: 404 }),
+    );
+    try {
+      await getAccessToken(config);
+      throw new Error("expected rejection");
+    } catch (err) {
+      expect(err).toBeInstanceOf(OAuthError);
+      expect((err as OAuthError).code).toBe("refresh_failed");
     }
   });
 
@@ -266,6 +303,60 @@ describe("fetchGrantStatus", () => {
   it("falls back to { granted: false } on Kao failures", async () => {
     const config = configWith();
     vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    expect(await fetchGrantStatus(config)).toEqual({ granted: false });
+  });
+
+  it("emits grantedAt:null when Kao returns granted:true with grantedAt:null", async () => {
+    // The dashboard renders null as "—" via fmtDateTime; an ISO epoch
+    // ("1970-01-01T00:00:00.000Z") would render as "Dec 31, 1969, 7:00 PM"
+    // — actively misleading rather than a clear "unknown" signal.
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(200, {
+        name: "kizuna",
+        granted: true,
+        scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+        grantedAt: null,
+      }),
+    );
+    expect(await fetchGrantStatus(config)).toEqual({
+      granted: true,
+      scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+      grantedAt: null,
+    });
+  });
+
+  it("emits grantedAt:null when Kao's grantedAt is a malformed string", async () => {
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(200, {
+        name: "kizuna",
+        granted: true,
+        scopes: [],
+        grantedAt: "not-a-date",
+      }),
+    );
+    const status = await fetchGrantStatus(config);
+    expect(status.granted).toBe(true);
+    if (status.granted) {
+      // Unparseable timestamps fall back to null so the dashboard doesn't
+      // crash on `new Date(s).toISOString()`.
+      expect(status.grantedAt).toBeNull();
+    }
+  });
+
+  it("rejects truthy non-boolean granted (Kao contract drift defense)", async () => {
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(200, {
+        name: "kizuna",
+        granted: "yes",
+        scopes: ["x"],
+        grantedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    // Strict-equality check rejects "yes" — would otherwise lie to the
+    // dashboard about the grant's status.
     expect(await fetchGrantStatus(config)).toEqual({ granted: false });
   });
 });

@@ -36,14 +36,23 @@ const envSchema = z
         // `https://api.kao.localhost?debug=1/grants/kizuna/token`. Caught
         // at startup with a clear message instead of as an opaque Kao 404
         // at first ingest.
+        //
+        // Also reject embedded userinfo (`https://user:secret@host`). The
+        // explicit `Authorization: Bearer` header overrides anything in
+        // userinfo so it's functionally dead at the wire — but `${base}`
+        // gets interpolated into KaoNoGrantError messages that flow into
+        // SyncState.lastError, structured logs, and Kansoku. Leaving the
+        // credentials in there would leak them.
         .refine((s) => {
-          try {
-            const u = new URL(s);
-            return (u.pathname === "" || u.pathname === "/") && u.search === "" && u.hash === "";
-          } catch {
-            return false;
-          }
-        }, "KAO_URL must be host-only (no path, query, or fragment)")
+          const u = new URL(s);
+          return (
+            (u.pathname === "" || u.pathname === "/") &&
+            u.search === "" &&
+            u.hash === "" &&
+            u.username === "" &&
+            u.password === ""
+          );
+        }, "KAO_URL must be host-only (no path, query, fragment, or userinfo)")
         .optional(),
     ),
     // Kao's own config enforces `min(16)` on the same bearer; mirror it here

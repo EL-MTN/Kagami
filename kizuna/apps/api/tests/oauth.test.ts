@@ -6,11 +6,13 @@ import { SyncState } from "../src/db/models/SyncState.js";
 import { clearAccessTokenCache } from "../src/lib/kao-client.js";
 import { startHarness, type TestHarness } from "./helpers/harness.js";
 
-// Minimal route-level coverage for the Kao-backed OAuth surface. The legacy
-// oauth.test.ts was deleted with the consent flow itself (which now lives in
-// Kao), so this file covers what Kizuna still owns: the /start 302 to Kao,
-// the prerequisite gates, the pause-cleanup side effect, and the
-// /status reshape over Kao's grant payload.
+// Route-level coverage for the Kao-backed OAuth surface. The legacy
+// oauth.test.ts was deleted with the consent flow itself (which now lives
+// in Kao), so this file covers what Kizuna still owns:
+//   * POST /oauth/google/start — 303 to Kao, prerequisite gates,
+//     pause/errorCount-cleanup side effect, lastError preservation,
+//     resilience to a transient SyncState write failure.
+//   * GET /oauth/google/status — reshape over Kao's grant payload.
 
 let h: TestHarness;
 
@@ -31,11 +33,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("GET /oauth/google/start", () => {
-  it("302s to Kao's per-grant consent URL when Kao is configured", async () => {
-    const res = await request(h.app).get("/oauth/google/start").redirects(0);
-    expect(res.status).toBe(302);
+describe("POST /oauth/google/start", () => {
+  it("303s to Kao's per-grant consent URL when Kao is configured", async () => {
+    const res = await request(h.app).post("/oauth/google/start").redirects(0);
+    expect(res.status).toBe(303);
     expect(res.headers.location).toBe("https://api.kao.localhost/oauth/kizuna/start");
+  });
+
+  it("rejects GET (state-mutating routes must not be reachable by preloaders/<img> tags)", async () => {
+    const res = await request(h.app).get("/oauth/google/start");
+    // Express returns 404 for unmatched methods on a registered path.
+    expect(res.status).toBe(404);
   });
 
   it("returns 400 when Kao is not configured", async () => {
@@ -44,12 +52,12 @@ describe("GET /oauth/google/start", () => {
       USER_EMAILS: "me@example.com",
     });
     const app = createApp({ db: h.db, config: noKaoConfig });
-    const res = await request(app).get("/oauth/google/start").redirects(0);
+    const res = await request(app).post("/oauth/google/start").redirects(0);
     expect(res.status).toBe(400);
     expect(res.body.error.message).toMatch(/Kao is not configured/);
   });
 
-  it("clears pausedAt and lastError on paused workers before redirecting", async () => {
+  it("clears pausedAt and resets errorCount but leaves lastError intact", async () => {
     await SyncState.create({
       provider: "gmail",
       pausedAt: new Date("2026-04-01T00:00:00Z"),
@@ -69,17 +77,32 @@ describe("GET /oauth/google/start", () => {
       source: "gcal-sync",
     });
 
-    const res = await request(h.app).get("/oauth/google/start").redirects(0);
-    expect(res.status).toBe(302);
+    const res = await request(h.app).post("/oauth/google/start").redirects(0);
+    expect(res.status).toBe(303);
 
     const gmail = await SyncState.findOne({ provider: "gmail" }).lean();
     const gcal = await SyncState.findOne({ provider: "gcal" }).lean();
     expect(gmail!.pausedAt).toBeNull();
-    expect(gmail!.lastError).toBeNull();
     expect(gcal!.pausedAt).toBeNull();
-    expect(gcal!.lastError).toBeNull();
-    // errorCount is operator-visible signal; intentionally not reset.
-    expect(gmail!.errorCount).toBe(3);
+    // errorCount reset so the dashboard doesn't show a perpetual "N errors"
+    // badge after the worker recovers.
+    expect(gmail!.errorCount).toBe(0);
+    expect(gcal!.errorCount).toBe(0);
+    // lastError preserved — recordSuccessfulRun clears it on a real success;
+    // wiping it preemptively would erase the operator's diagnostic history.
+    expect(gmail!.lastError).toBe("invalid_grant");
+    expect(gcal!.lastError).toBe("invalid_grant");
+  });
+
+  it("still redirects to Kao even if the SyncState write fails (transient DB)", async () => {
+    // Simulate a transient DB blip on the updateMany call by stubbing it
+    // to throw. The redirect must still fire so the operator can complete
+    // the consent flow; the next ingest tick will simply re-pause on the
+    // same invalid_grant if Kao didn't take.
+    vi.spyOn(SyncState, "updateMany").mockRejectedValueOnce(new Error("connection refused"));
+    const res = await request(h.app).post("/oauth/google/start").redirects(0);
+    expect(res.status).toBe(303);
+    expect(res.headers.location).toBe("https://api.kao.localhost/oauth/kizuna/start");
   });
 });
 
@@ -123,6 +146,23 @@ describe("GET /oauth/google/status", () => {
     });
   });
 
+  it("collapses Kao 200 + {granted:false} to {granted:false}", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          name: "kizuna",
+          granted: false,
+          scopes: [],
+          grantedAt: null,
+          revokedAt: null,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const res = await request(h.app).get("/oauth/google/status");
+    expect(res.body).toEqual({ granted: false });
+  });
+
   it("collapses Kao 5xx to { granted: false } so the dashboard shows Connect", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response("server error", { status: 503 }),
@@ -139,10 +179,9 @@ describe("GET /oauth/google/status", () => {
     expect(res.body).toEqual({ granted: false });
   });
 
-  it("falls back to epoch grantedAt rather than dropping a granted Kao row", async () => {
-    // Defensive: if Kao ever returns granted:true with grantedAt:null, the
-    // grant works (tokens can be vended) so the dashboard should still see
-    // it as granted. Epoch is a visible sentinel rather than a silent drop.
+  it("emits grantedAt:null rather than a fake epoch when Kao's grantedAt is null", async () => {
+    // The dashboard renders null as "—" via fmtDateTime; an ISO epoch
+    // would have rendered as "Dec 31, 1969, 7:00 PM" — actively misleading.
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -157,6 +196,44 @@ describe("GET /oauth/google/status", () => {
     );
     const res = await request(h.app).get("/oauth/google/status");
     expect(res.body.granted).toBe(true);
-    expect(res.body.grantedAt).toBe("1970-01-01T00:00:00.000Z");
+    expect(res.body.grantedAt).toBeNull();
+  });
+
+  it("emits grantedAt:null when Kao's grantedAt is a malformed string", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          name: "kizuna",
+          granted: true,
+          scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+          grantedAt: "not-a-date",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const res = await request(h.app).get("/oauth/google/status");
+    expect(res.body.granted).toBe(true);
+    // Defensive: unparseable string falls back to null instead of being
+    // propagated to the dashboard where `new Date(s).toISOString()` would
+    // throw RangeError on render.
+    expect(res.body.grantedAt).toBeNull();
+  });
+
+  it("rejects non-boolean granted (e.g. Kao returns granted:'yes')", async () => {
+    // Strict `=== true` check rejects truthy non-booleans that would
+    // otherwise route a contract-drifted Kao response to the granted branch.
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          name: "kizuna",
+          granted: "yes",
+          scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+          grantedAt: "2026-04-01T12:00:00.000Z",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const res = await request(h.app).get("/oauth/google/status");
+    expect(res.body).toEqual({ granted: false });
   });
 });

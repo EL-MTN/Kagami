@@ -101,19 +101,22 @@ async function processMessageIds(
       raw = await client.getMessage(id);
       result.fetched++;
     } catch (err) {
+      // Paths that escape the per-message loop (don't `continue`) should
+      // NOT increment `result.errors` — the outer pause/timeout handling
+      // owns the bookkeeping. Without this ordering, an OAuthError from
+      // the self-heal retry reported `errors:0` (rethrown before the
+      // increment) while a fresh 401 → OAuthError reported `errors:1`
+      // (incremented before the throw), even though both have the same
+      // root cause.
       if (err instanceof GoogleRequestTimeoutError) throw err;
-      // OAuthError can now bubble up from the client's self-heal retry
-      // (getAccessToken({force:true}) → Kao 409/network → OAuthError).
-      // It must propagate to the outer try-catch so the worker pauses or
-      // returns no_grant cleanly — without this re-throw, every remaining
-      // message in the batch would re-trigger the same OAuthError and
-      // silently inflate `result.errors` while the run reports status:'ok'.
       if (err instanceof OAuthError) throw err;
-      result.errors++;
-      logger.warn({ error: err, id }, "gmail: failed to fetch message");
       if (err instanceof GmailHttpError && err.status === 401) {
         throw new OAuthError("invalid_grant", "gmail returned 401 mid-batch");
       }
+      // Only true per-message failures (parse error, transient network,
+      // non-401 HTTP error) reach this point and get counted + skipped.
+      result.errors++;
+      logger.warn({ error: err, id }, "gmail: failed to fetch message");
       continue;
     }
 
@@ -322,6 +325,15 @@ export async function runGmailSync(args: {
           status: "no_grant",
           message: "no Google OAuth grant on file",
         };
+      }
+      if (err.code === "refresh_failed") {
+        // Kao unreachable / 5xx / misconfigured. Record a stable label so
+        // the dashboard's `lastError` column stays fingerprint-friendly
+        // across transient Kao blips, rather than churning verbose Kao
+        // internal strings (e.g. "Kao token fetch failed: ECONNREFUSED").
+        await recordFailedRun("kao_unreachable");
+        logger.error({ error: err, provider: "gmail" }, "gmail sync: kao unreachable");
+        return { ...result, status: "error", message: "kao_unreachable" };
       }
     }
     if (err instanceof GmailHttpError && err.status === 401) {

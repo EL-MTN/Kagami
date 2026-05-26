@@ -71,7 +71,7 @@ export async function startHarness(): Promise<TestHarness> {
     MONGODB_URI: uri,
     USER_EMAILS: "test@example.com",
     KAO_URL: "https://api.kao.localhost",
-    KAO_TOKEN: "test-kao-bearer",
+    KAO_TOKEN: "test-kao-bearer-16chars",
   });
 
   const db = await connectDb(config.MONGODB_URI);
