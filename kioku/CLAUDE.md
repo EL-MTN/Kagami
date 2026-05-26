@@ -4,6 +4,8 @@
 
 Kioku — a personal long-term memory subsystem. Atomic facts in MongoDB + hybrid retrieval (`$vectorSearch` + `$search` + entity boost) + a single MCP server interface. Designed to be consumed over HTTP by external agents (Kokoro is the primary client). Built with TypeScript, Express, the `@kagami/llm` inference gateway (OpenAI-compatible), and a Next.js dashboard for inspection. Lives as a subtree inside the Kagami nested monorepo.
 
+This file is the project guide. Cross-service facts live in the workspace root: see [`../CLAUDE.md`](../CLAUDE.md) and [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
+
 ## Monorepo Structure
 
 ```
@@ -97,6 +99,26 @@ Apps share no in-process code. The dashboard reaches the API only through `fetch
 - **Cross-package imports** — `@kagami/eslint-config`, `@kagami/tsconfig`, and `@kagami/llm` (the runtime inference gateway, consumed by `apps/api/src/llm.ts`); no project-internal packages today; no cross-app TS imports.
 - **Within-package imports** — relative paths with explicit `.js` extensions (NodeNext requirement on the API).
 - **Internal packages pattern** — Kioku has no project-internal TS packages today. The apps consume only the shared `@kagami/*` config packages from the Kagami workspace root (`shared/packages/`); the former `kioku/packages/typescript-config` and `kioku/packages/eslint-config` were folded into those workspace-level packages during the Kagami migration.
+
+## Where to find things
+
+Common tasks → files. When a task touches multiple files, all are listed.
+
+| Task                                                           | File(s)                                                                                                                                                |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Add a REST endpoint                                            | New router in `apps/api/src/routes/<name>.ts` + mount in `apps/api/src/server.ts`                                                                      |
+| Add an ingest pipeline step                                    | `apps/api/src/ingest/` (e.g. `consolidate.ts`, `append.ts`, `sessions.ts`); wire into `ingestSessionFromString()` in `sessions.ts`                     |
+| Add a retrieval scorer / re-ranker                             | `apps/api/src/retrieval/embeddings.ts` (`defaultFactRanker`) + `apps/api/src/retrieval/scoring.ts` (fusion)                                            |
+| Hybrid retrieval glue ($vectorSearch + $search + entity boost) | `apps/api/src/retrieval/embeddings.ts` + `scoring.ts` + `text.ts` (lemmatizer + entity extractor)                                                      |
+| Add a fact schema field                                        | `apps/api/src/storage/facts.ts` (extend `Fact` interface) + `apps/api/src/storage/indexes.ts` if filterable                                            |
+| Add a Mongo index                                              | `apps/api/src/storage/indexes.ts` (idempotent `ensureIndexes()`)                                                                                       |
+| Add an env var                                                 | `apps/api/.env.example` (template); resolution in `apps/api/src/llm.ts` (LLM/embedding vars) or the consumer module                                    |
+| Add a benchmark / LongMemEval probe                            | `apps/api/scripts/longmemeval.ts` (orchestrator) + `apps/api/scripts/longmemeval-worker.ts` + datasets under `apps/api/bench/longmemeval/`             |
+| Add a dashboard page                                           | `apps/dashboard/src/app/<route>/page.tsx`; API proxy at `apps/dashboard/src/app/api/<route>/route.ts`; data fetcher at `apps/dashboard/src/lib/api.ts` |
+| Logger init                                                    | `apps/api/src/logger.ts`                                                                                                                               |
+| API server entrypoint                                          | `apps/api/src/server.ts` (Express bootstrap, router mounting, `ensureIndexes()`, graceful shutdown)                                                    |
+| MCP transport (mounted at `/mcp`)                              | `apps/api/src/mcp.ts`                                                                                                                                  |
+| Tests                                                          | `apps/api/tests/*.test.ts` (colocated by area: `scoring.test.ts`, `entities.test.ts`, `facts.test.ts`, …)                                              |
 
 ## Doc Maintenance
 

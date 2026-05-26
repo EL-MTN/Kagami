@@ -116,7 +116,12 @@ All commands run from the Kagami root.
                                  #            streamed [prefix] output.
 npm run dev                      # alias for ./dev-all.sh
 npm run typecheck                # turbo run typecheck across every workspace
-npm run test                     # turbo run test
+npm run test                     # turbo run test (per-project, cached)
+npm run test:all                 # single vitest process across all five projects
+                                 # (root vitest.config.ts aggregates each
+                                 # project's config; per-project Mongo is
+                                 # preserved). Use when you want one
+                                 # reporter output across the workspace.
 npm run lint                     # turbo run lint
 npm run lint:fix
 npm run build                    # turbo run build
