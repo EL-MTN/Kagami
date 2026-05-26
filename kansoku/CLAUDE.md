@@ -171,6 +171,30 @@ Apps share no in-process code. The dashboard reaches the API only through `fetch
 - **`.env` location** — `apps/api/.env` (not root). `apps/api/.env.example` is the template.
 - **Within-package imports** — relative paths with explicit `.js` extensions (NodeNext requirement on the API).
 
+## Where to find things
+
+Common tasks → files. When a task touches multiple files, all are listed.
+
+| Task                                                    | File(s)                                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Add a log ingestion field                               | `apps/api/src/lib/envelope.ts` (ECS/legacy normalization)                                  |
+| Add a derived metric                                    | `apps/api/src/storage/metrics.ts`                                                          |
+| Add an error-fingerprint rule                           | `apps/api/src/lib/fingerprint.ts`                                                          |
+| Add an env var                                          | `apps/api/src/server.ts` (Zod resolution at boot) + `apps/api/.env.example`                |
+| Add a REST endpoint                                     | New router in `apps/api/src/routes/<name>.ts` + mount in `apps/api/src/server.ts`          |
+| SSE tail handler                                        | `apps/api/src/routes/tail.ts`                                                              |
+| Ingest route (`POST /v1/logs`)                          | `apps/api/src/routes/ingest.ts`                                                            |
+| Query route (`GET /v1/logs`, `GET /v1/traces/:id`)      | `apps/api/src/routes/query.ts`                                                             |
+| Span folding (`event.kind:"span"` → `spans` collection) | `apps/api/src/storage/spans.ts`                                                            |
+| Cardinality budget                                      | `apps/api/src/lib/cardinality.ts`                                                          |
+| New-error webhook alerter                               | `apps/api/src/lib/alerts.ts`                                                               |
+| Bearer-token auth middleware                            | `apps/api/src/lib/auth.ts`                                                                 |
+| Dashboard page                                          | `apps/dashboard/src/app/<route>/page.tsx`; data fetcher at `apps/dashboard/src/lib/api.ts` |
+| kansoku-debug CLI                                       | `apps/api/scripts/kansoku-debug.ts` (invoked via `npm run kansoku:debug -- <subcommand>`)  |
+| Logger init                                             | `apps/api/src/logger.ts`                                                                   |
+| API server entrypoint                                   | `apps/api/src/server.ts`                                                                   |
+| Tests                                                   | `apps/api/tests/*.test.ts`                                                                 |
+
 ## Doc Maintenance
 
 After any code change, update the relevant doc in `/docs` to reflect the change. If a new module or major feature is added, create a new doc file. Keep docs accurate — they are the primary architecture reference.

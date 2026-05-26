@@ -4,6 +4,8 @@
 
 Kizuna — a personal CRM that tracks people, organizations, interactions, and follow-ups. Auto-ingests Gmail and Google Calendar to populate the relationship graph; everything else is concierge-driven via REST. Built with TypeScript, Express 5, Mongoose, and a Next.js 15 dashboard. Lives as a subtree inside the Kagami nested monorepo and consumes shared tooling via `@kagami/eslint-config` and `@kagami/tsconfig` from `shared/packages/`. Kokoro consumes the API for read-only CRM tools; Kizuna itself has no outbound runtime coupling to Kioku or Kokoro.
 
+This file is the project guide. Cross-service facts live in the workspace root: see [`../CLAUDE.md`](../CLAUDE.md) and [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
+
 ## Monorepo Structure
 
 ```
@@ -96,6 +98,24 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 - **`.env` location** — `apps/api/.env` and `apps/dashboard/.env`. `apps/api/.env.example` and `apps/dashboard/.env.example` are templates.
 - **Tests as source of truth** — when a test fails because production behaves differently than the test expects, fix the API, not the test. See [docs/testing.md](docs/testing.md).
 - **Internal packages pattern** — Kizuna has no project-internal TypeScript packages today; the apps consume only the shared `@kagami/*` config packages from Kagami's `shared/packages/`. The local `kizuna/packages/` directory is reserved for future Kizuna-only libs.
+
+## Where to find things
+
+Common tasks → files. When a task touches multiple files, all are listed.
+
+| Task                                                   | File(s)                                                                                                                                |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Add a Mongoose model                                   | `apps/api/src/db/models/<model>.ts`                                                                                                    |
+| Add a REST endpoint                                    | New router in `apps/api/src/routes/<name>.ts` + mount in `apps/api/src/server.ts`                                                      |
+| Add a sync source (Gmail, Calendar, etc.)              | `apps/api/src/ingest/<source>/` + register in `apps/api/src/ingest/scheduler.ts`                                                       |
+| Add an env var                                         | `apps/api/src/config.ts` (Zod schema) + `apps/api/.env.example`                                                                        |
+| Kao identity client (calls `/grants/kizuna/token`)     | `apps/api/src/lib/kao-client.ts`                                                                                                       |
+| Interaction writer (the canonical `recordInteraction`) | `apps/api/src/db/recordInteraction.ts`                                                                                                 |
+| Dashboard page                                         | `apps/dashboard/app/(app)/<route>/page.tsx`; API client at `apps/dashboard/lib/api.ts`                                                 |
+| Logger init                                            | `apps/api/src/lib/logger.ts`                                                                                                           |
+| API server entrypoint                                  | `apps/api/src/main.ts` (boot: `loadConfig → connectDb → createApp → ingestScheduler`); Express app builder in `apps/api/src/server.ts` |
+| Shared Zod schemas (pagination, IdParam, ISO date)     | `apps/api/src/schemas/`                                                                                                                |
+| Tests                                                  | `apps/api/tests/*.test.ts`                                                                                                             |
 
 ## Doc Maintenance
 
