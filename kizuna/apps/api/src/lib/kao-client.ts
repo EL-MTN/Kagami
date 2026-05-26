@@ -35,15 +35,27 @@ export class KaoUnreachableError extends Error {
 }
 
 export class KaoMisconfiguredError extends Error {
-  constructor(message: string) {
+  // `code` distinguishes the two operator-actionable misconfig cases:
+  //   - bad_bearer: KAO_TOKEN rejected (401)
+  //   - wrong_host: 404 with a non-Kao response shape (KAO_URL likely points
+  //     at the wrong service)
+  // The translation to OAuthError uses this so the worker can record a
+  // matching stable label and the dashboard's status reason can stay in
+  // lockstep with the ingest path's lastError.
+  readonly code: "bad_bearer" | "wrong_host";
+  constructor(code: "bad_bearer" | "wrong_host", message: string) {
     super(message);
     this.name = "KaoMisconfiguredError";
+    this.code = code;
   }
 }
 
 export class OAuthError extends Error {
-  readonly code: "no_grant" | "invalid_grant" | "refresh_failed";
-  constructor(code: "no_grant" | "invalid_grant" | "refresh_failed", message: string) {
+  readonly code: "no_grant" | "invalid_grant" | "refresh_failed" | "kao_unauthorized";
+  constructor(
+    code: "no_grant" | "invalid_grant" | "refresh_failed" | "kao_unauthorized",
+    message: string,
+  ) {
     super(message);
     this.name = "OAuthError";
     this.code = code;
@@ -150,7 +162,19 @@ export async function getAccessToken(
         // decrypt_failed and invalid_grant both require operator re-consent.
         throw new OAuthError("invalid_grant", err.message);
       }
-      if (err instanceof KaoUnreachableError || err instanceof KaoMisconfiguredError) {
+      if (err instanceof KaoMisconfiguredError) {
+        // bad_bearer (Kao 401) gets a distinct OAuthError code so the worker
+        // can record `kao_unauthorized` in lastError — matching the status
+        // route's `reason: "kao_unauthorized"`. Otherwise the operator
+        // would see "Kao rejected our bearer" on the OAuth card AND
+        // "kao_unreachable" on the Gmail/Calendar card simultaneously
+        // for the same single root cause.
+        if (err.code === "bad_bearer") {
+          throw new OAuthError("kao_unauthorized", err.message);
+        }
+        throw new OAuthError("refresh_failed", err.message);
+      }
+      if (err instanceof KaoUnreachableError) {
         throw new OAuthError("refresh_failed", err.message);
       }
       throw err;
@@ -187,7 +211,10 @@ async function fetchToken(url: string, bearer: string, base: string): Promise<Ve
 
   if (res.status === 401) {
     // Bearer wrong — operator config error, not transient. Surface plainly.
-    throw new KaoMisconfiguredError(`Kao returned 401 for grants/kizuna/token — check KAO_TOKEN`);
+    throw new KaoMisconfiguredError(
+      "bad_bearer",
+      `Kao returned 401 for grants/kizuna/token — check KAO_TOKEN`,
+    );
   }
 
   if (res.status === 404) {
@@ -205,17 +232,27 @@ async function fetchToken(url: string, bearer: string, base: string): Promise<Ve
     const ct = (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
     const looksJson = ct === "application/json";
     const body = looksJson ? ((await res.json().catch(() => null)) as unknown) : null;
-    const isKaoEnvelope =
+    // Kao's real 404 envelope (kao/apps/api/src/lib/errors.ts) always carries
+    // `error.code: "not_found"` as a string. Requiring `error.code` to be a
+    // string distinguishes Kao from look-alike envelopes — e.g. a Next.js
+    // catch-all that 404s with `{error: {message: "..."}}` (no `code`) or
+    // some other JSON API with `{error: {detail: "..."}}`. Without this
+    // gate, a typo'd KAO_URL pointing at any JSON service with an `error`
+    // object would silently route to no_grant, and (since recordIdleRun
+    // clears lastError every tick) the operator would have zero diagnostic
+    // surface for the misconfig.
+    const errorField =
       body !== null &&
       typeof body === "object" &&
-      // Arrays satisfy `typeof === "object"` and are non-null; reject them
-      // explicitly so `{error: ["msg"]}` from a non-Kao service doesn't
-      // get misclassified as the Kao envelope.
       !Array.isArray(body) &&
-      "error" in (body as Record<string, unknown>) &&
-      typeof (body as { error?: unknown }).error === "object" &&
-      (body as { error?: unknown }).error !== null &&
-      !Array.isArray((body as { error?: unknown }).error);
+      "error" in (body as Record<string, unknown>)
+        ? (body as { error?: unknown }).error
+        : undefined;
+    const isKaoEnvelope =
+      typeof errorField === "object" &&
+      errorField !== null &&
+      !Array.isArray(errorField) &&
+      typeof (errorField as { code?: unknown }).code === "string";
     if (isKaoEnvelope) {
       // Kao confirmed: grant unknown to it (not in GRANT_NAMES yet, or
       // operator hasn't registered 'kizuna'). Idle cleanly via no_grant.
@@ -228,6 +265,7 @@ async function fetchToken(url: string, bearer: string, base: string): Promise<Ve
     // KAO_URL pointing at the wrong service. Surface as misconfig so the
     // operator sees an actionable error instead of "Connect Google".
     throw new KaoMisconfiguredError(
+      "wrong_host",
       `Kao returned 404 with a non-Kao response body — check KAO_URL points at Kao`,
     );
   }
@@ -347,7 +385,20 @@ export async function fetchGrantStatus(config: Config): Promise<
       logger.warn({ status: 401 }, "kao grant status: bearer rejected — check KAO_TOKEN");
       return { granted: false, reason: "kao_unauthorized" };
     }
-    logger.warn({ status: res.status }, "kao grant status returned non-2xx");
+    // For 4xx (other than 401) include the response body so the operator
+    // can distinguish "Kao API contract changed" (e.g. /grants/:grant moved)
+    // from a transient blip. 4xx → error level (not transient); 5xx stays
+    // at warn (transient). Body truncated to 500 chars.
+    const body = await res.text().catch(() => "<unreadable>");
+    const isClientError = res.status >= 400 && res.status < 500;
+    if (isClientError) {
+      logger.error(
+        { status: res.status, body: body.slice(0, 500) },
+        "kao grant status returned 4xx — possible API contract change",
+      );
+    } else {
+      logger.warn({ status: res.status }, "kao grant status returned 5xx");
+    }
     return { granted: false, reason: "kao_unreachable" };
   }
   const data = (await res.json().catch(() => null)) as {
@@ -370,12 +421,21 @@ export async function fetchGrantStatus(config: Config): Promise<
     return { granted: false };
   }
   // Surface null grantedAt rather than a fake epoch sentinel. The dashboard
-  // renders that distinctly from a real date. Also reject malformed and
-  // date-only strings (e.g. "1970-01-01") that would parse via `new Date`
-  // but render as misleading concrete dates.
+  // renders that distinctly from a real date. Both checks are needed:
+  //   - ISO_DATETIME_RE rejects date-only strings like "1970-01-01" that
+  //     `new Date` would happily parse (and render as "Dec 31, 1969").
+  //   - Number.isFinite(new Date(s).getTime()) rejects shape-valid but
+  //     semantically-invalid strings like "2026-13-45T25:99:99Z" that the
+  //     regex's \d{2} accepts but Date returns NaN for. Without this check
+  //     the dashboard would render "on —" (fmtDateTime's NaN fallback)
+  //     instead of the intended "timestamp unknown" branch.
   const rawGrantedAt = data.grantedAt;
   const grantedAt =
-    typeof rawGrantedAt === "string" && ISO_DATETIME_RE.test(rawGrantedAt) ? rawGrantedAt : null;
+    typeof rawGrantedAt === "string" &&
+    ISO_DATETIME_RE.test(rawGrantedAt) &&
+    Number.isFinite(new Date(rawGrantedAt).getTime())
+      ? rawGrantedAt
+      : null;
   return {
     granted: true,
     scopes: Array.isArray(data.scopes) ? data.scopes.filter((s) => typeof s === "string") : [],

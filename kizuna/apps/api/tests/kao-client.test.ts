@@ -115,13 +115,16 @@ describe("getAccessToken", () => {
     });
   });
 
-  it("translates Kao 401 (bad bearer) → OAuthError(refresh_failed)", async () => {
+  it("translates Kao 401 (bad bearer) → OAuthError(kao_unauthorized)", async () => {
+    // Distinct from refresh_failed so the worker can record a stable
+    // `lastError: 'kao_unauthorized'` that matches the status route's
+    // `reason: 'kao_unauthorized'` — operator sees consistent labels.
     const config = configWith();
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse(401, { error: { message: "bad bearer" } }),
     );
     await expect(getAccessToken(config)).rejects.toMatchObject({
-      code: "refresh_failed",
+      code: "kao_unauthorized",
     });
   });
 
@@ -162,10 +165,28 @@ describe("getAccessToken", () => {
     }
   });
 
+  it("treats 404 with JSON envelope missing `error.code` as refresh_failed", async () => {
+    // Real Kao always sets `error.code` as a string. A look-alike envelope
+    // missing `code` (e.g. `{error: {message: "..."}}` from a Next.js
+    // catch-all) must NOT be classified as Kao — otherwise a typo'd
+    // KAO_URL silently idles ingest with no diagnostic.
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(404, { error: { message: "not found" } }),
+    );
+    try {
+      await getAccessToken(config);
+      throw new Error("expected rejection");
+    } catch (err) {
+      expect(err).toBeInstanceOf(OAuthError);
+      expect((err as OAuthError).code).toBe("refresh_failed");
+    }
+  });
+
   it("treats 404 with JSON body of wrong shape as refresh_failed", async () => {
     // Another JSON API on the wrong host could 404 with its own envelope
-    // (e.g. `{message: "..."}`); only Kao's `{error: {...}}` shape counts
-    // as confirmation that we hit Kao itself.
+    // (e.g. `{message: "..."}`); only Kao's `{error: {code, ...}}` shape
+    // counts as confirmation that we hit Kao itself.
     const config = configWith();
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse(404, { message: "not found", status: 404 }),
@@ -357,6 +378,40 @@ describe("fetchGrantStatus", () => {
       // regex rejects them.
       expect(status.grantedAt).toBeNull();
     }
+  });
+
+  it("rejects shape-valid but semantically-invalid timestamps (e.g. '2026-13-45T25:99:99Z')", async () => {
+    // The ISO regex is shape-only — `\\d{2}` accepts 13/45/25/99. Without
+    // the Number.isFinite belt-and-suspenders check, these would pass
+    // validation but be rendered by the dashboard as "on —" (fmtDateTime's
+    // NaN fallback) — exactly the misleading concrete-date display the
+    // null fallback was meant to prevent.
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          name: "kizuna",
+          granted: true,
+          scopes: [],
+          grantedAt: "2026-13-45T25:99:99Z",
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          name: "kizuna",
+          granted: true,
+          scopes: [],
+          grantedAt: "0000-00-00T00:00:00Z",
+        }),
+      );
+
+    let status = await fetchGrantStatus(config);
+    expect(status.granted).toBe(true);
+    if (status.granted) expect(status.grantedAt).toBeNull();
+
+    status = await fetchGrantStatus(config);
+    expect(status.granted).toBe(true);
+    if (status.granted) expect(status.grantedAt).toBeNull();
   });
 
   it("rejects loose strings that JS Date accepts (e.g. '1999', 'abc 1999')", async () => {

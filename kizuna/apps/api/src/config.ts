@@ -72,6 +72,17 @@ const envSchema = z
       blankAsUndefined,
       z.string().min(16, "KAO_TOKEN must be at least 16 characters").optional(),
     ),
+    // Comma-separated list of Origin values that may POST to
+    // /oauth/google/start. The default allowlist is `https://kizuna.localhost`
+    // (the Portless dashboard origin). Operators running the dashboard on a
+    // different origin (renamed Portless host, bare-port debug, SSH tunnel,
+    // staging deploy) extend the list here. The legacy hardcoded
+    // `https://api.kizuna.localhost` entry was dropped — the API never
+    // hosts a form, so it had no legitimate cross-origin use.
+    KIZUNA_DASHBOARD_ORIGIN: z
+      .string()
+      .optional()
+      .transform((s) => (s ? csv(s) : [])),
     NEWSLETTER_DOMAIN_BLOCKLIST: z
       .string()
       .optional()

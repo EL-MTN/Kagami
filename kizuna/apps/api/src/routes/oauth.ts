@@ -21,14 +21,23 @@ import { errors } from "../lib/errors.js";
 export function makeOauthRouter(config: Config): Router {
   const r = Router();
 
-  // Allow-list of Origins that may POST to /oauth/google/start. The
-  // dashboard form submission carries `Origin: https://kizuna.localhost`
-  // (browsers send Origin automatically for cross-origin form POSTs).
-  // Programmatic callers (curl, supertest) typically don't send Origin
-  // and are allowed through — they're inherently OS-user-trusted on the
-  // localhost-only deployment. The check defends against CSRF from a
-  // malicious tab that issues a hidden cross-origin form POST.
-  const allowedOrigins = new Set(["https://kizuna.localhost", "https://api.kizuna.localhost"]);
+  // Allow-list of Origins that may POST to /oauth/google/start. Default is
+  // the Portless dashboard origin (`https://kizuna.localhost`); operators on
+  // a different dashboard origin extend the list via the comma-separated
+  // KIZUNA_DASHBOARD_ORIGIN env var. The previous hardcoded
+  // `https://api.kizuna.localhost` entry was dropped — the API never hosts
+  // a form, so a request claiming that as its Origin is never legitimate.
+  //
+  // Programmatic callers (curl, supertest, the dashboard's server-side
+  // fetch path) typically don't send an Origin header at all, OR send an
+  // empty one in some browsers / no-referrer policies. Both cases are
+  // allowed: OS-user-trusted on the localhost-only deployment, and an
+  // empty Origin is indistinguishable in intent from a missing one. The
+  // check rejects requests that DO send an Origin which isn't on the list
+  // — a malicious cross-origin tab can't omit Origin from a form POST in
+  // any current browser.
+  const allowedOrigins = new Set<string>(["https://kizuna.localhost"]);
+  for (const extra of config.KIZUNA_DASHBOARD_ORIGIN) allowedOrigins.add(extra);
 
   r.post("/google/start", async (req, res) => {
     if (!config.KAO_URL || !config.KAO_TOKEN) {
@@ -37,7 +46,7 @@ export function makeOauthRouter(config: Config): Router {
       );
     }
     const origin = req.headers.origin;
-    if (typeof origin === "string" && origin.length > 0 && !allowedOrigins.has(origin)) {
+    if (typeof origin === "string" && origin !== "" && !allowedOrigins.has(origin)) {
       throw errors.unauthorized(`origin '${origin}' not allowed`);
     }
     // Operator is about to re-consent at Kao. Reset the operator-visible

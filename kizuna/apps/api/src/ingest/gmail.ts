@@ -92,11 +92,19 @@ async function recordFailedRun(message: string): Promise<void> {
 // "invalid_grant" message from before re-consent doesn't linger on the
 // dashboard alongside a fresh status:'no_grant' result. errorCount stays
 // put (this tick didn't fail).
+//
+// The Mongo write is wrapped in try/catch so a transient DB blip doesn't
+// turn a no_grant result into a 500 from POST /sync/gmail/run — the
+// status:'no_grant' return shape is part of the route contract.
 async function recordIdleRun(): Promise<void> {
-  await SyncState.updateOne(
-    { provider: "gmail" },
-    { $set: { lastError: null, lastRunAt: new Date() } },
-  );
+  try {
+    await SyncState.updateOne(
+      { provider: "gmail" },
+      { $set: { lastError: null, lastRunAt: new Date() } },
+    );
+  } catch (err) {
+    logger.warn({ error: err }, "gmail: failed to record idle run");
+  }
 }
 
 async function processMessageIds(
@@ -352,11 +360,21 @@ export async function runGmailSync(args: {
           message: "no Google OAuth grant on file",
         };
       }
+      if (err.code === "kao_unauthorized") {
+        // Kao 401 — bearer rejected. Stable label matches the status
+        // route's `reason: "kao_unauthorized"` so the dashboard's OAuth
+        // card and Gmail card show the same diagnostic for the same root
+        // cause (wrong KAO_TOKEN).
+        await recordFailedRun("kao_unauthorized");
+        logger.error({ error: err, provider: "gmail" }, "gmail sync: kao unauthorized");
+        return { ...result, status: "error", message: "kao_unauthorized" };
+      }
       if (err.code === "refresh_failed") {
-        // Kao unreachable / 5xx / misconfigured. Record a stable label so
-        // the dashboard's `lastError` column stays fingerprint-friendly
-        // across transient Kao blips, rather than churning verbose Kao
-        // internal strings (e.g. "Kao token fetch failed: ECONNREFUSED").
+        // Kao unreachable / 5xx / misconfigured (wrong-host 404 — not
+        // bad-bearer 401, which has its own branch above). Record a stable
+        // label so the dashboard's `lastError` column stays fingerprint-
+        // friendly across transient Kao blips rather than churning verbose
+        // Kao internal strings (e.g. "Kao token fetch failed: ECONNREFUSED").
         await recordFailedRun("kao_unreachable");
         logger.error({ error: err, provider: "gmail" }, "gmail sync: kao unreachable");
         return { ...result, status: "error", message: "kao_unreachable" };
@@ -369,6 +387,20 @@ export async function runGmailSync(args: {
         status: "paused",
         message: "gmail returned 401 — re-grant required",
       };
+    }
+    if (err instanceof GmailHttpError && err.status === 403) {
+      // Google 403 after the client's self-heal retry — quota /
+      // dailyLimitExceeded / scope misalignment that survived a fresh
+      // token. Stable label so the dashboard doesn't churn the verbose
+      // 300-char Google JSON body across retries (which would explode
+      // Kansoku error fingerprinting). Verbose detail goes to the log,
+      // not to SyncState.lastError.
+      await recordFailedRun("google_403");
+      logger.error(
+        { error: err, body: err.body.slice(0, 500), provider: "gmail" },
+        "gmail sync: google 403 (quota or scope)",
+      );
+      return { ...result, status: "error", message: "google_403" };
     }
     const progress = {
       provider: "gmail",

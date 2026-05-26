@@ -103,8 +103,6 @@ describe("POST /oauth/google/start", () => {
   });
 
   it("rejects a cross-origin form POST from an unallowed Origin (CSRF defense)", async () => {
-    // A malicious page on another origin issuing a form POST would send
-    // its own Origin header; reject those rather than mutating SyncState.
     const res = await request(h.app)
       .post("/oauth/google/start")
       .set("Origin", "https://evil.example.com")
@@ -113,10 +111,40 @@ describe("POST /oauth/google/start", () => {
     expect(res.body.error.message).toMatch(/origin/i);
   });
 
+  it("rejects the API's own origin (no legitimate form is hosted on the API)", async () => {
+    const res = await request(h.app)
+      .post("/oauth/google/start")
+      .set("Origin", "https://api.kizuna.localhost")
+      .redirects(0);
+    expect(res.status).toBe(401);
+  });
+
   it("allows requests with no Origin header (curl / supertest)", async () => {
-    // Programmatic callers don't send Origin; trusted on localhost-only.
     const res = await request(h.app).post("/oauth/google/start").redirects(0);
     expect(res.status).toBe(303);
+  });
+
+  it("treats an empty Origin header like a missing one (no_referrer policy)", async () => {
+    // Some browser configurations / older browsers issue cross-origin form
+    // POSTs with `Origin: ` (empty). Indistinguishable in intent from
+    // missing — allow rather than wedging older clients with a 401.
+    const res = await request(h.app).post("/oauth/google/start").set("Origin", "").redirects(0);
+    expect(res.status).toBe(303);
+  });
+
+  it("accepts Origins added via KIZUNA_DASHBOARD_ORIGIN", async () => {
+    const extendedConfig = loadConfig({
+      MONGODB_URI: h.uri,
+      USER_EMAILS: "test@example.com",
+      KAO_URL: "https://api.kao.localhost",
+      KAO_TOKEN: "test-kao-bearer-16chars",
+      KIZUNA_DASHBOARD_ORIGIN: "https://crm.localhost,https://kizuna.staging",
+    });
+    const app = createApp({ db: h.db, config: extendedConfig });
+    for (const origin of ["https://crm.localhost", "https://kizuna.staging"]) {
+      const res = await request(app).post("/oauth/google/start").set("Origin", origin).redirects(0);
+      expect(res.status).toBe(303);
+    }
   });
 
   it("still redirects to Kao even if the SyncState write fails (transient DB)", async () => {

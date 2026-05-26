@@ -143,7 +143,7 @@ spy.mockResolvedValue({
 });
 ```
 
-The dashboard never appears in tests. The OAuth callback is exercised by minting a valid signed state from `GET /oauth/google/start`, then issuing the callback request with a mocked `getToken`.
+The dashboard never appears in tests. The OAuth callback lives in Kao now, not Kizuna — the only Kizuna-side OAuth surface is `POST /oauth/google/start` (303 to `${KAO_URL}/oauth/kizuna/start`, Origin-checked, with side effects on paused SyncStates) and `GET /oauth/google/status` (server-side fetch of `${KAO_URL}/grants/kizuna`). Both are covered by `oauth.test.ts` using `vi.spyOn(globalThis, "fetch")` to mock Kao's responses.
 
 ### Fake Google ingest clients
 

@@ -78,12 +78,17 @@ async function recordFailedRun(message: string): Promise<void> {
   );
 }
 
-// See gmail.ts for the recordIdleRun rationale.
+// See gmail.ts for the recordIdleRun rationale. try/catch so a Mongo blip
+// doesn't 500 the /sync/gcal/run route's no_grant response.
 async function recordIdleRun(): Promise<void> {
-  await SyncState.updateOne(
-    { provider: "gcal" },
-    { $set: { lastError: null, lastRunAt: new Date() } },
-  );
+  try {
+    await SyncState.updateOne(
+      { provider: "gcal" },
+      { $set: { lastError: null, lastRunAt: new Date() } },
+    );
+  } catch (err) {
+    logger.warn({ error: err }, "gcal: failed to record idle run");
+  }
 }
 
 async function clearSyncToken(): Promise<void> {
@@ -282,8 +287,13 @@ export async function runCalendarSync(args: {
           message: "no Google OAuth grant on file",
         };
       }
+      if (err.code === "kao_unauthorized") {
+        // See gmail.ts for the rationale.
+        await recordFailedRun("kao_unauthorized");
+        logger.error({ error: err, provider: "gcal" }, "gcal sync: kao unauthorized");
+        return { ...result, status: "error", message: "kao_unauthorized" };
+      }
       if (err.code === "refresh_failed") {
-        // Stable label — see gmail.ts for the rationale.
         await recordFailedRun("kao_unreachable");
         logger.error({ error: err, provider: "gcal" }, "gcal sync: kao unreachable");
         return { ...result, status: "error", message: "kao_unreachable" };
@@ -296,6 +306,15 @@ export async function runCalendarSync(args: {
         status: "paused",
         message: "calendar returned 401 — re-grant required",
       };
+    }
+    if (err instanceof CalendarHttpError && err.status === 403) {
+      // See gmail.ts for the google_403 stable-label rationale.
+      await recordFailedRun("google_403");
+      logger.error(
+        { error: err, body: err.body.slice(0, 500), provider: "gcal" },
+        "gcal sync: google 403 (quota or scope)",
+      );
+      return { ...result, status: "error", message: "google_403" };
     }
     const progress = {
       provider: "gcal",
