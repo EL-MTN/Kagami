@@ -49,15 +49,14 @@ export function makeSyncRouter(config: Config): Router {
     requireKao();
     const result = await runGmailSyncOnce(config);
     if (body.force && result.status === "paused") {
-      // Clear both `pausedAt` and `lastError` so a successful second run
-      // doesn't leave the dashboard showing a stale "invalid_grant" error.
-      // recordSuccessfulRun will overwrite both on success; if the second
-      // run fails for a different reason, recordFailedRun captures the new
-      // error message rather than masking it with the old one.
-      await SyncState.updateOne(
-        { provider: "gmail" },
-        { $set: { pausedAt: null, lastError: null } },
-      );
+      // Operator says "I've addressed the upstream cause" — clear
+      // `pausedAt` and reset `errorCount` so the dashboard doesn't show a
+      // perpetual "N errors total" badge after the worker recovers.
+      // `lastError` is intentionally left alone: recordSuccessfulRun will
+      // clear it on a real success, recordFailedRun will overwrite it on a
+      // fresh failure. Preemptively wiping it would erase the operator's
+      // diagnostic history before the second run completes.
+      await SyncState.updateOne({ provider: "gmail" }, { $set: { pausedAt: null, errorCount: 0 } });
       const second = await runGmailSyncOnce(config);
       res.json(second);
       return;
@@ -95,10 +94,7 @@ export function makeSyncRouter(config: Config): Router {
     requireKao();
     const result = await runCalendarSyncOnce(config);
     if (body.force && result.status === "paused") {
-      await SyncState.updateOne(
-        { provider: "gcal" },
-        { $set: { pausedAt: null, lastError: null } },
-      );
+      await SyncState.updateOne({ provider: "gcal" }, { $set: { pausedAt: null, errorCount: 0 } });
       const second = await runCalendarSyncOnce(config);
       res.json(second);
       return;

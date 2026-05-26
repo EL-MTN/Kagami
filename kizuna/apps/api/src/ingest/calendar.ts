@@ -273,6 +273,12 @@ export async function runCalendarSync(args: {
           message: "no Google OAuth grant on file",
         };
       }
+      if (err.code === "refresh_failed") {
+        // Stable label — see gmail.ts for the rationale.
+        await recordFailedRun("kao_unreachable");
+        logger.error({ error: err, provider: "gcal" }, "gcal sync: kao unreachable");
+        return { ...result, status: "error", message: "kao_unreachable" };
+      }
     }
     if (err instanceof CalendarHttpError && err.status === 401) {
       await pauseWith("invalid_grant");

@@ -3,10 +3,12 @@ import { makeCalendarClient } from "../src/ingest/calendar-client.js";
 import { makeGmailClient } from "../src/ingest/gmail-client.js";
 
 // Verify the in-client `{ force: true }` retry path that recovers from a
-// Google-side revocation mid-cache-window. The clients are responsible for
-// asking the token getter to bypass Kao's own cache on 401/403 and trying
-// once more before propagating the failure. Two attempts is intentional —
-// a third would just be hammering Google with a known-dead token.
+// Google-side revocation mid-cache-window OR from a post-reconsent scope
+// mutation (cached old-scope token gets 403, fresh refresh-token gives
+// new scopes). The clients ask the token getter to bypass Kao's own
+// cache on 401/403 and try once more before propagating the failure.
+// Two attempts is intentional — a third would just be hammering Google
+// with a known-dead token.
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -61,18 +63,42 @@ describe("makeGmailClient — self-heal on 401", () => {
     expect(getter).toHaveBeenCalledTimes(2);
   });
 
-  it("does not retry on 403 — 403 escapes after the first attempt", async () => {
-    // 403 from Google is usually permanent (insufficient scope, quota,
-    // dailyLimitExceeded). A fresh access token won't help, so the client
-    // does NOT trigger the force-refresh path — the 403 escapes immediately
-    // as GmailHttpError and the worker records it via recordFailedRun.
-    const getter = vi.fn(async () => "any-token");
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(res(403, {}));
+  it("retries with force:true on 403 (post-reconsent scope mutation)", async () => {
+    // 403 covers the case where the operator just expanded the grant's
+    // scopes in Kao; the cached token still has the old scopes and Google
+    // returns `insufficientPermissions`. The retry force-refreshes via
+    // Kao (new refresh token, new scopes) and the second attempt succeeds.
+    const calls: Array<{ force: boolean }> = [];
+    const getter = vi.fn(async (opts: { force?: boolean } = {}) => {
+      calls.push({ force: Boolean(opts.force) });
+      return opts.force ? "fresh-token" : "stale-token";
+    });
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(res(403, { error: "insufficientPermissions" }))
+      .mockResolvedValueOnce(res(200, { emailAddress: "u@example.com", historyId: "h1" }));
 
     const client = makeGmailClient(getter);
-    await expect(client.getProfile()).rejects.toMatchObject({ status: 403 });
-    expect(getter).toHaveBeenCalledTimes(1);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const profile = await client.getProfile();
+    expect(profile).toEqual({ emailAddress: "u@example.com", historyId: "h1" });
+    expect(calls).toEqual([{ force: false }, { force: true }]);
+  });
+
+  it("escapes a persistent 403 after the second attempt (no third retry)", async () => {
+    const { GmailHttpError } = await import("../src/ingest/gmail-client.js");
+    const getter = vi.fn(async () => "any-token");
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(res(403, {}))
+      .mockResolvedValueOnce(res(403, {}));
+
+    const client = makeGmailClient(getter);
+    try {
+      await client.getProfile();
+      throw new Error("expected rejection");
+    } catch (err) {
+      expect(err).toBeInstanceOf(GmailHttpError);
+      expect((err as InstanceType<typeof GmailHttpError>).status).toBe(403);
+    }
+    expect(getter).toHaveBeenCalledTimes(2);
   });
 });
 

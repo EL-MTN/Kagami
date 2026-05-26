@@ -65,9 +65,14 @@ export default async function SyncPage() {
                 ))}
               </ul>
               <div className="pt-2">
-                <Button variant="outline" asChild>
-                  <a href={oauthStartUrl()}>Re-authorize</a>
-                </Button>
+                {/* POST (not GET) so browser preloaders / link unfurlers
+                    can't accidentally fire the state-mutating start route
+                    that clears paused-worker counters. */}
+                <form action={oauthStartUrl()} method="post">
+                  <Button type="submit" variant="outline">
+                    Re-authorize
+                  </Button>
+                </form>
                 <p className="mt-1.5 text-xs text-faint">
                   Use this if Google revoked access (<Mono>invalid_grant</Mono>) or to add scopes.
                 </p>
@@ -82,9 +87,9 @@ export default async function SyncPage() {
                 </span>
               </div>
               <div className="pt-2">
-                <Button asChild>
-                  <a href={oauthStartUrl()}>Connect Google</a>
-                </Button>
+                <form action={oauthStartUrl()} method="post">
+                  <Button type="submit">Connect Google</Button>
+                </form>
               </div>
             </>
           )}

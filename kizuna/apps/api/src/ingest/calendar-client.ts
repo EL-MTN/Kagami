@@ -40,8 +40,8 @@ export class SyncTokenExpired extends Error {
   }
 }
 
-// See gmail-client.ts for the rationale on `{ force }` and the 401/403
-// self-heal retry — same shape, same Kao-cache-bypass semantics.
+// See gmail-client.ts for the full rationale on `{ force }` and the
+// 401/403 self-heal retry — same shape, same Kao-cache-bypass semantics.
 export type AccessTokenGetter = (options?: { force?: boolean }) => Promise<string>;
 
 export function makeCalendarClient(getAccessToken: AccessTokenGetter): CalendarClient {
@@ -70,10 +70,10 @@ export function makeCalendarClient(getAccessToken: AccessTokenGetter): CalendarC
       throw err;
     }
     if (res.status === 410) throw new SyncTokenExpired();
-    if (res.status === 401 && !force) {
-      // Google rejected the cached access token — force-refresh via Kao
-      // and retry exactly once. 403 is intentionally NOT retried; see
-      // gmail-client.ts for the full rationale.
+    if ((res.status === 401 || res.status === 403) && !force) {
+      // Google rejected the cached access token (401) or said it has the
+      // wrong scopes (403) — force-refresh via Kao and retry exactly once.
+      // See gmail-client.ts for the full rationale.
       return listEventsOnce(params, true);
     }
     if (!res.ok) {
