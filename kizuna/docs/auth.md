@@ -2,64 +2,39 @@
 
 Single-user-per-deployment, single-machine, localhost-only. The OS user boundary is the trust boundary; there is no API-level authentication. The resource routes accept any caller that can reach `https://api.kizuna.localhost`, and the dashboard at `https://kizuna.localhost` is open.
 
-The only credentials Kizuna still owns are:
+Google access is **delegated to the Kao identity service** — Kizuna does not own a Google refresh token. Kao stores the encrypted refresh token, hosts the consent flow, and vends short-lived access tokens to Kizuna over HTTP. The only credentials Kizuna still owns are:
 
-- The Google OAuth refresh token (encrypted at rest in Mongo).
-- A process-local HMAC secret for OAuth-callback CSRF state (regenerated on every API restart; not persisted).
+- `KAO_TOKEN`, a bearer that gates Kao's `/grants/kizuna/token` endpoint.
 - `USER_EMAILS`, used only to identify which inbox addresses count as "self" during ingest.
 
 ## At a glance
 
-| Layer                    | Mechanism                                                                                       | Source                            |
-| ------------------------ | ----------------------------------------------------------------------------------------------- | --------------------------------- |
-| resource routes (API)    | none — open at localhost                                                                        | —                                 |
-| `/oauth/google/start`    | none — open at localhost                                                                        | `apps/api/src/routes/oauth.ts`    |
-| `/oauth/google/callback` | HMAC-SHA-256 signed CSRF state token (10-min TTL, process-local secret); no credential on wire  | `apps/api/src/lib/oauth-state.ts` |
-| `/oauth/google/status`   | none — open at localhost                                                                        | `apps/api/src/routes/oauth.ts`    |
-| Refresh token at rest    | AES-256-GCM, key = `KIZUNA_OAUTH_ENCRYPTION_KEY` (base64 32 bytes), random 12-byte IV per write | `apps/api/src/lib/encryption.ts`  |
-| Dashboard sessions       | none — dashboard is open at localhost                                                           | —                                 |
-| Ingest "self" detection  | `USER_EMAILS` allowlist (lowercased, comma-separated)                                           | `apps/api/src/config.ts`          |
+| Layer                   | Mechanism                                                                            | Source                                |
+| ----------------------- | ------------------------------------------------------------------------------------ | ------------------------------------- |
+| resource routes (API)   | none — open at localhost                                                             | —                                     |
+| `/oauth/google/start`   | 302 redirect to `${KAO_URL}/oauth/kizuna/start`                                      | `apps/api/src/routes/oauth.ts`        |
+| `/oauth/google/status`  | reads `${KAO_URL}/grants/kizuna` with `Authorization: Bearer ${KAO_TOKEN}`, reshapes | `apps/api/src/routes/oauth.ts`        |
+| Google refresh token    | stored encrypted in Kao's Mongo; never reaches Kizuna's process                      | `kao/apps/api/src/lib/encryption.ts`  |
+| Google access token     | vended on demand from Kao; 30s-buffer in-process cache in Kizuna                     | `apps/api/src/lib/kao-client.ts`      |
+| CSRF on consent flow    | HMAC-signed state bound to the grant name; minted by Kao                             | `kao/apps/api/src/lib/oauth-state.ts` |
+| Dashboard sessions      | none — dashboard is open at localhost                                                | —                                     |
+| Ingest "self" detection | `USER_EMAILS` allowlist (lowercased, comma-separated)                                | `apps/api/src/config.ts`              |
 
 ## OAuth grant flow
 
-The OAuth callback is the only handler with a real adversary model: an external attacker could try to trick the user's browser into completing a consent flow that lands on Kizuna's callback. CSRF state defends against that, regardless of localhost.
+The consent flow lives entirely in Kao. Kizuna's `/oauth/google/start` is a thin 302 redirect to `${KAO_URL}/oauth/kizuna/start`, so the dashboard's "Connect Google" / "Re-authorize" button keeps working unchanged. The Google Cloud OAuth client is registered with **one** redirect URI — `${KAO_PUBLIC_URL}/oauth/callback` — and Kao routes responses back to the right grant via its signed CSRF state.
 
-### `GET /oauth/google/start`
+After consent, the operator lands on Kao's success page; the grant is persisted under the name `kizuna` (read-only Gmail + Calendar — see `kao/apps/api/src/grant-registry.ts`). The next sync run vends an access token from Kao and proceeds normally.
 
-Open. Validates `KIZUNA_OAUTH_ENCRYPTION_KEY` is set (otherwise `400` — no point starting a flow we couldn't persist), mints a signed state token via `makeState()`, builds the Google consent URL with `access_type: 'offline'`, `prompt: 'consent'`, `scope: gmail.readonly + calendar.readonly`, and the state, then `res.redirect(302, authUrl)`.
+A re-grant invalidates Kao's cached access token for the `kizuna` grant immediately. Kizuna does **not** auto-unpause paused workers after a re-grant (Kao has no knowledge of Kizuna's `SyncState`); manually trigger `POST /sync/{gmail,gcal}/run` with `{ "force": true }` after re-authorizing, or wait for the next scheduler tick.
 
-`prompt: 'consent'` is non-negotiable — Google only returns a `refresh_token` on a fresh consent. Without it, a re-grant might return only an access token, and the callback rejects with "Google did not return a refresh_token (re-consent with prompt=consent required)."
+### `GET /oauth/google/start` (Kizuna)
 
-### `GET /oauth/google/callback`
+Validates that `KAO_URL` + `KAO_TOKEN` are set (otherwise `400` — Kao isn't reachable so the flow can't complete). Redirects 302 to `${KAO_URL}/oauth/kizuna/start`.
 
-The callback URL ends up in Google's redirect log and the user's browser history; we never put a credential on the wire here. The CSRF state token is verified via `verifyState()`.
+### `GET /oauth/google/status` (Kizuna)
 
-State token format (`apps/api/src/lib/oauth-state.ts`):
-
-```
-<base64url(nonce ‖ ":" ‖ tsSeconds)>.<base64url(HMAC_SHA256(secret, payload))>
-```
-
-- Nonce: 16 random bytes.
-- Timestamp: seconds since epoch.
-- TTL: 10 minutes by default (`DEFAULT_TTL_SEC`).
-- Secret: `randomBytes(32)` generated at module load. **Process-local; not persisted.** Restarting the API invalidates any in-flight consent flows; the user re-clicks "Authorize."
-
-A forged or expired state → `401 unauthorized`. Missing `code` or `state` → `400 bad_request`. Google reporting one of the allowed OAuth error codes (`access_denied`, `server_error`, `invalid_scope`, `temporarily_unavailable`, `interaction_required`) → `400 bad_request` with that code surfaced. Unexpected `?error=` values are collapsed to a generic `google denied consent` response.
-
-On success:
-
-1. `client.getToken(code)` — exchanges the auth code for tokens.
-2. If `tokens.refresh_token` is missing → `400 bad_request`.
-3. `encrypt(refresh_token, KIZUNA_OAUTH_ENCRYPTION_KEY)` (AES-256-GCM).
-4. `OAuthToken.findOneAndUpdate({ provider:'google' }, { $set: { refreshToken, scopes, grantedAt: now, deletedAt: null, source: 'concierge' } }, { upsert: true })`.
-5. **Auto-resume paused workers**: `SyncState.updateMany({ pausedAt: { $ne: null } }, { $set: { pausedAt: null, lastError: null } })`. A re-grant after `invalid_grant` should "just work" without forcing the operator to also `POST /sync/.../run` with `force: true`.
-6. `clearAccessTokenCache()` — drop the in-process access-token cache so the next worker run re-derives from the new refresh token.
-7. Return a small inline HTML page: "Google access granted ✓".
-
-### `GET /oauth/google/status`
-
-Open. Returns one of:
+Open. Server-side GETs `${KAO_URL}/grants/kizuna` with the bearer, then reshapes Kao's response into the legacy `OAuthStatus` envelope the dashboard already understands:
 
 ```json
 { "granted": false }
@@ -73,61 +48,36 @@ Open. Returns one of:
 }
 ```
 
-The dashboard's `/sync` page polls this and decides whether to render "Connect Google" or "Re-authorize" + the worker control surfaces.
+Kao unreachable, bearer rejected, or grant absent all collapse to `{ granted: false }` — the dashboard UX in that case is "Connect Google", which is the right action.
 
-## Refresh-token encryption
+## Access-token cache and self-heal retry
 
-`apps/api/src/lib/encryption.ts`:
-
-```ts
-ALGORITHM = 'aes-256-gcm'
-IV_BYTES  = 12
-TAG_BYTES = 16
-
-encrypt(plaintext, envKey)
-  → base64( iv (12) ‖ tag (16) ‖ ciphertext )
-
-decrypt(envelope, envKey)
-  → plaintext  (or throws on tampering / wrong key / undersized envelope)
-```
-
-The key is `KIZUNA_OAUTH_ENCRYPTION_KEY`, a base64 32-byte string. Generate once with:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
-
-The zod config schema rejects a key that doesn't decode to exactly 32 bytes.
-
-The IV is fresh per write, so encrypting the same refresh token twice yields different envelopes. The auth tag is verified on decrypt; tampering or a wrong key throws.
-
-`KIZUNA_OAUTH_ENCRYPTION_KEY` is treated as required for any path that touches encrypted tokens (start, callback, sync runs). The route handlers fail with `400 bad_request` rather than running with cleartext storage.
-
-If you rotate the key, all existing rows in `oauthtokens` become undecryptable — the operational fix is `OAuthToken.deleteMany({})` followed by re-running the OAuth flow.
-
-## Access-token cache
-
-`apps/api/src/lib/google-auth.ts`:
+`apps/api/src/lib/kao-client.ts`:
 
 ```ts
-let cachedAccessToken: { token: string; expiresAt: number } | null = null;
+let cache: { token: string; expiresAt: number } | null = null;
+let inflight: Promise<string> | null = null;
 
-getAccessToken(config) =>
-  cached if expiresAt > now + 30 s
-  else: decrypt refresh, exchange via client.getAccessToken(), cache, return
+getAccessToken(config, { force? }) =>
+  if force: clear cache+inflight, then vend with ?force=1
+  else: return cached if expiresAt > now + 30s; else share inflight; else fetch
 ```
 
-The cache is process-local. In a multi-instance deploy, each worker would refresh independently; not a concern today (single-process).
+Kao also caches with a 30s safety buffer — both layers agree on "treat expiring-soon as expired" so a refresh stays comfortably ahead of any in-flight Google call. The `force` query parameter tells Kao to bypass **its** cache and round-trip to Google; without it, Kao's cache could re-vend a dead token until expiry lapses.
 
-`clearAccessTokenCache()` is called from the OAuth callback so a re-grant takes effect immediately rather than waiting for the cached token to expire.
+`clearAccessTokenCache()` clears both `cache` and `inflight` together — clearing only `cache` would let a stale in-flight fetch overwrite `cache` with the old token a moment later.
 
-`OAuthError` codes: `'no_grant'` (no row in `oauthtokens`), `'invalid_grant'` (Google rejected the refresh), `'refresh_failed'` (network / other). The sync workers map these to `result.status`:
+The Gmail and Calendar HTTP clients (`apps/api/src/ingest/{gmail,calendar}-client.ts`) wrap each Google call in a self-heal retry: on a 401 or 403 from Google, they ask `getAccessToken({ force: true })`, retry once, and only propagate a failure if Google rejects the _fresh_ token too. A persistent 401 after the retry still escapes as `GmailHttpError(401)` / `CalendarHttpError(401)`, which the worker maps to `OAuthError('invalid_grant')` and pauses the worker on.
 
-| `OAuthError.code`  | `result.status` | Side effect on `SyncState`          |
-| ------------------ | --------------- | ----------------------------------- |
-| `'no_grant'`       | `'no_grant'`    | None — no row to mutate             |
-| `'invalid_grant'`  | `'paused'`      | `pauseWith('invalid_grant')`        |
-| `'refresh_failed'` | `'error'`       | `lastError` written, `errorCount++` |
+`OAuthError` codes returned by `getAccessToken`:
+
+| `OAuthError.code`  | Origin                                                          | `result.status` | Side effect on `SyncState`          |
+| ------------------ | --------------------------------------------------------------- | --------------- | ----------------------------------- |
+| `'no_grant'`       | Kao 409 with `code:'no_grant'` (no consent yet / grant revoked) | `'no_grant'`    | None — no row to mutate             |
+| `'invalid_grant'`  | Kao 409 with `code:'invalid_grant'` or `'decrypt_failed'`       | `'paused'`      | `pauseWith('invalid_grant')`        |
+| `'refresh_failed'` | Kao unreachable, bearer rejected (401/404), or misconfigured    | `'error'`       | `lastError` written, `errorCount++` |
+
+Kao-specific error classes (`KaoNoGrantError`, `KaoUnreachableError`, `KaoMisconfiguredError`) are kept internal to `kao-client.ts` and translated on the boundary so the ingest workers keep matching on the stable `OAuthError` taxonomy.
 
 ## `USER_EMAILS` allowlist
 
@@ -141,11 +91,11 @@ There is **no per-request user identification** — every `USER_EMAILS` address 
 
 ### First-time setup (operator)
 
-1. `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` → `KIZUNA_OAUTH_ENCRYPTION_KEY`.
-2. Set `USER_EMAILS=you@example.com`, `MONGODB_URI`, Google OAuth client creds. Restart the API.
+1. Bring up Kao (see `kao/docs/configuration.md`). Note its public URL (`KAO_PUBLIC_URL`) and ingest bearer.
+2. In `apps/api/.env`, set `KAO_URL=https://api.kao.localhost` and `KAO_TOKEN=<same bearer Kao expects>`. Restart the API.
 3. Visit `https://kizuna.localhost` — no login.
-4. Navigate to `/sync`, click "Connect Google" — `<a href={oauthStartUrl()}>` resolves to `${API_URL}/oauth/google/start`.
-5. Consent on Google. Land on `/oauth/google/callback?...&state=...`. Refresh token is encrypted + stored.
+4. Navigate to `/sync`, click "Connect Google" — `<a href={oauthStartUrl()}>` resolves to `${API_URL}/oauth/google/start`, which 302s to `${KAO_URL}/oauth/kizuna/start`.
+5. Consent on Google. Land on Kao's success page. Kao persists the refresh token under the `kizuna` grant.
 6. Click "Run sync now" — this hits `POST /sync/gmail/run` (and Calendar).
 
 ### Concierge / programmatic caller
@@ -156,11 +106,10 @@ There is **no per-request user identification** — every `USER_EMAILS` address 
 ### Re-authorize after `invalid_grant`
 
 1. Worker pauses; `SyncState.pausedAt` is set, `lastError = 'invalid_grant'`.
-2. Operator visits `/sync`, clicks "Re-authorize" → re-runs the consent flow.
-3. The callback handler clears `pausedAt` on every paused row.
-4. Next tick (or manual `POST /sync/.../run`) runs cleanly.
+2. Operator visits `/sync`, clicks "Re-authorize" → re-runs the consent flow against Kao.
+3. After Google's success page, `POST /sync/gmail/run` with `{ "force": true }` to clear the pause and run cleanly (or wait for the next scheduler tick).
 
-If the operator wants to override the pause without re-granting (e.g. transient outage): `POST /sync/gmail/run` with `{ "force": true }`. The route clears `pausedAt` and runs once.
+If the operator wants to override the pause without re-granting (e.g. transient Kao outage): `POST /sync/gmail/run` with `{ "force": true }`. The route clears `pausedAt` and runs once.
 
 ## Threat model
 
@@ -169,7 +118,8 @@ What the localhost-only / no-API-auth posture does and doesn't defend against:
 - **OS user boundary.** Anyone running as the operating-system user can reach the API and read/write the DB directly. That's the trust boundary; no application-level credential changes it.
 - **Other dev tools on the same machine.** Could hit the API if pointed at it. Not defended against; not realistic for a personal dev box.
 - **Browser-side attacks (DNS rebinding, malicious sites visited by the user).** Mitigated by HTTPS-on-localhost + browser CORS defaults; the API itself does not enable permissive CORS.
-- **External OAuth callback collisions.** Defended by signed CSRF state on `/oauth/google/callback` (process-local HMAC secret).
-- **Refresh-token leakage via filesystem snapshots / dotfile backups.** Defended by AES-256-GCM at rest under `KIZUNA_OAUTH_ENCRYPTION_KEY`. The encryption key still lives in env; this protects against DB-only compromise.
+- **External OAuth callback collisions.** Defended in Kao by signed CSRF state bound to the grant name.
+- **Refresh-token leakage via Kizuna filesystem snapshots / dotfile backups.** No longer a concern in Kizuna — there is no refresh token here to leak. The encrypted refresh token lives only in Kao's Mongo, under Kao's own threat model (`kao/docs/auth.md`).
+- **`KAO_TOKEN` leakage.** Treat it like a write-equivalent secret to the Google account. If it leaks, anyone on localhost who can reach Kao can vend a Gmail-readonly + Calendar-readonly access token. Rotate by updating both `kao/apps/api/.env` and `kizuna/apps/api/.env` and restarting.
 
 If any of these stop being true (the API gets exposed beyond localhost, the host gets shared, multi-user lands), reintroduce a bearer or scoped credential before exposure — do not assume localhost trust elsewhere.
