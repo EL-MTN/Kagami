@@ -1,112 +1,98 @@
 import { Router } from "express";
 import type { Config } from "../config.js";
-import { OAuthToken } from "../db/models/OAuthToken.js";
 import { SyncState } from "../db/models/SyncState.js";
-import { clearAccessTokenCache } from "../lib/google-auth.js";
-import {
-  GOOGLE_SCOPES,
-  buildAuthUrl,
-  exchangeCode,
-  makeClient,
-  persistRefreshToken,
-} from "../lib/google-auth.js";
+import { clearAccessTokenCache, fetchGrantStatus } from "../lib/kao-client.js";
+import { logger } from "../lib/logger.js";
 import { errors } from "../lib/errors.js";
-import { makeState, verifyState } from "../lib/oauth-state.js";
 
-const GOOGLE_OAUTH_ERROR_CODES = new Set([
-  "access_denied",
-  "server_error",
-  "invalid_scope",
-  "temporarily_unavailable",
-  "interaction_required",
-]);
-
-function googleOAuthErrorMessage(error: string): string {
-  return GOOGLE_OAUTH_ERROR_CODES.has(error)
-    ? `google denied consent: ${error}`
-    : "google denied consent";
-}
-
+// OAuth surface is now a thin proxy in front of Kao — the dashboard's
+// contract (`/oauth/google/start` and `/oauth/google/status`) is preserved
+// in spirit so no dashboard data flow changes are needed. The Google
+// refresh token, the CSRF state, the AES key, and the inline-HTML consent
+// landing page all live in Kao now (see `kao/apps/api/src/routes/oauth.ts`).
+//
+// `/oauth/google/start` is intentionally a POST because it mutates SyncState
+// (clears pausedAt/errorCount on paused workers) and the access-token cache
+// before redirecting. A GET endpoint with side effects is reachable by
+// browser preloaders, link unfurlers, and stray <img src> tags — any of
+// which would silently destroy paused-worker diagnostic state. The dashboard
+// renders this as a <form method="post"> so the operator experience is
+// unchanged.
 export function makeOauthRouter(config: Config): Router {
   const r = Router();
 
-  // Initiate the consent flow. Open at localhost — the trust boundary is the
-  // OS user, not a bearer token. The callback is still CSRF-protected.
-  r.get("/google/start", (_req, res) => {
-    if (!config.KIZUNA_OAUTH_ENCRYPTION_KEY) {
+  // Allow-list of Origins that may POST to /oauth/google/start. Default is
+  // the Portless dashboard origin (`https://kizuna.localhost`); operators on
+  // a different dashboard origin extend the list via the comma-separated
+  // KIZUNA_DASHBOARD_ORIGIN env var. The previous hardcoded
+  // `https://api.kizuna.localhost` entry was dropped — the API never hosts
+  // a form, so a request claiming that as its Origin is never legitimate.
+  //
+  // Programmatic callers (curl, supertest, the dashboard's server-side
+  // fetch path) typically don't send an Origin header at all, OR send an
+  // empty one in some browsers / no-referrer policies. Both cases are
+  // allowed: OS-user-trusted on the localhost-only deployment, and an
+  // empty Origin is indistinguishable in intent from a missing one. The
+  // check rejects requests that DO send an Origin which isn't on the list
+  // — a malicious cross-origin tab can't omit Origin from a form POST in
+  // any current browser.
+  const allowedOrigins = new Set<string>(["https://kizuna.localhost"]);
+  for (const extra of config.KIZUNA_DASHBOARD_ORIGIN) allowedOrigins.add(extra);
+
+  r.post("/google/start", async (req, res) => {
+    if (!config.KAO_URL || !config.KAO_TOKEN) {
       throw errors.badRequest(
-        "KIZUNA_OAUTH_ENCRYPTION_KEY is not set; refresh token storage requires it",
+        "Kao is not configured: set KAO_URL and KAO_TOKEN to use Google ingest",
       );
     }
-    const client = makeClient(config);
-    const state = makeState();
-    res.redirect(302, buildAuthUrl(client, state));
-  });
-
-  // Google redirects here after consent. Protected by the signed CSRF state.
-  r.get("/google/callback", async (req, res) => {
-    const code = typeof req.query.code === "string" ? req.query.code : undefined;
-    const state = typeof req.query.state === "string" ? req.query.state : undefined;
-    const error = typeof req.query.error === "string" ? req.query.error : undefined;
-
-    if (error) {
-      throw errors.badRequest(googleOAuthErrorMessage(error));
+    const origin = req.headers.origin;
+    if (typeof origin === "string" && origin !== "" && !allowedOrigins.has(origin)) {
+      throw errors.unauthorized(`origin '${origin}' not allowed`);
     }
-    if (!code || !state) {
-      throw errors.badRequest("missing code or state");
-    }
-    if (!verifyState(state)) {
-      throw errors.unauthorized("invalid or expired state");
-    }
-    if (!config.KIZUNA_OAUTH_ENCRYPTION_KEY) {
-      throw errors.badRequest("KIZUNA_OAUTH_ENCRYPTION_KEY is not set");
-    }
-
-    const client = makeClient(config);
-    const tokens = await exchangeCode(client, code);
-    if (!tokens.refresh_token) {
-      throw errors.badRequest(
-        "Google did not return a refresh_token (re-consent with prompt=consent required)",
+    // Operator is about to re-consent at Kao. Reset the operator-visible
+    // failure counters on paused workers and drop the local access-token
+    // cache so the next ingest tick uses the fresh refresh token Kao stores.
+    // `lastError` is intentionally NOT cleared here — recordSuccessfulRun
+    // will clear it on the next successful tick (recordIdleRun on no_grant),
+    // and recordFailedRun will overwrite it on a fresh failure.
+    //
+    // If the DB write fails (transient Mongo issue), log it but proceed
+    // with the redirect — the next ingest tick will simply re-pause on the
+    // same invalid_grant if Kao consent doesn't take. Blocking the redirect
+    // on a Mongo blip would strand the operator with a generic 500 and no
+    // way to even attempt re-consent.
+    //
+    // Match docs via `pausedAt: { $type: "date" }` rather than `$ne: null`
+    // — the latter also matches docs where the field is missing entirely,
+    // which would cause this cleanup to mutate workers that were never
+    // paused. Schema default is `null`, so Mongoose-created docs would
+    // never trigger that path, but a raw `insertOne` from a script could.
+    try {
+      const { modifiedCount } = await SyncState.updateMany(
+        { pausedAt: { $type: "date" } },
+        { $set: { pausedAt: null, errorCount: 0 } },
       );
+      if (modifiedCount > 0) {
+        logger.info({ modifiedCount }, "cleared paused ingest workers ahead of re-consent");
+      }
+    } catch (err) {
+      logger.warn({ error: err }, "could not reset paused workers before re-consent");
     }
-    const scopes = tokens.scope?.split(" ") ?? GOOGLE_SCOPES;
-    await persistRefreshToken(tokens.refresh_token, scopes, config.KIZUNA_OAUTH_ENCRYPTION_KEY);
-
-    // A successful re-grant unpauses any worker that was paused on
-    // invalid_grant, and invalidates the cached access token.
-    await SyncState.updateMany(
-      { pausedAt: { $ne: null } },
-      { $set: { pausedAt: null, lastError: null } },
-    );
     clearAccessTokenCache();
-
-    res
-      .status(200)
-      .type("text/html")
-      .send(
-        '<!doctype html><meta charset="utf-8"><title>Granted</title>' +
-          '<body style="font-family:system-ui;padding:2rem;color:#18181b">' +
-          '<h1 style="font-weight:600">Google access granted ✓</h1>' +
-          "<p>You can close this window. Kizuna can now read Gmail and Calendar.</p>" +
-          "</body>",
-      );
+    const base = config.KAO_URL.replace(/\/+$/, "");
+    // 303 See Other is the HTTP-correct status for "POST that should be
+    // followed by a GET to the redirect URL"; browsers follow this with a
+    // GET to Kao's per-grant consent endpoint.
+    res.redirect(303, `${base}/oauth/kizuna/start`);
   });
 
-  // Status — returns whether a token is on file.
+  // Re-shape Kao's grant status into the OAuthStatus envelope the dashboard
+  // already understands. Kao is consulted with bearer auth; failure or
+  // missing config collapses to `{ granted: false }` rather than 5xx — the
+  // dashboard's UX in that case is "Connect Google".
   r.get("/google/status", async (_req, res) => {
-    const doc = await OAuthToken.findOne({
-      provider: "google",
-      deletedAt: null,
-    }).lean();
-    if (!doc) {
-      res.json({ granted: false });
-      return;
-    }
-    res.json({
-      granted: true,
-      scopes: (doc.scopes as unknown as string[] | undefined) ?? [],
-      grantedAt: doc.grantedAt,
-    });
+    const status = await fetchGrantStatus(config);
+    res.json(status);
   });
 
   return r;

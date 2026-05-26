@@ -11,13 +11,11 @@ Validated by zod at boot via `loadConfig()` (`apps/api/src/config.ts`). On parse
 MONGODB_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com               # comma-separated; lowercased; validated as email[]
 
-# Required to actually start the OAuth flow / decrypt stored refresh tokens
-KIZUNA_OAUTH_ENCRYPTION_KEY=<base64 of exactly 32 bytes>
-
-# Required to run the OAuth flow at all
-GOOGLE_OAUTH_CLIENT_ID=<from Google Cloud Console>
-GOOGLE_OAUTH_CLIENT_SECRET=<from Google Cloud Console>
-GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback
+# Required to run the Gmail / Calendar ingest. Both vars must be set together;
+# Kizuna fetches Google access tokens from Kao at runtime. Kao itself stores
+# the encrypted refresh token and hosts the consent flow. See kao/docs.
+KAO_URL=https://api.kao.localhost
+KAO_TOKEN=<same bearer Kao expects (KAO_TOKEN in kao/apps/api/.env)>
 
 # Optional
 NEWSLETTER_DOMAIN_BLOCKLIST=mailchimp.com,substack.com    # comma-separated; lowercased
@@ -32,22 +30,15 @@ NODE_ENV=development                                       # enables pino-pretty
 
 Notes:
 
-- The API has no bearer/auth env var. The OAuth CSRF state token (`apps/api/src/lib/oauth-state.ts`) uses a process-local `randomBytes(32)` secret regenerated on every API restart; an API restart invalidates any in-flight consent flow (the user re-clicks "Authorize"). See [auth.md](auth.md) for the threat model.
-- `KIZUNA_OAUTH_ENCRYPTION_KEY` is decoded from base64; the resulting buffer must be exactly 32 bytes. The schema rejects anything else with "must be a base64-encoded 32-byte key."
-- Blank optional string values are treated as unset, so copying `.env.example` as-is keeps Google OAuth disabled until real values are provided.
+- The API has no bearer/auth env var of its own. The OAuth CSRF state and the Google refresh token both live in Kao now (`kao/apps/api/src/lib/oauth-state.ts`, `kao/apps/api/src/lib/encryption.ts`). See [auth.md](auth.md) for the threat model.
+- `KAO_URL` and `KAO_TOKEN` must be set as a pair — the zod schema rejects half-configured Kao with "KAO_URL and KAO_TOKEN must be set together." Blank values are treated as unset, so copying `.env.example` as-is keeps Google ingest disabled until both are provided.
 - `USER_EMAILS` controls the ingest workers' "self" detection — see [sync.md](sync.md) and [auth.md](auth.md). It is _not_ an authentication boundary.
 - `KIZUNA_INGEST_INTERVAL_SEC=0` disables the in-process scheduler entirely. Manual triggers via `POST /sync/{gmail,gcal}/run` work regardless. Set to `300` (5 min) for typical dev use.
 - `KIZUNA_HOST` and `PORT` only apply when running standalone. Under `npm run dev`, Portless picks an ephemeral port and routes `https://api.kizuna.localhost` to it. Prefer the Portless URL in local config and docs.
 
-### Generating the encryption key
+### Where the OAuth client lives now
 
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
-
-Paste the result into `KIZUNA_OAUTH_ENCRYPTION_KEY`.
-
-If you rotate the encryption key, all rows in `oauthtokens` become undecryptable. The fix is `OAuthToken.deleteMany({})` followed by re-running the OAuth flow.
+The Google Cloud OAuth client is registered for **Kao**, not Kizuna. The single redirect URI registered in Google Cloud is `${KAO_PUBLIC_URL}/oauth/callback`. Kizuna's `POST /oauth/google/start` is a 303 to `${KAO_URL}/oauth/kizuna/start` (POST so browser preloaders / `<img src>` tags can't trigger the state mutation; Origin-checked); the `kizuna` grant in Kao's registry is consented for read-only Gmail + Calendar. See `kao/docs/configuration.md` for the Kao setup (Google client ID/secret, encryption key, public URL).
 
 ## Dashboard (`apps/dashboard/.env`)
 
@@ -94,25 +85,24 @@ First run prompts once for sudo to install a local CA (HTTPS auto-trusted therea
 MONGODB_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com
 KIZUNA_INGEST_INTERVAL_SEC=0
-# Skip GOOGLE_OAUTH_* and KIZUNA_OAUTH_ENCRYPTION_KEY — start/callback will reject, but the rest of the resource API works.
+# Skip KAO_URL/KAO_TOKEN — /sync/* will return 400 and the dashboard's
+# "Connect Google" button is disabled, but the rest of the resource API works.
 ```
 
-You'll be able to use the concierge endpoints (`POST /people`, etc.) and the dashboard's read-only views, but `/sync` will report "Google OAuth is not configured."
+You'll be able to use the concierge endpoints (`POST /people`, etc.) and the dashboard's read-only views, but `/sync` will report "Kao is not configured."
 
 ### Single-machine dev with Google ingest
 
 ```sh
 MONGODB_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com
-KIZUNA_OAUTH_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
-GOOGLE_OAUTH_CLIENT_ID=...
-GOOGLE_OAUTH_CLIENT_SECRET=...
-GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback
+KAO_URL=https://api.kao.localhost
+KAO_TOKEN=<same bearer Kao expects>
 KIZUNA_INGEST_INTERVAL_SEC=300
 NEWSLETTER_DOMAIN_BLOCKLIST=mailchimp.com,substack.com,buttondown.email,reply.slack.com
 ```
 
-Configure the OAuth client in Google Cloud Console as a "Web application" with the exact redirect URI above. The Portless URL `https://api.kizuna.localhost/oauth/google/callback` is what Google needs to see — both `localhost` and HTTPS are required.
+Bring up Kao alongside Kizuna (`npm run kao:dev` or `./dev-all.sh`). Then in the dashboard click "Connect Google" — the form POSTs to `${API_URL}/oauth/google/start`, which 303s to `${KAO_URL}/oauth/kizuna/start` and Kao runs the consent flow. If you run the dashboard on a non-default origin (renamed Portless host, bare-port debug), extend the allowlist via `KIZUNA_DASHBOARD_ORIGIN=<your-origin>` in `apps/api/.env`.
 
 ### Bumping backfill horizons
 

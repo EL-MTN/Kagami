@@ -4,11 +4,11 @@
 // whatever the last consent happened to request. Adding a consumer is a
 // reviewable one-line change.
 //
-// Mirrors today's independent / migrated implementations exactly:
-//   - kizuna: read-only Gmail + Calendar (apps/api/src/lib/google-auth.ts —
-//     not yet migrated to Kao; Kizuna still runs its own OAuth)
-//   - kokoro: read Gmail + send + read/write Calendar (migrated; consumer
-//     code at kokoro/apps/bot/src/services/kao-client.ts)
+// Both consumers now read tokens from Kao at runtime:
+//   - kizuna: read-only Gmail + Calendar (consumer code at
+//     kizuna/apps/api/src/lib/kao-client.ts)
+//   - kokoro: read Gmail + send + read/write Calendar (consumer code at
+//     kokoro/apps/bot/src/services/kao-client.ts)
 const GRANT_REGISTRY = {
   kizuna: [
     "https://www.googleapis.com/auth/gmail.readonly",

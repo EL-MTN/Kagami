@@ -1,9 +1,18 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
-import { OAuth2Client } from "google-auth-library";
-import { OAuthToken } from "../src/db/models/OAuthToken.js";
-import { decrypt } from "../src/lib/encryption.js";
+import { loadConfig } from "../src/config.js";
+import { createApp } from "../src/server.js";
+import { SyncState } from "../src/db/models/SyncState.js";
+import { clearAccessTokenCache } from "../src/lib/kao-client.js";
 import { startHarness, type TestHarness } from "./helpers/harness.js";
+
+// Route-level coverage for the Kao-backed OAuth surface. The legacy
+// oauth.test.ts was deleted with the consent flow itself (which now lives
+// in Kao), so this file covers what Kizuna still owns:
+//   * POST /oauth/google/start — 303 to Kao, prerequisite gates,
+//     pause/errorCount-cleanup side effect, lastError preservation,
+//     resilience to a transient SyncState write failure.
+//   * GET /oauth/google/status — reshape over Kao's grant payload.
 
 let h: TestHarness;
 
@@ -15,137 +24,278 @@ afterAll(async () => {
   await h.stop();
 });
 
-afterEach(async () => {
-  await OAuthToken.deleteMany({});
+beforeEach(async () => {
+  await SyncState.deleteMany({});
+  clearAccessTokenCache();
+});
+
+afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("GET /oauth/google/start", () => {
-  it("redirects to Google with the right params", async () => {
+describe("POST /oauth/google/start", () => {
+  it("303s to Kao's per-grant consent URL when Kao is configured", async () => {
+    const res = await request(h.app).post("/oauth/google/start").redirects(0);
+    expect(res.status).toBe(303);
+    expect(res.headers.location).toBe("https://api.kao.localhost/oauth/kizuna/start");
+  });
+
+  it("rejects GET (state-mutating routes must not be reachable by preloaders/<img> tags)", async () => {
     const res = await request(h.app).get("/oauth/google/start");
-    expect(res.status).toBe(302);
-    const loc = res.headers.location as string;
-    expect(loc).toMatch(/^https:\/\/accounts\.google\.com\/o\/oauth2/);
-    const url = new URL(loc);
-    expect(url.searchParams.get("client_id")).toBe("test-client-id");
-    expect(url.searchParams.get("redirect_uri")).toBe(
-      "https://api.kizuna.localhost/oauth/google/callback",
-    );
-    expect(url.searchParams.get("access_type")).toBe("offline");
-    expect(url.searchParams.get("prompt")).toBe("consent");
-    expect(url.searchParams.get("scope")).toContain("gmail.readonly");
-    expect(url.searchParams.get("scope")).toContain("calendar.readonly");
-    expect(url.searchParams.get("state")).toBeTruthy();
+    // Express returns 404 for unmatched methods on a registered path.
+    expect(res.status).toBe(404);
   });
-});
 
-describe("GET /oauth/google/callback", () => {
-  async function getValidState(): Promise<string> {
-    const r = await request(h.app).get("/oauth/google/start");
-    const loc = new URL(r.headers.location as string);
-    return loc.searchParams.get("state")!;
-  }
-
-  it("rejects without code/state (400)", async () => {
-    const res = await request(h.app).get("/oauth/google/callback");
+  it("returns 400 when Kao is not configured", async () => {
+    const noKaoConfig = loadConfig({
+      MONGODB_URI: h.uri,
+      USER_EMAILS: "me@example.com",
+    });
+    const app = createApp({ db: h.db, config: noKaoConfig });
+    const res = await request(app).post("/oauth/google/start").redirects(0);
     expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/Kao is not configured/);
   });
 
-  it("rejects an explicit Google error (400)", async () => {
-    const res = await request(h.app).get("/oauth/google/callback?error=access_denied");
-    expect(res.status).toBe(400);
-    expect(res.body.error.message).toMatch(/access_denied/);
+  it("clears pausedAt and resets errorCount but leaves lastError intact", async () => {
+    await SyncState.create({
+      provider: "gmail",
+      pausedAt: new Date("2026-04-01T00:00:00Z"),
+      lastError: "invalid_grant",
+      lastRunAt: new Date(),
+      errorCount: 3,
+      historyId: null,
+      source: "gmail-sync",
+    });
+    await SyncState.create({
+      provider: "gcal",
+      pausedAt: new Date("2026-04-01T00:00:00Z"),
+      lastError: "invalid_grant",
+      lastRunAt: new Date(),
+      errorCount: 1,
+      syncToken: null,
+      source: "gcal-sync",
+    });
+
+    const res = await request(h.app).post("/oauth/google/start").redirects(0);
+    expect(res.status).toBe(303);
+
+    const gmail = await SyncState.findOne({ provider: "gmail" }).lean();
+    const gcal = await SyncState.findOne({ provider: "gcal" }).lean();
+    expect(gmail!.pausedAt).toBeNull();
+    expect(gcal!.pausedAt).toBeNull();
+    // errorCount reset so the dashboard doesn't show a perpetual "N errors"
+    // badge after the worker recovers.
+    expect(gmail!.errorCount).toBe(0);
+    expect(gcal!.errorCount).toBe(0);
+    // lastError preserved — recordSuccessfulRun clears it on a real success;
+    // wiping it preemptively would erase the operator's diagnostic history.
+    expect(gmail!.lastError).toBe("invalid_grant");
+    expect(gcal!.lastError).toBe("invalid_grant");
   });
 
-  it("does not echo unexpected Google error values", async () => {
-    const raw = "<script>alert(1)</script>";
-    const res = await request(h.app).get(`/oauth/google/callback?error=${encodeURIComponent(raw)}`);
-    expect(res.status).toBe(400);
-    expect(res.body.error.message).toBe("google denied consent");
-    expect(JSON.stringify(res.body)).not.toContain(raw);
+  it("accepts the dashboard's Origin header", async () => {
+    const res = await request(h.app)
+      .post("/oauth/google/start")
+      .set("Origin", "https://kizuna.localhost")
+      .redirects(0);
+    expect(res.status).toBe(303);
   });
 
-  it("rejects an unsigned/forged state (401)", async () => {
-    const res = await request(h.app).get("/oauth/google/callback?code=abc&state=not-real.signed");
+  it("rejects a cross-origin form POST from an unallowed Origin (CSRF defense)", async () => {
+    const res = await request(h.app)
+      .post("/oauth/google/start")
+      .set("Origin", "https://evil.example.com")
+      .redirects(0);
+    expect(res.status).toBe(401);
+    expect(res.body.error.message).toMatch(/origin/i);
+  });
+
+  it("rejects the API's own origin (no legitimate form is hosted on the API)", async () => {
+    const res = await request(h.app)
+      .post("/oauth/google/start")
+      .set("Origin", "https://api.kizuna.localhost")
+      .redirects(0);
     expect(res.status).toBe(401);
   });
 
-  it("exchanges code, encrypts refresh, upserts oauth_tokens", async () => {
-    const state = await getValidState();
-    const spy = vi.spyOn(OAuth2Client.prototype, "getToken") as unknown as {
-      mockResolvedValue: (v: unknown) => unknown;
-      mock: { calls: unknown[][] };
-    };
-    spy.mockResolvedValue({
-      tokens: {
-        access_token: "ya29.fake-access",
-        refresh_token: "1//refresh-fake",
-        expiry_date: Date.now() + 3_500_000,
-        scope:
-          "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly",
-        token_type: "Bearer",
-      },
-      res: null,
-    });
-
-    const res = await request(h.app).get(
-      `/oauth/google/callback?code=auth-code&state=${encodeURIComponent(state)}`,
-    );
-    expect(res.status).toBe(200);
-    expect(spy.mock.calls[0]).toEqual(["auth-code"]);
-
-    const stored = await OAuthToken.findOne({ provider: "google" }).lean();
-    expect(stored).toBeTruthy();
-    expect(stored!.scopes).toEqual([
-      "https://www.googleapis.com/auth/gmail.readonly",
-      "https://www.googleapis.com/auth/calendar.readonly",
-    ]);
-    // Refresh token is encrypted at rest.
-    expect(stored!.refreshToken).not.toBe("1//refresh-fake");
-    const decrypted = decrypt(stored!.refreshToken, h.encryptionKey);
-    expect(decrypted).toBe("1//refresh-fake");
+  it("allows requests with no Origin header (curl / supertest)", async () => {
+    const res = await request(h.app).post("/oauth/google/start").redirects(0);
+    expect(res.status).toBe(303);
   });
 
-  it("rejects when Google returns no refresh_token", async () => {
-    const state = await getValidState();
-    const spy = vi.spyOn(OAuth2Client.prototype, "getToken") as unknown as {
-      mockResolvedValue: (v: unknown) => unknown;
-    };
-    spy.mockResolvedValue({
-      tokens: {
-        access_token: "ya29.fake",
-        expiry_date: Date.now() + 3_500_000,
-        token_type: "Bearer",
-      },
-      res: null,
+  it("treats an empty Origin header like a missing one (no_referrer policy)", async () => {
+    // Some browser configurations / older browsers issue cross-origin form
+    // POSTs with `Origin: ` (empty). Indistinguishable in intent from
+    // missing — allow rather than wedging older clients with a 401.
+    const res = await request(h.app).post("/oauth/google/start").set("Origin", "").redirects(0);
+    expect(res.status).toBe(303);
+  });
+
+  it("accepts Origins added via KIZUNA_DASHBOARD_ORIGIN", async () => {
+    const extendedConfig = loadConfig({
+      MONGODB_URI: h.uri,
+      USER_EMAILS: "test@example.com",
+      KAO_URL: "https://api.kao.localhost",
+      KAO_TOKEN: "test-kao-bearer-16chars",
+      KIZUNA_DASHBOARD_ORIGIN: "https://crm.localhost,https://kizuna.staging",
     });
-    const res = await request(h.app).get(
-      `/oauth/google/callback?code=auth-code&state=${encodeURIComponent(state)}`,
-    );
-    expect(res.status).toBe(400);
-    expect(res.body.error.message).toMatch(/refresh_token/);
+    const app = createApp({ db: h.db, config: extendedConfig });
+    for (const origin of ["https://crm.localhost", "https://kizuna.staging"]) {
+      const res = await request(app).post("/oauth/google/start").set("Origin", origin).redirects(0);
+      expect(res.status).toBe(303);
+    }
+  });
+
+  it("still redirects to Kao even if the SyncState write fails (transient DB)", async () => {
+    // Simulate a transient DB blip on the updateMany call by stubbing it
+    // to throw. The redirect must still fire so the operator can complete
+    // the consent flow; the next ingest tick will simply re-pause on the
+    // same invalid_grant if Kao didn't take.
+    vi.spyOn(SyncState, "updateMany").mockRejectedValueOnce(new Error("connection refused"));
+    const res = await request(h.app).post("/oauth/google/start").redirects(0);
+    expect(res.status).toBe(303);
+    expect(res.headers.location).toBe("https://api.kao.localhost/oauth/kizuna/start");
   });
 });
 
 describe("GET /oauth/google/status", () => {
-  it("reports granted=false when no token is on file", async () => {
-    const res = await request(h.app).get("/oauth/google/status");
+  it("returns { granted: false } when Kao is not configured", async () => {
+    const noKaoConfig = loadConfig({
+      MONGODB_URI: h.uri,
+      USER_EMAILS: "me@example.com",
+    });
+    const app = createApp({ db: h.db, config: noKaoConfig });
+    const res = await request(app).get("/oauth/google/status");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ granted: false });
   });
 
-  it("reports granted=true after a successful callback", async () => {
-    await OAuthToken.create({
-      provider: "google",
-      refreshToken: "encrypted-blob-doesnt-matter-here",
-      scopes: ["gmail.readonly"],
-      grantedAt: new Date("2026-04-01T00:00:00Z"),
-      source: "concierge",
-    });
+  it("reshapes Kao's granted=true response into the dashboard envelope", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          name: "kizuna",
+          granted: true,
+          scopes: [
+            "https://www.googleapis.com/auth/gmail.readonly",
+            "https://www.googleapis.com/auth/calendar.readonly",
+          ],
+          grantedAt: "2026-04-01T12:00:00.000Z",
+          revokedAt: null,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
     const res = await request(h.app).get("/oauth/google/status");
     expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      granted: true,
+      scopes: [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/calendar.readonly",
+      ],
+      grantedAt: "2026-04-01T12:00:00.000Z",
+    });
+  });
+
+  it("collapses Kao 200 + {granted:false} to {granted:false}", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          name: "kizuna",
+          granted: false,
+          scopes: [],
+          grantedAt: null,
+          revokedAt: null,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const res = await request(h.app).get("/oauth/google/status");
+    expect(res.body).toEqual({ granted: false });
+  });
+
+  it("flags Kao 5xx with reason:'kao_unreachable' so the dashboard can hint", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("server error", { status: 503 }),
+    );
+    const res = await request(h.app).get("/oauth/google/status");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ granted: false, reason: "kao_unreachable" });
+  });
+
+  it("flags Kao network failure with reason:'kao_unreachable'", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    const res = await request(h.app).get("/oauth/google/status");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ granted: false, reason: "kao_unreachable" });
+  });
+
+  it("flags Kao 401 (bad bearer) with reason:'kao_unauthorized'", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("unauthorized", { status: 401 }),
+    );
+    const res = await request(h.app).get("/oauth/google/status");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ granted: false, reason: "kao_unauthorized" });
+  });
+
+  it("emits grantedAt:null rather than a fake epoch when Kao's grantedAt is null", async () => {
+    // The dashboard renders null as "—" via fmtDateTime; an ISO epoch
+    // would have rendered as "Dec 31, 1969, 7:00 PM" — actively misleading.
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          name: "kizuna",
+          granted: true,
+          scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+          grantedAt: null,
+          revokedAt: null,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const res = await request(h.app).get("/oauth/google/status");
     expect(res.body.granted).toBe(true);
-    expect(res.body.scopes).toEqual(["gmail.readonly"]);
-    expect(new Date(res.body.grantedAt).toISOString()).toBe("2026-04-01T00:00:00.000Z");
+    expect(res.body.grantedAt).toBeNull();
+  });
+
+  it("emits grantedAt:null when Kao's grantedAt is a malformed string", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          name: "kizuna",
+          granted: true,
+          scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+          grantedAt: "not-a-date",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const res = await request(h.app).get("/oauth/google/status");
+    expect(res.body.granted).toBe(true);
+    // Defensive: unparseable string falls back to null instead of being
+    // propagated to the dashboard where `new Date(s).toISOString()` would
+    // throw RangeError on render.
+    expect(res.body.grantedAt).toBeNull();
+  });
+
+  it("rejects non-boolean granted (e.g. Kao returns granted:'yes')", async () => {
+    // Strict `=== true` check rejects truthy non-booleans that would
+    // otherwise route a contract-drifted Kao response to the granted branch.
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          name: "kizuna",
+          granted: "yes",
+          scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+          grantedAt: "2026-04-01T12:00:00.000Z",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const res = await request(h.app).get("/oauth/google/status");
+    expect(res.body).toEqual({ granted: false });
   });
 });

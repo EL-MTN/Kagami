@@ -57,12 +57,34 @@ export class GmailHttpError extends Error {
   }
 }
 
-export function makeGmailClient(getAccessToken: () => Promise<string>): GmailClient {
+// `getAccessToken` accepts `{ force }` so the client can recover from a
+// Google-side revocation mid-cache-window. Both 401 AND 403 trigger the
+// retry: 401 is the obvious "access token rejected" case, and 403 covers
+// the post-reconsent scope-mutation window — when the operator just
+// expanded the grant's scope set in Kao, the cached access token still
+// has the OLD scopes and Google replies 403 `insufficientPermissions`
+// until the local cache lapses. Force-refreshing via Kao re-vends with
+// the new refresh token (new scopes) and the retry succeeds. The cost
+// is one extra Kao→Google exchange per genuinely-permanent 403 (quota,
+// dailyLimitExceeded) — cheap insurance for the post-reconsent UX.
+// If Google rejects the freshly-vended token too, the second-attempt
+// error escapes and the worker maps it to `OAuthError('invalid_grant')`.
+export type AccessTokenGetter = (options?: { force?: boolean }) => Promise<string>;
+
+export function makeGmailClient(getAccessToken: AccessTokenGetter): GmailClient {
   async function call<T>(
     path: string,
     query: Record<string, string | number | undefined> = {},
   ): Promise<T> {
-    const token = await getAccessToken();
+    return doCall<T>(path, query, false);
+  }
+
+  async function doCall<T>(
+    path: string,
+    query: Record<string, string | number | undefined>,
+    force: boolean,
+  ): Promise<T> {
+    const token = await getAccessToken({ force });
     const sp = new URLSearchParams();
     for (const [k, v] of Object.entries(query)) {
       if (v === undefined) continue;
@@ -78,6 +100,15 @@ export function makeGmailClient(getAccessToken: () => Promise<string>): GmailCli
     } catch (err) {
       if (isAbortSignalTimeout(err)) throw new GoogleRequestTimeoutError("gmail");
       throw err;
+    }
+    if ((res.status === 401 || res.status === 403) && !force) {
+      // Google rejected the cached access token (401) or said it has the
+      // wrong scopes (403). Force Kao to bypass its cache and re-derive
+      // from the refresh token (which may now carry broader scopes after
+      // a re-consent), then retry exactly once. If Google rejects the
+      // fresh token too, the second attempt escapes and the worker
+      // pauses on `invalid_grant`.
+      return doCall<T>(path, query, true);
     }
     if (!res.ok) {
       const text = await res.text().catch(() => "");

@@ -41,32 +41,49 @@ describe("loadConfig", () => {
   it("treats blank optional strings as unset", () => {
     const c = loadConfig({
       ...validEnv,
-      GOOGLE_OAUTH_CLIENT_ID: "",
-      GOOGLE_OAUTH_CLIENT_SECRET: "   ",
-      GOOGLE_OAUTH_REDIRECT_URI: "",
-      KIZUNA_OAUTH_ENCRYPTION_KEY: "",
+      KAO_URL: "",
+      KAO_TOKEN: "   ",
       KIZUNA_HOST: "",
     });
-    expect(c.GOOGLE_OAUTH_CLIENT_ID).toBeUndefined();
-    expect(c.GOOGLE_OAUTH_CLIENT_SECRET).toBeUndefined();
-    expect(c.GOOGLE_OAUTH_REDIRECT_URI).toBeUndefined();
-    expect(c.KIZUNA_OAUTH_ENCRYPTION_KEY).toBeUndefined();
+    expect(c.KAO_URL).toBeUndefined();
+    expect(c.KAO_TOKEN).toBeUndefined();
     expect(c.KIZUNA_HOST).toBe("127.0.0.1");
   });
 
-  it("trims optional string values", () => {
-    const key = Buffer.alloc(32, 1).toString("base64");
+  it("trims and accepts Kao config", () => {
     const c = loadConfig({
       ...validEnv,
-      GOOGLE_OAUTH_CLIENT_ID: "  client-id  ",
-      GOOGLE_OAUTH_CLIENT_SECRET: "  client-secret  ",
-      GOOGLE_OAUTH_REDIRECT_URI: "  https://api.kizuna.localhost/oauth/google/callback  ",
-      KIZUNA_OAUTH_ENCRYPTION_KEY: `  ${key}  `,
+      KAO_URL: "  https://api.kao.localhost  ",
+      KAO_TOKEN: "  bearer-value-16chars  ",
     });
-    expect(c.GOOGLE_OAUTH_CLIENT_ID).toBe("client-id");
-    expect(c.GOOGLE_OAUTH_CLIENT_SECRET).toBe("client-secret");
-    expect(c.GOOGLE_OAUTH_REDIRECT_URI).toBe("https://api.kizuna.localhost/oauth/google/callback");
-    expect(c.KIZUNA_OAUTH_ENCRYPTION_KEY).toBe(key);
+    expect(c.KAO_URL).toBe("https://api.kao.localhost");
+    expect(c.KAO_TOKEN).toBe("bearer-value-16chars");
+  });
+
+  it("rejects a short KAO_TOKEN", () => {
+    expect(() =>
+      loadConfig({ ...validEnv, KAO_URL: "https://api.kao.localhost", KAO_TOKEN: "too-short" }),
+    ).toThrow(/at least 16 characters/);
+  });
+
+  it("rejects a KAO_URL with a path component", () => {
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        KAO_URL: "https://api.kao.localhost/api",
+        KAO_TOKEN: "bearer-value-16chars",
+      }),
+    ).toThrow(/host-only/);
+  });
+
+  it("rejects a KAO_URL with a query string", () => {
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        KAO_URL: "https://api.kao.localhost?debug=1",
+        KAO_TOKEN: "bearer-value-16chars",
+      }),
+    ).toThrow(/host-only/);
   });
 
   it("rejects a non-mongodb URI", () => {
@@ -77,18 +94,19 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...validEnv, USER_EMAILS: "not-an-email" })).toThrow();
   });
 
-  it("rejects malformed non-empty optional values", () => {
-    expect(() =>
-      loadConfig({
-        ...validEnv,
-        GOOGLE_OAUTH_REDIRECT_URI: "not-a-url",
-      }),
-    ).toThrow();
-    expect(() =>
-      loadConfig({
-        ...validEnv,
-        KIZUNA_OAUTH_ENCRYPTION_KEY: "not-32-bytes",
-      }),
-    ).toThrow();
+  it("rejects a malformed KAO_URL", () => {
+    expect(() => loadConfig({ ...validEnv, KAO_URL: "not-a-url", KAO_TOKEN: "bearer" })).toThrow();
+  });
+
+  it("rejects half-configured Kao (URL without token)", () => {
+    expect(() => loadConfig({ ...validEnv, KAO_URL: "https://api.kao.localhost" })).toThrow(
+      /KAO_URL and KAO_TOKEN must be set together/,
+    );
+  });
+
+  it("rejects half-configured Kao (token without URL)", () => {
+    expect(() => loadConfig({ ...validEnv, KAO_TOKEN: "bearer-value-16chars" })).toThrow(
+      /KAO_URL and KAO_TOKEN must be set together/,
+    );
   });
 });

@@ -4,7 +4,7 @@ Kizuna's test suite covers the API workspace. Pure helpers run with no infrastru
 
 ## Goals
 
-1. Catch regressions in correctness invariants — soft-delete semantics, cursor shapes, dedup via `sourceRef`, OAuth + token-encryption round-trip, ingest pause/resume.
+1. Catch regressions in correctness invariants — soft-delete semantics, cursor shapes, dedup via `sourceRef`, Kao token-vend + self-heal retry, ingest pause/resume.
 2. Document the API contract via executable examples (per-resource endpoint tests and the Kokoro consumer contract).
 3. Stay cheap. No live Google calls — the Gmail and Calendar clients are interfaces, and tests inject `FakeGmailClient` / `FakeCalendarClient` implementations.
 4. Be the source of truth for behavior — when a test and the API disagree, fix the API, not the test.
@@ -36,23 +36,23 @@ apps/api/tests/
 ├── fixtures/
 │   └── gmail/                # (raw JSON fixtures slot, currently empty)
 ├── setup.ts                  # LOG_LEVEL=silent default
-├── config.test.ts            # loadConfig branches (zod parse, defaults, CSV transforms)
-├── duration.test.ts          # parseDurationMs (ISO + short forms)
-├── encryption.test.ts        # AES-256-GCM round-trip + tamper / wrong-key / size checks
-├── oauth-state.test.ts       # signed state issue + verify + tamper + TTL
-├── parse-message.test.ts     # parseGmailMessage + parseAddress[List] + senderDomain
-├── parse-event.test.ts       # parseCalendarEvent (organizer dedup, all-day, cancelled)
-├── upsert-person.test.ts     # find-or-create semantics; suppressReingest; un-tombstone
-├── people-sort.test.ts       # lastInteractionAt:-1 cursor (null bucket)
-├── digest.test.ts            # /digest overdue/upcoming + duration parsing
-├── contexts.test.ts          # /contexts aggregation + personId scoping
-├── health.test.ts            # /health + resource-route no-auth contract
-├── kokoro-contract.test.ts   # read-only CRM API contract consumed by Kokoro
-├── oauth.test.ts             # /oauth/google/{start,callback,status}
-├── crud.test.ts              # CRUD endpoints across people, organizations, interactions, followups
-├── gmail-ingest.test.ts      # bootstrap + incremental + skip-self + newsletter + pause
-├── gcal-ingest.test.ts       # bootstrap + incremental + 410 SyncTokenExpired + cancellation
-└── logger.test.ts            # stable service/component/env bindings on the @kagami/logger wrapper
+├── config.test.ts                  # loadConfig branches (zod parse, defaults, CSV transforms, KAO pairing)
+├── duration.test.ts                # parseDurationMs (ISO + short forms)
+├── kao-client.test.ts              # Kao token vend, cache, force=1 retry, error-taxonomy translation, fetchGrantStatus
+├── google-client-self-heal.test.ts # Gmail/Calendar client 401 → force-refresh → retry-once contract
+├── google-client-timeout.test.ts   # 30s AbortSignal.timeout wired through both clients
+├── parse-message.test.ts           # parseGmailMessage + parseAddress[List] + senderDomain
+├── parse-event.test.ts             # parseCalendarEvent (organizer dedup, all-day, cancelled)
+├── upsert-person.test.ts           # find-or-create semantics; suppressReingest; un-tombstone
+├── people-sort.test.ts             # lastInteractionAt:-1 cursor (null bucket)
+├── digest.test.ts                  # /digest overdue/upcoming + duration parsing
+├── contexts.test.ts                # /contexts aggregation + personId scoping
+├── health.test.ts                  # /health + resource-route no-auth contract
+├── kokoro-contract.test.ts         # read-only CRM API contract consumed by Kokoro
+├── crud.test.ts                    # CRUD endpoints across people, organizations, interactions, followups
+├── gmail-ingest.test.ts            # bootstrap + incremental + skip-self + newsletter + pause
+├── gcal-ingest.test.ts             # bootstrap + incremental + 410 SyncTokenExpired + cancellation
+└── logger.test.ts                  # stable service/component/env bindings on the @kagami/logger wrapper
 ```
 
 ## Harness
@@ -66,15 +66,12 @@ export async function startHarness(): Promise<TestHarness> {
 
   const dbName = `kizuna_test_${randomBytes(6).toString("hex")}`;
   const uri = baseUri.replace(/\/?$/, `/${dbName}`);
-  const encryptionKey = randomBytes(32).toString("base64");
 
   const config = loadConfig({
     MONGODB_URI: uri,
     USER_EMAILS: "test@example.com",
-    GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
-    GOOGLE_OAUTH_CLIENT_SECRET: "test-client-secret",
-    GOOGLE_OAUTH_REDIRECT_URI: "https://api.kizuna.localhost/oauth/google/callback",
-    KIZUNA_OAUTH_ENCRYPTION_KEY: encryptionKey,
+    KAO_URL: "https://api.kao.localhost",
+    KAO_TOKEN: "test-kao-bearer-16chars",
   });
 
   const db = await connectDb(config.MONGODB_URI);
@@ -83,7 +80,6 @@ export async function startHarness(): Promise<TestHarness> {
     app,
     db,
     uri,
-    encryptionKey,
     stop: async () => {
       await db.conn.connection.dropDatabase();
       await db.close();
@@ -147,7 +143,7 @@ spy.mockResolvedValue({
 });
 ```
 
-The dashboard never appears in tests. The OAuth callback is exercised by minting a valid signed state from `GET /oauth/google/start`, then issuing the callback request with a mocked `getToken`.
+The dashboard never appears in tests. The OAuth callback lives in Kao now, not Kizuna — the only Kizuna-side OAuth surface is `POST /oauth/google/start` (303 to `${KAO_URL}/oauth/kizuna/start`, Origin-checked, with side effects on paused SyncStates) and `GET /oauth/google/status` (server-side fetch of `${KAO_URL}/grants/kizuna`). Both are covered by `oauth.test.ts` using `vi.spyOn(globalThis, "fetch")` to mock Kao's responses.
 
 ### Fake Google ingest clients
 
@@ -190,16 +186,17 @@ cd apps/api && npm run test:watch     # vitest watch
 LOG_LEVEL=debug cd apps/api && npm test   # surface pino logs while triaging
 ```
 
-The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (~150 MB, one time). Subsequent runs reuse it. The full suite runs in ~4 s on a warm cache; pure-helper tests (`config`, `duration`, `encryption`, `oauth-state`, `parse-message`, `parse-event`) skip the harness entirely and finish in milliseconds.
+The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (~150 MB, one time). Subsequent runs reuse it. The full suite runs in ~4 s on a warm cache; pure-helper tests (`config`, `duration`, `kao-client`, `google-client-*`, `parse-message`, `parse-event`, `logger`) skip the harness entirely and finish in milliseconds.
 
 ## What's covered
 
 | Area                                           | Coverage                                                                                                              |
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `config.ts` env parsing                        | `config.test.ts`                                                                                                      |
+| `config.ts` env parsing                        | `config.test.ts` — defaults, CSV transforms, KAO_URL/KAO_TOKEN paired-or-neither rule                                 |
 | `duration.ts` (ISO + short forms)              | `duration.test.ts`                                                                                                    |
-| `encryption.ts` (AES-256-GCM)                  | `encryption.test.ts`                                                                                                  |
-| `oauth-state.ts` (signed CSRF state)           | `oauth-state.test.ts`                                                                                                 |
+| `kao-client.ts` (token vend + status)          | `kao-client.test.ts` — cache, `force=1` retry, error-taxonomy translation, `fetchGrantStatus` reshape                 |
+| Gmail/Calendar client self-heal                | `google-client-self-heal.test.ts` — 401/403 → `getAccessToken({force:true})` → retry once; second 401 escapes         |
+| Gmail/Calendar request timeout                 | `google-client-timeout.test.ts` — 30s AbortSignal.timeout wired through both clients                                  |
 | `parse-message.ts` (Gmail parser)              | `parse-message.test.ts`                                                                                               |
 | `parse-event.ts` (Calendar parser)             | `parse-event.test.ts`                                                                                                 |
 | `upsertPerson` semantics                       | `upsert-person.test.ts` — find-or-create, suppressReingest, un-tombstone                                              |
@@ -207,7 +204,6 @@ The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (
 | `/digest`                                      | `digest.test.ts`                                                                                                      |
 | `/contexts`                                    | `contexts.test.ts`                                                                                                    |
 | `/health` + resource-route no-auth contract    | `health.test.ts`                                                                                                      |
-| OAuth start/callback/status                    | `oauth.test.ts` — including refresh-token encryption-at-rest verification                                             |
 | CRUD across people/orgs/interactions/followups | `crud.test.ts`                                                                                                        |
 | Gmail ingest end-to-end                        | `gmail-ingest.test.ts` — bootstrap, incremental, skip-self, newsletter blocklist, dedup via `sourceRef`, pause/resume |
 | Calendar ingest end-to-end                     | `gcal-ingest.test.ts` — bootstrap, incremental, 410 → re-bootstrap, cancellation, edit reconciliation                 |
@@ -225,6 +221,6 @@ The first run downloads a `mongod` binary into `mongodb-memory-server`'s cache (
 1. Pick the right harness shape:
    - Pure helper → top-level imports, no `startHarness`.
    - DB / HTTP → `beforeAll(startHarness)` + `afterAll(stop)` + `beforeEach(deleteMany)`.
-2. Stub Google calls — `vi.spyOn(OAuth2Client.prototype, 'getToken')` for OAuth, or inject a `FakeGmailClient` / `FakeCalendarClient` for ingest.
+2. Stub external calls — `vi.spyOn(globalThis, 'fetch')` for Kao token-vend tests, or inject a `FakeGmailClient` / `FakeCalendarClient` for ingest end-to-end tests.
 3. Use `expect(r.body).toMatchObject(...)` for shape assertions; reserve `toEqual` for fully-known payloads.
 4. When mutating `process.env`, use `vi.stubEnv` and `vi.unstubAllEnvs` in `afterEach` (the suite re-imports `loadConfig` fresh per call rather than relying on module re-evaluation, so this is rarely needed).
