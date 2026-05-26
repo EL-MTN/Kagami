@@ -6,6 +6,8 @@ Kokoro — a Telegram-based conversational AI that maintains persistent personal
 
 Kokoro is now a subtree inside the **Kagami nested monorepo** (`/Kagami/kokoro/`). It consumes shared tooling — `@kagami/eslint-config`, `@kagami/tsconfig`, and the `@kagami/llm` inference gateway — from `Kagami/shared/packages/`. There is no top-level `package.json`, `turbo.json`, or `package-lock.json` inside `kokoro/`; those live at the Kagami root. Husky hooks are also managed at the Kagami root (no `kokoro/.husky/`).
 
+This file is the project guide. Cross-service facts live in the workspace root: see [`../CLAUDE.md`](../CLAUDE.md) and [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
+
 ## Monorepo Structure
 
 ```
@@ -87,6 +89,32 @@ Lint and tsconfig bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from 
 - **Internal packages** — `@kokoro/*` libraries export raw `.ts` source (`exports: "./src/index.ts"`); only `bot` and `dashboard` have build steps. The shared `@kagami/logger` and `@kagami/llm` are built (ship `dist` JS + `.d.ts`) so compiled services can consume them under plain `node`
 - **`.env` location** — `apps/bot/.env` (not root)
 - **Tests as source of truth** — when a test fails because production behaves differently than the test expects, fix the bot, not the test. See `docs/testing.md` for the harness and per-module coverage map.
+
+## Where to find things
+
+Common tasks → files. When a task touches multiple files, all are listed.
+
+| Task                                  | File(s)                                                                                                               |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Add a new AI tool                     | `apps/bot/src/ai/tools/<tool>.ts` (definition) + `apps/bot/src/ai/tools/index.ts` (registration)                      |
+| Add a confirmation-gated write tool   | Above + `apps/bot/src/services/gated-actions.ts` (dispatcher) + `apps/bot/src/ai/tools/confirmations.ts` (UX)         |
+| Add a Mongo collection / model        | `packages/db/src/models/<model>.ts` + export from `packages/db/src/index.ts`                                          |
+| Add an env var                        | `packages/shared/src/config.ts` (Zod schema) + `apps/bot/.env.example`                                                |
+| Add a Telegram handler                | `apps/bot/src/platform/telegram/bot.ts`                                                                               |
+| Add an iMessage handler               | `apps/bot/src/platform/imessage/webhook.ts`                                                                           |
+| Add a scheduled job / watcher         | `apps/bot/src/scheduler/<job>.ts` + register in `apps/bot/src/index.ts`                                               |
+| Add a dashboard page                  | `apps/dashboard/src/app/<route>/page.tsx`                                                                             |
+| Kioku client (fail-open anchor)       | `packages/memory/src/index.ts` (`KiokuClientError`)                                                                   |
+| Kizuna client (fail-open anchor)      | `packages/kizuna/src/client.ts` (`KizunaClientError`)                                                                 |
+| Kao client (Google token vend)        | `apps/bot/src/services/kao-client.ts`                                                                                 |
+| System prompts / personality          | `apps/bot/context/soul.md` + `apps/bot/context/instructions/*.md` (loaded via `apps/bot/src/ai/context-assembler.ts`) |
+| AI prompt helpers (time-of-day, etc.) | `apps/bot/src/ai/prompts.ts`                                                                                          |
+| Kioku-pending-write sweeper (5-min)   | `packages/memory/src/sweeper.ts` + scheduled by `apps/bot/src/scheduler/maintenance.ts`                               |
+| Routine executor                      | `apps/bot/src/services/routine-executor.ts` + scheduled by `apps/bot/src/scheduler/routines.ts`                       |
+| Watcher executor                      | `apps/bot/src/services/watcher-executor.ts` + scheduled by `apps/bot/src/scheduler/watchers.ts`                       |
+| Logger init (service wrapper)         | `packages/shared/src/logger.ts` (consumed as `import { logger } from "@kokoro/shared"`)                               |
+| Tests (bot)                           | `apps/bot/tests/{ai,services,platform,stt}/*.test.ts`                                                                 |
+| Tests (packages)                      | `packages/{shared,db,memory,kizuna}/tests/*.test.ts`                                                                  |
 
 ## Doc Maintenance
 
