@@ -11,7 +11,7 @@ const validEnv = {
   MONGODB_URI: "mongodb://127.0.0.1:27017/kizuna",
   USER_EMAILS: "me@example.com",
   KAO_URL: "https://api.kao.localhost",
-  KAO_TOKEN: "bearer-xyz",
+  KAO_TOKEN: "bearer-xyz-16chars-or-more",
 };
 
 function configWith(overrides: Record<string, string> = {}) {
@@ -59,7 +59,9 @@ describe("getAccessToken", () => {
     const url = fetchSpy.mock.calls[0]![0] as string;
     expect(url).toBe("https://api.kao.localhost/grants/kizuna/token");
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer bearer-xyz");
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer bearer-xyz-16chars-or-more",
+    );
   });
 
   it("force: true bypasses the local cache and adds ?force=1", async () => {
@@ -121,6 +123,43 @@ describe("getAccessToken", () => {
     await expect(getAccessToken(config)).rejects.toMatchObject({
       code: "refresh_failed",
     });
+  });
+
+  it("translates Kao 404 (grant unknown) → OAuthError(no_grant)", async () => {
+    // 404 means Kao has no 'kizuna' entry in GRANT_NAMES. Semantically
+    // "operator hasn't registered the grant yet" — should idle cleanly, not
+    // inflate errorCount via refresh_failed.
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(404, { error: { message: "unknown grant" } }),
+    );
+    try {
+      await getAccessToken(config);
+      throw new Error("expected rejection");
+    } catch (err) {
+      expect(err).toBeInstanceOf(OAuthError);
+      expect((err as OAuthError).code).toBe("no_grant");
+    }
+  });
+
+  it("does not crash if Kao returns a literal JSON null body on 409", async () => {
+    // Regression: `body.error?.details?.code` would TypeError on a null body
+    // because optional chaining doesn't short-circuit the receiver.
+    const config = configWith();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("null", {
+        status: 409,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    try {
+      await getAccessToken(config);
+      throw new Error("expected rejection");
+    } catch (err) {
+      expect(err).toBeInstanceOf(OAuthError);
+      // Unknown detailsCode → defaults to no_grant.
+      expect((err as OAuthError).code).toBe("no_grant");
+    }
   });
 
   it("translates a network failure → OAuthError(refresh_failed)", async () => {

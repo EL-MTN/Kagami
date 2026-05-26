@@ -1,4 +1,5 @@
 import type { Config } from "../config.js";
+import { tracedFetch } from "@kagami/logger/traced-fetch";
 import { logger } from "./logger.js";
 
 // Thin HTTP client for the Kao identity service. Kizuna no longer owns a
@@ -11,23 +12,40 @@ import { logger } from "./logger.js";
 // External boundary: Kao-specific errors are translated into Kizuna's
 // existing `OAuthError` taxonomy on the way out so the ingest workers keep
 // pausing/no-granting/erroring with the same shapes they always have.
+//
+// All four error classes set `this.name` so the `@kagami/logger` ECS
+// serializer emits a useful `error.type` instead of the inherited "Error",
+// which keeps Kansoku error fingerprinting from collapsing OAuth-pause
+// events into the generic-Error bucket.
 
 export class KaoNoGrantError extends Error {
   readonly code: "no_grant" | "invalid_grant" | "decrypt_failed";
   constructor(code: "no_grant" | "invalid_grant" | "decrypt_failed", message: string) {
     super(message);
+    this.name = "KaoNoGrantError";
     this.code = code;
   }
 }
 
-export class KaoUnreachableError extends Error {}
+export class KaoUnreachableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "KaoUnreachableError";
+  }
+}
 
-export class KaoMisconfiguredError extends Error {}
+export class KaoMisconfiguredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "KaoMisconfiguredError";
+  }
+}
 
 export class OAuthError extends Error {
   readonly code: "no_grant" | "invalid_grant" | "refresh_failed";
   constructor(code: "no_grant" | "invalid_grant" | "refresh_failed", message: string) {
     super(message);
+    this.name = "OAuthError";
     this.code = code;
   }
 }
@@ -71,7 +89,7 @@ const MAX_PLAUSIBLE_EXPIRY_MS = 24 * 60 * 60 * 1000;
  * way to recover from a Google-side revocation mid-window. Without it, Kao's
  * 30 s-buffer cache would re-vend the dead token until its expiry lapses
  * (~the full token lifetime). The client wrappers in `ingest/{gmail,
- * calendar}-client.ts` retry once with `force:true` on 401/403 from Google.
+ * calendar}-client.ts` retry once with `force:true` on a Google 401.
  *
  * `force` also resets the LOCAL inflight/cache here so the caller doesn't
  * piggyback an in-flight non-force fetch (which is using the stale token).
@@ -117,7 +135,7 @@ export async function getAccessToken(
   let p: Promise<string> | undefined = undefined;
   p = (async () => {
     try {
-      const vended = await fetchToken(url, bearer);
+      const vended = await fetchToken(url, bearer, base);
       if (inflight === p) {
         cache = { token: vended.accessToken, expiresAt: vended.expiresAt };
       }
@@ -149,11 +167,14 @@ interface VendedAccessToken {
   expiresAt: number;
 }
 
-async function fetchToken(url: string, bearer: string): Promise<VendedAccessToken> {
-  const base = url.split("/grants/")[0] ?? url;
+async function fetchToken(url: string, bearer: string, base: string): Promise<VendedAccessToken> {
   let res: Response;
   try {
-    res = await fetch(url, {
+    // tracedFetch propagates the active W3C traceparent so Kao's
+    // traceMiddleware threads the vend call onto the same trace as the
+    // request (or scheduler tick) that triggered ingest — observability
+    // across the Kizuna→Kao hop in Kansoku.
+    res = await tracedFetch(url, {
       headers: { Authorization: `Bearer ${bearer}` },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -164,11 +185,20 @@ async function fetchToken(url: string, bearer: string): Promise<VendedAccessToke
     throw new KaoUnreachableError(`Kao token fetch failed: ${msg}`);
   }
 
-  if (res.status === 401 || res.status === 404) {
-    // Bearer wrong or grant name unknown to Kao — operator config error,
-    // not a transient one. Surface plainly; do not cache.
-    throw new KaoMisconfiguredError(
-      `Kao returned ${res.status} for grants/kizuna/token — check KAO_TOKEN and that the 'kizuna' grant is registered`,
+  if (res.status === 401) {
+    // Bearer wrong — operator config error, not transient. Surface plainly.
+    throw new KaoMisconfiguredError(`Kao returned 401 for grants/kizuna/token — check KAO_TOKEN`);
+  }
+
+  if (res.status === 404) {
+    // Grant name unknown to Kao (not in GRANT_NAMES yet, or operator hasn't
+    // registered 'kizuna'). Semantically "no consent yet" rather than a
+    // transient failure — map to no_grant so the worker idles cleanly
+    // (status:'no_grant', no SyncState mutation) instead of inflating
+    // errorCount on every scheduler tick.
+    throw new KaoNoGrantError(
+      "no_grant",
+      `Kao has no 'kizuna' grant — consent at ${base}/oauth/kizuna/start`,
     );
   }
 
@@ -178,7 +208,14 @@ async function fetchToken(url: string, bearer: string): Promise<VendedAccessToke
     // All three require the operator to (re-)consent at
     // ${KAO_URL}/oauth/kizuna/start, but the structured code lets a caller
     // distinguish them.
-    const body = (await res.json().catch(() => ({}))) as {
+    //
+    // The `.catch(() => null)` covers JSON.parse failure; the `?? {}` then
+    // covers the case where the body is the literal JSON `null` (valid JSON,
+    // `res.json()` resolves to `null`) — without the second guard, the
+    // subsequent `body.error?.details?.code` would dereference null and
+    // raise an untranslated TypeError that escapes the IIFE.
+    const raw = (await res.json().catch(() => null)) as unknown;
+    const body = (raw && typeof raw === "object" ? raw : {}) as {
       error?: { details?: { code?: string } };
     };
     const detailsCode = body.error?.details?.code;
@@ -249,7 +286,7 @@ export async function fetchGrantStatus(config: Config): Promise<
   const base = config.KAO_URL.replace(/\/+$/, "");
   let res: Response;
   try {
-    res = await fetch(`${base}/grants/kizuna`, {
+    res = await tracedFetch(`${base}/grants/kizuna`, {
       headers: { Authorization: `Bearer ${config.KAO_TOKEN}` },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -266,12 +303,21 @@ export async function fetchGrantStatus(config: Config): Promise<
     scopes?: string[];
     grantedAt?: string | null;
   } | null;
-  if (!data || !data.granted || !data.grantedAt) {
+  if (!data || !data.granted) {
     return { granted: false };
   }
+  // Kao always sets grantedAt at consent time, but if a malformed row ever
+  // returned granted:true with grantedAt:null, falling back to "not granted"
+  // would lie to the operator (the grant works — tokens can be vended). Use
+  // the epoch as a sentinel so the dashboard still shows "granted" with a
+  // visible "unknown" timestamp instead of dropping the row entirely.
+  const grantedAt =
+    typeof data.grantedAt === "string" && data.grantedAt.length > 0
+      ? data.grantedAt
+      : new Date(0).toISOString();
   return {
     granted: true,
-    scopes: Array.isArray(data.scopes) ? data.scopes : [],
-    grantedAt: data.grantedAt,
+    scopes: Array.isArray(data.scopes) ? data.scopes.filter((s) => typeof s === "string") : [],
+    grantedAt,
   };
 }
