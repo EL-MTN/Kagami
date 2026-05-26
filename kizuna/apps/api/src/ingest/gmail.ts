@@ -87,6 +87,18 @@ async function recordFailedRun(message: string): Promise<void> {
   );
 }
 
+// "no_grant" is neither success nor failure — the operator simply hasn't
+// (re-)consented yet. Update lastRunAt and clear lastError so a stale
+// "invalid_grant" message from before re-consent doesn't linger on the
+// dashboard alongside a fresh status:'no_grant' result. errorCount stays
+// put (this tick didn't fail).
+async function recordIdleRun(): Promise<void> {
+  await SyncState.updateOne(
+    { provider: "gmail" },
+    { $set: { lastError: null, lastRunAt: new Date() } },
+  );
+}
+
 async function processMessageIds(
   ids: string[],
   client: GmailClient,
@@ -111,10 +123,23 @@ async function processMessageIds(
       if (err instanceof GoogleRequestTimeoutError) throw err;
       if (err instanceof OAuthError) throw err;
       if (err instanceof GmailHttpError && err.status === 401) {
+        // Log with the message id BEFORE throwing so the operator can
+        // pinpoint which message triggered the pause in Kansoku.
+        logger.warn({ error: err, id }, "gmail: 401 mid-batch — token rejected");
         throw new OAuthError("invalid_grant", "gmail returned 401 mid-batch");
       }
+      if (err instanceof GmailHttpError && err.status === 403) {
+        // Google 403 that survived the client's self-heal retry — Google
+        // has a real complaint (quota, dailyLimitExceeded, scope
+        // misalignment after a force-refresh). Abort the batch so the
+        // outer catch lands in recordFailedRun and historyId stays put —
+        // otherwise recordSuccessfulRun would advance the cursor past
+        // the unprocessed messages and they'd be silently dropped.
+        logger.warn({ error: err, id }, "gmail: 403 mid-batch — aborting run");
+        throw err;
+      }
       // Only true per-message failures (parse error, transient network,
-      // non-401 HTTP error) reach this point and get counted + skipped.
+      // non-401/403 HTTP error) reach this point and get counted + skipped.
       result.errors++;
       logger.warn({ error: err, id }, "gmail: failed to fetch message");
       continue;
@@ -320,6 +345,7 @@ export async function runGmailSync(args: {
         };
       }
       if (err.code === "no_grant") {
+        await recordIdleRun();
         return {
           ...result,
           status: "no_grant",

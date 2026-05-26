@@ -102,8 +102,8 @@ describe("makeGmailClient — self-heal on 401", () => {
   });
 });
 
-describe("makeCalendarClient — self-heal on 401", () => {
-  it("retries once with force:true and succeeds", async () => {
+describe("makeCalendarClient — self-heal on 401/403", () => {
+  it("retries once with force:true on 401 and succeeds", async () => {
     const calls: Array<{ force: boolean }> = [];
     const getter = vi.fn(async (opts: { force?: boolean } = {}) => {
       calls.push({ force: Boolean(opts.force) });
@@ -117,5 +117,39 @@ describe("makeCalendarClient — self-heal on 401", () => {
     const out = await client.listEvents({ timeMin: "2026-01-01T00:00:00.000Z" });
     expect(out).toEqual({ items: [] });
     expect(calls).toEqual([{ force: false }, { force: true }]);
+  });
+
+  it("retries with force:true on 403 (post-reconsent scope mutation)", async () => {
+    const calls: Array<{ force: boolean }> = [];
+    const getter = vi.fn(async (opts: { force?: boolean } = {}) => {
+      calls.push({ force: Boolean(opts.force) });
+      return opts.force ? "fresh-token" : "stale-token";
+    });
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(res(403, {}))
+      .mockResolvedValueOnce(res(200, { items: [] }));
+
+    const client = makeCalendarClient(getter);
+    const out = await client.listEvents({ timeMin: "2026-01-01T00:00:00.000Z" });
+    expect(out).toEqual({ items: [] });
+    expect(calls).toEqual([{ force: false }, { force: true }]);
+  });
+
+  it("escapes a persistent 403 after the second attempt (no third retry)", async () => {
+    const { CalendarHttpError } = await import("../src/ingest/calendar-client.js");
+    const getter = vi.fn(async () => "any-token");
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(res(403, {}))
+      .mockResolvedValueOnce(res(403, {}));
+
+    const client = makeCalendarClient(getter);
+    try {
+      await client.listEvents({ timeMin: "2026-01-01T00:00:00.000Z" });
+      throw new Error("expected rejection");
+    } catch (err) {
+      expect(err).toBeInstanceOf(CalendarHttpError);
+      expect((err as InstanceType<typeof CalendarHttpError>).status).toBe(403);
+    }
+    expect(getter).toHaveBeenCalledTimes(2);
   });
 });

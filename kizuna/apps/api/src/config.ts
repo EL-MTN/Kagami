@@ -43,15 +43,26 @@ const envSchema = z
         // gets interpolated into KaoNoGrantError messages that flow into
         // SyncState.lastError, structured logs, and Kansoku. Leaving the
         // credentials in there would leak them.
+        //
+        // The try/catch is REQUIRED even though `.url()` runs first in the
+        // chain: zod's check pipeline does NOT short-circuit between
+        // siblings, so an upstream `.url()` failure still invokes this
+        // refine on the invalid string and `new URL(s)` throws a raw
+        // TypeError that escapes `safeParse`. The catch keeps loadConfig's
+        // formatted-issue contract intact.
         .refine((s) => {
-          const u = new URL(s);
-          return (
-            (u.pathname === "" || u.pathname === "/") &&
-            u.search === "" &&
-            u.hash === "" &&
-            u.username === "" &&
-            u.password === ""
-          );
+          try {
+            const u = new URL(s);
+            return (
+              (u.pathname === "" || u.pathname === "/") &&
+              u.search === "" &&
+              u.hash === "" &&
+              u.username === "" &&
+              u.password === ""
+            );
+          } catch {
+            return false;
+          }
         }, "KAO_URL must be host-only (no path, query, fragment, or userinfo)")
         .optional(),
     ),

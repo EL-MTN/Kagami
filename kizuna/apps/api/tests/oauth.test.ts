@@ -94,6 +94,31 @@ describe("POST /oauth/google/start", () => {
     expect(gcal!.lastError).toBe("invalid_grant");
   });
 
+  it("accepts the dashboard's Origin header", async () => {
+    const res = await request(h.app)
+      .post("/oauth/google/start")
+      .set("Origin", "https://kizuna.localhost")
+      .redirects(0);
+    expect(res.status).toBe(303);
+  });
+
+  it("rejects a cross-origin form POST from an unallowed Origin (CSRF defense)", async () => {
+    // A malicious page on another origin issuing a form POST would send
+    // its own Origin header; reject those rather than mutating SyncState.
+    const res = await request(h.app)
+      .post("/oauth/google/start")
+      .set("Origin", "https://evil.example.com")
+      .redirects(0);
+    expect(res.status).toBe(401);
+    expect(res.body.error.message).toMatch(/origin/i);
+  });
+
+  it("allows requests with no Origin header (curl / supertest)", async () => {
+    // Programmatic callers don't send Origin; trusted on localhost-only.
+    const res = await request(h.app).post("/oauth/google/start").redirects(0);
+    expect(res.status).toBe(303);
+  });
+
   it("still redirects to Kao even if the SyncState write fails (transient DB)", async () => {
     // Simulate a transient DB blip on the updateMany call by stubbing it
     // to throw. The redirect must still fire so the operator can complete
@@ -163,20 +188,29 @@ describe("GET /oauth/google/status", () => {
     expect(res.body).toEqual({ granted: false });
   });
 
-  it("collapses Kao 5xx to { granted: false } so the dashboard shows Connect", async () => {
+  it("flags Kao 5xx with reason:'kao_unreachable' so the dashboard can hint", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response("server error", { status: 503 }),
     );
     const res = await request(h.app).get("/oauth/google/status");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ granted: false });
+    expect(res.body).toEqual({ granted: false, reason: "kao_unreachable" });
   });
 
-  it("collapses Kao network failure to { granted: false }", async () => {
+  it("flags Kao network failure with reason:'kao_unreachable'", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("ECONNREFUSED"));
     const res = await request(h.app).get("/oauth/google/status");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ granted: false });
+    expect(res.body).toEqual({ granted: false, reason: "kao_unreachable" });
+  });
+
+  it("flags Kao 401 (bad bearer) with reason:'kao_unauthorized'", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("unauthorized", { status: 401 }),
+    );
+    const res = await request(h.app).get("/oauth/google/status");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ granted: false, reason: "kao_unauthorized" });
   });
 
   it("emits grantedAt:null rather than a fake epoch when Kao's grantedAt is null", async () => {

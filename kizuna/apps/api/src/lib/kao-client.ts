@@ -197,15 +197,25 @@ async function fetchToken(url: string, bearer: string, base: string): Promise<Ve
     // errors.ts). A wrong-host 404 typically responds with text/html, plain
     // text, or a different JSON shape — those should surface as a
     // misconfiguration, not silently idle as no_grant.
-    const ct = res.headers.get("content-type") ?? "";
-    const looksJson = ct.toLowerCase().includes("application/json");
+    //
+    // Exact-match on the media type rather than substring `includes` so we
+    // don't accidentally treat `application/ld+json` or
+    // `application/vnd.api+json` as Kao. The `; charset=utf-8` parameter
+    // suffix from Express's `res.json` is normalized by splitting on `;`.
+    const ct = (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+    const looksJson = ct === "application/json";
     const body = looksJson ? ((await res.json().catch(() => null)) as unknown) : null;
     const isKaoEnvelope =
       body !== null &&
       typeof body === "object" &&
+      // Arrays satisfy `typeof === "object"` and are non-null; reject them
+      // explicitly so `{error: ["msg"]}` from a non-Kao service doesn't
+      // get misclassified as the Kao envelope.
+      !Array.isArray(body) &&
       "error" in (body as Record<string, unknown>) &&
       typeof (body as { error?: unknown }).error === "object" &&
-      (body as { error?: unknown }).error !== null;
+      (body as { error?: unknown }).error !== null &&
+      !Array.isArray((body as { error?: unknown }).error);
     if (isKaoEnvelope) {
       // Kao confirmed: grant unknown to it (not in GRANT_NAMES yet, or
       // operator hasn't registered 'kizuna'). Idle cleanly via no_grant.
@@ -288,15 +298,27 @@ async function fetchToken(url: string, bearer: string, base: string): Promise<Ve
   return { accessToken, expiresAt };
 }
 
+// Strict ISO-8601 datetime regex (date + time component + timezone). A
+// bare date like "1970-01-01" passes `new Date(s).getTime()` (returns 0,
+// finite) but renders as "Dec 31, 1969, 7:00 PM" in the dashboard's
+// non-UTC timezone — exactly the misleading concrete date the null
+// fallback aims to prevent. Require the `T` + time + tz so only real
+// timestamps survive the validation.
+const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
+
 // Fetch the grant status from Kao for the OAuth status route. Returns the
 // reshape the dashboard already expects; absence/missing-config yields
 // `{ granted: false }` rather than throwing — the dashboard's UX is
 // "Connect Google" in that case. grantedAt may be `null` (Kao said the
 // grant works but didn't supply a parseable timestamp); the dashboard
-// renders null as "—" so the operator sees "granted, timestamp unknown"
-// instead of a misleading concrete date like 1970-01-01.
+// renders that as "timestamp unknown" instead of a misleading concrete
+// date.
+//
+// `reason` is a hint for the dashboard to render a more specific message
+// than the default "Connect Google" — primarily so an operator with a
+// wrong KAO_TOKEN isn't stuck clicking Connect forever.
 export async function fetchGrantStatus(config: Config): Promise<
-  | { granted: false }
+  | { granted: false; reason?: "kao_unauthorized" | "kao_unreachable" }
   | {
       granted: true;
       scopes: string[];
@@ -315,11 +337,18 @@ export async function fetchGrantStatus(config: Config): Promise<
     });
   } catch (err) {
     logger.warn({ error: err }, "kao grant status fetch failed");
-    return { granted: false };
+    return { granted: false, reason: "kao_unreachable" };
   }
   if (!res.ok) {
+    if (res.status === 401) {
+      // Bearer rejected — operator config error, not "no consent yet".
+      // Surface a distinct reason so the dashboard can hint at the actual
+      // fix rather than offering "Connect Google" which won't help.
+      logger.warn({ status: 401 }, "kao grant status: bearer rejected — check KAO_TOKEN");
+      return { granted: false, reason: "kao_unauthorized" };
+    }
     logger.warn({ status: res.status }, "kao grant status returned non-2xx");
-    return { granted: false };
+    return { granted: false, reason: "kao_unreachable" };
   }
   const data = (await res.json().catch(() => null)) as {
     granted?: boolean;
@@ -330,19 +359,23 @@ export async function fetchGrantStatus(config: Config): Promise<
   // serialization bug returning "yes" / 1 would otherwise route to the
   // granted branch and mask a real Kao contract issue as a working grant).
   if (!data || data.granted !== true) {
+    if (data && data.granted !== undefined && data.granted !== false) {
+      // Surface the drift loudly — silently flipping to "Connect Google"
+      // hides a contract issue.
+      logger.warn(
+        { granted: data.granted },
+        "kao returned non-boolean granted; treating as not granted",
+      );
+    }
     return { granted: false };
   }
-  // Surface null grantedAt rather than a fake epoch sentinel — the dashboard
-  // renders null as "—" via fmtDateTime, which clearly reads as "unknown"
-  // instead of the misleading "Dec 31, 1969, 7:00 PM" an epoch ISO produced.
-  // Also reject malformed-but-truthy timestamps that wouldn't parse as Date.
+  // Surface null grantedAt rather than a fake epoch sentinel. The dashboard
+  // renders that distinctly from a real date. Also reject malformed and
+  // date-only strings (e.g. "1970-01-01") that would parse via `new Date`
+  // but render as misleading concrete dates.
   const rawGrantedAt = data.grantedAt;
   const grantedAt =
-    typeof rawGrantedAt === "string" &&
-    rawGrantedAt.length > 0 &&
-    Number.isFinite(new Date(rawGrantedAt).getTime())
-      ? rawGrantedAt
-      : null;
+    typeof rawGrantedAt === "string" && ISO_DATETIME_RE.test(rawGrantedAt) ? rawGrantedAt : null;
   return {
     granted: true,
     scopes: Array.isArray(data.scopes) ? data.scopes.filter((s) => typeof s === "string") : [],

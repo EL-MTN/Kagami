@@ -9,28 +9,28 @@ Google access is **delegated to the Kao identity service** — Kizuna does not o
 
 ## At a glance
 
-| Layer                   | Mechanism                                                                            | Source                                |
-| ----------------------- | ------------------------------------------------------------------------------------ | ------------------------------------- |
-| resource routes (API)   | none — open at localhost                                                             | —                                     |
-| `/oauth/google/start`   | 302 redirect to `${KAO_URL}/oauth/kizuna/start`                                      | `apps/api/src/routes/oauth.ts`        |
-| `/oauth/google/status`  | reads `${KAO_URL}/grants/kizuna` with `Authorization: Bearer ${KAO_TOKEN}`, reshapes | `apps/api/src/routes/oauth.ts`        |
-| Google refresh token    | stored encrypted in Kao's Mongo; never reaches Kizuna's process                      | `kao/apps/api/src/lib/encryption.ts`  |
-| Google access token     | vended on demand from Kao; 30s-buffer in-process cache in Kizuna                     | `apps/api/src/lib/kao-client.ts`      |
-| CSRF on consent flow    | HMAC-signed state bound to the grant name; minted by Kao                             | `kao/apps/api/src/lib/oauth-state.ts` |
-| Dashboard sessions      | none — dashboard is open at localhost                                                | —                                     |
-| Ingest "self" detection | `USER_EMAILS` allowlist (lowercased, comma-separated)                                | `apps/api/src/config.ts`              |
+| Layer                      | Mechanism                                                                                                                | Source                                |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
+| resource routes (API)      | none — open at localhost                                                                                                 | —                                     |
+| `POST /oauth/google/start` | 303 → `${KAO_URL}/oauth/kizuna/start` (POST; same-origin Origin check; clears paused workers' `pausedAt` + `errorCount`) | `apps/api/src/routes/oauth.ts`        |
+| `/oauth/google/status`     | reads `${KAO_URL}/grants/kizuna` with `Authorization: Bearer ${KAO_TOKEN}`, reshapes                                     | `apps/api/src/routes/oauth.ts`        |
+| Google refresh token       | stored encrypted in Kao's Mongo; never reaches Kizuna's process                                                          | `kao/apps/api/src/lib/encryption.ts`  |
+| Google access token        | vended on demand from Kao; 30s-buffer in-process cache in Kizuna                                                         | `apps/api/src/lib/kao-client.ts`      |
+| CSRF on consent flow       | HMAC-signed state bound to the grant name; minted by Kao                                                                 | `kao/apps/api/src/lib/oauth-state.ts` |
+| Dashboard sessions         | none — dashboard is open at localhost                                                                                    | —                                     |
+| Ingest "self" detection    | `USER_EMAILS` allowlist (lowercased, comma-separated)                                                                    | `apps/api/src/config.ts`              |
 
 ## OAuth grant flow
 
-The consent flow lives entirely in Kao. Kizuna's `/oauth/google/start` is a thin 302 redirect to `${KAO_URL}/oauth/kizuna/start`, so the dashboard's "Connect Google" / "Re-authorize" button keeps working unchanged. The Google Cloud OAuth client is registered with **one** redirect URI — `${KAO_PUBLIC_URL}/oauth/callback` — and Kao routes responses back to the right grant via its signed CSRF state.
+The consent flow lives entirely in Kao. Kizuna's `POST /oauth/google/start` is a 303 redirect to `${KAO_URL}/oauth/kizuna/start`, so the dashboard's "Connect Google" / "Re-authorize" button (now a `<form method="post">`) keeps working. The Google Cloud OAuth client is registered with **one** redirect URI — `${KAO_PUBLIC_URL}/oauth/callback` — and Kao routes responses back to the right grant via its signed CSRF state. POST is intentional: a GET that mutates SyncState would be reachable by browser preloaders, link unfurlers, and `<img src>` tags; an Origin check (allowlist of `https://kizuna.localhost` + `https://api.kizuna.localhost`) defends against cross-origin form-CSRF from a malicious tab.
 
 After consent, the operator lands on Kao's success page; the grant is persisted under the name `kizuna` (read-only Gmail + Calendar — see `kao/apps/api/src/grant-registry.ts`). The next sync run vends an access token from Kao and proceeds normally.
 
 A re-grant invalidates Kao's cached access token for the `kizuna` grant immediately. Kizuna does **not** auto-unpause paused workers after a re-grant (Kao has no knowledge of Kizuna's `SyncState`); manually trigger `POST /sync/{gmail,gcal}/run` with `{ "force": true }` after re-authorizing, or wait for the next scheduler tick.
 
-### `GET /oauth/google/start` (Kizuna)
+### `POST /oauth/google/start` (Kizuna)
 
-Validates that `KAO_URL` + `KAO_TOKEN` are set (otherwise `400` — Kao isn't reachable so the flow can't complete). Redirects 302 to `${KAO_URL}/oauth/kizuna/start`.
+Validates that `KAO_URL` + `KAO_TOKEN` are set (otherwise `400`) and that the `Origin` header, if present, is in the allowlist (`https://kizuna.localhost` + `https://api.kizuna.localhost`); otherwise `401`. Clears `pausedAt` and resets `errorCount` on any SyncState row with `pausedAt: {$type: "date"}`, then drops the local access-token cache. Redirects 303 to `${KAO_URL}/oauth/kizuna/start`. `lastError` is intentionally NOT cleared here — recordSuccessfulRun/recordIdleRun handle it on the next tick.
 
 ### `GET /oauth/google/status` (Kizuna)
 
@@ -94,7 +94,7 @@ There is **no per-request user identification** — every `USER_EMAILS` address 
 1. Bring up Kao (see `kao/docs/configuration.md`). Note its public URL (`KAO_PUBLIC_URL`) and ingest bearer.
 2. In `apps/api/.env`, set `KAO_URL=https://api.kao.localhost` and `KAO_TOKEN=<same bearer Kao expects>`. Restart the API.
 3. Visit `https://kizuna.localhost` — no login.
-4. Navigate to `/sync`, click "Connect Google" — `<a href={oauthStartUrl()}>` resolves to `${API_URL}/oauth/google/start`, which 302s to `${KAO_URL}/oauth/kizuna/start`.
+4. Navigate to `/sync`, click "Connect Google" — `<form action={oauthStartUrl()} method="post">` posts to `${API_URL}/oauth/google/start`, which 303s to `${KAO_URL}/oauth/kizuna/start`.
 5. Consent on Google. Land on Kao's success page. Kao persists the refresh token under the `kizuna` grant.
 6. Click "Run sync now" — this hits `POST /sync/gmail/run` (and Calendar).
 
