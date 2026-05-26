@@ -38,7 +38,7 @@ Notes:
 
 ### Where the OAuth client lives now
 
-The Google Cloud OAuth client is registered for **Kao**, not Kizuna. The single redirect URI registered in Google Cloud is `${KAO_PUBLIC_URL}/oauth/callback`. Kizuna's `/oauth/google/start` is a 302 to `${KAO_URL}/oauth/kizuna/start`; the `kizuna` grant in Kao's registry is consented for read-only Gmail + Calendar. See `kao/docs/configuration.md` for the Kao setup (Google client ID/secret, encryption key, public URL).
+The Google Cloud OAuth client is registered for **Kao**, not Kizuna. The single redirect URI registered in Google Cloud is `${KAO_PUBLIC_URL}/oauth/callback`. Kizuna's `POST /oauth/google/start` is a 303 to `${KAO_URL}/oauth/kizuna/start` (POST so browser preloaders / `<img src>` tags can't trigger the state mutation; Origin-checked); the `kizuna` grant in Kao's registry is consented for read-only Gmail + Calendar. See `kao/docs/configuration.md` for the Kao setup (Google client ID/secret, encryption key, public URL).
 
 ## Dashboard (`apps/dashboard/.env`)
 
@@ -102,7 +102,7 @@ KIZUNA_INGEST_INTERVAL_SEC=300
 NEWSLETTER_DOMAIN_BLOCKLIST=mailchimp.com,substack.com,buttondown.email,reply.slack.com
 ```
 
-Bring up Kao alongside Kizuna (`npm run kao:dev` or `./dev-all.sh`). Then in the dashboard click "Connect Google" — it 302s to `${KAO_URL}/oauth/kizuna/start` and Kao runs the consent flow.
+Bring up Kao alongside Kizuna (`npm run kao:dev` or `./dev-all.sh`). Then in the dashboard click "Connect Google" — the form POSTs to `${API_URL}/oauth/google/start`, which 303s to `${KAO_URL}/oauth/kizuna/start` and Kao runs the consent flow. If you run the dashboard on a non-default origin (renamed Portless host, bare-port debug), extend the allowlist via `KIZUNA_DASHBOARD_ORIGIN=<your-origin>` in `apps/api/.env`.
 
 ### Bumping backfill horizons
 

@@ -1,6 +1,6 @@
 # API
 
-One surface: REST at `https://api.kizuna.localhost` (Portless). The API is open at single-user localhost — no bearer auth on resource routes, no auth on `/oauth/google/{start,status}`. The OAuth consent flow itself lives in Kao now; Kizuna's `/oauth/google/start` is just a 302 redirect.
+One surface: REST at `https://api.kizuna.localhost` (Portless). The API is open at single-user localhost — no bearer auth on resource routes, no auth on `/oauth/google/status`. The OAuth consent flow itself lives in Kao now; Kizuna's `POST /oauth/google/start` is a 303 redirect with a same-origin Origin check.
 
 ## Mount order
 
