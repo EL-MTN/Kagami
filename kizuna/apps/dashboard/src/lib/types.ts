@@ -155,8 +155,8 @@ export type ListFollowupsQuery = {
 };
 
 export type OAuthStatus =
-  | { granted: false }
-  | { granted: true; scopes: string[]; grantedAt: string };
+  | { granted: false; reason?: "kao_unauthorized" | "kao_unreachable" }
+  | { granted: true; scopes: string[]; grantedAt: string | null };
 
 export type SyncState = {
   provider: "gmail" | "gcal";

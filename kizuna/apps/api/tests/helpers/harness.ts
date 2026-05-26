@@ -7,7 +7,6 @@ import "../../src/db/models/Organization.js";
 import "../../src/db/models/Interaction.js";
 import "../../src/db/models/Followup.js";
 import "../../src/db/models/SyncState.js";
-import "../../src/db/models/OAuthToken.js";
 import { createApp } from "../../src/server.js";
 import { SHARED_MONGO_URI_ENV } from "../global-setup.js";
 
@@ -15,7 +14,6 @@ export type TestHarness = {
   app: Express;
   db: DbHandle;
   uri: string;
-  encryptionKey: string;
   stop: () => Promise<void>;
 };
 
@@ -29,15 +27,12 @@ export async function startHarness(): Promise<TestHarness> {
 
   const dbName = `kizuna_test_${randomBytes(6).toString("hex")}`;
   const uri = baseUri.replace(/\/?$/, `/${dbName}`);
-  const encryptionKey = randomBytes(32).toString("base64");
 
   const config = loadConfig({
     MONGODB_URI: uri,
     USER_EMAILS: "test@example.com",
-    GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
-    GOOGLE_OAUTH_CLIENT_SECRET: "test-client-secret",
-    GOOGLE_OAUTH_REDIRECT_URI: "https://api.kizuna.localhost/oauth/google/callback",
-    KIZUNA_OAUTH_ENCRYPTION_KEY: encryptionKey,
+    KAO_URL: "https://api.kao.localhost",
+    KAO_TOKEN: "test-kao-bearer-16chars",
   });
 
   const db = await connectDb(config.MONGODB_URI);
@@ -47,7 +42,6 @@ export async function startHarness(): Promise<TestHarness> {
     app,
     db,
     uri,
-    encryptionKey,
     stop: async () => {
       await db.conn.connection.dropDatabase();
       await db.close();

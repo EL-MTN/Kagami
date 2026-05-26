@@ -4,7 +4,7 @@ import {
   upsertInteractionBySourceRef,
   type RecordInteractionInput,
 } from "../db/recordInteraction.js";
-import { OAuthError } from "../lib/google-auth.js";
+import { OAuthError } from "../lib/kao-client.js";
 import { logger } from "../lib/logger.js";
 import { CalendarHttpError, SyncTokenExpired, type CalendarClient } from "./calendar-client.js";
 import { GoogleRequestTimeoutError } from "./google-timeout.js";
@@ -76,6 +76,19 @@ async function recordFailedRun(message: string): Promise<void> {
       $inc: { errorCount: 1 },
     },
   );
+}
+
+// See gmail.ts for the recordIdleRun rationale. try/catch so a Mongo blip
+// doesn't 500 the /sync/gcal/run route's no_grant response.
+async function recordIdleRun(): Promise<void> {
+  try {
+    await SyncState.updateOne(
+      { provider: "gcal" },
+      { $set: { lastError: null, lastRunAt: new Date() } },
+    );
+  } catch (err) {
+    logger.warn({ error: err }, "gcal: failed to record idle run");
+  }
 }
 
 async function clearSyncToken(): Promise<void> {
@@ -267,11 +280,23 @@ export async function runCalendarSync(args: {
         };
       }
       if (err.code === "no_grant") {
+        await recordIdleRun();
         return {
           ...result,
           status: "no_grant",
           message: "no Google OAuth grant on file",
         };
+      }
+      if (err.code === "kao_unauthorized") {
+        // See gmail.ts for the rationale.
+        await recordFailedRun("kao_unauthorized");
+        logger.error({ error: err, provider: "gcal" }, "gcal sync: kao unauthorized");
+        return { ...result, status: "error", message: "kao_unauthorized" };
+      }
+      if (err.code === "refresh_failed") {
+        await recordFailedRun("kao_unreachable");
+        logger.error({ error: err, provider: "gcal" }, "gcal sync: kao unreachable");
+        return { ...result, status: "error", message: "kao_unreachable" };
       }
     }
     if (err instanceof CalendarHttpError && err.status === 401) {
@@ -281,6 +306,15 @@ export async function runCalendarSync(args: {
         status: "paused",
         message: "calendar returned 401 — re-grant required",
       };
+    }
+    if (err instanceof CalendarHttpError && err.status === 403) {
+      // See gmail.ts for the google_403 stable-label rationale.
+      await recordFailedRun("google_403");
+      logger.error(
+        { error: err, body: err.body.slice(0, 500), provider: "gcal" },
+        "gcal sync: google 403 (quota or scope)",
+      );
+      return { ...result, status: "error", message: "google_403" };
     }
     const progress = {
       provider: "gcal",
@@ -303,7 +337,7 @@ export async function runCalendarSync(args: {
 
 export async function runCalendarSyncOnce(config: Config): Promise<CalendarSyncResult> {
   const { makeCalendarClient } = await import("./calendar-client.js");
-  const { getAccessToken } = await import("../lib/google-auth.js");
-  const client = makeCalendarClient(() => getAccessToken(config));
+  const { getAccessToken } = await import("../lib/kao-client.js");
+  const client = makeCalendarClient((options) => getAccessToken(config, options));
   return runCalendarSync({ config, client });
 }

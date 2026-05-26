@@ -3,7 +3,7 @@ import type { Config } from "../config.js";
 import { SyncState } from "../db/models/SyncState.js";
 import { recordInteraction, type RecordInteractionInput } from "../db/recordInteraction.js";
 import { logger } from "../lib/logger.js";
-import { OAuthError } from "../lib/google-auth.js";
+import { OAuthError } from "../lib/kao-client.js";
 import type { GmailClient } from "./gmail-client.js";
 import { GmailHttpError } from "./gmail-client.js";
 import { GoogleRequestTimeoutError } from "./google-timeout.js";
@@ -87,6 +87,26 @@ async function recordFailedRun(message: string): Promise<void> {
   );
 }
 
+// "no_grant" is neither success nor failure — the operator simply hasn't
+// (re-)consented yet. Update lastRunAt and clear lastError so a stale
+// "invalid_grant" message from before re-consent doesn't linger on the
+// dashboard alongside a fresh status:'no_grant' result. errorCount stays
+// put (this tick didn't fail).
+//
+// The Mongo write is wrapped in try/catch so a transient DB blip doesn't
+// turn a no_grant result into a 500 from POST /sync/gmail/run — the
+// status:'no_grant' return shape is part of the route contract.
+async function recordIdleRun(): Promise<void> {
+  try {
+    await SyncState.updateOne(
+      { provider: "gmail" },
+      { $set: { lastError: null, lastRunAt: new Date() } },
+    );
+  } catch (err) {
+    logger.warn({ error: err }, "gmail: failed to record idle run");
+  }
+}
+
 async function processMessageIds(
   ids: string[],
   client: GmailClient,
@@ -101,12 +121,35 @@ async function processMessageIds(
       raw = await client.getMessage(id);
       result.fetched++;
     } catch (err) {
+      // Paths that escape the per-message loop (don't `continue`) should
+      // NOT increment `result.errors` — the outer pause/timeout handling
+      // owns the bookkeeping. Without this ordering, an OAuthError from
+      // the self-heal retry reported `errors:0` (rethrown before the
+      // increment) while a fresh 401 → OAuthError reported `errors:1`
+      // (incremented before the throw), even though both have the same
+      // root cause.
       if (err instanceof GoogleRequestTimeoutError) throw err;
-      result.errors++;
-      logger.warn({ error: err, id }, "gmail: failed to fetch message");
+      if (err instanceof OAuthError) throw err;
       if (err instanceof GmailHttpError && err.status === 401) {
+        // Log with the message id BEFORE throwing so the operator can
+        // pinpoint which message triggered the pause in Kansoku.
+        logger.warn({ error: err, id }, "gmail: 401 mid-batch — token rejected");
         throw new OAuthError("invalid_grant", "gmail returned 401 mid-batch");
       }
+      if (err instanceof GmailHttpError && err.status === 403) {
+        // Google 403 that survived the client's self-heal retry — Google
+        // has a real complaint (quota, dailyLimitExceeded, scope
+        // misalignment after a force-refresh). Abort the batch so the
+        // outer catch lands in recordFailedRun and historyId stays put —
+        // otherwise recordSuccessfulRun would advance the cursor past
+        // the unprocessed messages and they'd be silently dropped.
+        logger.warn({ error: err, id }, "gmail: 403 mid-batch — aborting run");
+        throw err;
+      }
+      // Only true per-message failures (parse error, transient network,
+      // non-401/403 HTTP error) reach this point and get counted + skipped.
+      result.errors++;
+      logger.warn({ error: err, id }, "gmail: failed to fetch message");
       continue;
     }
 
@@ -310,11 +353,31 @@ export async function runGmailSync(args: {
         };
       }
       if (err.code === "no_grant") {
+        await recordIdleRun();
         return {
           ...result,
           status: "no_grant",
           message: "no Google OAuth grant on file",
         };
+      }
+      if (err.code === "kao_unauthorized") {
+        // Kao 401 — bearer rejected. Stable label matches the status
+        // route's `reason: "kao_unauthorized"` so the dashboard's OAuth
+        // card and Gmail card show the same diagnostic for the same root
+        // cause (wrong KAO_TOKEN).
+        await recordFailedRun("kao_unauthorized");
+        logger.error({ error: err, provider: "gmail" }, "gmail sync: kao unauthorized");
+        return { ...result, status: "error", message: "kao_unauthorized" };
+      }
+      if (err.code === "refresh_failed") {
+        // Kao unreachable / 5xx / misconfigured (wrong-host 404 — not
+        // bad-bearer 401, which has its own branch above). Record a stable
+        // label so the dashboard's `lastError` column stays fingerprint-
+        // friendly across transient Kao blips rather than churning verbose
+        // Kao internal strings (e.g. "Kao token fetch failed: ECONNREFUSED").
+        await recordFailedRun("kao_unreachable");
+        logger.error({ error: err, provider: "gmail" }, "gmail sync: kao unreachable");
+        return { ...result, status: "error", message: "kao_unreachable" };
       }
     }
     if (err instanceof GmailHttpError && err.status === 401) {
@@ -324,6 +387,20 @@ export async function runGmailSync(args: {
         status: "paused",
         message: "gmail returned 401 — re-grant required",
       };
+    }
+    if (err instanceof GmailHttpError && err.status === 403) {
+      // Google 403 after the client's self-heal retry — quota /
+      // dailyLimitExceeded / scope misalignment that survived a fresh
+      // token. Stable label so the dashboard doesn't churn the verbose
+      // 300-char Google JSON body across retries (which would explode
+      // Kansoku error fingerprinting). Verbose detail goes to the log,
+      // not to SyncState.lastError.
+      await recordFailedRun("google_403");
+      logger.error(
+        { error: err, body: err.body.slice(0, 500), provider: "gmail" },
+        "gmail sync: google 403 (quota or scope)",
+      );
+      return { ...result, status: "error", message: "google_403" };
     }
     const progress = {
       provider: "gmail",
@@ -344,10 +421,11 @@ export async function runGmailSync(args: {
   }
 }
 
-// Wire-up: build a real client backed by getAccessToken from step 4.
+// Wire-up: vend Google access tokens via Kao. The `{ force }` hop lets the
+// client recover from a mid-window Google revocation without restarting.
 export async function runGmailSyncOnce(config: Config): Promise<SyncResult> {
   const { makeGmailClient } = await import("./gmail-client.js");
-  const { getAccessToken } = await import("../lib/google-auth.js");
-  const client = makeGmailClient(() => getAccessToken(config));
+  const { getAccessToken } = await import("../lib/kao-client.js");
+  const client = makeGmailClient((options) => getAccessToken(config, options));
   return runGmailSync({ config, client });
 }

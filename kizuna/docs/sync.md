@@ -1,6 +1,6 @@
 # Sync
 
-The Gmail + Calendar ingest pipeline lives at `apps/api/src/ingest/`. Two workers, one scheduler, one OAuth client. Both workers share the same skeleton: state machine in Mongo + paginated fetch + pure parser + idempotent write through `recordInteraction.ts`.
+The Gmail + Calendar ingest pipeline lives at `apps/api/src/ingest/`. Two workers, one scheduler, one shared Kao-backed token vend. Both workers share the same skeleton: state machine in Mongo + paginated fetch + pure parser + idempotent write through `recordInteraction.ts`.
 
 ## Layout
 
@@ -8,28 +8,31 @@ The Gmail + Calendar ingest pipeline lives at `apps/api/src/ingest/`. Two worker
 apps/api/src/ingest/
 ├── scheduler.ts        # setInterval-driven tick; re-entrancy guard
 ├── gmail.ts            # bootstrap (date window) → incremental (history)
-├── gmail-client.ts     # thin fetch wrapper around gmail.googleapis.com
+├── gmail-client.ts     # thin fetch wrapper around gmail.googleapis.com (self-heals on 401)
 ├── parse-message.ts    # Gmail message JSON → ParsedMessage (pure)
 ├── calendar.ts         # bootstrap → sync-token incremental + reconciliation
-├── calendar-client.ts  # fetch wrapper around calendar.googleapis.com
+├── calendar-client.ts  # fetch wrapper around calendar.googleapis.com (self-heals on 401)
 ├── parse-event.ts      # Calendar event → ParsedEvent (pure)
 └── upsert-person.ts    # find-or-create by lowercased email, respects suppressReingest
 ```
 
 ## Auth + token handling
 
-Both workers go through `getAccessToken(config)` in `apps/api/src/lib/google-auth.ts`:
+Both workers go through `getAccessToken(config, options?)` in `apps/api/src/lib/kao-client.ts`:
 
-1. Module-scope cache returns the access token if `expiresAt > Date.now() + 30 s`.
-2. Otherwise, `OAuthToken.findOne({ provider:'google', deletedAt: null })`. Missing → `OAuthError('no_grant')`.
-3. `decrypt(refreshToken, KIZUNA_OAUTH_ENCRYPTION_KEY)` (AES-256-GCM).
-4. `client.setCredentials({ refresh_token })` + `client.getAccessToken()`.
-5. On `invalid_grant` → `OAuthError('invalid_grant')` (Google revoked the grant; user must re-authorize).
-6. On any other failure → `OAuthError('refresh_failed')`.
+1. If `options.force`: clear local cache+inflight, then vend with `?force=1` so Kao bypasses its own cache and round-trips to Google.
+2. Otherwise: module-scope cache returns the access token if `expiresAt > Date.now() + 30 s`. Concurrent callers share one in-flight fetch.
+3. `GET ${KAO_URL}/grants/kizuna/token` with `Authorization: Bearer ${KAO_TOKEN}`. Kao decrypts the stored refresh token, refreshes at Google, and returns `{ accessToken, expiresAt, scopes }`.
+4. Kao taxonomy → `OAuthError` on the boundary so workers keep their stable matching:
+   - Kao 409 `no_grant` → `OAuthError('no_grant')`
+   - Kao 409 `invalid_grant` / `decrypt_failed` → `OAuthError('invalid_grant')`
+   - Kao unreachable, 401/404, malformed body, or implausible `expiresAt` → `OAuthError('refresh_failed')`
 
-`clearAccessTokenCache()` is called from the OAuth callback so a re-grant takes effect immediately.
+`clearAccessTokenCache()` clears both `cache` and `inflight` together so a force-refresh isn't overwritten by a stale in-flight result.
 
-The refresh-token scopes (constant in `lib/google-auth.ts::GOOGLE_SCOPES`):
+The Gmail and Calendar HTTP clients add a self-heal retry on top: on a 401 or 403 from Google, they call `getAccessToken({ force: true })` and retry the request once. Only the second 401 escapes the client (as `GmailHttpError(401)` / `CalendarHttpError(401)`); the worker then maps that to `OAuthError('invalid_grant')` and pauses.
+
+The refresh-token scopes for the `kizuna` grant are version-controlled in Kao's registry (`kao/apps/api/src/grant-registry.ts`):
 
 ```
 https://www.googleapis.com/auth/gmail.readonly
@@ -101,7 +104,7 @@ Per ID:
 ### Pause + resume semantics
 
 - On `OAuthError('invalid_grant')` or a Gmail 401 outside `getMessage` → `pauseWith(message)`: log at `error` (`"<provider> ingest paused — re-grant required"`, with `provider` + `reason` — pausing freezes ingest until a manual re-grant, so it is not a silent state mutation), then set `pausedAt: now`, increment `errorCount`, write `lastError`. Subsequent runs short-circuit with `{ status: 'paused' }` until either:
-  - The user re-authorizes via `/oauth/google/start` → `/callback`, which calls `SyncState.updateMany({ pausedAt: { $ne: null } }, { pausedAt: null, lastError: null })`; or
+  - The operator re-authorizes via `POST /oauth/google/start`, which 303s to Kao's consent flow and (before redirecting) clears `pausedAt` + resets `errorCount` on rows with `pausedAt: {$type: "date"}`. `lastError` is preserved until the next tick (cleared by recordSuccessfulRun on success or recordIdleRun on no_grant); or
   - The caller passes `force: true` to `POST /sync/gmail/run`, which clears `pausedAt` and runs once.
 - On any other error → write `lastError` + bump `errorCount` (without setting `pausedAt`). Next tick retries.
 - On Google request timeout → write `gmail_request_timeout` to `lastError` + bump `errorCount` (without setting `pausedAt`). Next tick retries from the previous cursor.
@@ -200,16 +203,17 @@ That's the whole point of `sourceRef` carrying the provider's stable ID instead 
 
 ## Failure modes — quick reference
 
-| Trigger                                             | What happens                                                                                                                           |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `OAuthToken` row missing                            | `OAuthError('no_grant')` → `result.status = 'no_grant'`. Not a pause; just an empty run.                                               |
-| `KIZUNA_OAUTH_ENCRYPTION_KEY` missing               | Caught at the route level (`POST /sync/.../run`) — `400 bad_request`. Direct calls to the worker raise `OAuthError('refresh_failed')`. |
-| Google rejects the refresh token (`invalid_grant`)  | `pauseWith('invalid_grant')` → `pausedAt` set, `errorCount++`. Worker stays paused until re-grant or `force: true`.                    |
-| Gmail 401 inside `getMessage`                       | Re-raised as `OAuthError('invalid_grant')` so the run pauses cleanly mid-batch.                                                        |
-| Calendar 410 on syncToken                           | `clearSyncToken()` + rebootstrap; `resyncedFromBootstrap: true` in the result.                                                         |
-| Single message / event fails to fetch or parse      | `result.errors++`, `logger.warn`, continue to next ID. Whole run still succeeds.                                                       |
-| Mongo dup-key on `sourceRef`                        | `recordInteraction` returns `null` (`skipIfDuplicate`); `result.skippedExisting++`.                                                    |
-| Tombstoned `Person` (with `suppressReingest: true`) | New interactions still link via the existing `personId`. The Person row itself is left alone.                                          |
+| Trigger                                             | What happens                                                                                                                                                          |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kao 409 `no_grant` (no consent yet on Kao)          | `OAuthError('no_grant')` → `result.status = 'no_grant'`. Not a pause; just an empty run.                                                                              |
+| `KAO_URL`/`KAO_TOKEN` missing                       | Caught at the route level (`POST /sync/.../run`) — `400 bad_request`. Direct calls to `getAccessToken` raise `OAuthError('refresh_failed')`.                          |
+| Kao 409 `invalid_grant` / `decrypt_failed`          | `OAuthError('invalid_grant')` → `pauseWith('invalid_grant')`. Operator re-consents at `${KAO_URL}/oauth/kizuna/start`, then `force: true` clears the pause.           |
+| Kao unreachable / 5xx / bad bearer (401)            | `OAuthError('refresh_failed')` → `recordFailedRun(msg)`, `errorCount++`. Next scheduler tick (or manual run) retries.                                                 |
+| Google 401 inside a client call                     | Client transparently retries with `getAccessToken({ force: true })` (Kao bypasses **its** cache via `?force=1`). A persistent 401 escapes → pause as `invalid_grant`. |
+| Calendar 410 on syncToken                           | `clearSyncToken()` + rebootstrap; `resyncedFromBootstrap: true` in the result.                                                                                        |
+| Single message / event fails to fetch or parse      | `result.errors++`, `logger.warn`, continue to next ID. Whole run still succeeds.                                                                                      |
+| Mongo dup-key on `sourceRef`                        | `recordInteraction` returns `null` (`skipIfDuplicate`); `result.skippedExisting++`.                                                                                   |
+| Tombstoned `Person` (with `suppressReingest: true`) | New interactions still link via the existing `personId`. The Person row itself is left alone.                                                                         |
 
 ## Ad-hoc imports
 
