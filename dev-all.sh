@@ -174,4 +174,4 @@ for c in $ALL; do
   filters+=(--filter="$(pkg_for "$c")")
 done
 
-exec npx turbo run dev "${filters[@]}" --ui="$ui"
+exec npx turbo run dev "${filters[@]}" --ui="$ui" --concurrency=12
