@@ -1,6 +1,7 @@
 import type { Db } from "mongodb";
 import { getDb } from "./mongo.js";
 import { logger } from "../logger.js";
+import { resolvePositiveInt } from "../lib/env.js";
 
 const SECONDS_PER_DAY = 24 * 60 * 60;
 const DEFAULT_LOGS_TTL_DAYS = 30;
@@ -15,35 +16,13 @@ const DEFAULT_ERRORS_TTL_DAYS = 90;
 const MAX_TTL_DAYS = 365;
 
 /**
- * Resolve a day-valued TTL env var to seconds. Bounded by a floor of 1 and a
- * 365-day ceiling. Strict integer parsing — `"30days"` (which `parseInt`
- * would silently accept as `30`) and similar typos fall back to the default
- * with a clear warning instead of mystery semantics.
+ * Resolve a day-valued TTL env var to seconds via the shared positive-int
+ * parser, then cap at 365 days. Anything longer is presumably a typo (and,
+ * for the time-series logs collection, bucket compaction degrades with very
+ * long retention).
  */
 function resolveTtlSeconds(envVar: string, defaultDays: number): number {
-  const raw = process.env[envVar];
-  if (raw === undefined || raw.trim() === "") {
-    return defaultDays * SECONDS_PER_DAY;
-  }
-  const trimmed = raw.trim();
-  if (!/^\d+$/.test(trimmed)) {
-    logger.warn(
-      { envVar, provided: raw, fallback: defaultDays },
-      `${envVar} not a positive integer; using default`,
-    );
-    return defaultDays * SECONDS_PER_DAY;
-  }
-  const days = Number.parseInt(trimmed, 10);
-  if (days < 1) {
-    logger.warn(
-      { envVar, provided: raw, fallback: defaultDays },
-      `${envVar} must be >= 1; using default`,
-    );
-    return defaultDays * SECONDS_PER_DAY;
-  }
-  // Cap at 365 days — anything longer is presumably a typo (and, for the
-  // time-series logs collection, bucket compaction degrades with very long
-  // retention).
+  const days = resolvePositiveInt(envVar, defaultDays);
   return Math.min(days, MAX_TTL_DAYS) * SECONDS_PER_DAY;
 }
 
