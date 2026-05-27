@@ -183,36 +183,50 @@ reconcile two time domains.
 }
 ```
 
-Implementation lives in `storage/errors.ts::evaluateSpike`. Per
-fingerprint the `errors` doc tracks `windowStart`, `windowCount`, and
+Implementation lives in `storage/errors.ts`. Per fingerprint the
+`errors` doc tracks `windowStart`, `windowCount`, and
 `lastSpikeAlertAt`; these are server-side projection-stripped from
 `GET /v1/errors` responses so the wire shape is unchanged for the
 dashboard and `kansoku-debug`.
 
-Three guards keep the alert tight:
+**Storage upsert** — `recordErrors` groups the incoming docs by
+fingerprint and issues one aggregation-pipeline `updateOne` per
+group. The pipeline uses `$min` / `$max` / `$ifNull` / `$add` /
+`$concatArrays`-with-`$slice` so the same shape works on insert and
+update, and so the doc state is monotonic across out-of-order or
+replayed batches: `firstSeen` only moves earlier, `lastSeen` only
+moves later, `count` accumulates, `recentTraceIds` is capped at 20
+post-concat. The TTL index on `errors_last_seen` is therefore safe
+against a replay batch rewinding `lastSeen` and prematurely
+evicting an active fingerprint.
 
-1. **Webhook short-circuit.** `evaluateSpike` no-ops before any Mongo
-   write when `KANSOKU_ALERT_WEBHOOK_URL` is unset — without a consumer
-   the state has no purpose, so a deployment with alerts off pays
-   nothing for this feature.
-2. **Replay guard.** If the triggering log's `ts` is older than
-   `KANSOKU_SPIKE_WINDOW_MINUTES`, the eval is skipped entirely.
-   Spike alerts mean "this is happening now"; a backfill / buffer
-   drain arriving at wall-clock now shouldn't page.
-3. **Batch grouping.** `recordErrors` groups the incoming docs by
-   fingerprint and issues one `updateOne` per group with
-   `$inc: count: groupLen`. Same-batch concurrency that used to race
-   N parallel upserts is now impossible: a brand-new fingerprint with
-   100 logs in one batch fires the new-error alert once and never
-   trips spike from its own first sighting.
+**Spike eval** — `evaluateSpike` runs only when (a) the upsert
+didn't insert (existing fingerprint), (b) at least one doc in the
+group is within the spike window, and (c) `KANSOKU_ALERT_WEBHOOK_URL`
+is set. Replay-only groups produce `inWindowIncrement === 0` and
+skip eval; the storage upsert still records them. The `increment`
+passed to `evaluateSpike` is the count of in-window docs only, so a
+mixed batch of stale + fresh docs counts only the fresh ones toward
+spike — even when the array order happens to place a fresh doc last
+(or first).
 
-The roll itself is an aggregation-pipeline `findOneAndUpdate` with a
-hoisted `__reset` predicate (so the boolean isn't duplicated for both
-the `windowStart` and `windowCount` `$cond`s). If post-roll count meets
-the threshold, a conditional `updateOne` atomically claims the
-cooldown by setting `lastSpikeAlertAt`; the guard checks
-`matchedCount === 0` (not `modifiedCount`) so a byte-identical
-post-image can't be misread as a missed claim.
+**Same-batch protection** — a brand-new fingerprint with 100 logs
+in one batch fires the new-error alert once and never trips spike
+from its own first sighting. The window seed is `windowCount: 0`
+(not `groupDocs.length`) so the next batch's eval doesn't inherit a
+phantom backlog: a single follow-up error rolls windowCount to 1,
+not 101.
+
+**Window roll** — aggregation-pipeline `findOneAndUpdate` with a
+hoisted `__reset` predicate (so the boolean isn't duplicated for
+both the `windowStart` and `windowCount` `$cond`s, and so legacy
+partial state — `windowStart` set but `windowCount` missing — also
+triggers a reset).
+
+**Cooldown claim** — a conditional `updateOne` atomically sets
+`lastSpikeAlertAt`; the guard checks `matchedCount === 0` (not
+`modifiedCount`) so a byte-identical post-image can't be misread as
+a missed claim.
 
 Both shapes work directly with Discord/Slack-style hooks, and a generic
 endpoint can map them onward.

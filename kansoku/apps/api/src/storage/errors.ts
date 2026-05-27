@@ -43,6 +43,7 @@ async function getErrorsCollection(): Promise<Collection<ErrorRecord>> {
 
 interface FingerprintGroup {
   fp: ErrorFingerprint;
+  /** Docs sorted ascending by `ts` so `[0]` is the earliest and `[-1]` the latest. */
   docs: StoredLog[];
 }
 
@@ -51,27 +52,35 @@ interface FingerprintGroup {
  * by fingerprint so each unique error in the batch becomes exactly one
  * upsert.
  *
- * Grouping (vs. one upsert per doc) is load-bearing for two reasons:
+ * Grouping (vs. one upsert per doc) is load-bearing:
  *
  *   1. Same-batch duplicate suppression. Without grouping, a batch with N
  *      logs of a brand-new fingerprint would race N parallel upserts; one
  *      wins (`upsertedCount === 1`, fires the new-error alert) and the
- *      other N-1 fall into `evaluateSpike`, which can cross the threshold
- *      from the same batch — surfacing as a double-fire (new-error AND
- *      spike) for the very first sighting. Grouping eliminates the race.
+ *      other N-1 fall into `evaluateSpike`, which could cross the
+ *      threshold from the same batch.
  *
- *   2. Mongo round-trip economy. A batch of N same-fingerprint errors now
- *      costs one `updateOne` instead of N.
+ *   2. Mongo round-trip economy. A batch of N same-fingerprint errors
+ *      costs one update instead of N.
  *
- * `evaluateSpike` is only entered for groups that hit existing fingerprints
- * (the new-error path returns early on an upsert). Spike state lives on
- * each `errors` doc and is rolled atomically per evaluation — see the
- * function-level docstring.
+ * The upsert is an aggregation-pipeline update so that:
+ *   - `firstSeen` uses `$min` (monotonic even across out-of-order batches)
+ *   - `lastSeen` uses `$max` (monotonic; a replay of stale logs cannot
+ *     rewind the field — which would otherwise prematurely trip the TTL
+ *     index `errors_last_seen` and re-fire new-error after eviction)
+ *   - `recentTraceIds` is rebuilt via `$concatArrays` + `$slice`
+ *   - Spike-state seeds (`windowStart`, `windowCount`) use `$ifNull` so
+ *     they only seed on the very first sighting
+ *
+ * `evaluateSpike` is only entered when the upsert was NOT an insert
+ * (existing fingerprint) AND at least one doc in the group is within the
+ * spike window (`now - doc.ts <= windowMs`). Replay batches whose docs
+ * are entirely old don't trip spike but still update storage truthfully.
  */
 export async function recordErrors(docs: StoredLog[]): Promise<void> {
-  const coll = await getErrorsCollection();
+  // Build groups first — the Mongo handle acquire is unnecessary for
+  // batches that contain zero error-level rows (the common case).
   const groups = new Map<string, FingerprintGroup>();
-
   for (const doc of docs) {
     if (!ERROR_LEVELS.has(doc.meta.level)) continue;
     const fp = fingerprintErrorLog(doc);
@@ -80,68 +89,103 @@ export async function recordErrors(docs: StoredLog[]): Promise<void> {
     if (existing) existing.docs.push(doc);
     else groups.set(fp.fingerprint, { fp, docs: [doc] });
   }
+  if (groups.size === 0) return;
 
+  // Sort each group's docs ascending by ts so first.ts is the earliest
+  // (drives $min firstSeen, new-error firstSeen payload, first.traceId
+  // fallback) and last.ts is the latest (drives $max lastSeen and the
+  // replay-guard reference).
+  for (const group of groups.values()) {
+    group.docs.sort((a, b) => a.ts.getTime() - b.ts.getTime());
+  }
+
+  const coll = await getErrorsCollection();
+  const cfg = getSpikeConfig();
+  const windowMs = cfg.windowMinutes * 60_000;
+  const now = new Date();
+  const windowCutoffMs = now.getTime() - windowMs;
   const ops: Promise<void>[] = [];
 
   for (const group of groups.values()) {
     const { fp, docs: groupDocs } = group;
     const first = groupDocs[0]!;
     const last = groupDocs[groupDocs.length - 1]!;
-
-    const setOnInsert: Partial<ErrorRecord> = {
-      service: first.meta.service,
-      component: first.meta.component,
-      message: fp.message,
-      firstSeen: first.ts,
-      // Seed the spike-detection window with this group's count, so a
-      // fresh-fingerprint burst that arrives after deployment doesn't
-      // start its counter pre-charged with old data — and so a future
-      // existing-fingerprint eval starts from a known state.
-      windowStart: new Date(),
-      windowCount: groupDocs.length,
-    };
-    if (fp.name !== undefined) setOnInsert.name = fp.name;
-    if (fp.sampleStack !== undefined) setOnInsert.sampleStack = fp.sampleStack;
-    if (first.msg !== undefined) setOnInsert.sampleMsg = first.msg;
+    // Only docs whose ts is within the current spike window contribute
+    // to the spike counter. Replay-only groups produce inWindowIncrement
+    // === 0 → evaluateSpike is skipped, but the storage upsert still
+    // records them faithfully.
+    const inWindowIncrement = groupDocs.reduce(
+      (n, d) => (d.ts.getTime() >= windowCutoffMs ? n + 1 : n),
+      0,
+    );
 
     const traceIds: string[] = [];
+    // Pick the first available traceId across the (ts-ascending) group
+    // so the new-error payload's traceId, when present, corresponds to
+    // an actual representative of `firstSeen` rather than a tail-of-batch
+    // accident. Falls through to undefined if no doc in the group is
+    // traced.
+    let firstTraceId: string | undefined;
     for (const d of groupDocs) {
-      if (d.traceId) traceIds.push(d.traceId);
+      if (d.traceId) {
+        traceIds.push(d.traceId);
+        if (firstTraceId === undefined) firstTraceId = d.traceId;
+      }
     }
 
-    const update: Record<string, unknown> = {
-      $setOnInsert: setOnInsert,
-      $set: { lastSeen: last.ts },
-      $inc: { count: groupDocs.length },
+    // Aggregation-pipeline upsert. Every field uses an existing-aware
+    // operator ($min/$max/$ifNull/$add/$concatArrays) so the same shape
+    // works for both insert and update.
+    const setStage: Record<string, unknown> = {
+      service: { $ifNull: ["$service", first.meta.service] },
+      component: { $ifNull: ["$component", first.meta.component] },
+      message: { $ifNull: ["$message", fp.message] },
+      firstSeen: { $min: [{ $ifNull: ["$firstSeen", first.ts] }, first.ts] },
+      lastSeen: { $max: [{ $ifNull: ["$lastSeen", new Date(0)] }, last.ts] },
+      count: { $add: [{ $ifNull: ["$count", 0] }, groupDocs.length] },
+      // Seeds: only take effect on insert (existing values are preserved).
+      // `windowCount: 0` (not groupDocs.length) so the new-error path
+      // doesn't pre-charge the next spike eval with this batch's volume —
+      // a phantom backlog that would make the very next live error fire
+      // a spike alert with a misleadingly large count.
+      windowStart: { $ifNull: ["$windowStart", now] },
+      windowCount: { $ifNull: ["$windowCount", 0] },
+      recentTraceIds: {
+        $slice: [
+          { $concatArrays: [{ $ifNull: ["$recentTraceIds", []] }, traceIds] },
+          -RECENT_TRACE_CAP,
+        ],
+      },
     };
-    if (traceIds.length > 0) {
-      // Mongo forbids touching the same path in $setOnInsert and $push in
-      // one update; $push with $slice creates the array on insert anyway.
-      update.$push = { recentTraceIds: { $each: traceIds, $slice: -RECENT_TRACE_CAP } };
-    } else {
-      setOnInsert.recentTraceIds = [];
-    }
+    // Optional fields — only conditionally project so a $set with undefined
+    // doesn't unset an existing value via BSON's missing-field semantics.
+    if (fp.name !== undefined) setStage.name = { $ifNull: ["$name", fp.name] };
+    if (fp.sampleStack !== undefined)
+      setStage.sampleStack = { $ifNull: ["$sampleStack", fp.sampleStack] };
+    if (first.msg !== undefined) setStage.sampleMsg = { $ifNull: ["$sampleMsg", first.msg] };
 
     ops.push(
       (async () => {
-        const result = await coll.updateOne({ _id: fp.fingerprint }, update, { upsert: true });
+        const result = await coll.updateOne({ _id: fp.fingerprint }, [{ $set: setStage }], {
+          upsert: true,
+        });
         if (result.upsertedCount > 0) {
-          // Brand-new fingerprint — fire the new-error alert and skip the
-          // spike eval. The seed `windowCount = groupDocs.length` means
-          // the next batch's eval starts from the correct baseline.
+          // Brand-new fingerprint — fire the new-error alert. Skip spike
+          // eval; the new-error covers this batch.
           void postAlert({
             kind: "kansoku.error.new",
             fingerprint: fp.fingerprint,
             service: first.meta.service,
             component: first.meta.component,
-            name: fp.name,
+            ...(fp.name !== undefined ? { name: fp.name } : {}),
             message: fp.message,
             firstSeen: first.ts.toISOString(),
-            ...(last.traceId ? { traceId: last.traceId } : {}),
+            ...(firstTraceId !== undefined ? { traceId: firstTraceId } : {}),
           } satisfies NewErrorPayload);
           return;
         }
-        await evaluateSpike(coll, last, fp, groupDocs.length);
+        if (inWindowIncrement === 0) return;
+        await evaluateSpike(coll, last, fp, inWindowIncrement, cfg, now);
       })(),
     );
   }
@@ -149,14 +193,12 @@ export async function recordErrors(docs: StoredLog[]): Promise<void> {
   const results = await Promise.allSettled(ops);
   const failures = results.filter((r) => r.status === "rejected");
   if (failures.length > 0) {
+    const firstReason: unknown = (failures[0] as PromiseRejectedResult).reason;
     logger.warn(
       {
         failed: failures.length,
         total: ops.length,
-        sample:
-          (failures[0] as PromiseRejectedResult).reason instanceof Error
-            ? ((failures[0] as PromiseRejectedResult).reason as Error).message
-            : String((failures[0] as PromiseRejectedResult).reason),
+        sample: firstReason instanceof Error ? firstReason.message : String(firstReason),
       },
       "kansoku error registry: partial upsert failure",
     );
@@ -165,52 +207,38 @@ export async function recordErrors(docs: StoredLog[]): Promise<void> {
 
 /**
  * Roll the per-fingerprint fixed-window counter for one group of size
- * `increment` and, if the post-roll count crosses the threshold, fire a
- * spike alert exactly once per cooldown.
+ * `increment` (in-window docs only) and, if the post-roll count crosses
+ * the threshold, fire a spike alert exactly once per cooldown.
  *
  * Short-circuits before any Mongo write when no webhook URL is configured —
- * the alert state has no consumer in that case, so paying for the writes
- * would contradict the "no webhook → no effect" claim in configuration.md.
+ * the alert state has no consumer in that case.
  *
- * Skips on replay: if the triggering log's `ts` is older than the spike
- * window, the alert is about "errors arriving NOW" and a replay shouldn't
- * trip it, regardless of how many old docs land in the same batch.
- *
- * Two server-side updates back the eval so concurrent ingest stays correct:
+ * Two server-side updates back the eval:
  *
  *  1. Aggregation-pipeline `findOneAndUpdate` advances windowStart /
  *     windowCount. A prior `$addFields` stage materializes the reset
  *     predicate as `__reset` so the same boolean expression isn't written
- *     twice (and can't drift); the `$set` stage references `"$__reset"`
- *     and a final `$unset` clears the temp field.
+ *     twice (and can't drift); the predicate considers BOTH windowStart
+ *     and windowCount missing — a legacy partial state shouldn't slip
+ *     past the reset.
  *
  *  2. If the post-roll count meets the threshold, a conditional `updateOne`
  *     claims the cooldown by setting lastSpikeAlertAt. The filter only
- *     matches when no recent alert exists; we check `matchedCount` (not
- *     `modifiedCount`) so a hypothetical byte-identical post-image can't
- *     be misread as a missed claim.
+ *     matches when no recent alert exists; we check `matchedCount` so the
+ *     semantic is "filter missed" not "value unchanged".
  */
 async function evaluateSpike(
   coll: Collection<ErrorRecord>,
   doc: StoredLog,
   fp: ErrorFingerprint,
   increment: number,
+  cfg: ReturnType<typeof getSpikeConfig>,
+  now: Date,
 ): Promise<void> {
-  // Short-circuit when alerts are disabled. Without a consumer the spike
-  // state is dead weight; skip the Mongo writes entirely so the no-webhook
-  // deployment pays nothing for this feature.
   if (!getWebhookUrl()) return;
 
-  const cfg = getSpikeConfig();
-  const now = new Date();
   const windowMs = cfg.windowMinutes * 60_000;
   const cooldownMs = cfg.cooldownMinutes * 60_000;
-
-  // Replay guard. Spike alerts mean "this is happening now"; a batch of
-  // old logs (NTP step, shipper buffer drain across a long outage, manual
-  // backfill) shouldn't page even though it arrives at wall-clock now.
-  if (now.getTime() - doc.ts.getTime() > windowMs) return;
-
   const windowCutoff = new Date(now.getTime() - windowMs);
   const cooldownCutoff = new Date(now.getTime() - cooldownMs);
 
@@ -222,6 +250,7 @@ async function evaluateSpike(
           __reset: {
             $or: [
               { $eq: [{ $type: "$windowStart" }, "missing"] },
+              { $eq: [{ $type: "$windowCount" }, "missing"] },
               { $lt: ["$windowStart", windowCutoff] },
             ],
           },
@@ -243,11 +272,6 @@ async function evaluateSpike(
   if (!rolled || rolled.windowCount === undefined || rolled.windowStart === undefined) return;
   if (rolled.windowCount < cfg.threshold) return;
 
-  // Atomic cooldown claim — the filter matches only if no fresh alert is
-  // recorded. Concurrent ingest of the same fingerprint races here; whoever
-  // wins fires the alert, the rest see `matchedCount === 0` and skip. We
-  // check `matchedCount` rather than `modifiedCount` so the semantic is
-  // "filter missed" not "value unchanged".
   const claim = await coll.updateOne(
     {
       _id: fp.fingerprint,
