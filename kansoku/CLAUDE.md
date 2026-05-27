@@ -10,6 +10,10 @@ This file is the project guide. Cross-service facts live in the workspace root: 
 
 ## Status
 
+**Phase 9 — spike alerts live.** On top of Phases 0–8:
+
+- `KANSOKU_ALERT_WEBHOOK_URL` now fires a second payload, `kansoku.error.spike`, when a **known** fingerprint hits `KANSOKU_SPIKE_THRESHOLD` (default 10) occurrences inside `KANSOKU_SPIKE_WINDOW_MINUTES` (default 5). Re-fires are gated by `KANSOKU_SPIKE_COOLDOWN_MINUTES` (default 60) so a sustained outage doesn't pager-storm. State (`windowStart`/`windowCount`/`lastSpikeAlertAt`) lives on each `errors` doc; window roll is an aggregation-pipeline `findOneAndUpdate` and the cooldown is claimed by a second conditional `updateOne` so concurrent ingest of the same fingerprint can't double-fire. Wall-clock `Date.now()` drives the window (not the log's `ts`) so a batched replay of old errors doesn't trip the spike path. Both alert kinds share the same webhook URL and the same fail-open posture (5 s timeout, swallowed errors).
+
 **Phase 8 — prod-hardening (branch `logging-prod-hardening`, not yet on `main`).** On top of Phases 0–7:
 
 - **Wire format is ECS / OTel** (`log.level`, `@timestamp`, `service.{name,environment,component}`, `host.name`, `process.pid`, `trace.id`, `span.{id,parent.id}`, `error.{type,message,stack_trace}`, `message`). `lib/envelope.ts` tolerantly accepts BOTH the ECS shape and the legacy flat form and normalizes both to the unchanged internal `StoredLog`, so queries/metrics/errors/dashboard are untouched and producers/consumer needn't restart in lock-step.
@@ -65,7 +69,7 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │   │   │   │   ├── cors.ts      # *.localhost echo for the dashboard
 │   │   │   │   ├── log-events.ts # in-process broadcaster + 500-entry ring
 │   │   │   │   ├── fingerprint.ts # error signature builder (ECS + legacy error shapes)
-│   │   │   │   └── alerts.ts    # fail-open webhook for new error fingerprints
+│   │   │   │   └── alerts.ts    # fail-open webhook: new-error + spike alerts
 │   │   │   ├── server.ts        # createApp() + main() boot
 │   │   │   └── logger.ts        # @kagami/logger wrapper
 │   │   ├── tests/               # vitest + mongodb-memory-server harness
@@ -187,7 +191,7 @@ Common tasks → files. When a task touches multiple files, all are listed.
 | Query route (`GET /v1/logs`, `GET /v1/traces/:id`)      | `apps/api/src/routes/query.ts`                                                             |
 | Span folding (`event.kind:"span"` → `spans` collection) | `apps/api/src/storage/spans.ts`                                                            |
 | Cardinality budget                                      | `apps/api/src/lib/cardinality.ts`                                                          |
-| New-error webhook alerter                               | `apps/api/src/lib/alerts.ts`                                                               |
+| Webhook alerter (new-error + spike)                     | `apps/api/src/lib/alerts.ts`; spike evaluator in `apps/api/src/storage/errors.ts`          |
 | Bearer-token auth middleware                            | `apps/api/src/lib/auth.ts`                                                                 |
 | Dashboard page                                          | `apps/dashboard/src/app/<route>/page.tsx`; data fetcher at `apps/dashboard/src/lib/api.ts` |
 | kansoku-debug CLI                                       | `apps/api/scripts/kansoku-debug.ts` (invoked via `npm run kansoku:debug -- <subcommand>`)  |
