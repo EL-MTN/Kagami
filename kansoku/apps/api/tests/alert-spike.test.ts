@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http";
-import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { setupTestMongo, teardownTestMongo } from "./helpers/mongo.ts";
 import type { StoredLog } from "../src/storage/logs.ts";
 import type { ErrorRecord } from "../src/storage/errors.ts";
@@ -36,10 +36,21 @@ function makeLog(overrides: Partial<StoredLog> = {}): StoredLog {
   };
 }
 
-async function waitForAlerts(min: number, timeoutMs = 2_000): Promise<void> {
+// Wait until `captured` has at least `min` alerts AND no new alerts have
+// arrived in the last `quietMs`. The recordErrors call resolves before its
+// fire-and-forget `void postAlert(...)` chain lands, so a naïve "polled
+// length >= min" returns too early and lets late arrivals leak into the
+// next test's `captured`. Quiescence makes the wait robust.
+async function waitForAlerts(min: number, timeoutMs = 3_000, quietMs = 80): Promise<void> {
   const deadline = Date.now() + timeoutMs;
+  let lastChange = Date.now();
+  let lastLength = captured.length;
   while (Date.now() < deadline) {
-    if (captured.length >= min) return;
+    if (captured.length !== lastLength) {
+      lastLength = captured.length;
+      lastChange = Date.now();
+    }
+    if (captured.length >= min && Date.now() - lastChange >= quietMs) return;
     await new Promise((r) => setTimeout(r, 20));
   }
   throw new Error(
@@ -47,11 +58,21 @@ async function waitForAlerts(min: number, timeoutMs = 2_000): Promise<void> {
   );
 }
 
-// `recordErrors` fires alerts via `void notify*(...)` — the call resolves
-// before the webhook POST lands. Drain by waiting one event-loop tick plus
-// a short settle for the fetch round trip to the in-process server.
-async function settle(ms = 100): Promise<void> {
-  await new Promise((r) => setTimeout(r, ms));
+// Wait for the in-flight fire-and-forget POSTs from the previous call to
+// drain, even if the test expects zero alerts (so a late arrival can't
+// pollute the next test).
+async function settle(quietMs = 120): Promise<void> {
+  let lastLength = captured.length;
+  let lastChange = Date.now();
+  const deadline = Date.now() + 1_500;
+  while (Date.now() < deadline) {
+    if (captured.length !== lastLength) {
+      lastLength = captured.length;
+      lastChange = Date.now();
+    }
+    if (Date.now() - lastChange >= quietMs) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
 }
 
 beforeAll(async () => {
@@ -86,17 +107,19 @@ beforeAll(async () => {
   const addr = webhookServer.address();
   if (!addr || typeof addr === "string") throw new Error("webhook server did not bind");
   webhookUrl = `http://127.0.0.1:${addr.port}/`;
-  process.env.KANSOKU_ALERT_WEBHOOK_URL = webhookUrl;
-  process.env.KANSOKU_SPIKE_THRESHOLD = "5";
-  process.env.KANSOKU_SPIKE_WINDOW_MINUTES = "5";
-  process.env.KANSOKU_SPIKE_COOLDOWN_MINUTES = "60";
+  // vi.stubEnv auto-unstubs in afterAll (via `unstubEnvs: true` if
+  // configured, otherwise via the explicit call below) — strictly safer
+  // than direct process.env mutation under any future pool/isolation
+  // change. Tests within this file still see the stubbed values via
+  // process.env reads (vitest forwards both).
+  vi.stubEnv("KANSOKU_ALERT_WEBHOOK_URL", webhookUrl);
+  vi.stubEnv("KANSOKU_SPIKE_THRESHOLD", "5");
+  vi.stubEnv("KANSOKU_SPIKE_WINDOW_MINUTES", "5");
+  vi.stubEnv("KANSOKU_SPIKE_COOLDOWN_MINUTES", "60");
 });
 
 afterAll(async () => {
-  delete process.env.KANSOKU_ALERT_WEBHOOK_URL;
-  delete process.env.KANSOKU_SPIKE_THRESHOLD;
-  delete process.env.KANSOKU_SPIKE_WINDOW_MINUTES;
-  delete process.env.KANSOKU_SPIKE_COOLDOWN_MINUTES;
+  vi.unstubAllEnvs();
   await new Promise<void>((resolve, reject) => {
     webhookServer.close((err) => (err ? reject(err) : resolve()));
   });
@@ -107,10 +130,11 @@ beforeEach(() => {
   captured.length = 0;
 });
 
-// Reset the errors collection between tests so window/cooldown state
-// doesn't leak across cases. Each test stages its own fingerprint via
-// distinct msgs anyway, but a clean slate makes assertions deterministic.
+// Drain any in-flight late arrivals before clearing the errors collection,
+// then clear the collection so window/cooldown state doesn't leak across
+// tests.
 afterEach(async () => {
+  await settle();
   const { getDb } = await import("../src/storage/mongo.ts");
   const db = await getDb();
   await db.collection<ErrorRecord>("errors").deleteMany({});
@@ -146,7 +170,6 @@ describe("spike alerts", () => {
       await recordErrors([makeLog({ msg: "spike-A", fields: undefined })]);
     }
     await waitForAlerts(2);
-    await settle();
     const newAlerts = captured.filter((a) => a.kind === "kansoku.error.new");
     const spikes = captured.filter((a) => a.kind === "kansoku.error.spike");
     expect(newAlerts).toHaveLength(1);
@@ -163,7 +186,6 @@ describe("spike alerts", () => {
       await recordErrors([makeLog({ msg: "spike-B", fields: undefined })]);
     }
     await waitForAlerts(2);
-    await settle(200);
     const spikes = captured.filter((a) => a.kind === "kansoku.error.spike");
     expect(spikes).toHaveLength(1);
     expect(spikes[0]!.body.count).toBe(5);
@@ -184,30 +206,22 @@ describe("spike alerts", () => {
     const fp = fingerprintErrorLog(makeLog({ msg: "spike-C", fields: undefined }));
     if (!fp) throw new Error("could not fingerprint test log");
     const db = await getDb();
-    // Rewind lastSpikeAlertAt past the 60-min cooldown.
-    await db
-      .collection<ErrorRecord>("errors")
-      .updateOne(
-        { _id: fp.fingerprint },
-        { $set: { lastSpikeAlertAt: new Date(Date.now() - 90 * 60_000) } },
-      );
-    // Also collapse the existing window so the next batch re-rolls a
-    // fresh window (otherwise it would still be inside the previous one
-    // and immediately re-trip without exercising the post-cooldown path).
-    await db
-      .collection<ErrorRecord>("errors")
-      .updateOne(
-        { _id: fp.fingerprint },
-        { $set: { windowStart: new Date(Date.now() - 90 * 60_000), windowCount: 0 } },
-      );
+    await db.collection<ErrorRecord>("errors").updateOne(
+      { _id: fp.fingerprint },
+      {
+        $set: {
+          lastSpikeAlertAt: new Date(Date.now() - 90 * 60_000),
+          windowStart: new Date(Date.now() - 90 * 60_000),
+          windowCount: 0,
+        },
+      },
+    );
 
     captured.length = 0;
-    // 5 more errors → new window, hits threshold, fires once more.
     for (let i = 0; i < 5; i += 1) {
       await recordErrors([makeLog({ msg: "spike-C", fields: undefined })]);
     }
     await waitForAlerts(1);
-    await settle();
     const spikes = captured.filter((a) => a.kind === "kansoku.error.spike");
     expect(spikes).toHaveLength(1);
     expect(spikes[0]!.body.count).toBe(5);
@@ -218,19 +232,17 @@ describe("spike alerts", () => {
     const { fingerprintErrorLog } = await import("../src/lib/fingerprint.ts");
     const { getDb } = await import("../src/storage/mongo.ts");
 
-    // Below-threshold burst: 3 errors → new + windowCount = 3.
     for (let i = 0; i < 3; i += 1) {
       await recordErrors([makeLog({ msg: "spike-D", fields: undefined })]);
     }
     await waitForAlerts(1);
-    await settle();
     expect(captured.filter((a) => a.kind === "kansoku.error.spike")).toHaveLength(0);
 
     const fp = fingerprintErrorLog(makeLog({ msg: "spike-D", fields: undefined }));
     if (!fp) throw new Error("could not fingerprint test log");
     const db = await getDb();
-    // Age the window past the 5-minute window — next eval should reset
-    // count to 1, *not* continue from 3.
+    // Age the window past windowMinutes — next eval should reset count to
+    // 1, not continue from 3.
     await db
       .collection<ErrorRecord>("errors")
       .updateOne(
@@ -239,8 +251,6 @@ describe("spike alerts", () => {
       );
 
     captured.length = 0;
-    // 4 more errors. If the window reset, count goes 1→4 (no spike).
-    // If the window had NOT reset, count would be 4→7 and fire on #2.
     for (let i = 0; i < 4; i += 1) {
       await recordErrors([makeLog({ msg: "spike-D", fields: undefined })]);
     }
@@ -253,8 +263,7 @@ describe("spike alerts", () => {
 
   it("does not fire alerts when KANSOKU_ALERT_WEBHOOK_URL is unset", async () => {
     const { recordErrors } = await import("../src/storage/errors.ts");
-    const prev = process.env.KANSOKU_ALERT_WEBHOOK_URL;
-    delete process.env.KANSOKU_ALERT_WEBHOOK_URL;
+    vi.stubEnv("KANSOKU_ALERT_WEBHOOK_URL", "");
     try {
       for (let i = 0; i < 5; i += 1) {
         await recordErrors([makeLog({ msg: "spike-E", fields: undefined })]);
@@ -262,7 +271,82 @@ describe("spike alerts", () => {
       await settle();
       expect(captured).toHaveLength(0);
     } finally {
-      process.env.KANSOKU_ALERT_WEBHOOK_URL = prev;
+      vi.stubEnv("KANSOKU_ALERT_WEBHOOK_URL", webhookUrl);
+    }
+  });
+
+  it("skips the spike eval when the log's ts is older than the window (replay)", async () => {
+    const { recordErrors } = await import("../src/storage/errors.ts");
+    // Seed the fingerprint via a real-time first sighting so the new-error
+    // alert fires once.
+    await recordErrors([makeLog({ msg: "spike-F", fields: undefined })]);
+    await waitForAlerts(1);
+
+    captured.length = 0;
+    // Replay 20 errors with a stale ts (older than the 5-min window).
+    const oldTs = new Date(Date.now() - 60 * 60_000);
+    const replay: StoredLog[] = Array.from({ length: 20 }, () =>
+      makeLog({ msg: "spike-F", ts: oldTs, fields: undefined }),
+    );
+    await recordErrors(replay);
+    await settle();
+    // Replay guard should suppress the spike alert despite hitting the
+    // threshold count.
+    expect(captured.filter((a) => a.kind === "kansoku.error.spike")).toHaveLength(0);
+  });
+
+  it("does not fire a spike on a brand-new fingerprint even when the batch contains threshold+ logs", async () => {
+    const { recordErrors } = await import("../src/storage/errors.ts");
+    // Batch of 20 identical brand-new errors. Grouping folds them into one
+    // upsert: new-error fires once, spike does NOT fire (per design — a
+    // fingerprint we just learned about can't be "spiking" against its
+    // own absent history).
+    const batch: StoredLog[] = Array.from({ length: 20 }, () =>
+      makeLog({ msg: "spike-G", fields: undefined }),
+    );
+    await recordErrors(batch);
+    await waitForAlerts(1);
+    const newAlerts = captured.filter((a) => a.kind === "kansoku.error.new");
+    const spikes = captured.filter((a) => a.kind === "kansoku.error.spike");
+    expect(newAlerts).toHaveLength(1);
+    expect(spikes).toHaveLength(0);
+  });
+
+  it("fires exactly one spike for a single-batch burst on an existing fingerprint", async () => {
+    const { recordErrors } = await import("../src/storage/errors.ts");
+    // Seed the fingerprint with a single real-time error so subsequent
+    // batches take the existing-fingerprint path.
+    await recordErrors([makeLog({ msg: "spike-H", fields: undefined })]);
+    await waitForAlerts(1);
+
+    captured.length = 0;
+    // One batch of 100 identical errors — grouping folds them to one
+    // updateOne + one evaluateSpike. Exactly one spike payload should
+    // land; the cooldown gate guarantees at-most-one even under
+    // concurrent calls to evaluateSpike inside the batch.
+    const burst: StoredLog[] = Array.from({ length: 100 }, () =>
+      makeLog({ msg: "spike-H", fields: undefined }),
+    );
+    await recordErrors(burst);
+    await waitForAlerts(1);
+    const spikes = captured.filter((a) => a.kind === "kansoku.error.spike");
+    expect(spikes).toHaveLength(1);
+    // count reflects the full burst (101 = 1 seed + 100 batch).
+    expect(spikes[0]!.body.count).toBe(101);
+  });
+
+  it("rejects KANSOKU_SPIKE_THRESHOLD=1 and falls back to the default", async () => {
+    // The floor of 2 in the env parser keeps threshold=1 unreachable
+    // (which would otherwise be a no-op edge case since the first
+    // sighting always takes the new-error path).
+    vi.stubEnv("KANSOKU_SPIKE_THRESHOLD", "1");
+    try {
+      const { getSpikeConfig } = await import("../src/lib/alerts.ts");
+      const cfg = getSpikeConfig();
+      // Default is 10; threshold=1 should NOT take effect.
+      expect(cfg.threshold).toBe(10);
+    } finally {
+      vi.stubEnv("KANSOKU_SPIKE_THRESHOLD", "5");
     }
   });
 });

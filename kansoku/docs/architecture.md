@@ -159,10 +159,13 @@ do NOT re-fire this.
 
 **`kansoku.error.spike`** — fires when a known fingerprint's count
 inside the rolling window crosses `KANSOKU_SPIKE_THRESHOLD` (default
-10). Subsequent crossings of the same fingerprint stay silent for
-`KANSOKU_SPIKE_COOLDOWN_MINUTES` (default 60). Window width is
+10, floor 2). Subsequent crossings of the same fingerprint stay silent
+for `KANSOKU_SPIKE_COOLDOWN_MINUTES` (default 60). Window width is
 `KANSOKU_SPIKE_WINDOW_MINUTES` (default 5). All three are strict
-positive integers; non-integer or `<1` falls back with a warn.
+positive integers; non-integer or below the floor falls back with a
+warn. Both `windowStart` and `lastSeen` in the payload are wall-clock
+(the moment the spike was detected), so consumers don't have to
+reconcile two time domains.
 
 ```json
 {
@@ -182,15 +185,34 @@ positive integers; non-integer or `<1` falls back with a warn.
 
 Implementation lives in `storage/errors.ts::evaluateSpike`. Per
 fingerprint the `errors` doc tracks `windowStart`, `windowCount`, and
-`lastSpikeAlertAt`. On each error ingest of an existing fingerprint, an
-aggregation-pipeline `findOneAndUpdate` resets the window if
-`now - windowStart > windowMinutes` (else increments `windowCount`).
-If post-roll count meets the threshold, a second `updateOne` atomically
-claims the cooldown by setting `lastSpikeAlertAt` — the filter only
-matches when no recent alert is recorded, so concurrent ingest of the
-same fingerprint can't double-fire. Time math uses wall-clock
-`Date.now()`, not the log's `ts`, so a batched replay of old errors
-doesn't trip the spike path.
+`lastSpikeAlertAt`; these are server-side projection-stripped from
+`GET /v1/errors` responses so the wire shape is unchanged for the
+dashboard and `kansoku-debug`.
+
+Three guards keep the alert tight:
+
+1. **Webhook short-circuit.** `evaluateSpike` no-ops before any Mongo
+   write when `KANSOKU_ALERT_WEBHOOK_URL` is unset — without a consumer
+   the state has no purpose, so a deployment with alerts off pays
+   nothing for this feature.
+2. **Replay guard.** If the triggering log's `ts` is older than
+   `KANSOKU_SPIKE_WINDOW_MINUTES`, the eval is skipped entirely.
+   Spike alerts mean "this is happening now"; a backfill / buffer
+   drain arriving at wall-clock now shouldn't page.
+3. **Batch grouping.** `recordErrors` groups the incoming docs by
+   fingerprint and issues one `updateOne` per group with
+   `$inc: count: groupLen`. Same-batch concurrency that used to race
+   N parallel upserts is now impossible: a brand-new fingerprint with
+   100 logs in one batch fires the new-error alert once and never
+   trips spike from its own first sighting.
+
+The roll itself is an aggregation-pipeline `findOneAndUpdate` with a
+hoisted `__reset` predicate (so the boolean isn't duplicated for both
+the `windowStart` and `windowCount` `$cond`s). If post-roll count meets
+the threshold, a conditional `updateOne` atomically claims the
+cooldown by setting `lastSpikeAlertAt`; the guard checks
+`matchedCount === 0` (not `modifiedCount`) so a byte-identical
+post-image can't be misread as a missed claim.
 
 Both shapes work directly with Discord/Slack-style hooks, and a generic
 endpoint can map them onward.
