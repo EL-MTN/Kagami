@@ -10,6 +10,15 @@ This file is the project guide. Cross-service facts live in the workspace root: 
 
 ## Status
 
+**Phase 9 — spike alerts live.** On top of Phases 0–8:
+
+- `KANSOKU_ALERT_WEBHOOK_URL` now fires a second payload, `kansoku.error.spike`, when a **known** fingerprint hits `KANSOKU_SPIKE_THRESHOLD` (default 10, floor 2) occurrences inside `KANSOKU_SPIKE_WINDOW_MINUTES` (default 5). Re-fires are gated by `KANSOKU_SPIKE_COOLDOWN_MINUTES` (default 60) so a sustained outage doesn't pager-storm. State (`windowStart`/`windowCount`/`lastSpikeAlertAt`) lives on each `errors` doc, projection-stripped from `GET /v1/errors` so the wire shape is unchanged for the dashboard/CLI.
+- `recordErrors` issues one aggregation-pipeline `updateOne` per fingerprint group (sorted ascending by `ts`). The pipeline uses `$min`/`$max`/`$ifNull`/`$add`/`$concatArrays` so `firstSeen` only moves earlier and `lastSeen` only moves later regardless of batch order or replay — keeping the `errors_last_seen` TTL safe against stale-ts batches rewinding the field. `recentTraceIds` is rebuilt as `$slice(concat(existing, batch), -20)`. Optional fields (`name`/`sampleStack`/`sampleMsg`) are only projected into the pipeline when defined so BSON missing-field semantics don't `$unset` an existing value.
+- `evaluateSpike` is entered only when the upsert didn't insert AND at least one doc in the group is within the spike window AND the webhook URL is set. The `increment` passed in counts only in-window docs, so a mixed batch of stale + fresh docs contributes only the fresh ones to spike — independent of array order. Replay-only groups still update storage but never page.
+- The `$setOnInsert` seed for `windowCount` is **0** (not the batch length) — a brand-new-fingerprint burst fires only `kansoku.error.new` and leaves the next eval to count from zero, so a single follow-up error rolls to 1 (not 101).
+- Window roll is an aggregation-pipeline `findOneAndUpdate` with a hoisted `__reset` predicate; the predicate triggers on missing `windowStart`, missing `windowCount`, or aged-out `windowStart` (so legacy partial state can't slip past). Cooldown is claimed by a conditional `updateOne` that checks `matchedCount === 0` for the "filter missed" semantic.
+- `postAlert` uses `AbortSignal.timeout(5_000)` (auto-`unref`'d) instead of a manual AbortController/clearTimeout dance; the call sites are `void postAlert(...)` and shutdown is handled by `server.ts::shutdown` calling `process.exit`. The shared positive-integer env parser lives in `lib/env.ts` (also used by `cardinality.ts` and `indexes.ts`). Test helpers `tests/helpers/quiescence.ts` and `tests/helpers/webhook-receiver.ts` factor out the polling + egress patterns.
+
 **Phase 8 — prod-hardening (branch `logging-prod-hardening`, not yet on `main`).** On top of Phases 0–7:
 
 - **Wire format is ECS / OTel** (`log.level`, `@timestamp`, `service.{name,environment,component}`, `host.name`, `process.pid`, `trace.id`, `span.{id,parent.id}`, `error.{type,message,stack_trace}`, `message`). `lib/envelope.ts` tolerantly accepts BOTH the ECS shape and the legacy flat form and normalizes both to the unchanged internal `StoredLog`, so queries/metrics/errors/dashboard are untouched and producers/consumer needn't restart in lock-step.
@@ -65,7 +74,7 @@ kansoku/                # subtree of the Kagami workspace; no project-local pack
 │   │   │   │   ├── cors.ts      # *.localhost echo for the dashboard
 │   │   │   │   ├── log-events.ts # in-process broadcaster + 500-entry ring
 │   │   │   │   ├── fingerprint.ts # error signature builder (ECS + legacy error shapes)
-│   │   │   │   └── alerts.ts    # fail-open webhook for new error fingerprints
+│   │   │   │   └── alerts.ts    # fail-open webhook: new-error + spike alerts
 │   │   │   ├── server.ts        # createApp() + main() boot
 │   │   │   └── logger.ts        # @kagami/logger wrapper
 │   │   ├── tests/               # vitest + mongodb-memory-server harness
@@ -187,7 +196,7 @@ Common tasks → files. When a task touches multiple files, all are listed.
 | Query route (`GET /v1/logs`, `GET /v1/traces/:id`)      | `apps/api/src/routes/query.ts`                                                             |
 | Span folding (`event.kind:"span"` → `spans` collection) | `apps/api/src/storage/spans.ts`                                                            |
 | Cardinality budget                                      | `apps/api/src/lib/cardinality.ts`                                                          |
-| New-error webhook alerter                               | `apps/api/src/lib/alerts.ts`                                                               |
+| Webhook alerter (new-error + spike)                     | `apps/api/src/lib/alerts.ts`; spike evaluator in `apps/api/src/storage/errors.ts`          |
 | Bearer-token auth middleware                            | `apps/api/src/lib/auth.ts`                                                                 |
 | Dashboard page                                          | `apps/dashboard/src/app/<route>/page.tsx`; data fetcher at `apps/dashboard/src/lib/api.ts` |
 | kansoku-debug CLI                                       | `apps/api/scripts/kansoku-debug.ts` (invoked via `npm run kansoku:debug -- <subcommand>`)  |

@@ -136,11 +136,13 @@ same multistream as the console stream and the trace mixin reads
 AsyncLocalStorage synchronously at log-call time; a worker boundary would
 sever both, and the shipper does no CPU-bound work.
 
-A brand-new error fingerprint optionally fires a webhook configured via
-`KANSOKU_ALERT_WEBHOOK_URL`. The hook is fail-open at every step (5 s
-abort, errors swallowed) so an alerting outage can't wedge ingest, and
-only fires on `upsertedCount > 0` — re-occurrences of an existing error
-don't re-alert. Payload:
+Alerts are optional, gated by `KANSOKU_ALERT_WEBHOOK_URL`. The hook is
+fail-open at every step (5 s abort, errors swallowed) so an alerting
+outage can't wedge ingest. Two payload kinds share the same URL:
+
+**`kansoku.error.new`** — fires when an `upsertedCount > 0` upsert
+records a brand-new fingerprint. Re-occurrences of a known fingerprint
+do NOT re-fire this.
 
 ```json
 {
@@ -155,8 +157,79 @@ don't re-alert. Payload:
 }
 ```
 
-That shape works directly with Discord/Slack-style hooks, and a generic
-endpoint can map it onward.
+**`kansoku.error.spike`** — fires when a known fingerprint's count
+inside the rolling window crosses `KANSOKU_SPIKE_THRESHOLD` (default
+10, floor 2). Subsequent crossings of the same fingerprint stay silent
+for `KANSOKU_SPIKE_COOLDOWN_MINUTES` (default 60). Window width is
+`KANSOKU_SPIKE_WINDOW_MINUTES` (default 5). All three are strict
+positive integers; non-integer or below the floor falls back with a
+warn. Both `windowStart` and `lastSeen` in the payload are wall-clock
+(the moment the spike was detected), so consumers don't have to
+reconcile two time domains.
+
+```json
+{
+  "kind": "kansoku.error.spike",
+  "fingerprint": "<16-hex>",
+  "service": "kioku-api",
+  "component": "api",
+  "name": "TypeError",
+  "message": "Cannot read properties of undefined…",
+  "count": 12,
+  "windowMinutes": 5,
+  "windowStart": "2026-05-14T12:00:00.000Z",
+  "lastSeen": "2026-05-14T12:03:42.000Z",
+  "traceId": "<32-hex>"
+}
+```
+
+Implementation lives in `storage/errors.ts`. Per fingerprint the
+`errors` doc tracks `windowStart`, `windowCount`, and
+`lastSpikeAlertAt`; these are server-side projection-stripped from
+`GET /v1/errors` responses so the wire shape is unchanged for the
+dashboard and `kansoku-debug`.
+
+**Storage upsert** — `recordErrors` groups the incoming docs by
+fingerprint and issues one aggregation-pipeline `updateOne` per
+group. The pipeline uses `$min` / `$max` / `$ifNull` / `$add` /
+`$concatArrays`-with-`$slice` so the same shape works on insert and
+update, and so the doc state is monotonic across out-of-order or
+replayed batches: `firstSeen` only moves earlier, `lastSeen` only
+moves later, `count` accumulates, `recentTraceIds` is capped at 20
+post-concat. The TTL index on `errors_last_seen` is therefore safe
+against a replay batch rewinding `lastSeen` and prematurely
+evicting an active fingerprint.
+
+**Spike eval** — `evaluateSpike` runs only when (a) the upsert
+didn't insert (existing fingerprint), (b) at least one doc in the
+group is within the spike window, and (c) `KANSOKU_ALERT_WEBHOOK_URL`
+is set. Replay-only groups produce `inWindowIncrement === 0` and
+skip eval; the storage upsert still records them. The `increment`
+passed to `evaluateSpike` is the count of in-window docs only, so a
+mixed batch of stale + fresh docs counts only the fresh ones toward
+spike — even when the array order happens to place a fresh doc last
+(or first).
+
+**Same-batch protection** — a brand-new fingerprint with 100 logs
+in one batch fires the new-error alert once and never trips spike
+from its own first sighting. The window seed is `windowCount: 0`
+(not `groupDocs.length`) so the next batch's eval doesn't inherit a
+phantom backlog: a single follow-up error rolls windowCount to 1,
+not 101.
+
+**Window roll** — aggregation-pipeline `findOneAndUpdate` with a
+hoisted `__reset` predicate (so the boolean isn't duplicated for
+both the `windowStart` and `windowCount` `$cond`s, and so legacy
+partial state — `windowStart` set but `windowCount` missing — also
+triggers a reset).
+
+**Cooldown claim** — a conditional `updateOne` atomically sets
+`lastSpikeAlertAt`; the guard checks `matchedCount === 0` (not
+`modifiedCount`) so a byte-identical post-image can't be misread as
+a missed claim.
+
+Both shapes work directly with Discord/Slack-style hooks, and a generic
+endpoint can map them onward.
 
 ### Derived metrics (Phase 6)
 
