@@ -1,7 +1,7 @@
 import type { Collection, Filter } from "mongodb";
 import { getDb } from "./mongo.js";
 import { fingerprintErrorLog } from "../lib/fingerprint.js";
-import { notifyNewError } from "../lib/alerts.js";
+import { getSpikeConfig, notifyNewError, notifySpike } from "../lib/alerts.js";
 import { logger } from "../logger.js";
 import type { StoredLog } from "./logs.js";
 
@@ -17,6 +17,13 @@ export interface ErrorRecord {
   lastSeen: Date;
   count: number;
   recentTraceIds: string[];
+  // Spike-detection state. windowStart + windowCount form a fixed-window
+  // counter rolled by `evaluateSpike`; lastSpikeAlertAt gates the cooldown.
+  // All three fields are optional so legacy docs (pre-spike-alerts) coexist
+  // with new docs without a migration.
+  windowStart?: Date;
+  windowCount?: number;
+  lastSpikeAlertAt?: Date;
 }
 
 const RECENT_TRACE_CAP = 20;
@@ -50,6 +57,12 @@ export async function recordErrors(docs: StoredLog[]): Promise<void> {
       component: doc.meta.component,
       message: fp.message,
       firstSeen: doc.ts,
+      // Seed the spike-detection window so a fresh-fingerprint burst needs
+      // exactly `threshold` errors to fire (not `threshold + 1`). On insert
+      // this is error #1; the eval path on subsequent errors increments
+      // from here.
+      windowStart: new Date(),
+      windowCount: 1,
     };
     if (fp.name !== undefined) setOnInsert.name = fp.name;
     if (fp.sampleStack !== undefined) setOnInsert.sampleStack = fp.sampleStack;
@@ -91,7 +104,10 @@ export async function recordErrors(docs: StoredLog[]): Promise<void> {
             firstSeen: doc.ts,
             traceId: doc.traceId,
           });
+          return;
         }
+        // Existing fingerprint — evaluate against the spike threshold.
+        await evaluateSpike(coll, doc, fp);
       })(),
     );
   }
@@ -113,6 +129,105 @@ export async function recordErrors(docs: StoredLog[]): Promise<void> {
       "kansoku error registry: partial upsert failure",
     );
   }
+}
+
+/**
+ * Roll the per-fingerprint fixed-window counter and, if the post-roll count
+ * crosses the threshold, fire a spike alert exactly once per cooldown.
+ *
+ * Two updates are used so concurrent ingest batches stay correct:
+ *
+ *  1. Aggregation-pipeline `findOneAndUpdate` advances `windowStart` /
+ *     `windowCount`. If the existing window is missing or older than
+ *     `now - windowMs`, the window resets to `(now, 1)`; otherwise the
+ *     count is incremented. The pipeline form is atomic per-doc, so two
+ *     concurrent rollers never lose an increment.
+ *
+ *  2. If the post-roll count meets the threshold, an `updateOne` claims the
+ *     cooldown by setting `lastSpikeAlertAt`. The filter only matches when
+ *     no recent alert exists, so only the first concurrent caller fires.
+ *
+ * Wall-clock `Date.now()` is the reference (not `doc.ts`): the alert is
+ * about "errors arriving NOW," and using doc.ts would mis-trigger on a
+ * batched replay of old logs.
+ */
+async function evaluateSpike(
+  coll: Collection<ErrorRecord>,
+  doc: StoredLog,
+  fp: { fingerprint: string; name?: string; message: string },
+): Promise<void> {
+  const cfg = getSpikeConfig();
+  const now = new Date();
+  const windowMs = cfg.windowMinutes * 60_000;
+  const cooldownMs = cfg.cooldownMinutes * 60_000;
+  const windowCutoff = new Date(now.getTime() - windowMs);
+  const cooldownCutoff = new Date(now.getTime() - cooldownMs);
+
+  const rolled = await coll.findOneAndUpdate(
+    { _id: fp.fingerprint },
+    [
+      {
+        $set: {
+          windowStart: {
+            $cond: [
+              {
+                $or: [
+                  { $eq: [{ $type: "$windowStart" }, "missing"] },
+                  { $lt: ["$windowStart", windowCutoff] },
+                ],
+              },
+              now,
+              "$windowStart",
+            ],
+          },
+          windowCount: {
+            $cond: [
+              {
+                $or: [
+                  { $eq: [{ $type: "$windowStart" }, "missing"] },
+                  { $lt: ["$windowStart", windowCutoff] },
+                ],
+              },
+              1,
+              { $add: [{ $ifNull: ["$windowCount", 0] }, 1] },
+            ],
+          },
+        },
+      },
+    ],
+    { returnDocument: "after" },
+  );
+
+  if (!rolled || rolled.windowCount === undefined || rolled.windowStart === undefined) return;
+  if (rolled.windowCount < cfg.threshold) return;
+
+  // Atomic cooldown claim — the filter matches only if no fresh alert is
+  // recorded. Concurrent ingest of the same fingerprint races here; whoever
+  // wins fires the alert, the rest see `modifiedCount === 0` and skip.
+  const claim = await coll.updateOne(
+    {
+      _id: fp.fingerprint,
+      $or: [
+        { lastSpikeAlertAt: { $exists: false } },
+        { lastSpikeAlertAt: { $lt: cooldownCutoff } },
+      ],
+    },
+    { $set: { lastSpikeAlertAt: now } },
+  );
+  if (claim.modifiedCount === 0) return;
+
+  void notifySpike({
+    fingerprint: fp.fingerprint,
+    service: doc.meta.service,
+    component: doc.meta.component,
+    name: fp.name,
+    message: fp.message,
+    count: rolled.windowCount,
+    windowMinutes: cfg.windowMinutes,
+    windowStart: rolled.windowStart,
+    lastSeen: rolled.lastSeen,
+    traceId: doc.traceId,
+  });
 }
 
 export interface ListErrorsOptions {

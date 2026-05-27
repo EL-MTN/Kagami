@@ -136,11 +136,13 @@ same multistream as the console stream and the trace mixin reads
 AsyncLocalStorage synchronously at log-call time; a worker boundary would
 sever both, and the shipper does no CPU-bound work.
 
-A brand-new error fingerprint optionally fires a webhook configured via
-`KANSOKU_ALERT_WEBHOOK_URL`. The hook is fail-open at every step (5 s
-abort, errors swallowed) so an alerting outage can't wedge ingest, and
-only fires on `upsertedCount > 0` — re-occurrences of an existing error
-don't re-alert. Payload:
+Alerts are optional, gated by `KANSOKU_ALERT_WEBHOOK_URL`. The hook is
+fail-open at every step (5 s abort, errors swallowed) so an alerting
+outage can't wedge ingest. Two payload kinds share the same URL:
+
+**`kansoku.error.new`** — fires when an `upsertedCount > 0` upsert
+records a brand-new fingerprint. Re-occurrences of a known fingerprint
+do NOT re-fire this.
 
 ```json
 {
@@ -155,8 +157,43 @@ don't re-alert. Payload:
 }
 ```
 
-That shape works directly with Discord/Slack-style hooks, and a generic
-endpoint can map it onward.
+**`kansoku.error.spike`** — fires when a known fingerprint's count
+inside the rolling window crosses `KANSOKU_SPIKE_THRESHOLD` (default
+10). Subsequent crossings of the same fingerprint stay silent for
+`KANSOKU_SPIKE_COOLDOWN_MINUTES` (default 60). Window width is
+`KANSOKU_SPIKE_WINDOW_MINUTES` (default 5). All three are strict
+positive integers; non-integer or `<1` falls back with a warn.
+
+```json
+{
+  "kind": "kansoku.error.spike",
+  "fingerprint": "<16-hex>",
+  "service": "kioku-api",
+  "component": "api",
+  "name": "TypeError",
+  "message": "Cannot read properties of undefined…",
+  "count": 12,
+  "windowMinutes": 5,
+  "windowStart": "2026-05-14T12:00:00.000Z",
+  "lastSeen": "2026-05-14T12:03:42.000Z",
+  "traceId": "<32-hex>"
+}
+```
+
+Implementation lives in `storage/errors.ts::evaluateSpike`. Per
+fingerprint the `errors` doc tracks `windowStart`, `windowCount`, and
+`lastSpikeAlertAt`. On each error ingest of an existing fingerprint, an
+aggregation-pipeline `findOneAndUpdate` resets the window if
+`now - windowStart > windowMinutes` (else increments `windowCount`).
+If post-roll count meets the threshold, a second `updateOne` atomically
+claims the cooldown by setting `lastSpikeAlertAt` — the filter only
+matches when no recent alert is recorded, so concurrent ingest of the
+same fingerprint can't double-fire. Time math uses wall-clock
+`Date.now()`, not the log's `ts`, so a batched replay of old errors
+doesn't trip the spike path.
+
+Both shapes work directly with Discord/Slack-style hooks, and a generic
+endpoint can map them onward.
 
 ### Derived metrics (Phase 6)
 
