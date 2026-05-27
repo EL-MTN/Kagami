@@ -97,25 +97,24 @@ export function getSpikeConfig(): SpikeConfig {
  * silently and any fetch / parse failure is swallowed.
  *
  * Build the body lazily (after the URL check) so a deployment without a
- * webhook configured pays no serialization cost per error. `timer.unref()`
- * lets a graceful shutdown proceed even if an in-flight alert hasn't
- * received its webhook response yet.
+ * webhook configured pays no serialization cost per error. The timeout is
+ * driven by `AbortSignal.timeout` — the underlying timer is auto-`unref`'d
+ * by Node, so the alert's pending timer alone won't hold the event loop
+ * open. The fetch's open socket can still hold the loop; shutdown paths
+ * that need to drain in-flight alerts must coordinate with the call sites
+ * (today `void postAlert(...)` is detached and `server.ts::shutdown`
+ * explicitly calls `process.exit` after closing the HTTP server).
  */
 export async function postAlert(payload: AlertPayload): Promise<void> {
   const url = getWebhookUrl();
   if (!url) return;
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), ALERT_TIMEOUT_MS);
-  // Don't keep the event loop alive on a pending alert during shutdown.
-  timer.unref();
   try {
-    const body = JSON.stringify(payload);
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body,
-      signal: ctrl.signal,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(ALERT_TIMEOUT_MS),
     });
     if (!res.ok) {
       logger.warn(
@@ -128,7 +127,5 @@ export async function postAlert(payload: AlertPayload): Promise<void> {
       { fingerprint: payload.fingerprint, kind: payload.kind, err: (err as Error).message },
       "alert webhook delivery failed",
     );
-  } finally {
-    clearTimeout(timer);
   }
 }
