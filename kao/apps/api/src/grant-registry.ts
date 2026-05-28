@@ -21,7 +21,7 @@ const GRANT_REGISTRY = {
   ],
 } as const satisfies Record<string, readonly string[]>;
 
-export type GrantName = keyof typeof GRANT_REGISTRY;
+type GrantName = keyof typeof GRANT_REGISTRY;
 
 export const GRANT_NAMES = Object.keys(GRANT_REGISTRY) as GrantName[];
 

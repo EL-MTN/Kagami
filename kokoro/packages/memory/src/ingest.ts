@@ -21,7 +21,7 @@ const INGEST_LEASE_MS = 5 * 60 * 1000;
 //               deterministic-but-below-cap)
 //   abandoned — deterministic failure crossed the cap, status terminal "failed"
 //   skipped   — another worker holds the lease; we did nothing
-export type IngestOutcome = "done" | "retry" | "abandoned" | "skipped";
+type IngestOutcome = "done" | "retry" | "abandoned" | "skipped";
 
 // Whether an ingest failure should count toward the abandonment cap. The cap
 // exists to stop retrying a transcript that will never succeed — NOT to give

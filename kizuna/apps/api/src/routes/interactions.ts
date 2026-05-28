@@ -55,7 +55,7 @@ export const ListInteractionsQuery = Pagination.extend({
   sort: z.enum(["_id:-1", "occurredAt:-1"]).default("_id:-1"),
 });
 
-export type ListInteractionsQueryT = z.infer<typeof ListInteractionsQuery>;
+type ListInteractionsQueryT = z.infer<typeof ListInteractionsQuery>;
 
 type OccurredAtCursor = { oa: string; id: string };
 type LeanInteraction = {

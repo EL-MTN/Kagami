@@ -59,7 +59,7 @@ export function clearAccessTokenCache(grant: string): void {
   inflight.delete(grant);
 }
 
-export interface VendedToken {
+interface VendedToken {
   accessToken: string;
   expiresAt: number;
 }

@@ -302,7 +302,7 @@ async function evaluateSpike(
   } satisfies SpikePayload);
 }
 
-export interface ListErrorsOptions {
+interface ListErrorsOptions {
   service?: string;
   limit?: number;
 }
@@ -310,10 +310,7 @@ export interface ListErrorsOptions {
 // Public-API shape — strips the spike-detection state fields so the
 // /v1/errors response (and the dashboard / kansoku-debug CLI that consume
 // it) stay byte-identical to their pre-spike-alerts contract.
-export type PublicErrorRecord = Omit<
-  ErrorRecord,
-  "windowStart" | "windowCount" | "lastSpikeAlertAt"
->;
+type PublicErrorRecord = Omit<ErrorRecord, "windowStart" | "windowCount" | "lastSpikeAlertAt">;
 
 export async function listErrors(opts: ListErrorsOptions = {}): Promise<PublicErrorRecord[]> {
   const coll = await getErrorsCollection();

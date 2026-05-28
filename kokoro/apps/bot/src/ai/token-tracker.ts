@@ -56,7 +56,7 @@ function estimateCost(model: string, usage: TokenUsageData): number {
   return promptCost + completionCost;
 }
 
-export interface TrackUsageMetadata {
+interface TrackUsageMetadata {
   chatId?: string;
   sessionId?: string;
   routineId?: string;

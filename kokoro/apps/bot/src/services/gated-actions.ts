@@ -30,7 +30,7 @@ export const GATED_TOOL_NAMES = [
   "resolveFollowup",
   "updatePerson",
 ] as const;
-export type GatedToolName = (typeof GATED_TOOL_NAMES)[number];
+type GatedToolName = (typeof GATED_TOOL_NAMES)[number];
 
 export function isGatedTool(name: string): name is GatedToolName {
   return (GATED_TOOL_NAMES as readonly string[]).includes(name);
@@ -78,7 +78,7 @@ const GATED_ARG_SCHEMAS: Record<GatedToolName, z.ZodTypeAny> = {
   updatePerson: updatePersonInputSchema,
 };
 
-export interface DispatchResult {
+interface DispatchResult {
   success: boolean;
   /** Short human-readable line shown back to the user in the edited prompt. */
   summary: string;

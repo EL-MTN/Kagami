@@ -28,7 +28,7 @@ export type RecordInteractionInput = {
   status?: InteractionStatus;
 };
 
-export type RecordOpts = {
+type RecordOpts = {
   /**
    * If true, swallow E11000 dup-key errors raised by the unique partial index
    * on sourceRef. Returns null in that case. Used by ingest workers to make

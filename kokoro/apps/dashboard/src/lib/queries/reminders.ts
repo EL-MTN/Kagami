@@ -1,7 +1,7 @@
 import { Reminder } from "@kokoro/db";
 import { ensureDB } from "../db";
 
-export interface ReminderListItem {
+interface ReminderListItem {
   id: string;
   chatId: string;
   message: string;

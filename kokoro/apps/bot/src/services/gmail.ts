@@ -3,7 +3,7 @@ import { withFreshAuth } from "./google-auth";
 import { KaoMisconfiguredError, KaoNoGrantError, KaoUnreachableError } from "./kao-client";
 import { logger } from "@kokoro/shared";
 
-export interface EmailSummary {
+interface EmailSummary {
   id: string;
   from: string;
   subject: string;
@@ -13,7 +13,7 @@ export interface EmailSummary {
   threadId: string;
 }
 
-export interface EmailDetail extends EmailSummary {
+interface EmailDetail extends EmailSummary {
   body: string;
   messageId: string;
 }
@@ -118,7 +118,7 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-export interface SendEmailResult {
+interface SendEmailResult {
   id: string;
   threadId: string;
 }

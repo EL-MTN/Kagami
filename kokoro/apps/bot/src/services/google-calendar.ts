@@ -3,7 +3,7 @@ import { addDays } from "date-fns";
 import { withFreshAuth } from "./google-auth";
 import { logger } from "@kokoro/shared";
 
-export interface CalendarEvent {
+interface CalendarEvent {
   id: string;
   summary: string;
   description?: string;
@@ -13,7 +13,7 @@ export interface CalendarEvent {
   htmlLink: string;
 }
 
-export interface CreateEventParams {
+interface CreateEventParams {
   summary: string;
   description?: string;
   start: string;

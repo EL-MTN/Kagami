@@ -3,7 +3,7 @@ import { storeLocation, getLatestLocation, getLocationVisitCount } from "@kokoro
 import { appendFactWithRetryQueue } from "@kokoro/memory";
 import { reverseGeocode } from "./geocoding";
 
-export interface LocationEvent {
+interface LocationEvent {
   type: "arrival";
   placeName: string;
   placeCategory: string;

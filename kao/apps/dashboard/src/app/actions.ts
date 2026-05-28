@@ -12,7 +12,7 @@ import { ApiError, revokeGrant, vendToken } from "@/lib/api";
 // inline. Throwing out of a Server Action that's awaited inside
 // `startTransition` shows the default Next error overlay and leaves the
 // caller's transient state (e.g. "confirming") stuck — we never want that.
-export type RevokeActionResult =
+type RevokeActionResult =
   | { ok: true; grant: string }
   | { ok: false; grant: string; status: number; code: string; message: string };
 

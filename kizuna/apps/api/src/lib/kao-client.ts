@@ -18,7 +18,7 @@ import { logger } from "./logger.js";
 // which keeps Kansoku error fingerprinting from collapsing OAuth-pause
 // events into the generic-Error bucket.
 
-export class KaoNoGrantError extends Error {
+class KaoNoGrantError extends Error {
   readonly code: "no_grant" | "invalid_grant" | "decrypt_failed";
   constructor(code: "no_grant" | "invalid_grant" | "decrypt_failed", message: string) {
     super(message);
@@ -27,14 +27,14 @@ export class KaoNoGrantError extends Error {
   }
 }
 
-export class KaoUnreachableError extends Error {
+class KaoUnreachableError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "KaoUnreachableError";
   }
 }
 
-export class KaoMisconfiguredError extends Error {
+class KaoMisconfiguredError extends Error {
   // `code` distinguishes the two operator-actionable misconfig cases:
   //   - bad_bearer: KAO_TOKEN rejected (401)
   //   - wrong_host: 404 with a non-Kao response shape (KAO_URL likely points

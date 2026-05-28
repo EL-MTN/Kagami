@@ -13,7 +13,7 @@ import { digestRouter } from "./routes/digest.js";
 import { makeOauthRouter } from "./routes/oauth.js";
 import { makeSyncRouter } from "./routes/sync.js";
 
-export type ServerDeps = {
+type ServerDeps = {
   db: DbHandle;
   config: Config;
 };

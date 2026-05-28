@@ -10,7 +10,7 @@ import { upsertTranscript } from "../storage/transcripts.js";
 // Concurrent callers are safe: writes go through appendFacts (unique-hash
 // dedup) and upsertEntitiesFromFacts (atomic per-entity upserts).
 
-export interface IngestSessionInput {
+interface IngestSessionInput {
   transcript: string; // raw markdown body (frontmatter + turns)
   user_id?: string; // default 'default'
   run_id?: string;
@@ -18,7 +18,7 @@ export interface IngestSessionInput {
   metadata?: Record<string, unknown>;
 }
 
-export interface IngestSessionResult {
+interface IngestSessionResult {
   sessionId: string;
   added: number;
   batches: number;

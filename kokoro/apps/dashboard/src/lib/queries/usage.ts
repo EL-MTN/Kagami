@@ -2,7 +2,7 @@ import { TokenUsage, Routine, Watcher, type UsageSummary, type DailyUsage } from
 import { Types } from "mongoose";
 import { ensureDB } from "../db";
 
-export interface UsageOverview {
+interface UsageOverview {
   todayCost: number;
   weekCost: number;
   monthCost: number;

@@ -19,6 +19,7 @@
   "devDependencies": {
     "@kagami/eslint-config": "*",
     "@kagami/tsconfig": "*",
+    "@kokoro/test-utils": "*",
     "@types/node": "^22.10.0",
     "eslint": "^10.3.0",
     "typescript": "^6.0.3"

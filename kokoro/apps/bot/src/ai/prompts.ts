@@ -1,6 +1,6 @@
 import { config } from "@kokoro/shared";
 
-export type TimeOfDay = "late night" | "morning" | "afternoon" | "evening" | "night";
+type TimeOfDay = "late night" | "morning" | "afternoon" | "evening" | "night";
 
 export function timeOfDayFor(now: Date): TimeOfDay {
   const hour = Number(

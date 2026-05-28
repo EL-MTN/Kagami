@@ -18,7 +18,7 @@ import {
   type PersonSummary,
 } from "./schemas";
 
-export type ListFollowupsInput = {
+type ListFollowupsInput = {
   direction?: "i_owe" | "they_owe";
   status?: "open" | "done" | "snoozed" | "dismissed";
   limit?: number;

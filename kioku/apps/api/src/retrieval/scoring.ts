@@ -14,7 +14,7 @@ import { lemmatizeForBm25 } from "./text.js";
 
 export const ENTITY_BOOST_WEIGHT = 0.5;
 
-export interface Bm25ParamBucket {
+interface Bm25ParamBucket {
   maxTerms: number | null;
   midpointEnv: string;
   steepnessEnv: string;
@@ -132,12 +132,12 @@ export function normalizeBm25(rawScore: number, midpoint: number, steepness: num
   return 1.0 / (1.0 + Math.exp(-steepness * (rawScore - midpoint)));
 }
 
-export interface SemanticCandidate {
+interface SemanticCandidate {
   id: string;
   score: number; // semantic score in [0, 1]
 }
 
-export interface RankedResult {
+interface RankedResult {
   id: string;
   score: number; // combined score in [0, 1]
 }

@@ -13,7 +13,7 @@ async function getLogsCollection(): Promise<Collection<StoredLog>> {
   return db.collection<StoredLog>("logs");
 }
 
-export interface ServiceSummary {
+interface ServiceSummary {
   service: string;
   count: number;
   errorCount: number;
@@ -22,7 +22,7 @@ export interface ServiceSummary {
   components: string[];
 }
 
-export interface ServiceSummaryOptions {
+interface ServiceSummaryOptions {
   /** Absolute lower bound on `ts`. Required so the aggregation can hit the index. */
   since: Date;
 }
@@ -69,13 +69,13 @@ export async function serviceSummary(opts: ServiceSummaryOptions): Promise<Servi
 
 export type TimelineGranularity = "minute" | "hour" | "day";
 
-export interface ServiceTimelineBucket {
+interface ServiceTimelineBucket {
   ts: Date;
   count: number;
   errorCount: number;
 }
 
-export interface ServiceTimelineOptions {
+interface ServiceTimelineOptions {
   service: string;
   since: Date;
   granularity: TimelineGranularity;

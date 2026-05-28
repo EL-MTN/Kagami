@@ -189,7 +189,7 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
   });
 }
 
-export interface BrowseToolOptions {
+interface BrowseToolOptions {
   /**
    * Whether to expose the in-browser `search` action. Callers should set
    * `false` when a standalone `webSearch` tool is registered alongside

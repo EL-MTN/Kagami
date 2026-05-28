@@ -3,7 +3,7 @@ import { logger } from "@kokoro/shared";
 import { platformForChatId } from "../platform/registry";
 import { ingestClosedSession } from "@kokoro/memory";
 
-export interface ConfirmationResolutionEvent {
+interface ConfirmationResolutionEvent {
   summary: string;
   verdict: "approved" | "denied" | "cancelled";
   success?: boolean;

@@ -9,7 +9,7 @@ import { homeRouter } from "./routes/home.js";
 import { makeOauthRouter } from "./routes/oauth.js";
 import { makeGrantsRouter } from "./routes/grants.js";
 
-export type ServerDeps = {
+type ServerDeps = {
   db: Db;
   config: Config;
 };

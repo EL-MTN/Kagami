@@ -1,6 +1,6 @@
 export const GOOGLE_REQUEST_TIMEOUT_MS = 30_000;
 
-export type GoogleProvider = "gmail" | "gcal";
+type GoogleProvider = "gmail" | "gcal";
 
 export class GoogleRequestTimeoutError extends Error {
   provider: GoogleProvider;

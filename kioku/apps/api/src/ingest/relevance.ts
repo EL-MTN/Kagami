@@ -45,7 +45,7 @@ const RelevanceResult = z.object({
     .describe("ids of statements that are purely non-durable conversational noise"),
 });
 
-export interface Candidate {
+interface Candidate {
   id: string;
   text: string;
 }

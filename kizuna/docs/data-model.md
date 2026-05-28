@@ -213,7 +213,7 @@ Indexes:
 
 ### Google refresh token
 
-Not stored in Kizuna's Mongo anymore. The encrypted refresh token lives in **Kao's** `grants` collection — see `kao/docs/data-model.md`. Kizuna's `apps/api/src/lib/kao-client.ts` calls `GET ${KAO_URL}/grants/kizuna/token` at vend time; the access token is cached in module scope for `expiresAt − 30 s` and shared across concurrent ingest calls via an inflight de-dup. `clearAccessTokenCache()` resets both the cache and the inflight together (see `lib/kao-client.ts` for the rationale).
+Not stored in Kizuna's Mongo anymore. The encrypted refresh token lives in **Kao's** `grants` collection — see `kao/docs/architecture.md`. Kizuna's `apps/api/src/lib/kao-client.ts` calls `GET ${KAO_URL}/grants/kizuna/token` at vend time; the access token is cached in module scope for `expiresAt − 30 s` and shared across concurrent ingest calls via an inflight de-dup. `clearAccessTokenCache()` resets both the cache and the inflight together (see `lib/kao-client.ts` for the rationale).
 
 The legacy `oauthtokens` Mongoose model was deleted in the Kao migration; an existing row in your dev database can be removed with `db.oauthtokens.drop()` (it's no longer read by any code path).
 

@@ -69,7 +69,7 @@ export class GmailHttpError extends Error {
 // dailyLimitExceeded) — cheap insurance for the post-reconsent UX.
 // If Google rejects the freshly-vended token too, the second-attempt
 // error escapes and the worker maps it to `OAuthError('invalid_grant')`.
-export type AccessTokenGetter = (options?: { force?: boolean }) => Promise<string>;
+type AccessTokenGetter = (options?: { force?: boolean }) => Promise<string>;
 
 export function makeGmailClient(getAccessToken: AccessTokenGetter): GmailClient {
   async function call<T>(

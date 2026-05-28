@@ -1,7 +1,7 @@
 import { Conversation, Reminder } from "@kokoro/db";
 import { ensureDB } from "../db";
 
-export interface OverviewStats {
+interface OverviewStats {
   totalConversations: number;
   pendingReminders: number;
 }
