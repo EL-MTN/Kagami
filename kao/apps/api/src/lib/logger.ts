@@ -1,7 +1,5 @@
 import { createLogger, type Logger } from "@kagami/logger";
 
-export type { Logger };
-
 // Opt into Kansoku ingest when both vars are set. Either being missing leaves
 // the logger stdout-only — graceful in dev and during the rollout window
 // before Kansoku is reachable. Empty/whitespace strings count as missing so

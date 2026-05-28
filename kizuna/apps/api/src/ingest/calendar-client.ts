@@ -42,7 +42,7 @@ export class SyncTokenExpired extends Error {
 
 // See gmail-client.ts for the full rationale on `{ force }` and the
 // 401/403 self-heal retry — same shape, same Kao-cache-bypass semantics.
-export type AccessTokenGetter = (options?: { force?: boolean }) => Promise<string>;
+type AccessTokenGetter = (options?: { force?: boolean }) => Promise<string>;
 
 export function makeCalendarClient(getAccessToken: AccessTokenGetter): CalendarClient {
   async function listEventsOnce(params: ListEventsParams, force: boolean): Promise<ListEventsResp> {

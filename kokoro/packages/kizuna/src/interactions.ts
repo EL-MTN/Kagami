@@ -22,7 +22,7 @@ export type LogInteractionInput = {
   location?: string;
 };
 
-export type RecentInteractionsInput = {
+type RecentInteractionsInput = {
   personId: string;
   channel?: "email" | "calendar" | "call" | "in_person" | "message" | "manual";
   since?: string;

@@ -142,18 +142,18 @@ untested (thin wrapper, init code).
 
 ### `packages/db/src/`
 
-| File                             | Status | Test file                                   | Notes                                                                                                                      |
-| -------------------------------- | ------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `connection.ts`                  | ✅     | `tests/connection.test.ts`                  | Happy path, exit-on-failure, disconnect, `isDuplicateKeyError`. Mongoose mocked at the module level.                       |
-| `gridfs.ts`                      | ✅     | `tests/gridfs.test.ts`                      | Image + audio bucket roundtrips, isolation, batch removes, mimeType fallback.                                              |
-| `models/conversation.ts`         | ✅     | `tests/models/conversation.test.ts`         | `getOrCreateSession` platform scoping, idle cutover, append/clear/trim/cleanup. GridFS removers mocked.                    |
-| `models/pending-confirmation.ts` | ✅     | `tests/models/pending-confirmation.test.ts` | Atomic CAS under concurrent verdicts; list filters; `attachResultText`.                                                    |
-| `models/watcher.ts`              | ✅     | `tests/models/watcher.test.ts`              | CRUD, partial-unique name index, `getDue` filters, observation/state-only contract, manual-claim atomicity, log lifecycle. |
-| `models/routine.ts`              | ✅     | `tests/models/routine.test.ts`              | CRUD, `getDueRoutines`, atomic manual-claim, parent-log linkage, log cleanup.                                              |
-| `models/reminder.ts`             | ✅     | `tests/models/reminder.test.ts`             | Pending/listed/recently-fired filters, fire-then-cleanup.                                                                  |
-| `models/scheduler-state.ts`      | ❌     | —                                           | `getNextProactiveAt` / `setNextProactiveAt` untested — used by the proactive scheduler.                                    |
-| `models/location-history.ts`     | ❌     | —                                           | Location-history queries untested.                                                                                         |
-| `models/token-usage.ts`          | ❌     | —                                           | Usage aggregation queries untested.                                                                                        |
+| File                             | Status | Test file                                   | Notes                                                                                                                              |
+| -------------------------------- | ------ | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `connection.ts`                  | ✅     | `tests/connection.test.ts`                  | Happy path, exit-on-failure, disconnect, `isDuplicateKeyError`. Mongoose mocked at the module level.                               |
+| `gridfs.ts`                      | ✅     | `tests/gridfs.test.ts`                      | Image + audio bucket roundtrips, isolation, batch removes, mimeType fallback.                                                      |
+| `models/conversation.ts`         | ✅     | `tests/models/conversation.test.ts`         | `getOrCreateSession` platform scoping, idle cutover, append/clear/trim/cleanup. GridFS removers mocked.                            |
+| `models/pending-confirmation.ts` | ✅     | `tests/models/pending-confirmation.test.ts` | Atomic CAS under concurrent verdicts; list filters; `attachResultText`.                                                            |
+| `models/watcher.ts`              | ✅     | `tests/models/watcher.test.ts`              | CRUD, partial-unique name index, `getDueWatchers` filters, observation/state-only contract, manual-claim atomicity, log lifecycle. |
+| `models/routine.ts`              | ✅     | `tests/models/routine.test.ts`              | CRUD, `getDueRoutines`, atomic manual-claim, parent-log linkage, log cleanup.                                                      |
+| `models/reminder.ts`             | ✅     | `tests/models/reminder.test.ts`             | Pending/listed/recently-fired filters, fire-then-cleanup.                                                                          |
+| `models/scheduler-state.ts`      | ❌     | —                                           | `getNextProactiveAt` / `setNextProactiveAt` untested — used by the proactive scheduler.                                            |
+| `models/location-history.ts`     | ❌     | —                                           | Location-history queries untested.                                                                                                 |
+| `models/token-usage.ts`          | ❌     | —                                           | Usage aggregation queries untested.                                                                                                |
 
 ### `packages/memory/src/`
 

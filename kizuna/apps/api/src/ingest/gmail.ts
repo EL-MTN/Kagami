@@ -15,7 +15,7 @@ import {
 } from "./parse-message.js";
 import { upsertPerson } from "./upsert-person.js";
 
-export type SyncResult = {
+type SyncResult = {
   status: "ok" | "paused" | "no_grant" | "error";
   fetched: number;
   inserted: number;

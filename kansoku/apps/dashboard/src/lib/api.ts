@@ -24,7 +24,7 @@ export interface StoredLog {
   fields?: Record<string, unknown>;
 }
 
-export interface LogsResponse {
+interface LogsResponse {
   logs: StoredLog[];
 }
 
@@ -48,7 +48,7 @@ export async function getVersion(): Promise<{ name: string; version: string }> {
   return api("/version");
 }
 
-export interface SearchLogsParams {
+interface SearchLogsParams {
   service?: string;
   level?: string;
   since?: string;
@@ -77,7 +77,7 @@ export interface StoredSpan {
   status: "ok" | "error";
 }
 
-export interface TraceResponse {
+interface TraceResponse {
   traceId: string;
   logs: StoredLog[];
   // Real spans (build-light tracing). Empty for traces logged before spans
@@ -103,7 +103,7 @@ export interface ErrorRecord {
   recentTraceIds: string[];
 }
 
-export interface ErrorsResponse {
+interface ErrorsResponse {
   errors: ErrorRecord[];
 }
 
@@ -127,7 +127,7 @@ export interface ServiceSummary {
   components: string[];
 }
 
-export interface ServiceSummaryResponse {
+interface ServiceSummaryResponse {
   since: string;
   services: ServiceSummary[];
 }
@@ -149,7 +149,7 @@ export interface ServiceTimelineBucket {
   errorCount: number;
 }
 
-export interface ServiceTimelineResponse {
+interface ServiceTimelineResponse {
   service: string;
   since: string;
   granularity: "minute" | "hour" | "day";

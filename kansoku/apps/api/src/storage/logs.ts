@@ -64,7 +64,7 @@ export async function insertLogs(docs: StoredLog[]): Promise<InsertLogsResult> {
   }
 }
 
-export interface QueryLogsOptions {
+interface QueryLogsOptions {
   service?: string;
   level?: string;
   since?: Date;

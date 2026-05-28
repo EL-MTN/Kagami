@@ -1,7 +1,7 @@
 import { z, ZodError } from "zod";
 import { config, tracedFetch } from "@kokoro/shared";
 
-export type KizunaClientErrorKind = "disabled" | "timeout" | "transport" | "http" | "schema";
+type KizunaClientErrorKind = "disabled" | "timeout" | "transport" | "http" | "schema";
 
 export class KizunaClientError extends Error {
   constructor(

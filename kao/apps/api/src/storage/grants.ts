@@ -4,7 +4,7 @@ import type { Db, Collection } from "mongodb";
 // `refreshToken` is an AES-256-GCM envelope (see lib/encryption.ts); it is
 // nulled on revoke rather than the row being deleted, so status history and
 // the prior scope set stay inspectable.
-export interface GrantDoc {
+interface GrantDoc {
   name: string;
   scopes: string[];
   refreshToken: string | null;

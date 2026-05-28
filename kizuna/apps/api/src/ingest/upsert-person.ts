@@ -2,14 +2,14 @@ import { Types } from "mongoose";
 import { Person } from "../db/models/Person.js";
 import type { Source } from "../db/models/base.js";
 
-export type UpsertPersonInput = {
+type UpsertPersonInput = {
   email: string;
   displayName?: string | null;
   occurredAt: Date; // used as firstSeen if creating
   source: Source; // 'gmail-sync' or 'gcal-sync', set by the caller
 };
 
-export type UpsertPersonResult = {
+type UpsertPersonResult = {
   personId: Types.ObjectId;
   created: boolean;
   tombstonedSuppressed: boolean; // true when linked to a tombstoned person we won't mutate

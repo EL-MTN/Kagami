@@ -15,7 +15,7 @@ const isoDatetime = z
 
 // ─── manageCalendar ──────────────────────────────────────────────────────────
 
-export interface ManageCalendarToolOptions {
+interface ManageCalendarToolOptions {
   /** "full" exposes list/create/update/delete; "readOnly" restricts to list. */
   mode?: "full" | "readOnly";
 }

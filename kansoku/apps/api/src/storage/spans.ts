@@ -9,7 +9,7 @@ import type { StoredLog } from "./logs.js";
 // keyed `traceId:spanId` so the trace waterfall has real durations + a
 // parent/child tree instead of guessing from log timestamps.
 
-export interface StoredSpan {
+interface StoredSpan {
   _id: string; // `${traceId}:${spanId}` — idempotent on a shipper resend
   traceId: string;
   spanId: string;

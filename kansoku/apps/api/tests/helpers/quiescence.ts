@@ -11,7 +11,7 @@
  * for an in-memory captured array, a Mongo collection count, etc.
  */
 
-export interface QuiesceOptions {
+interface QuiesceOptions {
   /** Function returning the current size of the source being watched. */
   length: () => number;
   /** Minimum size required. Pass 0 to wait for the source to stop changing. */

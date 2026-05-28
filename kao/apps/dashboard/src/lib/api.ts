@@ -168,18 +168,18 @@ export interface GrantStatus {
   revokedAt: string | null;
 }
 
-export interface VendedToken {
+interface VendedToken {
   accessToken: string;
   expiresAt: number;
   scopes: string[];
 }
 
-export interface RevokeResult {
+interface RevokeResult {
   revoked: true;
   grant: string;
 }
 
-export interface HealthResponse {
+interface HealthResponse {
   status: string;
   service: string;
 }

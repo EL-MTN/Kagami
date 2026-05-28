@@ -131,7 +131,7 @@ export interface BlueBubblesMessageEvent {
   };
 }
 
-export interface NormalizedWebhookEvent {
+interface NormalizedWebhookEvent {
   message: IncomingMessage;
   /** raw chatGuid from BlueBubbles, used for sending replies back */
   chatGuid: string;

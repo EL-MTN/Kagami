@@ -188,7 +188,7 @@ function safeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(aMac, bMac);
 }
 
-export interface StartWebhookOptions {
+interface StartWebhookOptions {
   port: number;
   /** Token expected on incoming webhook calls (?password=... or X-Webhook-Token). */
   password: string;

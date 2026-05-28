@@ -16,7 +16,7 @@ import {
 } from "./parse-event.js";
 import { upsertPerson } from "./upsert-person.js";
 
-export type CalendarSyncResult = {
+type CalendarSyncResult = {
   status: "ok" | "paused" | "no_grant" | "error";
   fetched: number;
   upserted: number;

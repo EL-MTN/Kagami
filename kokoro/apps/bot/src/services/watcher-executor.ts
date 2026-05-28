@@ -101,7 +101,7 @@ function shouldAutoArchive(watcher: IWatcher, newFireCount: number): boolean {
   return false;
 }
 
-export interface ExecuteWatcherOptions {
+interface ExecuteWatcherOptions {
   trigger: "cron" | "manual";
   advanceSchedule?: boolean;
   /** When true, suppresses notification delivery even on triggered=true. */

@@ -1,6 +1,6 @@
 import { config, logger } from "@kokoro/shared";
 
-export interface WebSearchResult {
+interface WebSearchResult {
   title: string;
   url: string;
   snippet: string;

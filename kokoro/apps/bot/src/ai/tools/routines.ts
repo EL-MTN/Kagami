@@ -417,7 +417,7 @@ function validateParameters(
   return { valid: true, resolved: result.data };
 }
 
-export type UseRoutineCallingContext = "main" | "watcher";
+type UseRoutineCallingContext = "main" | "watcher";
 
 export function createUseRoutineTool(
   chatId: string,

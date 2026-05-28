@@ -30,7 +30,7 @@ export function makeState(grant: string, nowMs: number = Date.now()): string {
   return `${payload.toString("base64url")}.${sig.toString("base64url")}`;
 }
 
-export type StateResult = { ok: true; grant: string } | { ok: false };
+type StateResult = { ok: true; grant: string } | { ok: false };
 
 export function verifyState(
   state: string,

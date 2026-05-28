@@ -4,7 +4,7 @@ import { defaultFactRanker, type MemoryFilters, type RankedFact } from "../retri
 // ranker so HTTP callers (and the bot) can pull top-K facts directly
 // instead of going through answer.ts's single-shot answerer.
 
-export interface RecalledFact {
+interface RecalledFact {
   id: string;
   text: string;
   event_date: string;
@@ -12,7 +12,7 @@ export interface RecalledFact {
   created_at: string;
 }
 
-export interface RecallOptions {
+interface RecallOptions {
   k?: number;
   since?: string; // ISO date, inclusive lower bound on event_date
   until?: string; // ISO date, inclusive upper bound on event_date

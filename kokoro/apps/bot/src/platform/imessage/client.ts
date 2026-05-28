@@ -13,12 +13,12 @@ import crypto from "node:crypto";
  * caller already has retry signal via the LLM's tool result.
  */
 
-export interface BlueBubblesClientOptions {
+interface BlueBubblesClientOptions {
   host: string;
   password: string;
 }
 
-export interface SendTextOptions {
+interface SendTextOptions {
   chatGuid: string;
   message: string;
   /**
@@ -30,7 +30,7 @@ export interface SendTextOptions {
   method?: "apple-script" | "private-api";
 }
 
-export interface SendAttachmentOptions {
+interface SendAttachmentOptions {
   chatGuid: string;
   filename: string;
   buffer: Buffer;

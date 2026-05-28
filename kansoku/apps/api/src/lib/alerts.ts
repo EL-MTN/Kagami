@@ -50,9 +50,9 @@ export interface SpikePayload {
   traceId?: string;
 }
 
-export type AlertPayload = NewErrorPayload | SpikePayload;
+type AlertPayload = NewErrorPayload | SpikePayload;
 
-export interface SpikeConfig {
+interface SpikeConfig {
   threshold: number;
   windowMinutes: number;
   cooldownMinutes: number;

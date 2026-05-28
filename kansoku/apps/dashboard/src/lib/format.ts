@@ -35,7 +35,7 @@ export function formatRelative(input: string | Date): string {
 
 // Tone used by the level badge + log row indicator. Maps pino's six levels
 // onto the workspace's positive/info/caution/critical palette.
-export type LevelTone = "neutral" | "info" | "positive" | "caution" | "critical";
+type LevelTone = "neutral" | "info" | "positive" | "caution" | "critical";
 
 export function levelTone(level: string): LevelTone {
   switch (level) {

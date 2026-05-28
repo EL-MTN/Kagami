@@ -37,7 +37,7 @@ const NARRATIVE_SYSTEM = `You produce a narrative summary of a conversation tran
 
 const TURN_BUDGET_CHARS = 12000;
 
-export interface SessionSummaryScope {
+interface SessionSummaryScope {
   user_id?: string;
   run_id?: string;
   agent_id?: string;

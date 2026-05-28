@@ -35,7 +35,7 @@ type InteractionAttachment = {
   ref?: string;
 };
 
-export type InteractionAttrs = {
+type InteractionAttrs = {
   occurredAt: Date;
   channel: InteractionChannel;
   title: string;

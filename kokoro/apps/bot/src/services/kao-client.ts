@@ -47,7 +47,7 @@ export function clearAccessTokenCache(): void {
   inflight = null;
 }
 
-export interface VendedAccessToken {
+interface VendedAccessToken {
   accessToken: string;
   expiresAt: number;
 }

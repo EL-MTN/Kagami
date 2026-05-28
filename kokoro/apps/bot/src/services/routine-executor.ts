@@ -59,7 +59,7 @@ function assembleRoutineSystemPrompt(
   return parts.join("\n\n---\n\n");
 }
 
-export interface ExecuteRoutineOptions {
+interface ExecuteRoutineOptions {
   advanceSchedule?: boolean;
   trigger: "cron" | "manual" | "routine";
   parameters?: Record<string, unknown>;

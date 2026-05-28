@@ -2,7 +2,7 @@ import { Conversation } from "@kokoro/db";
 import type { IMessage } from "@kokoro/db";
 import { ensureDB } from "../db";
 
-export interface ConversationListItem {
+interface ConversationListItem {
   id: string;
   sessionId: string;
   chatId: string;
@@ -15,7 +15,7 @@ export interface ConversationListItem {
 
 const PAGE_SIZE = 20;
 
-export interface ConversationListOptions {
+interface ConversationListOptions {
   status?: "active" | "closed";
   /** Substring match against chatId. */
   search?: string;
@@ -64,7 +64,7 @@ export async function getConversationList(
   };
 }
 
-export interface ConversationDetail {
+interface ConversationDetail {
   id: string;
   sessionId: string;
   chatId: string;

@@ -4,7 +4,7 @@ import { logger } from "../lib/logger.js";
 import { runCalendarSyncOnce } from "./calendar.js";
 import { runGmailSyncOnce } from "./gmail.js";
 
-export type Scheduler = {
+type Scheduler = {
   stop(): void;
 };
 
