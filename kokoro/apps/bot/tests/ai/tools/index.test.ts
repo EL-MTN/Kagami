@@ -39,7 +39,14 @@ vi.mock("../../../src/services/routine-executor", () => ({
   executeRoutine: vi.fn(),
 }));
 
+// Mock the MCP manager so these tests don't load @ai-sdk/mcp or touch runtime
+// state. Default returns no tools, keeping the exact-match baseline below valid.
+vi.mock("../../../src/services/mcp", () => ({
+  getMcpTools: vi.fn(() => ({})),
+}));
+
 import { allTools, watcherTools, routineToolsUnderWatcher } from "../../../src/ai/tools/index";
+import { getMcpTools } from "../../../src/services/mcp";
 
 const adapter = fakeAdapter();
 const baseCtx = {
@@ -164,6 +171,28 @@ describe("allTools — feature flags", () => {
         "updatePerson",
       ]),
     );
+  });
+});
+
+describe("allTools — MCP tools", () => {
+  it("merges connected MCP tools into the main palette", () => {
+    vi.mocked(getMcpTools).mockReturnValueOnce({ mcp_kioku_recall: {} as never });
+    const names = Object.keys(allTools(baseCtx));
+    expect(names).toContain("mcp_kioku_recall");
+  });
+
+  it("never offers MCP tools to read-only watcher / under-watcher palettes", () => {
+    // getMcpTools would return tools, but watcherTools/routineToolsUnderWatcher
+    // don't consult it at all — the read-only invariant must hold structurally.
+    vi.mocked(getMcpTools).mockReturnValue({ mcp_kioku_recall: {} as never });
+    expect(Object.keys(watcherTools(baseCtx))).not.toContain("mcp_kioku_recall");
+    expect(Object.keys(routineToolsUnderWatcher(baseCtx))).not.toContain("mcp_kioku_recall");
+  });
+
+  it("does not let an MCP tool shadow a built-in of the same key", () => {
+    vi.mocked(getMcpTools).mockReturnValueOnce({ searchMemory: { sentinel: true } as never });
+    const tools = allTools(baseCtx) as Record<string, { sentinel?: boolean }>;
+    expect(tools.searchMemory.sentinel).toBeUndefined();
   });
 });
 

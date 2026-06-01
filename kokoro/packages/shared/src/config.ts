@@ -14,6 +14,37 @@ const optionalEnabledFlag = z.preprocess(
     .transform((s) => s === "true"),
 );
 
+// MCP (Model Context Protocol) servers Kokoro connects to as a CLIENT, mounting
+// their tools alongside the built-in palette (namespaced `mcp_<server>_<tool>`).
+// Configured as a JSON array in MCP_SERVERS; empty / unset → no MCP tools. Each
+// server is fail-open at connect time (an unreachable server is logged and
+// skipped, never crashes the bot). `http`/`sse` are remote transports; `stdio`
+// spawns a local subprocess. Server names are constrained to a tool-name-safe
+// charset so the namespacing prefix is collision-free without sanitization.
+const mcpServerNameSchema = z
+  .string()
+  .min(1)
+  .regex(/^[a-zA-Z0-9_-]+$/, "MCP server name must match [a-zA-Z0-9_-]");
+
+const mcpHttpServerSchema = z.object({
+  name: mcpServerNameSchema,
+  transport: z.enum(["http", "sse"]),
+  url: z.string().url(),
+  headers: z.record(z.string(), z.string()).optional(),
+});
+
+const mcpStdioServerSchema = z.object({
+  name: mcpServerNameSchema,
+  transport: z.literal("stdio"),
+  command: z.string().min(1),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  cwd: z.string().optional(),
+});
+
+export const mcpServerSchema = z.union([mcpHttpServerSchema, mcpStdioServerSchema]);
+export type McpServerConfig = z.infer<typeof mcpServerSchema>;
+
 const baseSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   ALLOWED_USER_IDS: z
@@ -137,6 +168,22 @@ const baseSchema = z.object({
         : [],
     ),
 
+  // External MCP servers (JSON array). Parsed/validated against mcpServerSchema.
+  // Empty string / unset → no MCP tools. A malformed JSON string is left as-is
+  // so the array schema below reports a clear "expected array" error rather than
+  // silently dropping the value.
+  MCP_SERVERS: z.preprocess((v) => {
+    if (v === undefined) return [];
+    if (typeof v !== "string") return v;
+    const trimmed = v.trim();
+    if (trimmed === "") return [];
+    try {
+      return JSON.parse(trimmed) as unknown;
+    } catch {
+      return trimmed;
+    }
+  }, z.array(mcpServerSchema).default([])),
+
   CONTEXT_PATH: z.string().default("./context"),
 
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
@@ -237,6 +284,14 @@ export function validateConfig(): void {
 
   if (config.LOCATION_ENABLED && !config.GOOGLE_MAPS_API_KEY) {
     errors.push("GOOGLE_MAPS_API_KEY is required when LOCATION_ENABLED is true");
+  }
+
+  // MCP server names become tool-name prefixes (mcp_<name>_<tool>) and must be
+  // unique so two servers can't shadow each other's namespace.
+  const mcpNames = config.MCP_SERVERS.map((s) => s.name);
+  const dupeMcp = [...new Set(mcpNames.filter((n, i) => mcpNames.indexOf(n) !== i))];
+  if (dupeMcp.length > 0) {
+    errors.push(`MCP_SERVERS has duplicate server name(s): ${dupeMcp.join(", ")}`);
   }
 
   if (config.BLUEBUBBLES_HOST && !config.BLUEBUBBLES_PASSWORD) {

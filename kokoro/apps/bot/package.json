@@ -16,6 +16,7 @@
   "dependencies": {
     "@ai-sdk/elevenlabs": "^2.0.0",
     "@ai-sdk/google": "^3.0.43",
+    "@ai-sdk/mcp": "^1.0.45",
     "@ai-sdk/openai": "^3.0.41",
     "@ai-sdk/xai": "^3.0.67",
     "@browserbasehq/stagehand": "^3.0.0",
