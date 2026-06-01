@@ -42,7 +42,7 @@ provenanceFields = {
 
 DELETE handlers never remove rows; they `findOneAndUpdate({ deletedAt: new Date() })`. List endpoints filter `deletedAt: null` unless `?includeTombstoned=true`. Every model has a sparse `{ deletedAt: 1 }` index so the dashboard's `/tombstones` page can scan only the tombstoned rows efficiently.
 
-The Person tombstone additionally sets `suppressReingest: true`, so a future Gmail or Calendar sync that observes a matching email won't recreate the row through `upsertPerson` — see [sync.md](sync.md).
+The Person tombstone additionally sets `suppressReingest: true`, so the Gmail or Calendar sync won't recreate the row through `upsertPerson` when it next observes a matching email — see [sync.md](sync.md).
 
 ## Collections
 
