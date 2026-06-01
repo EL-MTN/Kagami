@@ -48,6 +48,33 @@ export function namespacedToolName(server: string, tool: string): string {
   return `mcp_${server}_${safeTool}`.slice(0, MAX_TOOL_NAME_LEN);
 }
 
+/**
+ * Namespace a server's raw tool set and drop any intra-server key collisions
+ * (two tool names that collapse to the same key after the 64-char cap). The
+ * returned `toolNames` stays in sync with `tools` — no stale or duplicate keys,
+ * so the prompt never advertises a key that maps to a different tool.
+ */
+export function namespaceServerTools(
+  serverName: string,
+  rawTools: ToolSet,
+): { tools: ToolSet; toolNames: string[] } {
+  const tools: ToolSet = {};
+  const toolNames: string[] = [];
+  for (const [toolName, tool] of Object.entries(rawTools)) {
+    const key = namespacedToolName(serverName, toolName);
+    if (key in tools) {
+      logger.warn(
+        { mcp: { server: serverName, tool: key } },
+        "Duplicate MCP tool key within server (name truncation?) — keeping first, skipping",
+      );
+      continue;
+    }
+    tools[key] = tool;
+    toolNames.push(key);
+  }
+  return { tools, toolNames };
+}
+
 function buildTransport(server: McpServerConfig) {
   if (server.transport === "stdio") {
     return new Experimental_StdioMCPTransport({
@@ -85,10 +112,14 @@ interface ConnectResult {
 }
 
 async function connectServer(server: McpServerConfig): Promise<ConnectResult | null> {
-  let client: MCPClient | undefined;
+  // Hold the connect promise separately from the await: on a connect *timeout*
+  // the race rejects but createMCPClient keeps running, so a late success must
+  // still be closed (else a spawned stdio child / HTTP session leaks).
+  const connectPromise = createMCPClient({ transport: buildTransport(server) });
+  let keep = false;
   try {
-    client = await withTimeout(
-      createMCPClient({ transport: buildTransport(server) }),
+    const client = await withTimeout(
+      connectPromise,
       CONNECT_TIMEOUT_MS,
       `connect "${server.name}"`,
     );
@@ -98,14 +129,9 @@ async function connectServer(server: McpServerConfig): Promise<ConnectResult | n
       `list tools "${server.name}"`,
     );
 
-    const tools: ToolSet = {};
-    const toolNames: string[] = [];
-    for (const [toolName, tool] of Object.entries(rawTools)) {
-      const key = namespacedToolName(server.name, toolName);
-      tools[key] = tool;
-      toolNames.push(key);
-    }
+    const { tools, toolNames } = namespaceServerTools(server.name, rawTools);
 
+    keep = true;
     logger.info(
       { mcp: { server: server.name, transport: server.transport, tools: toolNames.length } },
       "MCP server connected",
@@ -121,14 +147,16 @@ async function connectServer(server: McpServerConfig): Promise<ConnectResult | n
       },
     };
   } catch (error) {
-    // Close a half-open client so a failed tool-listing doesn't leak a
-    // connection or a spawned stdio child process.
-    if (client) await client.close().catch(() => undefined);
     logger.warn(
       { error, mcp: { server: server.name, transport: server.transport } },
       "MCP server unavailable — skipping (fail-open)",
     );
     return null;
+  } finally {
+    // Not keeping this client (connect timeout, or a tools()/listing failure) —
+    // close whatever the connect eventually yields so nothing leaks. No-op if
+    // the connect rejected; harmless if it never resolves.
+    if (!keep) void connectPromise.then((c) => c.close()).catch(() => undefined);
   }
 }
 
@@ -163,7 +191,7 @@ export async function initMcp(servers: McpServerConfig[] = config.MCP_SERVERS): 
 }
 
 /** Cached, namespaced MCP tools. Empty until initMcp resolves (and after shutdown). */
-export function getMcpTools(): ToolSet {
+export function getMcpTools(): Readonly<ToolSet> {
   return mcpTools;
 }
 

@@ -48,7 +48,7 @@ export async function readInstruction(name: string): Promise<string | null> {
   return readContextFile(`instructions/${name}.md`);
 }
 
-async function assemblePromptShell(): Promise<string[]> {
+async function assemblePromptShell(includeMcpHint: boolean): Promise<string[]> {
   const parts: string[] = [];
   const now = new Date();
 
@@ -80,8 +80,12 @@ async function assemblePromptShell(): Promise<string[]> {
   const routines = await readInstruction("routines");
   if (routines) parts.push(routines);
 
-  const mcp = assembleMcpContext();
-  if (mcp) parts.push(mcp);
+  // Only advertise MCP tools on turns that actually expose them. The
+  // acknowledgment turn (acknowledge.ts) passes no tools, so it opts out.
+  if (includeMcpHint) {
+    const mcp = assembleMcpContext();
+    if (mcp) parts.push(mcp);
+  }
 
   return parts;
 }
@@ -172,8 +176,12 @@ async function assembleLocationContext(chatId: string): Promise<string | null> {
   }
 }
 
-export async function assembleSystemPrompt(chatId: string): Promise<string> {
-  const parts = await assemblePromptShell();
+export async function assembleSystemPrompt(
+  chatId: string,
+  opts: { includeMcpHint?: boolean } = {},
+): Promise<string> {
+  const { includeMcpHint = true } = opts;
+  const parts = await assemblePromptShell(includeMcpHint);
 
   const routineContext = await assembleRoutineContext(chatId);
   if (routineContext) parts.push(routineContext);
@@ -219,7 +227,8 @@ async function assembleReminderContext(chatId: string): Promise<string | null> {
 }
 
 export async function assembleProactiveSystemPrompt(chatId: string): Promise<string> {
-  const parts = await assemblePromptShell();
+  // Proactive turns use allTools (MCP included), so advertise the MCP hint.
+  const parts = await assemblePromptShell(true);
 
   const reminderContext = await assembleReminderContext(chatId);
   if (reminderContext) {

@@ -42,7 +42,9 @@ export async function generateAcknowledgment(
   const sessionId = conversation.sessionId;
 
   const [baseSystemPrompt, messages, ack] = await Promise.all([
-    assembleSystemPrompt(chatId),
+    // No tools are passed on this turn (see below), so don't advertise the
+    // MCP tool palette in the prompt.
+    assembleSystemPrompt(chatId, { includeMcpHint: false }),
     assembleMessages(chatId),
     readInstruction("acknowledgment"),
   ]);

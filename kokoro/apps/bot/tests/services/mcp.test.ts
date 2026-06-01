@@ -17,6 +17,7 @@ import {
   getMcpSummary,
   getMcpTools,
   initMcp,
+  namespaceServerTools,
   namespacedToolName,
   shutdownMcp,
 } from "../../src/services/mcp";
@@ -40,6 +41,33 @@ describe("namespacedToolName", () => {
     const key = namespacedToolName("srv", "x".repeat(200));
     expect(key.length).toBe(64);
     expect(key.startsWith("mcp_srv_")).toBe(true);
+  });
+});
+
+describe("namespaceServerTools", () => {
+  it("namespaces each tool and keeps toolNames in sync with the tools map", () => {
+    const { tools, toolNames } = namespaceServerTools("kioku", {
+      recall: {} as never,
+      query: {} as never,
+    });
+    expect(Object.keys(tools).sort()).toEqual(["mcp_kioku_query", "mcp_kioku_recall"]);
+    expect(toolNames.sort()).toEqual(["mcp_kioku_query", "mcp_kioku_recall"]);
+  });
+
+  it("drops an intra-server collision caused by the 64-char cap (no stale toolName)", () => {
+    // Both names collapse to the same capped key `mcp_s_` + 58×'a'; only the
+    // first survives, and toolNames must not list the dropped one.
+    const longA = "a".repeat(70);
+    const longB = "a".repeat(65) + "b";
+    const { tools, toolNames } = namespaceServerTools("s", {
+      [longA]: {} as never,
+      [longB]: {} as never,
+      recall: {} as never,
+    });
+    expect(Object.keys(tools)).toHaveLength(2);
+    expect(toolNames).toHaveLength(2);
+    expect(new Set(toolNames).size).toBe(toolNames.length); // no duplicates
+    expect(toolNames).toContain("mcp_s_recall");
   });
 });
 
