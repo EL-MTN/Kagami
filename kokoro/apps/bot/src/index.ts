@@ -14,6 +14,7 @@ import { startRoutineScheduler } from "./scheduler/routines";
 import { startWatcherScheduler } from "./scheduler/watchers";
 import { startMaintenanceScheduler } from "./scheduler/maintenance";
 import { shutdownBrowser } from "./services/browser";
+import { initMcp, shutdownMcp } from "./services/mcp";
 
 // Bot-specific validation: TELEGRAM_BOT_TOKEN is required
 function requireToken(): string {
@@ -39,6 +40,10 @@ async function main() {
   await connectDB();
 
   await loadContext();
+
+  // Connect to configured MCP servers and cache their tools before any tick
+  // (proactive/routine) can fire. Fail-open per server — see services/mcp.ts.
+  await initMcp();
 
   const registry = new AdapterRegistry();
 
@@ -82,7 +87,7 @@ function shutdown(signal: string) {
   stopWatcherScheduler?.();
   stopMaintenanceScheduler?.();
   stopBlueBubblesWebhook?.();
-  void shutdownBrowser()
+  void Promise.allSettled([shutdownBrowser(), shutdownMcp()])
     .then(() => disconnectDB())
     .finally(() => process.exit(0));
 }

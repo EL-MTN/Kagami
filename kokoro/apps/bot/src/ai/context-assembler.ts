@@ -11,6 +11,7 @@ import {
   listPendingConfirmations,
 } from "@kokoro/db";
 import { DATETIME_CONTEXT, moodForTimeOfDay, timeOfDayFor } from "./prompts";
+import { getMcpSummary } from "../services/mcp";
 import { config, logger, parseMarkdown } from "@kokoro/shared";
 import type { ModelMessage, UserContent, ToolContent } from "ai";
 
@@ -79,7 +80,36 @@ async function assemblePromptShell(): Promise<string[]> {
   const routines = await readInstruction("routines");
   if (routines) parts.push(routines);
 
+  const mcp = assembleMcpContext();
+  if (mcp) parts.push(mcp);
+
   return parts;
+}
+
+/**
+ * Lists tools mounted from connected MCP servers so the model knows they're
+ * available (and what each server is for). Reads cached runtime state from the
+ * MCP manager; null when no servers are connected. Tool-level semantics travel
+ * on each tool's own description — this is just the discovery hint, mirroring
+ * how `assembleRoutineContext` surfaces available routine names.
+ */
+function assembleMcpContext(): string | null {
+  const servers = getMcpSummary();
+  if (servers.length === 0) return null;
+
+  const lines = servers.map((s) => {
+    const tools = s.toolNames.length > 0 ? s.toolNames.join(", ") : "(no tools)";
+    const hint = s.instructions
+      ? ` — ${s.instructions.replace(/\s+/g, " ").trim().slice(0, 300)}`
+      : "";
+    return `- **${s.name}** (${s.transport})${hint}\n  tools: ${tools}`;
+  });
+
+  return (
+    "## External Tools (MCP)\n" +
+    "These tools come from connected MCP servers. Use them like any built-in tool when relevant.\n" +
+    lines.join("\n")
+  );
 }
 
 async function assembleRoutineContext(chatId: string): Promise<string | null> {
