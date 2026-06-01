@@ -21,7 +21,7 @@ apps/dashboard/src/app/
 │   └── [id]/page.tsx                # /people/:id   — detail + per-person interactions + followups
 ├── contexts/page.tsx                # /contexts     — distinct tags + tag-scoped detail
 ├── sync/page.tsx                    # /sync         — OAuth status + Gmail/Calendar ingest control
-├── errors/page.tsx                  # /errors       — placeholder; ingest error log is a roadmap item
+├── errors/page.tsx                  # /errors       — ingest worker health: decoded SyncState.lastError + pause state, per provider
 └── tombstones/page.tsx              # /tombstones   — soft-deleted People / Interactions / Followups
 ```
 
