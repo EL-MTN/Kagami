@@ -255,7 +255,7 @@ packages/         (no directory today — workspace glob is a placeholder for fu
 | Sync          | `GET /sync/{gmail,gcal}/state`, `POST /sync/{gmail,gcal}/run`                      |
 | OAuth         | `/oauth/google/{start,callback,status}`                                            |
 
-**Storage.** Mongoose models: `Person`, `Interaction`, `Followup`, `Organization`, `OAuthToken` (AES-256-GCM-encrypted refresh tokens), `SyncState`. Text indexes on people/interactions; unique sourceRef per Gmail/Calendar id.
+**Storage.** Mongoose models: `Person`, `Interaction`, `Followup`, `Organization`, `SyncState`. Text indexes on people/interactions; unique sourceRef per Gmail/Calendar id. (The old `OAuthToken` model is gone — the encrypted refresh token lives in Kao now.)
 
 **External services.** Google Gmail API (`gmail.readonly`) and Calendar API (`calendar.readonly`) via plain `fetch`, with access tokens vended by Kao at `${KAO_URL}/grants/kizuna/token`. No `google-auth-library` dep, no LLM, no queue, no webhooks.
 
