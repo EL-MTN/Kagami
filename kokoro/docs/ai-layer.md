@@ -286,6 +286,21 @@ Autonomous multi-step browsing (`stagehand.agent().execute()`, up to 25 steps) i
 
 **Architecture**: Executor service in `apps/bot/src/services/watcher-executor.ts`, scheduler in `apps/bot/src/scheduler/watchers.ts`, tools in `apps/bot/src/ai/tools/watchers.ts` (`createManageWatchersTool`, `reportWatcherResult`). DB models (`Watcher`, `WatcherLog`) in `packages/db/src/models/watcher.ts`. See [watchers.md](watchers.md) for full documentation.
 
+## MCP tools (external — conditional on `MCP_SERVERS`)
+
+Kokoro can act as an **MCP (Model Context Protocol) client**: at startup it connects to the servers listed in `MCP_SERVERS` and mounts their tools into the conversational palette alongside the hand-written tools above. This is the extensibility seam — adding a third-party capability (a filesystem server, a GitHub server, another Kagami service's `/mcp`, …) becomes a config line instead of a new tool module.
+
+- **Manager**: `apps/bot/src/services/mcp.ts` (`initMcp`, `getMcpTools`, `getMcpSummary`, `shutdownMcp`). `initMcp()` runs once in `apps/bot/src/index.ts` after `loadContext()` and before the schedulers start; `shutdownMcp()` runs alongside `shutdownBrowser()` on signal.
+- **Config**: `MCP_SERVERS` is a JSON array validated by `mcpServerSchema` (exported from `@kokoro/shared`). Each entry is one of:
+  - `{ name, transport: "http" | "sse", url, headers? }` — remote HTTP/SSE server (redirects rejected to avoid SSRF).
+  - `{ name, transport: "stdio", command, args?, env?, cwd? }` — local subprocess (via `@ai-sdk/mcp/mcp-stdio`).
+  - `name` must be unique (checked in `validateConfig`) and match `[a-zA-Z0-9_-]`.
+- **Namespacing**: each tool is keyed `mcp_<server>_<tool>` (capped at 64 chars), so MCP tools can never shadow a built-in (`searchMemory`, `sendPhoto`, …) and same-named tools across servers stay distinct. The merge in `allTools` is guarded so a built-in always wins on any collision.
+- **Fail-open**: a server that won't connect (or whose tool listing fails / times out at 15 s) is logged at `warn` and skipped — the bot starts with the remaining servers' tools, matching the Kioku/Kizuna client posture. A half-open client is closed so a failed stdio spawn doesn't leak a child process.
+- **Read-only invariant preserved**: MCP tools are merged **only in `allTools`** (main chat, routines, proactive). They are deliberately absent from `watcherTools` / `routineToolsUnderWatcher`, because an external tool's read/write purity can't be classified — watcher ticks must stay observe-only.
+- **Discovery in the prompt**: `assembleMcpContext()` (in `context-assembler.ts`) lists connected servers, their mounted tool keys, and any server-provided `instructions` under an `## External Tools (MCP)` section, mirroring how available routine names are surfaced. Per-tool semantics travel on each tool's own MCP-provided description.
+- **Dependency**: `@ai-sdk/mcp` (`createMCPClient`). MCP tool calls execute without the confirmation gate — the trust boundary is "operator chose to configure this server" (single-user localhost). Revisit before any non-localhost exposure.
+
 ## Image Generation
 
 Implemented in `apps/bot/src/context/generator.ts`. Uses the Vercel AI SDK `generateImage()` function with a configurable provider/model via `IMAGE_GENERATION_MODEL`.

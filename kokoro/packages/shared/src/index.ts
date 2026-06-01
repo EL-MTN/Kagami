@@ -1,4 +1,5 @@
-export { config, validateConfig } from "./config";
+export { config, validateConfig, mcpServerSchema } from "./config";
+export type { McpServerConfig } from "./config";
 export { logger } from "./logger";
 export { haversineMeters } from "./geo";
 export { parseMarkdown } from "./markdown";

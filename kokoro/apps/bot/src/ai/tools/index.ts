@@ -12,6 +12,7 @@ import { createManageWatchersTool, reportWatcherResult } from "./watchers";
 import { createRequestConfirmationTool, createCancelConfirmationTool } from "./confirmations";
 import { createSearchMemoryTool, createRememberFactTool } from "./memory";
 import { createCrmTools, createCrmWriteTools } from "./crm";
+import { getMcpTools } from "../../services/mcp";
 import { MAX_ROUTINE_DEPTH } from "../../services/routine-executor";
 import { config } from "@kokoro/shared";
 import type { ToolSet } from "ai";
@@ -101,6 +102,14 @@ export function allTools(ctx: ToolContext) {
   // Only provide useRoutine when below max depth (prevents infinite recursion)
   if (depth < MAX_ROUTINE_DEPTH) {
     tools.useRoutine = createUseRoutineTool(ctx.chatId, ctx.adapter, depth, callingContext);
+  }
+
+  // External MCP tools mounted at startup (initMcp). Namespaced `mcp_*` so they
+  // never shadow a built-in; merged only here (the "main" palette), never into
+  // the watcher read-only subset whose tools' read/write purity is known. The
+  // `in` guard keeps a built-in winning on any (prefix-impossible) collision.
+  for (const [key, tool] of Object.entries(getMcpTools())) {
+    if (!(key in tools)) tools[key] = tool;
   }
 
   return tools;
