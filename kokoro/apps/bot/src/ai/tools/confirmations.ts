@@ -5,11 +5,62 @@ import {
   setPromptMessageId,
   getPendingConfirmation,
   resolvePendingConfirmation,
+  type PendingConfirmationOrigin,
 } from "@kokoro/db";
 import { logger } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
-import { GATED_TOOL_NAMES, isGatedTool } from "../../services/gated-actions";
+import {
+  GATED_TOOL_NAMES,
+  isGatedTool,
+  recordProposalDeclineFromConfirmation,
+} from "../../services/gated-actions";
 import { appendConfirmationResolution } from "../../services/confirmation-events";
+
+// ─── raisePendingConfirmation ────────────────────────────────────────────────
+
+export interface RaiseConfirmationInput {
+  summary: string;
+  action: { tool: string; args: Record<string, unknown> };
+  origin?: PendingConfirmationOrigin;
+  originRef?: string;
+  /** Override the default 24h confirmation TTL (e.g. shorter for proposals). */
+  ttlMs?: number;
+  /** Text shown on the approval bubble. Defaults to `Approve action?\n\n{summary}`.
+   * Proposals pass the full routine prompt here so the user reviews what they
+   * approve, not just a one-line summary. */
+  promptText?: string;
+}
+
+/**
+ * Single writer for the approval rail: persist a pending row, post the
+ * tap-to-approve bubble via the adapter, and record the prompt message id so
+ * the row can later be edited in place. Shared by `requestConfirmation` (the
+ * LLM-facing gated-action wrapper) and `proposeRoutine` (self-authored
+ * routines), so both go through identical create → send → setPromptMessageId
+ * plumbing. Returns the confirmation id.
+ */
+export async function raisePendingConfirmation(
+  chatId: string,
+  adapter: PlatformAdapter,
+  input: RaiseConfirmationInput,
+): Promise<string> {
+  const row = await createPendingConfirmation({
+    chatId,
+    summary: input.summary,
+    action: input.action,
+    origin: input.origin,
+    originRef: input.originRef,
+    ttlMs: input.ttlMs,
+  });
+  const id = String(row._id);
+
+  const promptText = input.promptText ?? `Approve action?\n\n${input.summary}`;
+  const messageId = await adapter.sendConfirmationPrompt(chatId, promptText, id);
+  if (messageId) {
+    await setPromptMessageId(id, messageId);
+  }
+  return id;
+}
 
 // ─── requestConfirmation ─────────────────────────────────────────────────────
 
@@ -62,20 +113,12 @@ export function createRequestConfirmationTool(
       }
 
       try {
-        const row = await createPendingConfirmation({
-          chatId,
+        const id = await raisePendingConfirmation(chatId, adapter, {
           summary,
           action: { tool: action.tool, args: action.args },
           origin,
           originRef,
         });
-        const id = String(row._id);
-
-        const promptText = `Approve action?\n\n${summary}`;
-        const messageId = await adapter.sendConfirmationPrompt(chatId, promptText, id);
-        if (messageId) {
-          await setPromptMessageId(id, messageId);
-        }
 
         logger.debug(
           { confirmationId: id, tool: action.tool, origin },
@@ -145,6 +188,10 @@ export function createCancelConfirmationTool(
         if (!resolved) {
           return { success: false, reason: "confirmation was just resolved by another path" };
         }
+
+        // Cancelling a routine proposal is a "no" — record it so the model
+        // doesn't re-offer the same routine. No-op for any other action.
+        await recordProposalDeclineFromConfirmation(row);
 
         if (row.promptMessageId) {
           await adapter.editConfirmationPrompt(

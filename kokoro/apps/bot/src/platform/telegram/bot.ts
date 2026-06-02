@@ -11,7 +11,10 @@ import { handleMessage } from "../../ai/generate";
 import { generateAcknowledgment } from "../../ai/acknowledge";
 import { resetTimer, triggerLocationProactive } from "../../scheduler/proactive";
 import { processLocation } from "../../services/location";
-import { dispatchGatedAction } from "../../services/gated-actions";
+import {
+  dispatchGatedAction,
+  recordProposalDeclineFromConfirmation,
+} from "../../services/gated-actions";
 import { appendConfirmationResolution } from "../../services/confirmation-events";
 
 // Simple in-memory rate limiter
@@ -164,9 +167,13 @@ export function createBot(token: string): Bot {
           summary: row.summary,
           verdict: "denied",
         });
+        // Routine proposals: remember the "no" so the model doesn't re-offer.
+        await recordProposalDeclineFromConfirmation(row);
         logger.info({ confirmationId, chatId: row.chatId }, "Confirmation denied");
       } else {
-        const dispatch = await dispatchGatedAction(row.action.tool, row.action.args);
+        const dispatch = await dispatchGatedAction(row.action.tool, row.action.args, {
+          chatId: row.chatId,
+        });
         await attachResultText(confirmationId, dispatch.summary);
 
         const verdictMark = dispatch.success ? "✓ Approved" : "⚠ Approved · failed";

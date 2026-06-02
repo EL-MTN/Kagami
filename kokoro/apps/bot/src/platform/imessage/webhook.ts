@@ -10,7 +10,10 @@ import {
 } from "@kokoro/shared";
 import { attachResultText, listPendingConfirmations, resolvePendingConfirmation } from "@kokoro/db";
 import { handleMessage } from "../../ai/generate";
-import { dispatchGatedAction } from "../../services/gated-actions";
+import {
+  dispatchGatedAction,
+  recordProposalDeclineFromConfirmation,
+} from "../../services/gated-actions";
 import { appendConfirmationResolution } from "../../services/confirmation-events";
 import { generateAcknowledgment } from "../../ai/acknowledge";
 import { resetTimer } from "../../scheduler/proactive";
@@ -109,9 +112,11 @@ async function tryResolveConfirmationReply(
       summary: row.summary,
       verdict: "denied",
     });
+    // Routine proposals: remember the "no" so the model doesn't re-offer.
+    await recordProposalDeclineFromConfirmation(row);
     logger.info({ confirmationId, chatId }, "iMessage confirmation denied via reply");
   } else {
-    const dispatch = await dispatchGatedAction(row.action.tool, row.action.args);
+    const dispatch = await dispatchGatedAction(row.action.tool, row.action.args, { chatId });
     await attachResultText(confirmationId, dispatch.summary);
     const verdictMark = dispatch.success ? "✓ Approved" : "⚠ Approved · failed";
     await adapter.editConfirmationPrompt(
