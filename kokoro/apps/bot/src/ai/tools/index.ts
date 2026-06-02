@@ -10,6 +10,7 @@ import {
 } from "./routines";
 import { createManageWatchersTool, reportWatcherResult } from "./watchers";
 import { createRequestConfirmationTool, createCancelConfirmationTool } from "./confirmations";
+import { createProposeRoutineTool } from "./routine-proposals";
 import { createSearchMemoryTool, createRememberFactTool } from "./memory";
 import { createCrmTools, createCrmWriteTools } from "./crm";
 import { getMcpTools } from "../../services/mcp";
@@ -90,6 +91,15 @@ export function allTools(ctx: ToolContext) {
   tools.manageRoutines = createManageRoutinesTool(ctx.chatId);
   tools.searchRoutines = createSearchRoutinesTool(ctx.chatId);
   tools.manageWatchers = createManageWatchersTool(ctx.chatId);
+
+  // Self-authored routines: let the conversational model offer to save a
+  // just-completed task. Main palette ONLY — deliberately absent from
+  // watcherTools / routineToolsUnderWatcher so scheduled/observation runs can't
+  // self-author (preserves the read-only invariant). The approved action is the
+  // dispatch-only `createRoutine`, gated behind the approval rail.
+  if (config.ROUTINE_PROPOSALS_ENABLED) {
+    tools.proposeRoutine = createProposeRoutineTool(ctx.chatId, ctx.adapter);
+  }
 
   tools.searchMemory = createSearchMemoryTool();
   tools.rememberFact = createRememberFactTool();

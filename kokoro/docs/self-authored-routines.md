@@ -1,10 +1,23 @@
 # Self-Authored Routines — Design & Implementation Plan
 
-> **Status: PLANNED — not yet implemented.** This document is the agreed design
-> for letting Kokoro propose saving a just-completed task as a reusable routine.
-> No code for it exists yet; the file paths below are the intended targets. Update
-> this header to "Implemented" (and fold the relevant parts into
-> [`ai-layer.md`](ai-layer.md) / [`confirmations.md`](confirmations.md)) once it ships.
+> **Status: IMPLEMENTED.** Kokoro can offer to save a just-completed task as a
+> reusable routine via the `proposeRoutine` tool (gated on `ROUTINE_PROPOSALS_ENABLED`,
+> default on). The operational reference now lives in
+> [`ai-layer.md`](ai-layer.md#proposeroutine-conditional--routine_proposals_enabled-default-on-main-palette-only)
+> (tool surface, guard, dispatch-only `createRoutine`) and
+> [`confirmations.md`](confirmations.md#dispatch-only-actions-not-llm-raisable)
+> (the rail + dispatch-only pattern). This document is retained as the design
+> rationale (why Option A, alternatives rejected, safety analysis).
+>
+> **One deviation from the plan below:** `createRoutine` is **not** added to
+> `GATED_TOOL_NAMES` (§Components & files step 5 / Testing). Doing so would put
+> it in `requestConfirmation`'s enum and let the model raise it directly,
+> bypassing the `proposeRoutine` guard. Instead it's a separate **dispatch-only**
+> action (`DISPATCH_ONLY_TOOL_NAMES`) — dispatchable via the approval rail but
+> absent from the LLM-wrappable enum. This keeps the existing
+> `isGatedTool("createRoutine") === false` assertion true and better honors the
+> "reachable only via the approval rail" invariant. The signature/origin
+> discriminator for recording declines is `action.tool === "createRoutine"`.
 
 ## Motivation
 
