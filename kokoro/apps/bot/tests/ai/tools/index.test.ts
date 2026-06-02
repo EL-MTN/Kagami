@@ -199,6 +199,17 @@ describe("allTools — proposeRoutine (self-authored routines)", () => {
     expect(Object.keys(watcherTools(baseCtx))).not.toContain("proposeRoutine");
     expect(Object.keys(routineToolsUnderWatcher(baseCtx))).not.toContain("proposeRoutine");
   });
+
+  it("is withheld from routine executions (isRoutineRun) even though they share callingContext: main", () => {
+    // A cron/manual/composed routine runs through allTools with
+    // callingContext "main"; it must NOT be able to self-author another routine.
+    mockConfig.ROUTINE_PROPOSALS_ENABLED = true;
+    expect(Object.keys(allTools({ ...baseCtx, isRoutineRun: true }))).not.toContain(
+      "proposeRoutine",
+    );
+    // ...but a normal conversational turn (no isRoutineRun) still gets it.
+    expect(Object.keys(allTools(baseCtx))).toContain("proposeRoutine");
+  });
 });
 
 describe("allTools — MCP tools", () => {

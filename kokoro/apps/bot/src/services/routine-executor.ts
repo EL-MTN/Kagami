@@ -121,6 +121,10 @@ export async function executeRoutine(
       sessionId: `routine-${routineId}`,
       routineDepth: depth,
       callingContext,
+      // A routine run must never self-author another routine — withhold
+      // proposeRoutine even though this shares callingContext: "main" with
+      // live conversation.
+      isRoutineRun: true,
     };
 
     // Step limits by context

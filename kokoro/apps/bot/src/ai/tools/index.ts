@@ -36,6 +36,15 @@ export interface ToolContext {
   /** Current routine nesting depth. 0 = top-level conversation or manual routine trigger. */
   routineDepth?: number;
   /**
+   * True when this palette is being assembled for a routine *execution* (cron,
+   * manual, or composed) rather than a live conversational turn. Routine runs
+   * share `callingContext: "main"` with conversation, so this is the only signal
+   * that distinguishes them. Used to withhold `proposeRoutine` — a running
+   * routine must never self-author another routine (the proposal is a
+   * conversational, user-present affordance). Defaults to false.
+   */
+  isRoutineRun?: boolean;
+  /**
    * The execution context the tool set is being assembled for. "main" =
    * conversational chat or routine executor. "watcher" = inside a watcher tick
    * (read-only invariant). Used by `useRoutine` to gate by routine purity.
@@ -93,11 +102,13 @@ export function allTools(ctx: ToolContext) {
   tools.manageWatchers = createManageWatchersTool(ctx.chatId);
 
   // Self-authored routines: let the conversational model offer to save a
-  // just-completed task. Main palette ONLY — deliberately absent from
-  // watcherTools / routineToolsUnderWatcher so scheduled/observation runs can't
-  // self-author (preserves the read-only invariant). The approved action is the
+  // just-completed task. Conversational turns ONLY — withheld from
+  // watcherTools / routineToolsUnderWatcher (structurally) AND from routine
+  // executions (via `isRoutineRun`, since those also run under
+  // callingContext: "main" through allTools). A scheduled/manual/composed
+  // routine must never self-author another routine. The approved action is the
   // dispatch-only `createRoutine`, gated behind the approval rail.
-  if (config.ROUTINE_PROPOSALS_ENABLED) {
+  if (config.ROUTINE_PROPOSALS_ENABLED && !ctx.isRoutineRun) {
     tools.proposeRoutine = createProposeRoutineTool(ctx.chatId, ctx.adapter);
   }
 
