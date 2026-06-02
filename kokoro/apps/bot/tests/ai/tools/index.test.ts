@@ -181,34 +181,40 @@ describe("allTools — feature flags", () => {
 });
 
 describe("allTools — proposeRoutine (self-authored routines)", () => {
-  it("is absent from the main palette when the flag is unset/off", () => {
-    expect(Object.keys(allTools(baseCtx))).not.toContain("proposeRoutine");
+  // proposeRoutine is offered ONLY on a live conversational turn
+  // (ctx.conversational === true) AND with the flag on.
+  const convoCtx = { ...baseCtx, conversational: true };
+
+  it("is absent when the flag is unset/off, even on a conversational turn", () => {
+    expect(Object.keys(allTools(convoCtx))).not.toContain("proposeRoutine");
     mockConfig.ROUTINE_PROPOSALS_ENABLED = false;
-    expect(Object.keys(allTools(baseCtx))).not.toContain("proposeRoutine");
+    expect(Object.keys(allTools(convoCtx))).not.toContain("proposeRoutine");
   });
 
-  it("registers proposeRoutine in the main palette when the flag is on", () => {
+  it("registers proposeRoutine on a conversational turn when the flag is on", () => {
     mockConfig.ROUTINE_PROPOSALS_ENABLED = true;
-    expect(Object.keys(allTools(baseCtx))).toContain("proposeRoutine");
+    expect(Object.keys(allTools(convoCtx))).toContain("proposeRoutine");
   });
 
   it("is NEVER offered to watcher / under-watcher palettes even with the flag on", () => {
     // Structural invariant: scheduled/observation runs can't self-author a
     // routine — preserves the read-only watcher guarantee.
     mockConfig.ROUTINE_PROPOSALS_ENABLED = true;
-    expect(Object.keys(watcherTools(baseCtx))).not.toContain("proposeRoutine");
-    expect(Object.keys(routineToolsUnderWatcher(baseCtx))).not.toContain("proposeRoutine");
+    expect(Object.keys(watcherTools(convoCtx))).not.toContain("proposeRoutine");
+    expect(Object.keys(routineToolsUnderWatcher(convoCtx))).not.toContain("proposeRoutine");
   });
 
-  it("is withheld from routine executions (isRoutineRun) even though they share callingContext: main", () => {
-    // A cron/manual/composed routine runs through allTools with
-    // callingContext "main"; it must NOT be able to self-author another routine.
+  it("is withheld from every non-conversational main-context caller (routine runs, proactive)", () => {
+    // Routine executions and proactive outreach call allTools under
+    // callingContext "main" but leave `conversational` false — they must NOT
+    // be able to self-author a routine. Positive opt-in: no flag → no tool.
     mockConfig.ROUTINE_PROPOSALS_ENABLED = true;
-    expect(Object.keys(allTools({ ...baseCtx, isRoutineRun: true }))).not.toContain(
+    expect(Object.keys(allTools(baseCtx))).not.toContain("proposeRoutine");
+    expect(Object.keys(allTools({ ...baseCtx, conversational: false }))).not.toContain(
       "proposeRoutine",
     );
-    // ...but a normal conversational turn (no isRoutineRun) still gets it.
-    expect(Object.keys(allTools(baseCtx))).toContain("proposeRoutine");
+    // ...but a live conversational turn still gets it.
+    expect(Object.keys(allTools(convoCtx))).toContain("proposeRoutine");
   });
 });
 

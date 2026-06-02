@@ -11,7 +11,7 @@ import {
   updatePersonInputSchema,
 } from "../ai/tools/crm";
 import { parameterSchema } from "../ai/tools/routine-schema";
-import { config, logger, runWithSpan, validateCronAndDefaults } from "@kokoro/shared";
+import { config, logger, runWithSpan } from "@kokoro/shared";
 import type { IPendingConfirmation } from "@kokoro/db";
 
 /**
@@ -305,17 +305,13 @@ export async function dispatchGatedAction(
             detail: { reason: "no_chat_context" },
           };
         }
-
-        // Belt-and-suspenders: proposed routines carry no cron, so this is a
-        // no-op today, but it keeps the param/cron invariant enforced at the
-        // authoritative gate if a future caller ever passes a schedule.
-        const cronError = validateCronAndDefaults(null, args.parameters ?? []);
-        if (cronError) {
-          return { success: false, summary: cronError.message, detail: { reason: "invalid_args" } };
-        }
+        // No cron-validation needed: createRoutineArgs has no cronSchedule field,
+        // so a proposed routine can never carry a schedule (safe defaults below
+        // hardcode `cronSchedule: null`). The schema is the authoritative gate.
 
         logger.info({ chatId: ctx.chatId, name: args.name }, "Dispatching approved createRoutine");
 
+        let routineId: string | null = null;
         try {
           const routine = await createRoutine(ctx.chatId, {
             name: args.name,
@@ -331,31 +327,31 @@ export async function dispatchGatedAction(
             nextRunAt: null,
             enabled: true,
           });
-          // Best-effort: remember the accept so the model doesn't re-propose
-          // the same task. A write blip here must not fail the save itself.
-          await recordProposalDecision(ctx.chatId, args.signature, "accepted", {
-            cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,
-          }).catch(() => {});
-          return {
-            success: true,
-            summary: `routine "${args.name}" saved (on-demand)`,
-            detail: { routineId: String(routine._id) },
-          };
+          routineId = String(routine._id);
         } catch (error) {
-          if (isDuplicateKeyError(error)) {
-            // A routine with this name already exists — treat as a graceful
-            // no-op (still record the accept so we stop offering it).
-            await recordProposalDecision(ctx.chatId, args.signature, "accepted", {
-              cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,
-            }).catch(() => {});
-            return {
+          // A routine with this name already exists — treat as a graceful
+          // no-op (we still record the accept below so we stop offering it).
+          if (!isDuplicateKeyError(error)) throw error;
+        }
+
+        // Record the accept once, regardless of created-vs-duplicate, so the
+        // model doesn't re-propose. Best-effort — a write blip here must not
+        // fail the save.
+        await recordProposalDecision(ctx.chatId, args.signature, "accepted", {
+          cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,
+        }).catch(() => {});
+
+        return routineId
+          ? {
+              success: true,
+              summary: `routine "${args.name}" saved (on-demand)`,
+              detail: { routineId },
+            }
+          : {
               success: false,
               summary: `a routine named "${args.name}" already exists`,
               detail: { reason: "duplicate_name" },
             };
-          }
-          throw error;
-        }
       }
     }
   } catch (error) {

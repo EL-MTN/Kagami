@@ -48,7 +48,10 @@ export async function readInstruction(name: string): Promise<string | null> {
   return readContextFile(`instructions/${name}.md`);
 }
 
-async function assemblePromptShell(includeMcpHint: boolean): Promise<string[]> {
+async function assemblePromptShell(
+  includeMcpHint: boolean,
+  includeProposalRule: boolean = includeMcpHint,
+): Promise<string[]> {
   const parts: string[] = [];
   const now = new Date();
 
@@ -80,10 +83,12 @@ async function assemblePromptShell(includeMcpHint: boolean): Promise<string[]> {
   const routines = await readInstruction("routines");
   if (routines) parts.push(routines);
 
-  // The proposeRoutine rule rides on the same opt-out as the MCP hint: the
-  // no-tools acknowledgment turn can't call proposeRoutine, so don't load the
-  // rule there. Also gated on the feature flag.
-  if (includeMcpHint && config.ROUTINE_PROPOSALS_ENABLED) {
+  // Load the proposeRoutine rule only where the tool is actually offered —
+  // live conversational turns. Excluded from the no-tools acknowledgment turn
+  // (includeProposalRule defaults to includeMcpHint = false there) and from
+  // proactive outreach (passes includeProposalRule: false explicitly), keeping
+  // the rule and the tool's `conversational` gate in lockstep.
+  if (includeProposalRule && config.ROUTINE_PROPOSALS_ENABLED) {
     const routineProposals = await readInstruction("routine-proposals");
     if (routineProposals) parts.push(routineProposals);
   }
@@ -243,8 +248,11 @@ async function assembleReminderContext(chatId: string): Promise<string | null> {
 }
 
 export async function assembleProactiveSystemPrompt(chatId: string): Promise<string> {
-  // Proactive turns use allTools (MCP included), so advertise the MCP hint.
-  const parts = await assemblePromptShell(true);
+  // Proactive turns use allTools (MCP included), so advertise the MCP hint —
+  // but NOT the proposeRoutine rule: proactive outreach isn't a user-initiated
+  // task-completion turn, and `allTools` withholds proposeRoutine there
+  // (conversational is false), so advertising it would dangle a missing tool.
+  const parts = await assemblePromptShell(true, false);
 
   const reminderContext = await assembleReminderContext(chatId);
   if (reminderContext) {

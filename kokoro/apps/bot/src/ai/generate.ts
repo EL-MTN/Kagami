@@ -137,12 +137,15 @@ export async function handleMessage(
     "Context assembled",
   );
 
-  // 4. Create tool context with sessionId
+  // 4. Create tool context with sessionId. This is the only user-initiated
+  // conversational turn — mark it so `proposeRoutine` is offered here and
+  // nowhere else (proactive/routine/watcher paths leave `conversational` false).
   const toolContext: ToolContext = {
     chatId: incoming.chatId,
     adapter,
     sessionId,
     userId: incoming.userId,
+    conversational: true,
   };
 
   // 5. Generate response with tools
