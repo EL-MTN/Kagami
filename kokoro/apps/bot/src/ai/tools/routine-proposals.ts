@@ -92,15 +92,18 @@ export function createProposeRoutineTool(chatId: string, adapter: PlatformAdapte
         const params = parameters ?? [];
         const signature = computeProposalSignature(name, prompt);
 
-        // GUARD 1 — durable decline memory. Honors a prior "no" past the
-        // 40-message window / 1h session reset the LLM can't see.
-        if (await isRecentlyDeclined(chatId, signature)) {
+        // Both guards are independent reads — run them concurrently.
+        // GUARD 1 — durable decline memory: honors a prior "no" past the
+        //   40-message window / 1h session reset the LLM can't see.
+        // GUARD 2 — one proposal at a time: also protects iMessage's
+        //   "exactly one pending" YES/NO resolver from stacked bubbles.
+        const [declined, pending] = await Promise.all([
+          isRecentlyDeclined(chatId, signature),
+          listPendingConfirmations(chatId),
+        ]);
+        if (declined) {
           return { proposed: false, reason: "Goshujin-sama declined a similar routine recently" };
         }
-
-        // GUARD 2 — one proposal at a time. Also protects iMessage's
-        // "exactly one pending" YES/NO resolver from stacked bubbles.
-        const pending = await listPendingConfirmations(chatId);
         if (pending.some((p) => p.action.tool === "createRoutine")) {
           return { proposed: false, reason: "a routine proposal is already awaiting approval" };
         }

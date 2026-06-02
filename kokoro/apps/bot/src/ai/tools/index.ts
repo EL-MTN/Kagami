@@ -36,14 +36,16 @@ export interface ToolContext {
   /** Current routine nesting depth. 0 = top-level conversation or manual routine trigger. */
   routineDepth?: number;
   /**
-   * True when this palette is being assembled for a routine *execution* (cron,
-   * manual, or composed) rather than a live conversational turn. Routine runs
-   * share `callingContext: "main"` with conversation, so this is the only signal
-   * that distinguishes them. Used to withhold `proposeRoutine` — a running
-   * routine must never self-author another routine (the proposal is a
-   * conversational, user-present affordance). Defaults to false.
+   * True only for a live, user-initiated conversational turn (`generate.ts`).
+   * Proactive outreach, routine executions, watcher ticks, and the
+   * acknowledgment turn all leave it false — they share `callingContext: "main"`
+   * with conversation but are NOT moments where the user just asked for a
+   * multi-step task. Gates `proposeRoutine` (a conversational, user-present
+   * affordance): offering to save a routine only makes sense right after the
+   * user drove a task to completion. Positive opt-in so any new non-
+   * conversational `allTools` caller is excluded by default.
    */
-  isRoutineRun?: boolean;
+  conversational?: boolean;
   /**
    * The execution context the tool set is being assembled for. "main" =
    * conversational chat or routine executor. "watcher" = inside a watcher tick
@@ -101,14 +103,15 @@ export function allTools(ctx: ToolContext) {
   tools.searchRoutines = createSearchRoutinesTool(ctx.chatId);
   tools.manageWatchers = createManageWatchersTool(ctx.chatId);
 
-  // Self-authored routines: let the conversational model offer to save a
-  // just-completed task. Conversational turns ONLY — withheld from
-  // watcherTools / routineToolsUnderWatcher (structurally) AND from routine
-  // executions (via `isRoutineRun`, since those also run under
-  // callingContext: "main" through allTools). A scheduled/manual/composed
-  // routine must never self-author another routine. The approved action is the
-  // dispatch-only `createRoutine`, gated behind the approval rail.
-  if (config.ROUTINE_PROPOSALS_ENABLED && !ctx.isRoutineRun) {
+  // Self-authored routines: let the model offer to save a just-completed task.
+  // Live conversational turns ONLY (`ctx.conversational`) — structurally absent
+  // from watcherTools / routineToolsUnderWatcher, and withheld from every other
+  // allTools caller that runs under callingContext: "main" but isn't a
+  // user-initiated turn (proactive outreach, routine executions). A
+  // scheduled/manual/composed routine — or an unprompted proactive message —
+  // must never self-author a routine. Approved action is the dispatch-only
+  // `createRoutine`, gated behind the approval rail.
+  if (config.ROUTINE_PROPOSALS_ENABLED && ctx.conversational) {
     tools.proposeRoutine = createProposeRoutineTool(ctx.chatId, ctx.adapter);
   }
 
