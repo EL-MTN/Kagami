@@ -3,18 +3,21 @@ import { sendEmail } from "./gmail";
 import { updateEvent, deleteEvent } from "./google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser, withBrowserLock } from "./browser";
 import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
+import { createRoutine, isDuplicateKeyError, recordProposalDecision } from "@kokoro/db";
 import {
   createFollowupInputSchema,
   logInteractionInputSchema,
   resolveFollowupInputSchema,
   updatePersonInputSchema,
 } from "../ai/tools/crm";
-import { logger, runWithSpan } from "@kokoro/shared";
+import { parameterSchema } from "../ai/tools/routine-schema";
+import { config, logger, runWithSpan, validateCronAndDefaults } from "@kokoro/shared";
+import type { IPendingConfirmation } from "@kokoro/db";
 
 /**
  * Tools that the LLM must wrap in a `requestConfirmation` call rather than
- * invoking directly. The dispatcher below knows how to execute each one
- * after the user approves the pending confirmation.
+ * invoking directly. This is the enum `requestConfirmation` exposes, so it is
+ * exactly the set of actions the model may *raise* a confirmation for.
  *
  * Adding a new gated tool requires three things:
  *   1. add its name here (single source of truth)
@@ -32,8 +35,25 @@ export const GATED_TOOL_NAMES = [
 ] as const;
 type GatedToolName = (typeof GATED_TOOL_NAMES)[number];
 
+/**
+ * Dispatch-only actions: executable through the approval rail but deliberately
+ * NOT in `GATED_TOOL_NAMES`, so they're absent from `requestConfirmation`'s
+ * enum. `createRoutine` is reachable only via `proposeRoutine` → the approval
+ * bubble, which runs the durable anti-nag guard first; exposing it on
+ * `requestConfirmation` would let the model self-author a routine while
+ * bypassing that guard.
+ */
+const DISPATCH_ONLY_TOOL_NAMES = ["createRoutine"] as const;
+type DispatchOnlyToolName = (typeof DISPATCH_ONLY_TOOL_NAMES)[number];
+
+type DispatchableToolName = GatedToolName | DispatchOnlyToolName;
+
 export function isGatedTool(name: string): name is GatedToolName {
   return (GATED_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+function isDispatchable(name: string): name is DispatchableToolName {
+  return isGatedTool(name) || (DISPATCH_ONLY_TOOL_NAMES as readonly string[]).includes(name);
 }
 
 const sendEmailArgs = z.object({
@@ -64,11 +84,24 @@ const browseAgentArgs = z.object({
   goal: z.string().min(1),
 });
 
+// Self-authored routine draft. `signature` (normalized name + prompt hash) is
+// threaded through so the dispatcher can mark the proposal accepted in the
+// durable decline store. Routines created this way are always read-purity /
+// on-demand (no cron) — those safe defaults are applied at dispatch, NOT taken
+// from the draft, so the model can't smuggle a cron'd action routine through.
+const createRoutineArgs = z.object({
+  signature: z.string().min(1),
+  name: z.string().min(1).max(64),
+  description: z.string().min(1).max(500),
+  prompt: z.string().min(1).max(4000),
+  parameters: z.array(parameterSchema).optional(),
+});
+
 // CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the
 // dispatcher's re-validator and the tool's `inputSchema` are guaranteed to
 // stay in sync (Kizuna's API does not enforce the LLM-facing caps, so the
 // dispatcher schema is the only stop between the LLM and the database).
-const GATED_ARG_SCHEMAS: Record<GatedToolName, z.ZodTypeAny> = {
+const GATED_ARG_SCHEMAS: Record<DispatchableToolName, z.ZodTypeAny> = {
   sendEmail: sendEmailArgs,
   manageCalendar: manageCalendarArgs,
   browseAgent: browseAgentArgs,
@@ -76,6 +109,7 @@ const GATED_ARG_SCHEMAS: Record<GatedToolName, z.ZodTypeAny> = {
   createFollowup: createFollowupInputSchema,
   resolveFollowup: resolveFollowupInputSchema,
   updatePerson: updatePersonInputSchema,
+  createRoutine: createRoutineArgs,
 };
 
 interface DispatchResult {
@@ -86,8 +120,19 @@ interface DispatchResult {
   detail: Record<string, unknown>;
 }
 
-export async function dispatchGatedAction(tool: string, rawArgs: unknown): Promise<DispatchResult> {
-  if (!isGatedTool(tool)) {
+export interface DispatchContext {
+  /** Chat the confirmation belongs to. Required by chat-scoped actions
+   * (`createRoutine`); ignored by the global Google/CRM actions. Sourced from
+   * the resolved `PendingConfirmation` row, never from LLM-supplied args. */
+  chatId?: string;
+}
+
+export async function dispatchGatedAction(
+  tool: string,
+  rawArgs: unknown,
+  ctx: DispatchContext = {},
+): Promise<DispatchResult> {
+  if (!isDispatchable(tool)) {
     return {
       success: false,
       summary: `unknown gated tool "${tool}"`,
@@ -250,6 +295,68 @@ export async function dispatchGatedAction(tool: string, rawArgs: unknown): Promi
           detail: { person },
         };
       }
+
+      case "createRoutine": {
+        const args = parsed.data as z.infer<typeof createRoutineArgs>;
+        if (!ctx.chatId) {
+          return {
+            success: false,
+            summary: "cannot save routine — missing chat context",
+            detail: { reason: "no_chat_context" },
+          };
+        }
+
+        // Belt-and-suspenders: proposed routines carry no cron, so this is a
+        // no-op today, but it keeps the param/cron invariant enforced at the
+        // authoritative gate if a future caller ever passes a schedule.
+        const cronError = validateCronAndDefaults(null, args.parameters ?? []);
+        if (cronError) {
+          return { success: false, summary: cronError.message, detail: { reason: "invalid_args" } };
+        }
+
+        logger.info({ chatId: ctx.chatId, name: args.name }, "Dispatching approved createRoutine");
+
+        try {
+          const routine = await createRoutine(ctx.chatId, {
+            name: args.name,
+            description: args.description,
+            prompt: args.prompt,
+            parameters: args.parameters ?? [],
+            // Safe defaults — self-authored routines are read-only and
+            // on-demand. They never run autonomously; upgrading to action/cron
+            // stays the explicit, user-driven manageRoutines path.
+            cronSchedule: null,
+            reportMode: "always",
+            purity: "read",
+            nextRunAt: null,
+            enabled: true,
+          });
+          // Best-effort: remember the accept so the model doesn't re-propose
+          // the same task. A write blip here must not fail the save itself.
+          await recordProposalDecision(ctx.chatId, args.signature, "accepted", {
+            cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,
+          }).catch(() => {});
+          return {
+            success: true,
+            summary: `routine "${args.name}" saved (on-demand)`,
+            detail: { routineId: String(routine._id) },
+          };
+        } catch (error) {
+          if (isDuplicateKeyError(error)) {
+            // A routine with this name already exists — treat as a graceful
+            // no-op (still record the accept so we stop offering it).
+            await recordProposalDecision(ctx.chatId, args.signature, "accepted", {
+              cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,
+            }).catch(() => {});
+            return {
+              success: false,
+              summary: `a routine named "${args.name}" already exists`,
+              detail: { reason: "duplicate_name" },
+            };
+          }
+          throw error;
+        }
+      }
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unknown error";
@@ -259,5 +366,28 @@ export async function dispatchGatedAction(tool: string, rawArgs: unknown): Promi
       summary: `failed: ${reason}`,
       detail: { reason },
     };
+  }
+}
+
+/**
+ * When a `createRoutine` proposal confirmation is denied or cancelled, record
+ * the decline in the durable store so the model honors the "no" past the
+ * 40-message context window / 1h session reset. Discriminates on the action
+ * tool (NOT origin) so a routine-raised gated action — e.g. a running routine
+ * asking to send an email — never trips this. No-op for every other action;
+ * best-effort so a store blip never wedges the deny/cancel path.
+ */
+export async function recordProposalDeclineFromConfirmation(
+  row: Pick<IPendingConfirmation, "chatId" | "action">,
+): Promise<void> {
+  if (row.action.tool !== "createRoutine") return;
+  const signature = row.action.args.signature;
+  if (typeof signature !== "string" || signature.length === 0) return;
+  try {
+    await recordProposalDecision(row.chatId, signature, "declined", {
+      cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,
+    });
+  } catch (error) {
+    logger.warn({ error, chatId: row.chatId }, "Failed to record routine-proposal decline");
   }
 }

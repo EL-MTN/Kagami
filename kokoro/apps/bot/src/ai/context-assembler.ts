@@ -80,6 +80,14 @@ async function assemblePromptShell(includeMcpHint: boolean): Promise<string[]> {
   const routines = await readInstruction("routines");
   if (routines) parts.push(routines);
 
+  // The proposeRoutine rule rides on the same opt-out as the MCP hint: the
+  // no-tools acknowledgment turn can't call proposeRoutine, so don't load the
+  // rule there. Also gated on the feature flag.
+  if (includeMcpHint && config.ROUTINE_PROPOSALS_ENABLED) {
+    const routineProposals = await readInstruction("routine-proposals");
+    if (routineProposals) parts.push(routineProposals);
+  }
+
   // Only advertise MCP tools on turns that actually expose them. The
   // acknowledgment turn (acknowledge.ts) passes no tools, so it opts out.
   if (includeMcpHint) {
@@ -138,7 +146,15 @@ async function assemblePendingConfirmationsContext(chatId: string): Promise<stri
     const lines = pending.map((row) => {
       const ageMs = Date.now() - row.createdAt.getTime();
       const ago = formatDistanceToNow(row.createdAt, { addSuffix: false });
-      const stale = ageMs > 60 * 60_000 ? " (stale — consider cancelling if no longer wanted)" : "";
+      // Skip the stale-cancel nudge for routine proposals: an ignored "want me
+      // to save this?" offer should just TTL out (it's short-lived), not nag
+      // the model to cancel it. They're still listed so the model knows one is
+      // pending and won't re-propose.
+      const isProposal = row.action.tool === "createRoutine";
+      const stale =
+        !isProposal && ageMs > 60 * 60_000
+          ? " (stale — consider cancelling if no longer wanted)"
+          : "";
       return `- ${ago} ago — ${row.summary} (id: ${String(row._id)})${stale}`;
     });
     return (

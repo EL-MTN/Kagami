@@ -45,6 +45,12 @@ vi.mock("../../../src/services/mcp", () => ({
   getMcpTools: vi.fn(() => ({})),
 }));
 
+// proposeRoutine pulls in the confirmation rail + db; stub it to a sentinel so
+// the registry tests stay focused on which palette it lands in.
+vi.mock("../../../src/ai/tools/routine-proposals", () => ({
+  createProposeRoutineTool: vi.fn(() => ({ __proposeRoutine: true })),
+}));
+
 import { allTools, watcherTools, routineToolsUnderWatcher } from "../../../src/ai/tools/index";
 import { getMcpTools } from "../../../src/services/mcp";
 
@@ -171,6 +177,27 @@ describe("allTools — feature flags", () => {
         "updatePerson",
       ]),
     );
+  });
+});
+
+describe("allTools — proposeRoutine (self-authored routines)", () => {
+  it("is absent from the main palette when the flag is unset/off", () => {
+    expect(Object.keys(allTools(baseCtx))).not.toContain("proposeRoutine");
+    mockConfig.ROUTINE_PROPOSALS_ENABLED = false;
+    expect(Object.keys(allTools(baseCtx))).not.toContain("proposeRoutine");
+  });
+
+  it("registers proposeRoutine in the main palette when the flag is on", () => {
+    mockConfig.ROUTINE_PROPOSALS_ENABLED = true;
+    expect(Object.keys(allTools(baseCtx))).toContain("proposeRoutine");
+  });
+
+  it("is NEVER offered to watcher / under-watcher palettes even with the flag on", () => {
+    // Structural invariant: scheduled/observation runs can't self-author a
+    // routine — preserves the read-only watcher guarantee.
+    mockConfig.ROUTINE_PROPOSALS_ENABLED = true;
+    expect(Object.keys(watcherTools(baseCtx))).not.toContain("proposeRoutine");
+    expect(Object.keys(routineToolsUnderWatcher(baseCtx))).not.toContain("proposeRoutine");
   });
 });
 

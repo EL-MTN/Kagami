@@ -109,6 +109,14 @@ export {
   type CreatePendingConfirmationInput,
 } from "./models/pending-confirmation";
 export {
+  RoutineProposalDecision,
+  recordProposalDecision,
+  isRecentlyDeclined,
+  type IRoutineProposalDecision,
+  type ProposalVerdict,
+  type RecordProposalDecisionOptions,
+} from "./models/routine-proposal";
+export {
   Watcher,
   WatcherLog,
   createWatcher,
