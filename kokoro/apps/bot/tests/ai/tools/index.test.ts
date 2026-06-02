@@ -45,6 +45,12 @@ vi.mock("../../../src/services/mcp", () => ({
   getMcpTools: vi.fn(() => ({})),
 }));
 
+// proposeRoutine pulls in the confirmation rail + db; stub it to a sentinel so
+// the registry tests stay focused on which palette it lands in.
+vi.mock("../../../src/ai/tools/routine-proposals", () => ({
+  createProposeRoutineTool: vi.fn(() => ({ __proposeRoutine: true })),
+}));
+
 import { allTools, watcherTools, routineToolsUnderWatcher } from "../../../src/ai/tools/index";
 import { getMcpTools } from "../../../src/services/mcp";
 
@@ -171,6 +177,44 @@ describe("allTools — feature flags", () => {
         "updatePerson",
       ]),
     );
+  });
+});
+
+describe("allTools — proposeRoutine (self-authored routines)", () => {
+  // proposeRoutine is offered ONLY on a live conversational turn
+  // (ctx.conversational === true) AND with the flag on.
+  const convoCtx = { ...baseCtx, conversational: true };
+
+  it("is absent when the flag is unset/off, even on a conversational turn", () => {
+    expect(Object.keys(allTools(convoCtx))).not.toContain("proposeRoutine");
+    mockConfig.ROUTINE_PROPOSALS_ENABLED = false;
+    expect(Object.keys(allTools(convoCtx))).not.toContain("proposeRoutine");
+  });
+
+  it("registers proposeRoutine on a conversational turn when the flag is on", () => {
+    mockConfig.ROUTINE_PROPOSALS_ENABLED = true;
+    expect(Object.keys(allTools(convoCtx))).toContain("proposeRoutine");
+  });
+
+  it("is NEVER offered to watcher / under-watcher palettes even with the flag on", () => {
+    // Structural invariant: scheduled/observation runs can't self-author a
+    // routine — preserves the read-only watcher guarantee.
+    mockConfig.ROUTINE_PROPOSALS_ENABLED = true;
+    expect(Object.keys(watcherTools(convoCtx))).not.toContain("proposeRoutine");
+    expect(Object.keys(routineToolsUnderWatcher(convoCtx))).not.toContain("proposeRoutine");
+  });
+
+  it("is withheld from every non-conversational main-context caller (routine runs, proactive)", () => {
+    // Routine executions and proactive outreach call allTools under
+    // callingContext "main" but leave `conversational` false — they must NOT
+    // be able to self-author a routine. Positive opt-in: no flag → no tool.
+    mockConfig.ROUTINE_PROPOSALS_ENABLED = true;
+    expect(Object.keys(allTools(baseCtx))).not.toContain("proposeRoutine");
+    expect(Object.keys(allTools({ ...baseCtx, conversational: false }))).not.toContain(
+      "proposeRoutine",
+    );
+    // ...but a live conversational turn still gets it.
+    expect(Object.keys(allTools(convoCtx))).toContain("proposeRoutine");
   });
 });
 

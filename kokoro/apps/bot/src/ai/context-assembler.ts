@@ -48,7 +48,10 @@ export async function readInstruction(name: string): Promise<string | null> {
   return readContextFile(`instructions/${name}.md`);
 }
 
-async function assemblePromptShell(includeMcpHint: boolean): Promise<string[]> {
+async function assemblePromptShell(
+  includeMcpHint: boolean,
+  includeProposalRule: boolean = includeMcpHint,
+): Promise<string[]> {
   const parts: string[] = [];
   const now = new Date();
 
@@ -79,6 +82,16 @@ async function assemblePromptShell(includeMcpHint: boolean): Promise<string[]> {
 
   const routines = await readInstruction("routines");
   if (routines) parts.push(routines);
+
+  // Load the proposeRoutine rule only where the tool is actually offered —
+  // live conversational turns. Excluded from the no-tools acknowledgment turn
+  // (includeProposalRule defaults to includeMcpHint = false there) and from
+  // proactive outreach (passes includeProposalRule: false explicitly), keeping
+  // the rule and the tool's `conversational` gate in lockstep.
+  if (includeProposalRule && config.ROUTINE_PROPOSALS_ENABLED) {
+    const routineProposals = await readInstruction("routine-proposals");
+    if (routineProposals) parts.push(routineProposals);
+  }
 
   // Only advertise MCP tools on turns that actually expose them. The
   // acknowledgment turn (acknowledge.ts) passes no tools, so it opts out.
@@ -138,7 +151,15 @@ async function assemblePendingConfirmationsContext(chatId: string): Promise<stri
     const lines = pending.map((row) => {
       const ageMs = Date.now() - row.createdAt.getTime();
       const ago = formatDistanceToNow(row.createdAt, { addSuffix: false });
-      const stale = ageMs > 60 * 60_000 ? " (stale — consider cancelling if no longer wanted)" : "";
+      // Skip the stale-cancel nudge for routine proposals: an ignored "want me
+      // to save this?" offer should just TTL out (it's short-lived), not nag
+      // the model to cancel it. They're still listed so the model knows one is
+      // pending and won't re-propose.
+      const isProposal = row.action.tool === "createRoutine";
+      const stale =
+        !isProposal && ageMs > 60 * 60_000
+          ? " (stale — consider cancelling if no longer wanted)"
+          : "";
       return `- ${ago} ago — ${row.summary} (id: ${String(row._id)})${stale}`;
     });
     return (
@@ -227,8 +248,11 @@ async function assembleReminderContext(chatId: string): Promise<string | null> {
 }
 
 export async function assembleProactiveSystemPrompt(chatId: string): Promise<string> {
-  // Proactive turns use allTools (MCP included), so advertise the MCP hint.
-  const parts = await assemblePromptShell(true);
+  // Proactive turns use allTools (MCP included), so advertise the MCP hint —
+  // but NOT the proposeRoutine rule: proactive outreach isn't a user-initiated
+  // task-completion turn, and `allTools` withholds proposeRoutine there
+  // (conversational is false), so advertising it would dangle a missing tool.
+  const parts = await assemblePromptShell(true, false);
 
   const reminderContext = await assembleReminderContext(chatId);
   if (reminderContext) {

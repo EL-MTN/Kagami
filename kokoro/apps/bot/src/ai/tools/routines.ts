@@ -18,18 +18,13 @@ import { executeRoutine, MAX_ROUTINE_DEPTH } from "../../services/routine-execut
 
 // ─── manageRoutines ──────────────────────────────────────────────────────────
 
-const parameterSchema = z.object({
-  name: z.string().describe("Parameter name"),
-  type: z
-    .enum(["string", "number", "boolean", "array", "object"])
-    .describe("Parameter type — use array for lists, object for key-value maps"),
-  description: z.string().describe("What this parameter is for"),
-  required: z.boolean().describe("Whether this parameter must be provided"),
-  default: z
-    .unknown()
-    .optional()
-    .describe("Default value (required params with cron schedules must have defaults)"),
-});
+// parameterSchema lives in the leaf module `./routine-schema` (zod-only, no
+// other imports) so the gated `createRoutine` dispatcher and the `proposeRoutine`
+// tool can re-validate against the exact same shape without dragging the
+// routine-executor import graph into a cycle. Re-export keeps existing
+// `./routines` consumers working.
+export { parameterSchema } from "./routine-schema";
+import { parameterSchema } from "./routine-schema";
 
 export function createManageRoutinesTool(chatId: string) {
   return tool({

@@ -121,6 +121,8 @@ export async function executeRoutine(
       sessionId: `routine-${routineId}`,
       routineDepth: depth,
       callingContext,
+      // `conversational` is left false: a routine run must never self-author
+      // another routine. proposeRoutine is a user-initiated-turn affordance.
     };
 
     // Step limits by context

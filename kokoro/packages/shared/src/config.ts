@@ -184,6 +184,18 @@ const baseSchema = z.object({
     }
   }, z.array(mcpServerSchema).default([])),
 
+  // Self-authored routines: let the conversational model offer to save a
+  // just-completed multi-step task as a reusable routine (human-approved via
+  // the confirmation rail; never autonomous). ROUTINE_PROPOSALS_ENABLED gates
+  // the `proposeRoutine` tool + its system-prompt rule. COOLDOWN_DAYS is the
+  // base quiet window after a decline (escalates on repeat declines). Empty
+  // string → default. See docs/ai-layer.md.
+  ROUTINE_PROPOSALS_ENABLED: optionalEnabledFlag,
+  ROUTINE_PROPOSAL_COOLDOWN_DAYS: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.coerce.number().int().positive().default(14),
+  ),
+
   CONTEXT_PATH: z.string().default("./context"),
 
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),

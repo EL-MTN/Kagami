@@ -125,6 +125,10 @@ Telegram implementation in `apps/bot/src/platform/telegram/adapter.ts` uses Gram
 
 The tool's underlying service stays untouched; the dispatcher calls it directly with validated args.
 
+### Dispatch-only actions (not LLM-raisable)
+
+Some actions should be executable through the approval rail but **not** selectable by the model via `requestConfirmation`. `createRoutine` (self-authored routines) is the worked example: it lives in `DISPATCH_ONLY_TOOL_NAMES`, not `GATED_TOOL_NAMES`, so it is **absent from `requestConfirmation`'s enum** (the model can't raise it directly and bypass the `proposeRoutine` anti-nag guard) yet `dispatchGatedAction` still routes it (the guard is `isDispatchable`, = gated ∪ dispatch-only). The only way to reach it is `proposeRoutine` → `raisePendingConfirmation` → approve. `raisePendingConfirmation` is the single rail writer extracted from `requestConfirmation` so both paths share identical create → send → `setPromptMessageId` plumbing; proposals pass a shorter `ttlMs` and a `promptText` that shows the full routine prompt. On deny/cancel, the platform callback calls `recordProposalDeclineFromConfirmation(row)`, which discriminates on `action.tool === "createRoutine"` (not origin, so a routine-raised gated action never trips it). See [ai-layer.md](ai-layer.md#proposeroutine-conditional--routine_proposals_enabled-default-on-main-palette-only).
+
 ## On non-button platforms
 
 iMessage has no inline buttons and no third-party message editing. The confirmation primitive degrades gracefully: `sendConfirmationPrompt` sends a plain text prompt asking the user to reply YES/NO; `editConfirmationPrompt` sends a new message instead of editing the original bubble. The pre-AI YES/NO parser in the iMessage webhook handler resolves the confirmation when there's exactly one pending in the chat. See [imessage.md](imessage.md) for the full UX and matching rules.
