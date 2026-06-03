@@ -237,7 +237,7 @@ export function createListMyFollowupsTool() {
 // This is stricter than the older gated tools (sendEmail/manageCalendar/
 // browseAgent) which rely on prompt-only guidance plus incidental runtime
 // barriers (OAuth tokens, configured browser). CRM writes have no such
-// incidental barrier — KIZUNA_ENABLED defaults to true — so the gate is
+// incidental barrier — the CRM tools are always registered — so the gate is
 // promoted to a hard code-level check.
 //
 // Schemas are exported and re-used by the gated dispatcher's argument

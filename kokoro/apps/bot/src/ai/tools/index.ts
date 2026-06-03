@@ -81,24 +81,19 @@ export function allTools(ctx: ToolContext) {
     tools.webSearch = createWebSearchTool();
   }
 
-  if (config.BROWSER_ENABLED) {
-    // When a standalone webSearch tool is registered, drop the in-browser
-    // `search` action so the LLM has one obvious way to do lookups.
-    tools.browse = createBrowseTool(ctx.chatId, ctx.adapter, {
-      includeSearch: !config.BRAVE_SEARCH_API_KEY,
-    });
-  }
+  // When a standalone webSearch tool is registered, drop the in-browser
+  // `search` action so the LLM has one obvious way to do lookups.
+  tools.browse = createBrowseTool(ctx.chatId, ctx.adapter, {
+    includeSearch: !config.BRAVE_SEARCH_API_KEY,
+  });
 
-  // Approval-gated wrappers. Registered when any gated underlying tool is
-  // available — sendEmail/manageCalendar require Kao (Google access),
-  // browseAgent requires the browser, CRM writes require KIZUNA_ENABLED. The wrapper's
-  // enum is the same in all cases; the dispatcher fails at runtime if a
-  // tool is selected whose backing service isn't configured. Behavioral
-  // guidance steers the LLM correctly.
-  if (config.KAO_URL || config.BROWSER_ENABLED || config.KIZUNA_ENABLED) {
-    tools.requestConfirmation = createRequestConfirmationTool(ctx.chatId, ctx.adapter);
-    tools.cancelConfirmation = createCancelConfirmationTool(ctx.chatId, ctx.adapter, ctx.userId);
-  }
+  // Approval-gated wrappers. Always registered now that browser automation and
+  // CRM writes are unconditional (sendEmail/manageCalendar still require Kao for
+  // Google access). The wrapper's enum is the same in all cases; the dispatcher
+  // fails at runtime if a tool is selected whose backing service isn't
+  // configured. Behavioral guidance steers the LLM correctly.
+  tools.requestConfirmation = createRequestConfirmationTool(ctx.chatId, ctx.adapter);
+  tools.cancelConfirmation = createCancelConfirmationTool(ctx.chatId, ctx.adapter, ctx.userId);
 
   tools.manageRoutines = createManageRoutinesTool(ctx.chatId);
   tools.searchRoutines = createSearchRoutinesTool(ctx.chatId);
@@ -122,10 +117,8 @@ export function allTools(ctx: ToolContext) {
   tools.searchMemory = createSearchMemoryTool();
   tools.rememberFact = createRememberFactTool();
 
-  if (config.KIZUNA_ENABLED) {
-    Object.assign(tools, createCrmTools());
-    Object.assign(tools, createCrmWriteTools());
-  }
+  Object.assign(tools, createCrmTools());
+  Object.assign(tools, createCrmWriteTools());
 
   // Only provide useRoutine when below max depth (prevents infinite recursion)
   if (depth < MAX_ROUTINE_DEPTH) {
@@ -170,11 +163,9 @@ function readOnlyToolSubset(ctx: ToolContext): ToolSet {
     tools.webSearch = createWebSearchTool();
   }
 
-  if (config.BROWSER_ENABLED) {
-    tools.browse = createReadOnlyBrowseTool({
-      includeSearch: !config.BRAVE_SEARCH_API_KEY,
-    });
-  }
+  tools.browse = createReadOnlyBrowseTool({
+    includeSearch: !config.BRAVE_SEARCH_API_KEY,
+  });
 
   if (depth < MAX_ROUTINE_DEPTH) {
     tools.useRoutine = createUseRoutineTool(ctx.chatId, ctx.adapter, depth, "watcher");
@@ -184,9 +175,7 @@ function readOnlyToolSubset(ctx: ToolContext): ToolSet {
   // rememberFact is omitted because it mutates.
   tools.searchMemory = createSearchMemoryTool();
 
-  if (config.KIZUNA_ENABLED) {
-    Object.assign(tools, createCrmTools());
-  }
+  Object.assign(tools, createCrmTools());
 
   return tools;
 }

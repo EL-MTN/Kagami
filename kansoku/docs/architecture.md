@@ -26,7 +26,6 @@ MongoDB is the only store. The existing workspace Mongo instance is reused with 
 | `logs`     | time-series (`timeField: ts`, `metaField: meta`) | Every shipped log line (incl. span-event lines). `meta: { service, component, env, level }`.                       | `KANSOKU_LOGS_TTL_DAYS` (30)                     |
 | `errors`   | regular, `_id = fingerprint`                     | One doc per unique error. Holds `count`, sample message, sample stack, `firstSeen`, `lastSeen`, last-N trace IDs.  | `KANSOKU_ERRORS_TTL_DAYS` (90) TTL on `lastSeen` |
 | `spans`    | regular, `_id = traceId:spanId`                  | Build-light: one doc per completed `runWithSpan`, folded from `event.kind:"span"` log lines. Drives the waterfall. | `KANSOKU_LOGS_TTL_DAYS` TTL on `startedAt`       |
-| `metrics`  | time-series (reserved)                           | Pushed-metric API placeholder; not created — derived metrics aggregate over `logs` today.                          | n/a                                              |
 
 Indexes:
 

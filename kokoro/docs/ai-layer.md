@@ -27,9 +27,7 @@ map). Image / TTS / STT still use the Vercel AI SDK directly.
 | `GOOGLE_API_KEY`             | Required for embedding generation (Google Gemini `gemini-embedding-001`)                                                                                           |
 | `EMBEDDING_MODEL`            | Embedding model name (default: `"gemini-embedding-001"`)                                                                                                           |
 | `KIZUNA_URL`                 | Kizuna API base URL for CRM tools — reads call directly, writes are confirmation-gated (default: `https://api.kizuna.localhost`)                                   |
-| `KIZUNA_ENABLED`             | Feature gate for CRM tools; defaults to `true`, set `false` to omit them from all tool palettes                                                                    |
-| `LOCATION_ENABLED`           | Feature gate for location awareness (default: `false`)                                                                                                             |
-| `GOOGLE_MAPS_API_KEY`        | Google Maps Geocoding API key (required when `LOCATION_ENABLED=true`)                                                                                              |
+| `GOOGLE_MAPS_API_KEY`        | Google Maps Geocoding API key (optional; geocoding degrades to raw coordinates without it)                                                                         |
 | `LOCATION_CONTEXT_MAX_AGE_H` | Max age in hours for location data to appear in LLM context (default: `12`)                                                                                        |
 
 `getModel(tier?)` returns a `LanguageModel` from the `@kagami/llm` gateway
@@ -59,11 +57,11 @@ assembleSystemPrompt(chatId)
     ├─ 4. Tool behavior              ← apps/bot/context/instructions/tool-behavior.md
     ├─ 5. Maid service               ← apps/bot/context/instructions/maid-service.md (conditional on KAO_URL — Google access via Kao)
     ├─ 6. Web search                 ← apps/bot/context/instructions/web-search.md (conditional on BRAVE_SEARCH_API_KEY)
-    ├─ 7. Browser                    ← apps/bot/context/instructions/browser.md (conditional on BROWSER_ENABLED)
+    ├─ 7. Browser                    ← apps/bot/context/instructions/browser.md (always)
     ├─ 8. Routine behavior           ← apps/bot/context/instructions/routines.md (always)
     ├─ 9. Routine context            ← listRoutinesForChat → enabled routine names (Mongo)
     ├─ 10. Pending approvals         ← listPendingConfirmations (Mongo)
-    ├─ 11. Location context          ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (Mongo, conditional on LOCATION_ENABLED)
+    ├─ 11. Location context          ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (Mongo, always)
     └─ 12. Response format           ← apps/bot/context/instructions/response-format.md
 
     All parts joined with "\n\n---\n\n"
@@ -122,7 +120,7 @@ watcherTools(ctx) → { searchMemory, findPeople?, getPersonContext?, recentInte
 
 Two distinct tool sets are assembled depending on the calling context:
 
-- **`allTools(ctx)`** — full surface available to Mashiro in conversation and inside routine executors. Includes side-effecting tools (`sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, etc.) plus CRM lookup tools when `KIZUNA_ENABLED` is true.
+- **`allTools(ctx)`** — full surface available to Mashiro in conversation and inside routine executors. Includes side-effecting tools (`sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, etc.) plus CRM lookup tools (always).
 - **`watcherTools(ctx)`** — read-only subset for watcher executor ticks (`apps/bot/src/services/watcher-executor.ts`). Watchers observe; they never mutate external state. `searchMemory` and the Kizuna CRM **read** tools are included; `rememberFact` and the Kizuna CRM **write** tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are excluded. The browse tool is the `createReadOnlyBrowseTool()` variant, which restricts actions to `search`/`visit`/`extract` and excludes `screenshot` (sends a photo), `act` (mutates page state), and `login`. The calendar variant is `createManageCalendarTool({ mode: "readOnly" })`. `manageWatchers` is also excluded — watchers cannot create watchers.
 
 ### searchMemory
@@ -141,7 +139,7 @@ Two distinct tool sets are assembled depending on the calling context:
 
 See [memory.md](memory.md) for the full memory subsystem (session ingest, sweeper, transcript pipeline).
 
-### CRM tools (conditional — `KIZUNA_ENABLED` defaults to true)
+### CRM tools (always registered)
 
 - **Purpose**: Read compact relationship context from Kizuna without loading raw CRM records into the prompt, plus concierge-style writes (logging interactions, creating/resolving followups, editing people) behind the confirmation primitive.
 - **Read tools** (called directly):
@@ -178,7 +176,7 @@ See [memory.md](memory.md) for the full memory subsystem (session ingest, sweepe
 - **Returns**: `{ success, count?, emails? }` or `{ success, email }` or `{ success: false, reason }`
 - **Behavior**: Lists unread emails or retrieves a specific email by ID. Only registered when `KAO_URL` is configured (Google access vended by Kao).
 
-### requestConfirmation (conditional — requires `KAO_URL` or `BROWSER_ENABLED`)
+### requestConfirmation (always registered)
 
 - **Purpose**: Persist a pending action and ask Goshujin-sama to tap [Approve] / [Deny] before it runs
 - **Parameters**: `{ summary: string, action: { tool: GatedToolName, args: Record<string, unknown> } }`
@@ -220,7 +218,7 @@ See [memory.md](memory.md) for the full memory subsystem (session ingest, sweepe
 - **Returns**: `{ success: true, query, results: [{ title, url, snippet }] }` or `{ success: false, reason }`
 - **Behavior**: Single HTTP call to `https://api.search.brave.com/res/v1/web/search` with `X-Subscription-Token`. Maps Brave's `{title, url, description}` to the project's snippet shape and strips inline `<strong>` highlight tags. Surface errors are returned as a clean `reason` string the LLM can react to. Service in `apps/bot/src/services/web-search.ts`, tool in `apps/bot/src/ai/tools/web-search.ts`. Available to both `allTools` and `watcherTools` — gives memory-only watchers a cheap external-observation capability without the browser.
 
-### browse (conditional — requires BROWSER_ENABLED=true)
+### browse (always registered)
 
 - **Purpose**: Browse the web — visit pages, extract data, interact with elements, or take screenshots. (Autonomous multi-step browsing is **not** an inline action — it can't fit the per-action timeout; it lives in the confirmation-gated `browseAgent`.) When `BRAVE_SEARCH_API_KEY` is also set, the `search` action is dropped from the action enum so the LLM uses `webSearch` for lookups instead.
 - **Parameters**: `{ action: "search"?|"visit"|"extract"|"act"|"screenshot"|"login", query?, url?, instruction? }`
@@ -238,7 +236,7 @@ See [memory.md](memory.md) for the full memory subsystem (session ingest, sweepe
 
 Autonomous multi-step browsing (`stagehand.agent().execute()`, up to 25 steps) is the separate confirmation-gated `browseAgent` action, dispatched outside the conversational turn — see `services/gated-actions.ts`.
 
-**Architecture**: Two independent LLM streams — Kokoro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENABLED`, `BROWSER_ENV` (`local`/`cloud`), `BROWSER_DATA_DIR`, `BROWSER_HEADLESS`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
+**Architecture**: Two independent LLM streams — Kokoro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENV` (`local`/`cloud`), `BROWSER_DATA_DIR`, `BROWSER_HEADLESS`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
 
 **Observability (Kansoku)**: Each action runs inside `runWithSpan(\`browse.<action>\`)`and browser init inside`runWithSpan("browser.init")`, so a browse turn renders as a real waterfall (per-action durations, nested under the conversation trace) in Kansoku. Stagehand's own steps are bridged into the `@kokoro/shared`logger via its`logger(line)` hook (`stagehandLogger`in`browser.ts`): each `LogLine`ships as a`browser: …`log line tagged with its`category` (`init`/`extraction`/`act`/`aisdk`/…) and auto-correlated to the active trace/span. Stagehand `verbose`is gated on log level —`1`(step-level) normally,`2`(full prompts/responses/DOM, the`aisdk`lines) when`LOG_LEVEL=debug`— and`auxiliary`values are truncated (~4 KB) so a DOM dump can't bloat ingest. Net: to deep-debug a browse turn, **start** the bot with `LOG_LEVEL=debug` and open its trace in Kansoku. (`STAGEHAND_VERBOSE`is fixed at the first browser init from the process-level`LOG_LEVEL`, so this is start-time, not hot-toggleable.) The confirmation-gated `browseAgent` path (`services/gated-actions.ts`) is spanned the same way (`browse.agent`). **Caution:** at `verbose: 2`the`aisdk`lines carry the full LLM prompt/response and page content, and`@kokoro/logger`does no secret/PII redaction (local-trust only) — so a`login`/`agent`flow run under`LOG_LEVEL=debug`can ship typed credentials or page secrets to Kansoku. Use debug verbosity deliberately, and treat it as a pre-VPS redaction blocker (see`ARCHITECTURE.md`).
 
