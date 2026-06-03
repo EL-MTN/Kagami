@@ -5,6 +5,7 @@ import {
   getRoutineById,
   getRoutineLogs,
   listChatIdsWithRoutines,
+  routineNeedsAttention,
   type IRoutine,
   type RoutineHealth,
 } from "@kokoro/db";
@@ -15,17 +16,20 @@ import { getModel, getModelName, ModelTier } from "../ai/provider";
 import { trackUsage } from "../ai/token-tracker";
 import { proposeRefinement, proposeRetirement } from "../ai/tools/routine-refinements";
 
-// Mechanical pre-filter: only routines this unhealthy reach the (paid) LLM
-// review. These are *facts* (a count threshold), not a judgment — the LLM still
-// decides whether anything is actually wrong and what to do. Keeps the pass
-// cheap and avoids second-guessing routines that are basically fine.
-const MIN_RUNS_TO_REVIEW = 4;
-const BAD_RATE_THRESHOLD = 0.5;
+// Mechanical pre-filter: the shared `routineNeedsAttention` predicate (one
+// source of truth with the chat ⚠ annotation) — only routines whose recent
+// *real* attempts are mostly bad reach the paid LLM review. Facts only; the LLM
+// still decides what (if anything) to do.
+export const needsReview = routineNeedsAttention;
 
-// Hard cap on proposals raised per chat per run so a flurry of broken routines
-// can never flood the user with approval bubbles. Reviewing also stops once the
-// cap is hit, bounding LLM spend per run.
-const MAX_PROPOSALS_PER_RUN = 2;
+// At most one routine proposal can be pending per chat (the one-tap iMessage
+// invariant — see hasPendingRoutineProposal), so a run raises at most one.
+const MAX_PROPOSALS_PER_RUN = 1;
+// Hard cap on paid LLM reviews per chat per run. `raised` does NOT climb when a
+// review returns "none" or its proposal is anti-nag-suppressed, so without this
+// a chat full of chronically-declined routines would pay for a Smart-tier review
+// of every one, every run. This bounds spend regardless of outcome.
+const MAX_REVIEWS_PER_RUN = 6;
 
 const REVIEW_LOG_LIMIT = 8;
 
@@ -33,24 +37,17 @@ const reviewSchema = z.object({
   action: z.enum(["refine", "retire", "none"]),
   newPrompt: z
     .string()
+    .max(4000)
     .optional()
-    .describe("Required when action is 'refine': the complete replacement prompt."),
+    .describe(
+      "Required when action is 'refine': the complete replacement prompt (max 4000 chars — the dispatcher rejects longer).",
+    ),
   rationale: z
     .string()
     .describe("One line on the decision — shown to the user if a bubble is raised."),
 });
 
 type ReviewDecision = z.infer<typeof reviewSchema>;
-
-/**
- * Whether a routine's recent track record is bad enough to spend an LLM review
- * on. Facts only — `[no report]` runs are healthy and never count against it.
- */
-export function needsReview(h: RoutineHealth): boolean {
-  if (h.totalRuns < MIN_RUNS_TO_REVIEW) return false;
-  const bad = h.failedRuns + h.emptyRuns;
-  return bad / h.totalRuns >= BAD_RATE_THRESHOLD;
-}
 
 const REVIEW_SYSTEM = `You are auditing an automated routine that has been underperforming (failing or returning empty results). Choose exactly ONE action:
 - "refine": rewrite its prompt to fix the problem. Provide newPrompt — a complete replacement prompt that addresses the failures. Preserve any {parameter} references the routine relies on.
@@ -82,9 +79,14 @@ function buildReviewUser(routine: IRoutine, health: RoutineHealth, recentRuns: s
 }
 
 async function reviewRoutine(routine: IRoutine, health: RoutineHealth): Promise<ReviewDecision> {
-  const logs = await getRoutineLogs(routine.id, REVIEW_LOG_LIMIT);
+  // Filter at the DB (matching getRoutineHealth) so composed sub-runs and
+  // in-flight rows don't consume the limit window and leave the LLM with "(no
+  // run history)" while the header claims failures.
+  const logs = await getRoutineLogs(routine.id, REVIEW_LOG_LIMIT, {
+    excludeComposed: true,
+    excludeRunning: true,
+  });
   const recentRuns = logs
-    .filter((l) => l.trigger !== "routine")
     .map((l) => `- [${l.status}] ${(l.summary ?? "").trim().slice(0, 200) || "(no summary)"}`)
     .join("\n");
 
@@ -122,17 +124,19 @@ export async function reviewChatRoutines(
   let raised = 0;
   let reviewed = 0;
   for (const health of flagged) {
-    if (raised >= MAX_PROPOSALS_PER_RUN) {
+    // Stop once we've raised a proposal (only one can be pending per chat) or hit
+    // the review-spend cap — whichever comes first. Defer the rest to next run.
+    if (raised >= MAX_PROPOSALS_PER_RUN || reviewed >= MAX_REVIEWS_PER_RUN) {
       logger.info(
-        { chatId, raised, skipped: flagged.length - reviewed },
-        "Routine self-review hit per-run proposal cap — remaining routines deferred",
+        { chatId, raised, reviewed, deferred: flagged.length - reviewed },
+        "Routine self-review hit a per-run cap — remaining routines deferred to the next run",
       );
       break;
     }
-    reviewed++;
 
     const routine = await getRoutineById(health.routineId, chatId);
     if (!routine || !routine.enabled) continue;
+    reviewed++;
 
     let decision: ReviewDecision;
     try {

@@ -44,6 +44,7 @@ function fakeRoutine(
     id: ROUTINE_ID,
     name: over.name ?? "morning-digest",
     prompt: over.prompt ?? "Fetch unread email and summarize.",
+    parameters: [],
     version: over.version ?? 1,
     enabled: over.enabled ?? true,
   } as never;
@@ -134,13 +135,47 @@ describe("proposeRoutineRefinement — anti-nag guard", () => {
     expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
   });
 
-  it("does NOT suppress when the pending refinement is for a DIFFERENT routine", async () => {
+  it("suppresses when ANY routine proposal is pending, even for a different routine (one-at-a-time per chat)", async () => {
     vi.mocked(listPendingConfirmations).mockResolvedValue([
       { action: { tool: "updateRoutinePrompt", args: { routineId: "999999999999999999999999" } } },
     ] as never);
     const result = await runTool(input);
+    expect(result.proposed).toBe(false);
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
+  });
+
+  it("does NOT suppress when the only pending confirmation is a non-proposal action", async () => {
+    vi.mocked(listPendingConfirmations).mockResolvedValue([
+      { action: { tool: "sendEmail", args: {} } },
+    ] as never);
+    const result = await runTool(input);
     expect(result.proposed).toBe(true);
     expect(vi.mocked(raisePendingConfirmation)).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("proposeRoutineRefinement — parameters", () => {
+  it("allows a parameters-only refinement (prompt unchanged, parameters differ)", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ prompt: "Fetch and summarize." }));
+    const result = await runTool({
+      routineId: ROUTINE_ID,
+      newPrompt: "Fetch and summarize.", // identical to current
+      rationale: "tighten the date param",
+      newParameters: [{ name: "date", type: "string", description: "the day", required: true }],
+    });
+    expect(result.proposed).toBe(true);
+    const [, , raised] = vi.mocked(raisePendingConfirmation).mock.calls[0];
+    expect(raised.action.args).toHaveProperty("newParameters");
+  });
+
+  it("the signature distinguishes two refinements with the same prompt but different parameters", () => {
+    const a = computeRefinementSignature(ROUTINE_ID, 1, "p", [
+      { name: "x", type: "string", description: "", required: true },
+    ]);
+    const b = computeRefinementSignature(ROUTINE_ID, 1, "p", [
+      { name: "y", type: "string", description: "", required: true },
+    ]);
+    expect(a).not.toBe(b);
   });
 });
 

@@ -42,7 +42,7 @@ vi.mock("@kokoro/kizuna", () => ({
 vi.mock("@kokoro/db", () => ({
   createRoutine: vi.fn(),
   getRoutineById: vi.fn(),
-  updateRoutine: vi.fn(),
+  updateRoutineIfVersion: vi.fn(),
   isDuplicateKeyError: vi.fn(() => false),
   recordProposalDecision: vi.fn(),
 }));
@@ -54,7 +54,7 @@ import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@
 import {
   createRoutine,
   getRoutineById,
-  updateRoutine,
+  updateRoutineIfVersion,
   isDuplicateKeyError,
   recordProposalDecision,
 } from "@kokoro/db";
@@ -78,7 +78,7 @@ beforeEach(() => {
   vi.mocked(updatePerson).mockReset();
   vi.mocked(createRoutine).mockReset();
   vi.mocked(getRoutineById).mockReset();
-  vi.mocked(updateRoutine).mockReset();
+  vi.mocked(updateRoutineIfVersion).mockReset();
   // recordProposalDecision is async in production (callers chain .catch on it);
   // default the mock to a resolved promise so that chaining doesn't throw.
   vi.mocked(recordProposalDecision).mockReset().mockResolvedValue(undefined);
@@ -601,23 +601,16 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
     newPrompt: "Improved: fetch unread email and write a 3-bullet summary for {date}.",
   };
 
-  function fakeRoutine(over: Partial<{ name: string; prompt: string; version: number }> = {}) {
-    return {
-      _id: ROUTINE_ID,
-      name: over.name ?? "morning-digest",
-      prompt: over.prompt ?? "old prompt",
-      version: over.version ?? 1,
-    } as never;
-  }
-
   it("is dispatchable even though it is NOT in the requestConfirmation enum", () => {
     expect(isGatedTool("updateRoutinePrompt")).toBe(false);
     expect(GATED_TOOL_NAMES as readonly string[]).not.toContain("updateRoutinePrompt");
   });
 
-  it("updates the prompt, bumps version, records the accept, and never touches purity/cron", async () => {
-    vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ version: 1 }));
-    vi.mocked(updateRoutine).mockResolvedValue({ version: 2 } as never);
+  it("applies the version-guarded edit (prompt only), records NO decision", async () => {
+    vi.mocked(updateRoutineIfVersion).mockResolvedValue({
+      name: "morning-digest",
+      version: 2,
+    } as never);
 
     const result = await dispatchGatedAction("updateRoutinePrompt", draft, { chatId: "chat-1" });
 
@@ -625,30 +618,24 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
     expect(result.summary).toBe('routine "morning-digest" updated (v2)');
     expect(result.detail).toEqual({ routineId: ROUTINE_ID, version: 2 });
 
-    expect(vi.mocked(updateRoutine)).toHaveBeenCalledWith(
-      ROUTINE_ID,
-      expect.objectContaining({ prompt: draft.newPrompt, version: 2 }),
-      "chat-1",
-    );
-    // The refinement can never escalate scope — these stay out of the patch.
-    const patch = vi.mocked(updateRoutine).mock.calls[0][1];
+    // Atomic compare-and-set against baseVersion (the helper bumps version).
+    expect(vi.mocked(updateRoutineIfVersion)).toHaveBeenCalledWith(ROUTINE_ID, "chat-1", 1, {
+      prompt: draft.newPrompt,
+    });
+    // The refinement can never escalate scope — these never reach the patch.
+    const patch = vi.mocked(updateRoutineIfVersion).mock.calls[0][3];
     expect(patch).not.toHaveProperty("purity");
     expect(patch).not.toHaveProperty("cronSchedule");
     expect(patch).not.toHaveProperty("reportMode");
     expect(patch).not.toHaveProperty("enabled");
     expect(patch).not.toHaveProperty("parameters"); // none supplied this run
-
-    expect(vi.mocked(recordProposalDecision)).toHaveBeenCalledWith(
-      "chat-1",
-      draft.signature,
-      "accepted",
-      expect.any(Object),
-    );
+    // No accept is recorded: the prompt now equals the approved one (the
+    // proposeRefinement equality guard blocks an identical re-proposal).
+    expect(vi.mocked(recordProposalDecision)).not.toHaveBeenCalled();
   });
 
   it("forwards newParameters only when supplied", async () => {
-    vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ version: 1 }));
-    vi.mocked(updateRoutine).mockResolvedValue({ version: 2 } as never);
+    vi.mocked(updateRoutineIfVersion).mockResolvedValue({ name: "r", version: 2 } as never);
 
     await dispatchGatedAction(
       "updateRoutinePrompt",
@@ -659,36 +646,36 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
       { chatId: "chat-1" },
     );
 
-    expect(vi.mocked(updateRoutine).mock.calls[0][1]).toHaveProperty("parameters");
+    expect(vi.mocked(updateRoutineIfVersion).mock.calls[0][3]).toHaveProperty("parameters");
   });
 
-  it("rejects a stale proposal when the routine version moved on (no clobber)", async () => {
-    vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ version: 3 }));
+  it("reports version_conflict when the atomic update is rejected and the routine still exists", async () => {
+    vi.mocked(updateRoutineIfVersion).mockResolvedValue(null);
+    vi.mocked(getRoutineById).mockResolvedValue({ name: "morning-digest", version: 5 } as never);
 
     const result = await dispatchGatedAction("updateRoutinePrompt", draft, { chatId: "chat-1" });
 
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("version_conflict");
-    expect(result.detail).toMatchObject({ expected: 1, actual: 3 });
-    expect(vi.mocked(updateRoutine)).not.toHaveBeenCalled();
+    expect(result.detail).toMatchObject({ expected: 1, actual: 5 });
     expect(vi.mocked(recordProposalDecision)).not.toHaveBeenCalled();
   });
 
-  it("fails when the routine no longer exists", async () => {
+  it("reports not_found when the atomic update is rejected and the routine is gone", async () => {
+    vi.mocked(updateRoutineIfVersion).mockResolvedValue(null);
     vi.mocked(getRoutineById).mockResolvedValue(null);
 
     const result = await dispatchGatedAction("updateRoutinePrompt", draft, { chatId: "chat-1" });
 
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("not_found");
-    expect(vi.mocked(updateRoutine)).not.toHaveBeenCalled();
   });
 
   it("fails cleanly when chat context is missing (never trusts args for chatId)", async () => {
     const result = await dispatchGatedAction("updateRoutinePrompt", draft);
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("no_chat_context");
-    expect(vi.mocked(getRoutineById)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateRoutineIfVersion)).not.toHaveBeenCalled();
   });
 
   it("rejects a malformed draft (missing newPrompt) before touching the db", async () => {
@@ -699,7 +686,7 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
     );
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("invalid_args");
-    expect(vi.mocked(getRoutineById)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateRoutineIfVersion)).not.toHaveBeenCalled();
   });
 });
 
@@ -707,60 +694,54 @@ describe("dispatchGatedAction — disableRoutine (dispatch-only)", () => {
   const ROUTINE_ID = "555555555555555555555555";
   const draft = { signature: `retire:${ROUTINE_ID}#1`, routineId: ROUTINE_ID, baseVersion: 1 };
 
-  function fakeRoutine(over: Partial<{ name: string; version: number }> = {}) {
-    return {
-      _id: ROUTINE_ID,
-      name: over.name ?? "stale-digest",
-      version: over.version ?? 1,
-    } as never;
-  }
-
   it("is dispatchable even though it is NOT in the requestConfirmation enum", () => {
     expect(isGatedTool("disableRoutine")).toBe(false);
     expect(GATED_TOOL_NAMES as readonly string[]).not.toContain("disableRoutine");
   });
 
-  it("disables the routine (never deletes) and records the accept", async () => {
-    vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ version: 1 }));
-    vi.mocked(updateRoutine).mockResolvedValue({ enabled: false } as never);
+  it("disables via the version-guarded helper (never deletes), records NO decision", async () => {
+    vi.mocked(updateRoutineIfVersion).mockResolvedValue({
+      name: "stale-digest",
+      version: 2,
+    } as never);
 
     const result = await dispatchGatedAction("disableRoutine", draft, { chatId: "chat-1" });
 
     expect(result.success).toBe(true);
     expect(result.summary).toBe('routine "stale-digest" disabled');
-    expect(vi.mocked(updateRoutine)).toHaveBeenCalledWith(ROUTINE_ID, { enabled: false }, "chat-1");
-    expect(vi.mocked(recordProposalDecision)).toHaveBeenCalledWith(
-      "chat-1",
-      draft.signature,
-      "accepted",
-      expect.any(Object),
-    );
+    expect(vi.mocked(updateRoutineIfVersion)).toHaveBeenCalledWith(ROUTINE_ID, "chat-1", 1, {
+      enabled: false,
+    });
+    // No accept: a re-enabled routine must be reviewable again, not suppressed.
+    expect(vi.mocked(recordProposalDecision)).not.toHaveBeenCalled();
   });
 
-  it("rejects a stale retirement when the routine version moved on", async () => {
-    vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ version: 5 }));
+  it("reports version_conflict when rejected and the routine still exists", async () => {
+    vi.mocked(updateRoutineIfVersion).mockResolvedValue(null);
+    vi.mocked(getRoutineById).mockResolvedValue({ name: "stale-digest", version: 5 } as never);
 
     const result = await dispatchGatedAction("disableRoutine", draft, { chatId: "chat-1" });
 
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("version_conflict");
-    expect(vi.mocked(updateRoutine)).not.toHaveBeenCalled();
     expect(vi.mocked(recordProposalDecision)).not.toHaveBeenCalled();
   });
 
-  it("fails when the routine no longer exists", async () => {
+  it("reports not_found when rejected and the routine is gone", async () => {
+    vi.mocked(updateRoutineIfVersion).mockResolvedValue(null);
     vi.mocked(getRoutineById).mockResolvedValue(null);
+
     const result = await dispatchGatedAction("disableRoutine", draft, { chatId: "chat-1" });
+
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("not_found");
-    expect(vi.mocked(updateRoutine)).not.toHaveBeenCalled();
   });
 
   it("fails cleanly when chat context is missing", async () => {
     const result = await dispatchGatedAction("disableRoutine", draft);
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("no_chat_context");
-    expect(vi.mocked(getRoutineById)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateRoutineIfVersion)).not.toHaveBeenCalled();
   });
 });
 
