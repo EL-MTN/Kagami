@@ -1,9 +1,9 @@
 # Self-Authored Routines — Design & Implementation Plan
 
 > **Status: IMPLEMENTED.** Kokoro can offer to save a just-completed task as a
-> reusable routine via the `proposeRoutine` tool (gated on `ROUTINE_PROPOSALS_ENABLED`,
-> default on). The operational reference now lives in
-> [`ai-layer.md`](ai-layer.md#proposeroutine-conditional--routine_proposals_enabled-default-on-main-palette-only)
+> reusable routine via the `proposeRoutine` tool (always on, on live
+> conversational turns; human-approved). The operational reference now lives in
+> [`ai-layer.md`](ai-layer.md#proposeroutine-live-conversational-turns-only)
 > (tool surface, guard, dispatch-only `createRoutine`) and
 > [`confirmations.md`](confirmations.md#dispatch-only-actions-not-llm-raisable)
 > (the rail + dispatch-only pattern). This document is retained as the design
@@ -128,21 +128,20 @@ parameters? }`; computes the signature; runs the guard; calls
    and catches `isDuplicateKeyError`. `createRoutine` is **dispatch-only** — it is
    _not_ registered in `allTools`; the model reaches it only via the approval rail.
 6. **`apps/bot/src/ai/tools/index.ts`** — register `proposeRoutine` in `allTools`
-   **only** (gated by `config.ROUTINE_PROPOSALS_ENABLED`); deliberately absent from
+   **only** on live conversational turns (`ctx.conversational`); deliberately absent from
    `watcherTools` / `routineToolsUnderWatcher`, so watchers and scheduled routines
    can't self-author (preserves the read-only invariant).
 7. **`apps/bot/src/platform/telegram/bot.ts`**, **`apps/bot/src/platform/imessage/webhook.ts`**,
    **`confirmations.ts`** (cancel path) — on **deny/cancel** of an `origin: "routine"`
    confirmation, call `recordProposalDecision(chatId, row.action.args.signature, "declined")`.
 8. **`apps/bot/src/ai/context-assembler.ts`** — load `routine-proposals.md` into
-   `assemblePromptShell` when the flag is on, and **exclude it from the no-tools
+   `assemblePromptShell` on conversational turns, and **exclude it from the no-tools
    acknowledgment turn** (same opt-out used for the MCP hint). Give proposal
    confirmations a **shorter TTL** than action confirmations and **skip them in the
    "stale — consider cancelling" nudge** so ignored proposals don't pollute the main
    prompt for 24h.
 9. **`packages/shared/src/config.ts`** + **`apps/bot/.env.example`** +
-   **`ARCHITECTURE.md`** — `ROUTINE_PROPOSALS_ENABLED` (default `true`) and
-   `ROUTINE_PROPOSAL_COOLDOWN_DAYS` (default `14`).
+   **`ARCHITECTURE.md`** — `ROUTINE_PROPOSAL_COOLDOWN_DAYS` (default `14`).
 10. **`kokoro/docs/ai-layer.md`** (+ a note in `confirmations.md`) — document the
     proposal flow once implemented.
 

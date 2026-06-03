@@ -8,7 +8,7 @@ import {
   type IRoutine,
   type RoutineHealth,
 } from "@kokoro/db";
-import { config, logger, runWithSpan } from "@kokoro/shared";
+import { logger, runWithSpan } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { AdapterRegistry, platformForChatId } from "../platform/registry";
 import { getModel, getModelName, ModelTier } from "../ai/provider";
@@ -184,13 +184,9 @@ export async function reviewChatRoutines(
 
 /**
  * Audit every chat that owns enabled routines. Resolves each chat's platform
- * adapter from the registry so it can raise approval bubbles unprompted. Gated
- * by ROUTINE_PROPOSALS_ENABLED (no separate flag) — automated refinement is on
- * whenever self-authored routines are.
+ * adapter from the registry so it can raise approval bubbles unprompted.
  */
 export async function runRoutineSelfReview(registry: AdapterRegistry): Promise<void> {
-  if (!config.ROUTINE_PROPOSALS_ENABLED) return;
-
   const chatIds = await listChatIdsWithRoutines();
   if (chatIds.length === 0) return;
 
