@@ -20,11 +20,6 @@ export interface ProposalResult {
   reason?: string;
 }
 
-/**
- * Canonical string for a parameter set, used both to detect a real
- * parameters-only change and to feed the refinement signature. Fixed key order
- * so two equal sets always serialize identically regardless of property order.
- */
 /** Recursively sort object keys so two structurally-equal values (incl. an
  * object/array `default`) serialize identically regardless of property order. */
 function canonicalize(v: unknown): unknown {
@@ -40,6 +35,8 @@ function canonicalize(v: unknown): unknown {
   return v;
 }
 
+/** Canonical string for a parameter set — used to detect a real
+ * parameters-only change and to feed the refinement signature. */
 function paramsKey(
   params: ReadonlyArray<RoutineParameter | IRoutineParameter> | undefined,
 ): string {
