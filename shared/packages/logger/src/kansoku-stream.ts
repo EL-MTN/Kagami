@@ -43,7 +43,7 @@ interface KansokuStreamInternals {
   droppedTotal(): number;
 }
 
-export type KansokuStream = Writable & KansokuStreamInternals;
+type KansokuStream = Writable & KansokuStreamInternals;
 
 /**
  * Pino destination stream that batches NDJSON log lines and POSTs them to

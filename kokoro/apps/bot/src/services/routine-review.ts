@@ -20,7 +20,7 @@ import { proposeRefinement, proposeRetirement } from "../ai/tools/routine-refine
 // source of truth with the chat ⚠ annotation) — only routines whose recent
 // *real* attempts are mostly bad reach the paid LLM review. Facts only; the LLM
 // still decides what (if anything) to do.
-export const needsReview = routineNeedsAttention;
+const needsReview = routineNeedsAttention;
 
 // At most one routine proposal can be pending per chat (the one-tap iMessage
 // invariant — see hasPendingRoutineProposal), so a run raises at most one.
