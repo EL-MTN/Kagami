@@ -8,9 +8,13 @@ import {
   getRecentlyFiredReminders,
   getLatestLocation,
   listRoutinesForChat,
+  getRoutineHealth,
+  routineNeedsAttention,
   listPendingConfirmations,
+  type RoutineHealth,
 } from "@kokoro/db";
 import { DATETIME_CONTEXT, moodForTimeOfDay, timeOfDayFor } from "./prompts";
+import { ROUTINE_PROPOSAL_TOOLS } from "./tools/routine-proposal-tools";
 import { getMcpSummary } from "../services/mcp";
 import { config, logger, parseMarkdown } from "@kokoro/shared";
 import type { ModelMessage, UserContent, ToolContent } from "ai";
@@ -83,14 +87,17 @@ async function assemblePromptShell(
   const routines = await readInstruction("routines");
   if (routines) parts.push(routines);
 
-  // Load the proposeRoutine rule only where the tool is actually offered —
-  // live conversational turns. Excluded from the no-tools acknowledgment turn
-  // (includeProposalRule defaults to includeMcpHint = false there) and from
-  // proactive outreach (passes includeProposalRule: false explicitly), keeping
-  // the rule and the tool's `conversational` gate in lockstep.
-  if (includeProposalRule && config.ROUTINE_PROPOSALS_ENABLED) {
+  // Load the proposeRoutine / proposeRoutineRefinement rules only where the
+  // tools are actually offered — live conversational turns. Excluded from the
+  // no-tools acknowledgment turn (includeProposalRule defaults to
+  // includeMcpHint = false there) and from proactive outreach (passes
+  // includeProposalRule: false explicitly), keeping the rules and the tools'
+  // `conversational` gate in lockstep.
+  if (includeProposalRule) {
     const routineProposals = await readInstruction("routine-proposals");
     if (routineProposals) parts.push(routineProposals);
+    const routineRefinement = await readInstruction("routine-refinement");
+    if (routineRefinement) parts.push(routineRefinement);
   }
 
   // Only advertise MCP tools on turns that actually expose them. The
@@ -129,14 +136,69 @@ function assembleMcpContext(): string | null {
   );
 }
 
-async function assembleRoutineContext(chatId: string): Promise<string | null> {
-  try {
-    const routines = await listRoutinesForChat(chatId);
-    const enabled = routines.filter((s) => s.enabled);
-    if (enabled.length === 0) return null;
+/**
+ * Build the ⚠ annotation for a routine the shared `routineNeedsAttention`
+ * predicate has already flagged. `lastError` is sanitized (collapse whitespace,
+ * cap length) so a multi-line or quote-bearing error message can't break the
+ * one-line routine list. Counts are over *real* attempts (no-report runs
+ * excluded), matching the predicate.
+ */
+function routineHealthNote(h: RoutineHealth): string {
+  const bad = h.failedRuns + h.emptyRuns;
+  const realRuns = h.totalRuns - h.noReportRuns;
+  const kind = h.failedRuns >= h.emptyRuns ? "failing" : "returning empty";
+  const detail = h.lastError
+    ? ` (last error: "${h.lastError.replace(/\s+/g, " ").trim().slice(0, 80)}")`
+    : "";
+  return `⚠ ${kind} — ${bad} of last ${realRuns} runs${detail}`;
+}
 
-    const names = enabled.map((s) => s.name).join(", ");
-    return `## Available Routines\n${names}\nUse searchRoutines to look up details or discover routines by keyword.`;
+function buildRoutineList(names: string[], offerHint = ""): string {
+  return `## Available Routines\n${names.join("\n")}\nUse searchRoutines to look up details or discover routines by keyword.${offerHint}`;
+}
+
+/** Plain enabled-routine name list (one Routine read). Used on non-conversational
+ * turns and as the fallback when the health lookup fails. */
+async function assembleRoutineNames(chatId: string): Promise<string | null> {
+  const enabled = (await listRoutinesForChat(chatId)).filter((s) => s.enabled);
+  if (enabled.length === 0) return null;
+  return buildRoutineList(enabled.map((s) => s.name));
+}
+
+/**
+ * Lists the chat's enabled routines for the prompt. On conversational turns
+ * (`withHealth`) it drives the list from `getRoutineHealth` alone — no second
+ * Routine read — and annotates the ones `routineNeedsAttention` flags so the
+ * model can offer a `proposeRoutineRefinement`. The offer hint is shown only
+ * when at least one routine is actually flagged. Health is an enhancement: if it
+ * fails, fall back to plain names.
+ */
+async function assembleRoutineContext(chatId: string, withHealth: boolean): Promise<string | null> {
+  try {
+    // `await` the fallbacks: a bare `return <promise>` from inside try/catch
+    // escapes the catch, so a DB rejection here would reject the caller's
+    // Promise.all and fail the whole turn instead of degrading to null.
+    if (!withHealth) return await assembleRoutineNames(chatId);
+
+    let health: RoutineHealth[];
+    try {
+      health = await getRoutineHealth(chatId);
+    } catch (error) {
+      logger.warn({ error }, "Failed to load routine health — listing names only");
+      return await assembleRoutineNames(chatId);
+    }
+    if (health.length === 0) return null;
+
+    let anyFlagged = false;
+    const lines = health.map((h) => {
+      if (!routineNeedsAttention(h)) return h.name;
+      anyFlagged = true;
+      return `${h.name} ${routineHealthNote(h)}`;
+    });
+    const offerHint = anyFlagged
+      ? "\nIf a routine is flagged ⚠ above, you may offer to fix its prompt with proposeRoutineRefinement — on a natural turn, one at a time."
+      : "";
+    return buildRoutineList(lines, offerHint);
   } catch (error) {
     logger.warn({ error: error }, "Failed to load routine context");
     return null;
@@ -151,11 +213,11 @@ async function assemblePendingConfirmationsContext(chatId: string): Promise<stri
     const lines = pending.map((row) => {
       const ageMs = Date.now() - row.createdAt.getTime();
       const ago = formatDistanceToNow(row.createdAt, { addSuffix: false });
-      // Skip the stale-cancel nudge for routine proposals: an ignored "want me
-      // to save this?" offer should just TTL out (it's short-lived), not nag
-      // the model to cancel it. They're still listed so the model knows one is
-      // pending and won't re-propose.
-      const isProposal = row.action.tool === "createRoutine";
+      // Skip the stale-cancel nudge for routine proposals (save/refine/retire):
+      // an ignored "want me to do this?" offer should just TTL out (it's
+      // short-lived), not nag the model to cancel it. They're still listed so
+      // the model knows one is pending and won't re-propose.
+      const isProposal = ROUTINE_PROPOSAL_TOOLS.has(row.action.tool);
       const stale =
         !isProposal && ageMs > 60 * 60_000
           ? " (stale — consider cancelling if no longer wanted)"
@@ -204,13 +266,21 @@ export async function assembleSystemPrompt(
   const { includeMcpHint = true } = opts;
   const parts = await assemblePromptShell(includeMcpHint);
 
-  const routineContext = await assembleRoutineContext(chatId);
+  // `includeMcpHint` is the conversational-turn signal (generate.ts uses the
+  // default true; the no-tools acknowledgment turn passes false) — the same
+  // gate `assemblePromptShell` uses for the proposal/refinement rule. Only
+  // conversational turns expose proposeRoutineRefinement, so only they pay the
+  // health lookup and show the ⚠ annotations.
+  // These three reads are independent and each fail-soft — run them
+  // concurrently so prompt-build latency is the slowest, not the sum. Pushed in
+  // a fixed order afterward so the assembled prompt stays deterministic.
+  const [routineContext, pendingContext, locationContext] = await Promise.all([
+    assembleRoutineContext(chatId, includeMcpHint),
+    assemblePendingConfirmationsContext(chatId),
+    assembleLocationContext(chatId),
+  ]);
   if (routineContext) parts.push(routineContext);
-
-  const pendingContext = await assemblePendingConfirmationsContext(chatId);
   if (pendingContext) parts.push(pendingContext);
-
-  const locationContext = await assembleLocationContext(chatId);
   if (locationContext) parts.push(locationContext);
 
   const responseFormat = await readInstruction("response-format");

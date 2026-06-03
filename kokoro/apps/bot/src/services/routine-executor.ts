@@ -7,6 +7,7 @@ import {
   completeRoutineLog,
   failRoutineLog,
   advanceRoutineNextRunAt,
+  NO_REPORT_SENTINEL,
   type IRoutine,
 } from "@kokoro/db";
 import { logger, computeNextRunAt } from "@kokoro/shared";
@@ -18,7 +19,6 @@ import { DATETIME_CONTEXT } from "../ai/prompts";
 
 export const MAX_ROUTINE_DEPTH = 3;
 const LLM_TIMEOUT_MS = 180_000; // 3 minutes
-const NO_REPORT_SENTINEL = "[no report]";
 
 const ROUTINE_EXECUTOR_IDENTITY = `You are a task executor. Complete the routine described below using your tools. Be concise and factual — return results, not commentary. Do not adopt a persona or use conversational tone.`;
 
