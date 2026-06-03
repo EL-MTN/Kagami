@@ -14,7 +14,7 @@ import { PROPOSAL_TTL_MS } from "./routine-proposals";
 
 type RoutineParameter = z.infer<typeof parameterSchema>;
 
-export interface ProposalResult {
+interface ProposalResult {
   proposed: boolean;
   confirmationId?: string;
   reason?: string;
