@@ -28,6 +28,8 @@ import { raisePendingConfirmation } from "../../../src/ai/tools/confirmations";
 import {
   createProposeRoutineRefinementTool,
   computeRefinementSignature,
+  computeRetirementSignature,
+  proposeRetirement,
 } from "../../../src/ai/tools/routine-refinements";
 
 const adapter = fakeAdapter();
@@ -39,6 +41,7 @@ function fakeRoutine(
 ) {
   return {
     _id: ROUTINE_ID,
+    id: ROUTINE_ID,
     name: over.name ?? "morning-digest",
     prompt: over.prompt ?? "Fetch unread email and summarize.",
     version: over.version ?? 1,
@@ -179,5 +182,72 @@ describe("proposeRoutineRefinement — raising the bubble", () => {
     const result = await runTool(input);
     expect(result.proposed).toBe(false);
     expect(result.reason).toBe("adapter down");
+  });
+
+  it("suppresses a refinement when a RETIREMENT for the same routine is already pending", async () => {
+    vi.mocked(listPendingConfirmations).mockResolvedValue([
+      { action: { tool: "disableRoutine", args: { routineId: ROUTINE_ID } } },
+    ] as never);
+    const result = await runTool(input);
+    expect(result.proposed).toBe(false);
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
+  });
+});
+
+describe("computeRetirementSignature", () => {
+  it("is version-scoped and stable", () => {
+    expect(computeRetirementSignature(ROUTINE_ID, 1)).toBe(
+      computeRetirementSignature(ROUTINE_ID, 1),
+    );
+    expect(computeRetirementSignature(ROUTINE_ID, 1)).not.toBe(
+      computeRetirementSignature(ROUTINE_ID, 2),
+    );
+  });
+});
+
+describe("proposeRetirement", () => {
+  function runRetire(
+    over: Parameters<typeof fakeRoutine>[0] = {},
+    rationale = "fundamentally broken",
+  ) {
+    return proposeRetirement({ chatId: CHAT, adapter, routine: fakeRoutine(over), rationale });
+  }
+
+  it("raises a disableRoutine confirmation carrying the signature and baseVersion", async () => {
+    const result = await runRetire({ version: 3 });
+
+    expect(result.proposed).toBe(true);
+    expect(result.confirmationId).toBe("conf-1");
+
+    const [chatId, , raised] = vi.mocked(raisePendingConfirmation).mock.calls[0];
+    expect(chatId).toBe(CHAT);
+    expect(raised.action.tool).toBe("disableRoutine");
+    expect(raised.action.args.routineId).toBe(ROUTINE_ID);
+    expect(raised.action.args.baseVersion).toBe(3);
+    expect(raised.action.args.signature).toBe(computeRetirementSignature(ROUTINE_ID, 3));
+    expect(raised.origin).toBe("routine");
+    expect(raised.promptText).toContain("fundamentally broken");
+  });
+
+  it("returns proposed:false when the routine is already disabled", async () => {
+    const result = await runRetire({ enabled: false });
+    expect(result.proposed).toBe(false);
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
+  });
+
+  it("suppresses when the retirement was recently declined", async () => {
+    vi.mocked(isRecentlyDeclined).mockResolvedValue(true);
+    const result = await runRetire();
+    expect(result.proposed).toBe(false);
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
+  });
+
+  it("suppresses when a refinement for the same routine is already pending (cross-guard)", async () => {
+    vi.mocked(listPendingConfirmations).mockResolvedValue([
+      { action: { tool: "updateRoutinePrompt", args: { routineId: ROUTINE_ID } } },
+    ] as never);
+    const result = await runRetire();
+    expect(result.proposed).toBe(false);
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
   });
 });
