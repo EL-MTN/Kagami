@@ -21,9 +21,7 @@ import { executeRoutine, MAX_ROUTINE_DEPTH } from "../../services/routine-execut
 // parameterSchema lives in the leaf module `./routine-schema` (zod-only, no
 // other imports) so the gated `createRoutine` dispatcher and the `proposeRoutine`
 // tool can re-validate against the exact same shape without dragging the
-// routine-executor import graph into a cycle. Re-export keeps existing
-// `./routines` consumers working.
-export { parameterSchema } from "./routine-schema";
+// routine-executor import graph into a cycle.
 import { parameterSchema } from "./routine-schema";
 
 export function createManageRoutinesTool(chatId: string) {
