@@ -333,7 +333,10 @@ export async function getRoutineLogs(
   // limiting first and dropping rows after — which can leave nothing behind.
   if (opts.excludeComposed) filter.trigger = { $ne: "routine" };
   if (opts.excludeRunning) filter.status = { $ne: "running" };
-  return RoutineLog.find(filter).sort({ startedAt: -1 }).limit(limit);
+  // `_id` breaks startedAt ties so "newest" is deterministic — ObjectIds are
+  // monotonic within a process, so the most-recently-inserted run wins even when
+  // two share a millisecond.
+  return RoutineLog.find(filter).sort({ startedAt: -1, _id: -1 }).limit(limit);
 }
 
 /**
@@ -352,16 +355,12 @@ export async function getRoutineHealth(
 
   return Promise.all(
     routines.map(async (routine) => {
-      const logs = await RoutineLog.find({
-        routineId: routine._id,
-        trigger: { $ne: "routine" },
-        status: { $ne: "running" },
-      })
-        // `_id` breaks startedAt ties so "latest" is deterministic — ObjectIds
-        // are monotonic within a process, so the most-recently-inserted run
-        // wins even when two runs share a millisecond.
-        .sort({ startedAt: -1, _id: -1 })
-        .limit(window);
+      // Same filter + sort the self-review pass uses (via getRoutineLogs) so the
+      // health counts and the runs shown to the review LLM can never diverge.
+      const logs = await getRoutineLogs(routine._id.toString(), window, {
+        excludeComposed: true,
+        excludeRunning: true,
+      });
 
       // An alert-mode routine legitimately produces nothing on a quiet run, and
       // only cron runs get the explicit `[no report]` sentinel instruction — a

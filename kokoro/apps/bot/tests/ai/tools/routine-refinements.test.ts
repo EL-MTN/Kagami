@@ -93,6 +93,22 @@ describe("computeRefinementSignature", () => {
       computeRefinementSignature(ROUTINE_ID, 1, "p"),
     );
   });
+
+  it("distinguishes params-unchanged (omitted) from params-cleared ([])", () => {
+    expect(computeRefinementSignature(ROUTINE_ID, 1, "p")).not.toBe(
+      computeRefinementSignature(ROUTINE_ID, 1, "p", []),
+    );
+  });
+
+  it("is stable across reordered nested keys in an object-typed default", () => {
+    const a = computeRefinementSignature(ROUTINE_ID, 1, "p", [
+      { name: "cfg", type: "object", description: "", required: false, default: { a: 1, b: 2 } },
+    ]);
+    const b = computeRefinementSignature(ROUTINE_ID, 1, "p", [
+      { name: "cfg", type: "object", description: "", required: false, default: { b: 2, a: 1 } },
+    ]);
+    expect(a).toBe(b);
+  });
 });
 
 describe("proposeRoutineRefinement — preconditions", () => {
@@ -113,6 +129,12 @@ describe("proposeRoutineRefinement — preconditions", () => {
   it("returns proposed:false when the new prompt is identical to the current one", async () => {
     vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ prompt: "  same  " }));
     const result = await runTool({ ...input, newPrompt: "same" });
+    expect(result.proposed).toBe(false);
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
+  });
+
+  it("returns proposed:false for an empty / whitespace-only newPrompt (would blank the routine)", async () => {
+    const result = await runTool({ ...input, newPrompt: "   " });
     expect(result.proposed).toBe(false);
     expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
   });

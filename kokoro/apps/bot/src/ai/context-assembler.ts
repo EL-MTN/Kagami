@@ -175,14 +175,17 @@ async function assembleRoutineNames(chatId: string): Promise<string | null> {
  */
 async function assembleRoutineContext(chatId: string, withHealth: boolean): Promise<string | null> {
   try {
-    if (!withHealth) return assembleRoutineNames(chatId);
+    // `await` the fallbacks: a bare `return <promise>` from inside try/catch
+    // escapes the catch, so a DB rejection here would reject the caller's
+    // Promise.all and fail the whole turn instead of degrading to null.
+    if (!withHealth) return await assembleRoutineNames(chatId);
 
     let health: RoutineHealth[];
     try {
       health = await getRoutineHealth(chatId);
     } catch (error) {
       logger.warn({ error }, "Failed to load routine health — listing names only");
-      return assembleRoutineNames(chatId);
+      return await assembleRoutineNames(chatId);
     }
     if (health.length === 0) return null;
 
