@@ -18,6 +18,17 @@ vi.mock("@kokoro/db", () => ({
   getRoutineById: vi.fn(),
   getRoutineLogs: vi.fn(),
   listChatIdsWithRoutines: vi.fn(),
+  // Real-equivalent predicate so the orchestration tests flag the same rows the
+  // production code would. The predicate itself is unit-tested in the db model.
+  routineNeedsAttention: (h: {
+    totalRuns: number;
+    failedRuns: number;
+    emptyRuns: number;
+    noReportRuns: number;
+  }) => {
+    const real = h.totalRuns - h.noReportRuns;
+    return real >= 4 && (h.failedRuns + h.emptyRuns) / real >= 0.5;
+  },
 }));
 
 vi.mock("ai", () => ({ generateObject: vi.fn() }));
@@ -38,7 +49,7 @@ vi.mock("../../src/ai/tools/routine-refinements", () => ({
 import { generateObject } from "ai";
 import { getRoutineHealth, getRoutineById, getRoutineLogs } from "@kokoro/db";
 import { proposeRefinement, proposeRetirement } from "../../src/ai/tools/routine-refinements";
-import { needsReview, reviewChatRoutines } from "../../src/services/routine-review";
+import { reviewChatRoutines } from "../../src/services/routine-review";
 
 const adapter = fakeAdapter();
 const CHAT = "chat-1";
@@ -92,26 +103,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
-});
-
-describe("needsReview", () => {
-  it("is false below the minimum run count", () => {
-    expect(needsReview(health({ totalRuns: 3, failedRuns: 3 }))).toBe(false);
-  });
-
-  it("is true when the bad rate meets the threshold", () => {
-    expect(needsReview(health({ totalRuns: 6, failedRuns: 3, emptyRuns: 0 }))).toBe(true);
-  });
-
-  it("is false when the bad rate is below the threshold", () => {
-    expect(needsReview(health({ totalRuns: 6, failedRuns: 1, emptyRuns: 1 }))).toBe(false);
-  });
-
-  it("counts empty runs alongside failures, ignores no-report", () => {
-    expect(
-      needsReview(health({ totalRuns: 6, failedRuns: 1, emptyRuns: 2, noReportRuns: 3 })),
-    ).toBe(true);
-  });
 });
 
 describe("reviewChatRoutines", () => {
@@ -198,7 +189,7 @@ describe("reviewChatRoutines", () => {
     expect(vi.mocked(generateObject)).not.toHaveBeenCalled();
   });
 
-  it("caps proposals per run and stops reviewing once the cap is hit", async () => {
+  it("stops reviewing once it raises a proposal (only one can be pending per chat)", async () => {
     vi.mocked(getRoutineHealth).mockResolvedValue([
       health({ routineId: "r1" }),
       health({ routineId: "r2" }),
@@ -208,8 +199,21 @@ describe("reviewChatRoutines", () => {
 
     const raised = await reviewChatRoutines(CHAT, adapter);
 
-    expect(raised).toBe(2); // MAX_PROPOSALS_PER_RUN
-    expect(vi.mocked(generateObject)).toHaveBeenCalledTimes(2); // 3rd routine never reviewed
-    expect(vi.mocked(proposeRefinement)).toHaveBeenCalledTimes(2);
+    expect(raised).toBe(1); // MAX_PROPOSALS_PER_RUN
+    expect(vi.mocked(generateObject)).toHaveBeenCalledTimes(1); // stops after the first raise
+    expect(vi.mocked(proposeRefinement)).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps paid LLM reviews per run even when every review returns action=none", async () => {
+    vi.mocked(getRoutineHealth).mockResolvedValue(
+      Array.from({ length: 10 }, (_, i) => health({ routineId: `r${i}` })),
+    );
+    llmDecision({ action: "none", rationale: "no clear fix" });
+
+    const raised = await reviewChatRoutines(CHAT, adapter);
+
+    expect(raised).toBe(0);
+    // MAX_REVIEWS_PER_RUN bounds spend — not all 10 flagged routines are reviewed.
+    expect(vi.mocked(generateObject)).toHaveBeenCalledTimes(6);
   });
 });

@@ -6,11 +6,13 @@ import { logger } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { parameterSchema } from "./routine-schema";
 import { raisePendingConfirmation } from "./confirmations";
+import { hasPendingRoutineProposal } from "./routine-proposal-tools";
 
 // Proposals expire faster than action confirmations (24h): an ignored "want me
 // to save this?" bubble shouldn't linger for a day. Two hours is long enough
 // for the user to tap, short enough that a stale offer clears on its own.
-const PROPOSAL_TTL_MS = 2 * 60 * 60 * 1000;
+// Exported so the self-review proposals (routine-refinements) share one TTL.
+export const PROPOSAL_TTL_MS = 2 * 60 * 60 * 1000;
 
 /**
  * Stable signature for a proposed routine: normalized name + a short hash of
@@ -95,8 +97,9 @@ export function createProposeRoutineTool(chatId: string, adapter: PlatformAdapte
         // Both guards are independent reads — run them concurrently.
         // GUARD 1 — durable decline memory: honors a prior "no" past the
         //   40-message window / 1h session reset the LLM can't see.
-        // GUARD 2 — one proposal at a time: also protects iMessage's
-        //   "exactly one pending" YES/NO resolver from stacked bubbles.
+        // GUARD 2 — one routine proposal at a time, across ALL proposal types
+        //   (save/refine/retire): also protects iMessage's "exactly one pending"
+        //   YES/NO resolver from stacked bubbles.
         const [declined, pending] = await Promise.all([
           isRecentlyDeclined(chatId, signature),
           listPendingConfirmations(chatId),
@@ -104,7 +107,7 @@ export function createProposeRoutineTool(chatId: string, adapter: PlatformAdapte
         if (declined) {
           return { proposed: false, reason: "Goshujin-sama declined a similar routine recently" };
         }
-        if (pending.some((p) => p.action.tool === "createRoutine")) {
+        if (hasPendingRoutineProposal(pending)) {
           return { proposed: false, reason: "a routine proposal is already awaiting approval" };
         }
 

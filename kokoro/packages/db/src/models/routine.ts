@@ -209,6 +209,27 @@ export async function updateRoutine(
   return Routine.findOneAndUpdate(filter, patch, { returnDocument: "after" });
 }
 
+/**
+ * Atomically apply a routine edit only if its version still equals
+ * `expectedVersion`, bumping the version on success. Closes the read-then-write
+ * race in the gated dispatcher: a concurrent edit landing between the proposal's
+ * version check and this write is rejected (returns null) rather than silently
+ * clobbered. Returns the updated doc, or null if the routine is gone OR its
+ * version moved on — the caller distinguishes the two via an existence check.
+ */
+export async function updateRoutineIfVersion(
+  routineId: string,
+  chatId: string,
+  expectedVersion: number,
+  patch: Partial<Pick<IRoutine, "prompt" | "parameters" | "enabled">>,
+): Promise<IRoutine | null> {
+  return Routine.findOneAndUpdate(
+    { _id: routineId, chatId, version: expectedVersion },
+    { ...patch, version: expectedVersion + 1 },
+    { returnDocument: "after" },
+  );
+}
+
 export async function deleteRoutine(routineId: string, chatId?: string): Promise<boolean> {
   const filter: Record<string, unknown> = { _id: routineId };
   if (chatId) filter.chatId = chatId;
@@ -301,10 +322,18 @@ export async function failRoutineLog(logId: string, reason: string): Promise<voi
   );
 }
 
-export async function getRoutineLogs(routineId: string, limit = 50): Promise<IRoutineLog[]> {
-  return RoutineLog.find({ routineId: new Types.ObjectId(routineId) })
-    .sort({ startedAt: -1 })
-    .limit(limit);
+export async function getRoutineLogs(
+  routineId: string,
+  limit = 50,
+  opts: { excludeComposed?: boolean; excludeRunning?: boolean } = {},
+): Promise<IRoutineLog[]> {
+  const filter: Record<string, unknown> = { routineId: new Types.ObjectId(routineId) };
+  // Push the filters into the query so callers that want only real, finished
+  // runs (the self-review pass) get them within the limit window, instead of
+  // limiting first and dropping rows after — which can leave nothing behind.
+  if (opts.excludeComposed) filter.trigger = { $ne: "routine" };
+  if (opts.excludeRunning) filter.status = { $ne: "running" };
+  return RoutineLog.find(filter).sort({ startedAt: -1 }).limit(limit);
 }
 
 /**
@@ -334,6 +363,14 @@ export async function getRoutineHealth(
         .sort({ startedAt: -1, _id: -1 })
         .limit(window);
 
+      // An alert-mode routine legitimately produces nothing on a quiet run, and
+      // only cron runs get the explicit `[no report]` sentinel instruction — a
+      // manual run, or a cron run where the model omits the literal, completes
+      // with a blank summary. Treat a blank completion as a (healthy) no-report
+      // for alert-mode routines so quiet runs don't look like failures; for
+      // always-report routines a blank completion is genuinely suspicious (it
+      // was supposed to report something), so it stays an emptyRun.
+      const alert = routine.reportMode === "alert";
       let failedRuns = 0;
       let emptyRuns = 0;
       let noReportRuns = 0;
@@ -343,8 +380,10 @@ export async function getRoutineHealth(
           continue;
         }
         const summary = (log.summary ?? "").trim();
-        if (summary.length === 0) emptyRuns++;
-        else if (summary.toLowerCase() === NO_REPORT_SENTINEL.toLowerCase()) noReportRuns++;
+        const isSentinel = summary.toLowerCase() === NO_REPORT_SENTINEL.toLowerCase();
+        if (isSentinel || (alert && summary.length === 0)) noReportRuns++;
+        else if (summary.length === 0) emptyRuns++;
+        // a non-empty real report → healthy, uncounted
       }
 
       const latest = logs[0];
@@ -362,6 +401,27 @@ export async function getRoutineHealth(
       };
     }),
   );
+}
+
+// Shared "is this routine underperforming" thresholds. `MIN_REAL_RUNS_TO_FLAG`
+// guards against judging on too little signal.
+const MIN_REAL_RUNS_TO_FLAG = 4;
+const BAD_RATE_THRESHOLD = 0.5;
+
+/**
+ * Whether a routine's recent record is bad enough to surface (a ⚠ annotation in
+ * chat) and spend an LLM self-review on. Counts only *real* attempts: runs that
+ * legitimately produced nothing (`noReportRuns`) are excluded from BOTH the
+ * numerator and the denominator — so a quiet alert-mode routine never trips it,
+ * and a routine that failed every real attempt isn't diluted into looking
+ * healthy by its quiet runs. Single source of truth shared by the chat
+ * annotation (`context-assembler`) and the self-review pass (`routine-review`)
+ * so the two surfaces can't disagree at the threshold boundary.
+ */
+export function routineNeedsAttention(h: RoutineHealth): boolean {
+  const realRuns = h.totalRuns - h.noReportRuns;
+  if (realRuns < MIN_REAL_RUNS_TO_FLAG) return false;
+  return (h.failedRuns + h.emptyRuns) / realRuns >= BAD_RATE_THRESHOLD;
 }
 
 /**

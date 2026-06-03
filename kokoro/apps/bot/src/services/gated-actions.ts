@@ -6,7 +6,7 @@ import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@
 import {
   createRoutine,
   getRoutineById,
-  updateRoutine,
+  updateRoutineIfVersion,
   isDuplicateKeyError,
   recordProposalDecision,
 } from "@kokoro/db";
@@ -17,6 +17,7 @@ import {
   updatePersonInputSchema,
 } from "../ai/tools/crm";
 import { parameterSchema } from "../ai/tools/routine-schema";
+import { ROUTINE_PROPOSAL_TOOLS } from "../ai/tools/routine-proposal-tools";
 import { config, logger, runWithSpan } from "@kokoro/shared";
 import type { IPendingConfirmation } from "@kokoro/db";
 
@@ -401,61 +402,44 @@ export async function dispatchGatedAction(
           };
         }
 
-        const routine = await getRoutineById(args.routineId, ctx.chatId);
-        if (!routine) {
-          return {
-            success: false,
-            summary: "routine not found",
-            detail: { reason: "not_found", routineId: args.routineId },
-          };
-        }
-
-        // Staleness guard: a refinement bubble can sit for up to 2h. If the
-        // routine changed since it was raised (a manual edit, or an earlier
-        // approved refinement), don't clobber that newer version — abort and
-        // let the model re-evaluate against current state.
-        if (routine.version !== args.baseVersion) {
-          return {
-            success: false,
-            summary: `routine "${routine.name}" changed since this was proposed — re-evaluate`,
-            detail: {
-              reason: "version_conflict",
-              expected: args.baseVersion,
-              actual: routine.version,
-            },
-          };
-        }
-
         logger.info(
-          { chatId: ctx.chatId, routineId: args.routineId, name: routine.name },
+          { chatId: ctx.chatId, routineId: args.routineId, baseVersion: args.baseVersion },
           "Dispatching approved updateRoutinePrompt",
         );
 
-        // Only prompt (and optionally parameters) change — version bumps so the
-        // edit is auditable/reversible via the dashboard. purity/cronSchedule/
-        // reportMode/enabled are absent from the schema, so a refinement can
-        // never escalate a read routine to action or add a schedule.
-        const updated = await updateRoutine(
-          args.routineId,
-          {
-            prompt: args.newPrompt,
-            version: routine.version + 1,
-            ...(args.newParameters !== undefined ? { parameters: args.newParameters } : {}),
-          },
-          ctx.chatId,
-        );
-
-        // Record the accept so the model doesn't re-propose the same fix.
-        // Best-effort — a write blip here must not fail the update.
-        await recordProposalDecision(ctx.chatId, args.signature, "accepted", {
-          cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,
-        }).catch(() => {});
-
-        return updated
+        // Atomic compare-and-set on version: the write only lands if the routine
+        // is still at the version the proposal was raised against, so a
+        // concurrent edit (dashboard / self-review / another bubble) in the ≤2h
+        // the bubble sat is rejected, not clobbered. Only prompt (and optionally
+        // parameters) change — purity/cronSchedule/reportMode/enabled are absent
+        // from the schema, so a refinement can never escalate a read routine to
+        // action or add a schedule. No `accepted` decision is recorded: the
+        // prompt now equals the approved one (the proposeRefinement equality
+        // guard blocks an identical re-proposal) and a genuinely different future
+        // fix should be allowed — a version-scoped accept could never match it
+        // anyway (version just bumped).
+        const updated = await updateRoutineIfVersion(args.routineId, ctx.chatId, args.baseVersion, {
+          prompt: args.newPrompt,
+          ...(args.newParameters !== undefined ? { parameters: args.newParameters } : {}),
+        });
+        if (updated) {
+          return {
+            success: true,
+            summary: `routine "${updated.name}" updated (v${updated.version})`,
+            detail: { routineId: args.routineId, version: updated.version },
+          };
+        }
+        // Didn't update — disambiguate gone-vs-raced.
+        const current = await getRoutineById(args.routineId, ctx.chatId);
+        return current
           ? {
-              success: true,
-              summary: `routine "${routine.name}" updated (v${updated.version})`,
-              detail: { routineId: args.routineId, version: updated.version },
+              success: false,
+              summary: `routine "${current.name}" changed since this was proposed — re-evaluate`,
+              detail: {
+                reason: "version_conflict",
+                expected: args.baseVersion,
+                actual: current.version,
+              },
             }
           : {
               success: false,
@@ -474,48 +458,42 @@ export async function dispatchGatedAction(
           };
         }
 
-        const routine = await getRoutineById(args.routineId, ctx.chatId);
-        if (!routine) {
-          return {
-            success: false,
-            summary: "routine not found",
-            detail: { reason: "not_found", routineId: args.routineId },
-          };
-        }
-
-        // Same staleness guard as updateRoutinePrompt: if the routine changed
-        // since the retirement was proposed (it may have just been fixed),
-        // don't disable it — re-evaluate.
-        if (routine.version !== args.baseVersion) {
-          return {
-            success: false,
-            summary: `routine "${routine.name}" changed since this was proposed — re-evaluate`,
-            detail: {
-              reason: "version_conflict",
-              expected: args.baseVersion,
-              actual: routine.version,
-            },
-          };
-        }
-
         logger.info(
-          { chatId: ctx.chatId, routineId: args.routineId, name: routine.name },
+          { chatId: ctx.chatId, routineId: args.routineId, baseVersion: args.baseVersion },
           "Dispatching approved disableRoutine",
         );
 
-        // Disable (reversible via the dashboard / manageRoutines enable), never
-        // delete — deleting would also wipe the RoutineLog history.
-        const disabled = await updateRoutine(args.routineId, { enabled: false }, ctx.chatId);
-
-        await recordProposalDecision(ctx.chatId, args.signature, "accepted", {
-          cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,
-        }).catch(() => {});
-
-        return disabled
+        // Atomic version-guarded disable (reversible via manageRoutines enable /
+        // the dashboard), never delete — deleting would also wipe RoutineLog
+        // history. No `accepted` decision is recorded: a disabled routine is
+        // excluded from health/review anyway, and on re-enable we WANT it
+        // reviewable again — a durable accept would suppress re-proposing
+        // retirement for ~90 days even after the user re-enables it.
+        const disabled = await updateRoutineIfVersion(
+          args.routineId,
+          ctx.chatId,
+          args.baseVersion,
+          {
+            enabled: false,
+          },
+        );
+        if (disabled) {
+          return {
+            success: true,
+            summary: `routine "${disabled.name}" disabled`,
+            detail: { routineId: args.routineId },
+          };
+        }
+        const current = await getRoutineById(args.routineId, ctx.chatId);
+        return current
           ? {
-              success: true,
-              summary: `routine "${routine.name}" disabled`,
-              detail: { routineId: args.routineId },
+              success: false,
+              summary: `routine "${current.name}" changed since this was proposed — re-evaluate`,
+              detail: {
+                reason: "version_conflict",
+                expected: args.baseVersion,
+                actual: current.version,
+              },
             }
           : {
               success: false,
@@ -534,10 +512,6 @@ export async function dispatchGatedAction(
     };
   }
 }
-
-/** Actions raised through a routine proposal/self-review bubble — a deny or
- * cancel on any of these records a durable decline so the model honors the "no". */
-const ROUTINE_PROPOSAL_TOOLS = new Set(["createRoutine", "updateRoutinePrompt", "disableRoutine"]);
 
 /**
  * When a routine proposal confirmation — a `createRoutine` save, an

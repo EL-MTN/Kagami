@@ -21,7 +21,10 @@ import {
   listRoutinesForChat,
   requestManualRun,
   resetStaleRunningRoutineLogs,
+  routineNeedsAttention,
   updateRoutine,
+  updateRoutineIfVersion,
+  type RoutineHealth,
   type RoutineInput,
 } from "../../src/models/routine";
 
@@ -343,5 +346,122 @@ describe("getRoutineHealth", () => {
 
     const health = await getRoutineHealth("chat-1");
     expect(health.map((h) => h.name)).toEqual([enabled.name]);
+  });
+
+  it("counts a blank completion as no-report (not empty) for an alert-mode routine", async () => {
+    // An alert-mode routine that runs quiet (blank summary on a manual run, or a
+    // cron run that omits the literal sentinel) is healthy, not failing.
+    const s = await createRoutine("chat-1", { ...baseInput, reportMode: "alert" });
+    await logRun(s.id, "manual", { summary: "" });
+    await logRun(s.id, "cron", { summary: "" });
+    await logRun(s.id, "cron", { summary: "[no report]" });
+
+    const [health] = await getRoutineHealth("chat-1");
+    expect(health.emptyRuns).toBe(0);
+    expect(health.noReportRuns).toBe(3);
+    expect(health.failedRuns).toBe(0);
+  });
+
+  it("still counts a blank completion as empty for an always-report routine", async () => {
+    const s = await createRoutine("chat-1", { ...baseInput, reportMode: "always" });
+    await logRun(s.id, "manual", { summary: "" });
+    const [health] = await getRoutineHealth("chat-1");
+    expect(health.emptyRuns).toBe(1);
+    expect(health.noReportRuns).toBe(0);
+  });
+});
+
+describe("routineNeedsAttention", () => {
+  function fakeHealth(over: Partial<RoutineHealth> = {}): RoutineHealth {
+    return {
+      routineId: "r",
+      name: "r",
+      window: 10,
+      totalRuns: 0,
+      failedRuns: 0,
+      emptyRuns: 0,
+      noReportRuns: 0,
+      lastStatus: null,
+      ...over,
+    };
+  }
+
+  it("is false below the minimum real-run count", () => {
+    expect(routineNeedsAttention(fakeHealth({ totalRuns: 3, failedRuns: 3 }))).toBe(false);
+  });
+
+  it("is true when the bad rate of real attempts meets the threshold", () => {
+    expect(routineNeedsAttention(fakeHealth({ totalRuns: 6, failedRuns: 3 }))).toBe(true);
+  });
+
+  it("is false when the bad rate is below the threshold", () => {
+    expect(routineNeedsAttention(fakeHealth({ totalRuns: 6, failedRuns: 1, emptyRuns: 1 }))).toBe(
+      false,
+    );
+  });
+
+  it("excludes no-report runs from the denominator (a routine failing every real attempt is flagged)", () => {
+    // 6 healthy no-reports + 4 failed → 4/4 real attempts bad. Old (bad/total)
+    // math gave 4/10 = 0.4 and wrongly skipped it.
+    expect(
+      routineNeedsAttention(fakeHealth({ totalRuns: 10, failedRuns: 4, noReportRuns: 6 })),
+    ).toBe(true);
+  });
+
+  it("is false when there are no real attempts (all no-report)", () => {
+    expect(routineNeedsAttention(fakeHealth({ totalRuns: 10, noReportRuns: 10 }))).toBe(false);
+  });
+});
+
+describe("updateRoutineIfVersion", () => {
+  it("applies the edit and bumps version when the expected version matches", async () => {
+    const r = await createRoutine("chat-1", baseInput); // version 1
+    const updated = await updateRoutineIfVersion(r.id, "chat-1", 1, { prompt: "new prompt" });
+    expect(updated).not.toBeNull();
+    expect(updated?.prompt).toBe("new prompt");
+    expect(updated?.version).toBe(2);
+  });
+
+  it("returns null and leaves the routine untouched when the version moved on", async () => {
+    const r = await createRoutine("chat-1", baseInput); // version 1
+    const res = await updateRoutineIfVersion(r.id, "chat-1", 99, { prompt: "stale" });
+    expect(res).toBeNull();
+    const after = await getRoutineById(r.id);
+    expect(after?.prompt).toBe(baseInput.prompt);
+    expect(after?.version).toBe(1);
+  });
+
+  it("returns null when the routine does not exist", async () => {
+    const res = await updateRoutineIfVersion("000000000000000000000000", "chat-1", 1, {
+      enabled: false,
+    });
+    expect(res).toBeNull();
+  });
+
+  it("scopes by chatId", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    const res = await updateRoutineIfVersion(r.id, "chat-2", 1, { prompt: "x" });
+    expect(res).toBeNull();
+  });
+});
+
+describe("getRoutineLogs filtering", () => {
+  it("excludes composed sub-runs and in-flight rows when asked", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    const a = await createRoutineLog(r.id, "cron");
+    await completeRoutineLog(a.id, "ok");
+    const b = await createRoutineLog(r.id, "routine");
+    await completeRoutineLog(b.id, "sub");
+    await createRoutineLog(r.id, "cron"); // left running
+
+    expect(await getRoutineLogs(r.id, 50)).toHaveLength(3);
+
+    const filtered = await getRoutineLogs(r.id, 50, {
+      excludeComposed: true,
+      excludeRunning: true,
+    });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.trigger).toBe("cron");
+    expect(filtered[0]?.status).toBe("completed");
   });
 });
