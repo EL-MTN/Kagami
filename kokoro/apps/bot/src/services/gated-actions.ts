@@ -3,7 +3,13 @@ import { sendEmail } from "./gmail";
 import { updateEvent, deleteEvent } from "./google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser, withBrowserLock } from "./browser";
 import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
-import { createRoutine, isDuplicateKeyError, recordProposalDecision } from "@kokoro/db";
+import {
+  createRoutine,
+  getRoutineById,
+  updateRoutine,
+  isDuplicateKeyError,
+  recordProposalDecision,
+} from "@kokoro/db";
 import {
   createFollowupInputSchema,
   logInteractionInputSchema,
@@ -38,12 +44,13 @@ type GatedToolName = (typeof GATED_TOOL_NAMES)[number];
 /**
  * Dispatch-only actions: executable through the approval rail but deliberately
  * NOT in `GATED_TOOL_NAMES`, so they're absent from `requestConfirmation`'s
- * enum. `createRoutine` is reachable only via `proposeRoutine` → the approval
- * bubble, which runs the durable anti-nag guard first; exposing it on
- * `requestConfirmation` would let the model self-author a routine while
- * bypassing that guard.
+ * enum. `createRoutine` is reachable only via `proposeRoutine`, and
+ * `updateRoutinePrompt` only via `proposeRoutineRefinement` → the approval
+ * bubble, which runs the durable anti-nag guard first; exposing either on
+ * `requestConfirmation` would let the model self-author or self-edit a routine
+ * while bypassing that guard.
  */
-const DISPATCH_ONLY_TOOL_NAMES = ["createRoutine"] as const;
+const DISPATCH_ONLY_TOOL_NAMES = ["createRoutine", "updateRoutinePrompt"] as const;
 type DispatchOnlyToolName = (typeof DISPATCH_ONLY_TOOL_NAMES)[number];
 
 type DispatchableToolName = GatedToolName | DispatchOnlyToolName;
@@ -97,6 +104,20 @@ const createRoutineArgs = z.object({
   parameters: z.array(parameterSchema).optional(),
 });
 
+// Self-authored refinement of an existing routine's prompt. `baseVersion` is the
+// version the proposal was raised against — the dispatcher rejects the update if
+// the routine has since changed, so a stale 2h-old bubble can't clobber a newer
+// edit. Like `createRoutineArgs`, this schema deliberately omits `purity`,
+// `cronSchedule`, `reportMode`, and `enabled`: a refinement rewrites WHAT a
+// routine does, never escalates it to action-purity or bolts on a schedule.
+const updateRoutinePromptArgs = z.object({
+  signature: z.string().min(1),
+  routineId: z.string().min(1),
+  baseVersion: z.number().int().nonnegative(),
+  newPrompt: z.string().min(1).max(4000),
+  newParameters: z.array(parameterSchema).optional(),
+});
+
 // CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the
 // dispatcher's re-validator and the tool's `inputSchema` are guaranteed to
 // stay in sync (Kizuna's API does not enforce the LLM-facing caps, so the
@@ -110,6 +131,7 @@ const GATED_ARG_SCHEMAS: Record<DispatchableToolName, z.ZodTypeAny> = {
   resolveFollowup: resolveFollowupInputSchema,
   updatePerson: updatePersonInputSchema,
   createRoutine: createRoutineArgs,
+  updateRoutinePrompt: updateRoutinePromptArgs,
 };
 
 interface DispatchResult {
@@ -353,6 +375,79 @@ export async function dispatchGatedAction(
               detail: { reason: "duplicate_name" },
             };
       }
+
+      case "updateRoutinePrompt": {
+        const args = parsed.data as z.infer<typeof updateRoutinePromptArgs>;
+        if (!ctx.chatId) {
+          return {
+            success: false,
+            summary: "cannot update routine — missing chat context",
+            detail: { reason: "no_chat_context" },
+          };
+        }
+
+        const routine = await getRoutineById(args.routineId, ctx.chatId);
+        if (!routine) {
+          return {
+            success: false,
+            summary: "routine not found",
+            detail: { reason: "not_found", routineId: args.routineId },
+          };
+        }
+
+        // Staleness guard: a refinement bubble can sit for up to 2h. If the
+        // routine changed since it was raised (a manual edit, or an earlier
+        // approved refinement), don't clobber that newer version — abort and
+        // let the model re-evaluate against current state.
+        if (routine.version !== args.baseVersion) {
+          return {
+            success: false,
+            summary: `routine "${routine.name}" changed since this was proposed — re-evaluate`,
+            detail: {
+              reason: "version_conflict",
+              expected: args.baseVersion,
+              actual: routine.version,
+            },
+          };
+        }
+
+        logger.info(
+          { chatId: ctx.chatId, routineId: args.routineId, name: routine.name },
+          "Dispatching approved updateRoutinePrompt",
+        );
+
+        // Only prompt (and optionally parameters) change — version bumps so the
+        // edit is auditable/reversible via the dashboard. purity/cronSchedule/
+        // reportMode/enabled are absent from the schema, so a refinement can
+        // never escalate a read routine to action or add a schedule.
+        const updated = await updateRoutine(
+          args.routineId,
+          {
+            prompt: args.newPrompt,
+            version: routine.version + 1,
+            ...(args.newParameters !== undefined ? { parameters: args.newParameters } : {}),
+          },
+          ctx.chatId,
+        );
+
+        // Record the accept so the model doesn't re-propose the same fix.
+        // Best-effort — a write blip here must not fail the update.
+        await recordProposalDecision(ctx.chatId, args.signature, "accepted", {
+          cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,
+        }).catch(() => {});
+
+        return updated
+          ? {
+              success: true,
+              summary: `routine "${routine.name}" updated (v${updated.version})`,
+              detail: { routineId: args.routineId, version: updated.version },
+            }
+          : {
+              success: false,
+              summary: "routine not found",
+              detail: { reason: "not_found", routineId: args.routineId },
+            };
+      }
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unknown error";
@@ -366,17 +461,18 @@ export async function dispatchGatedAction(
 }
 
 /**
- * When a `createRoutine` proposal confirmation is denied or cancelled, record
- * the decline in the durable store so the model honors the "no" past the
- * 40-message context window / 1h session reset. Discriminates on the action
- * tool (NOT origin) so a routine-raised gated action — e.g. a running routine
- * asking to send an email — never trips this. No-op for every other action;
- * best-effort so a store blip never wedges the deny/cancel path.
+ * When a routine proposal confirmation — a `createRoutine` save or an
+ * `updateRoutinePrompt` refinement — is denied or cancelled, record the decline
+ * in the durable store so the model honors the "no" past the 40-message context
+ * window / 1h session reset. Discriminates on the action tool (NOT origin) so a
+ * routine-raised gated action — e.g. a running routine asking to send an email —
+ * never trips this. No-op for every other action; best-effort so a store blip
+ * never wedges the deny/cancel path.
  */
 export async function recordProposalDeclineFromConfirmation(
   row: Pick<IPendingConfirmation, "chatId" | "action">,
 ): Promise<void> {
-  if (row.action.tool !== "createRoutine") return;
+  if (row.action.tool !== "createRoutine" && row.action.tool !== "updateRoutinePrompt") return;
   const signature = row.action.args.signature;
   if (typeof signature !== "string" || signature.length === 0) return;
   try {

@@ -41,6 +41,8 @@ vi.mock("@kokoro/kizuna", () => ({
 // real @kokoro/db pulls in mongoose/models we don't want to load here.
 vi.mock("@kokoro/db", () => ({
   createRoutine: vi.fn(),
+  getRoutineById: vi.fn(),
+  updateRoutine: vi.fn(),
   isDuplicateKeyError: vi.fn(() => false),
   recordProposalDecision: vi.fn(),
 }));
@@ -49,7 +51,13 @@ import { sendEmail } from "../../src/services/gmail";
 import { updateEvent, deleteEvent } from "../../src/services/google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser } from "../../src/services/browser";
 import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
-import { createRoutine, isDuplicateKeyError, recordProposalDecision } from "@kokoro/db";
+import {
+  createRoutine,
+  getRoutineById,
+  updateRoutine,
+  isDuplicateKeyError,
+  recordProposalDecision,
+} from "@kokoro/db";
 import {
   dispatchGatedAction,
   isGatedTool,
@@ -69,6 +77,8 @@ beforeEach(() => {
   vi.mocked(resolveFollowup).mockReset();
   vi.mocked(updatePerson).mockReset();
   vi.mocked(createRoutine).mockReset();
+  vi.mocked(getRoutineById).mockReset();
+  vi.mocked(updateRoutine).mockReset();
   // recordProposalDecision is async in production (callers chain .catch on it);
   // default the mock to a resolved promise so that chaining doesn't throw.
   vi.mocked(recordProposalDecision).mockReset().mockResolvedValue(undefined);
@@ -582,6 +592,117 @@ describe("dispatchGatedAction — createRoutine (dispatch-only)", () => {
   });
 });
 
+describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
+  const ROUTINE_ID = "444444444444444444444444";
+  const draft = {
+    signature: `refine:${ROUTINE_ID}#1#abcd1234`,
+    routineId: ROUTINE_ID,
+    baseVersion: 1,
+    newPrompt: "Improved: fetch unread email and write a 3-bullet summary for {date}.",
+  };
+
+  function fakeRoutine(over: Partial<{ name: string; prompt: string; version: number }> = {}) {
+    return {
+      _id: ROUTINE_ID,
+      name: over.name ?? "morning-digest",
+      prompt: over.prompt ?? "old prompt",
+      version: over.version ?? 1,
+    } as never;
+  }
+
+  it("is dispatchable even though it is NOT in the requestConfirmation enum", () => {
+    expect(isGatedTool("updateRoutinePrompt")).toBe(false);
+    expect(GATED_TOOL_NAMES as readonly string[]).not.toContain("updateRoutinePrompt");
+  });
+
+  it("updates the prompt, bumps version, records the accept, and never touches purity/cron", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ version: 1 }));
+    vi.mocked(updateRoutine).mockResolvedValue({ version: 2 } as never);
+
+    const result = await dispatchGatedAction("updateRoutinePrompt", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe('routine "morning-digest" updated (v2)');
+    expect(result.detail).toEqual({ routineId: ROUTINE_ID, version: 2 });
+
+    expect(vi.mocked(updateRoutine)).toHaveBeenCalledWith(
+      ROUTINE_ID,
+      expect.objectContaining({ prompt: draft.newPrompt, version: 2 }),
+      "chat-1",
+    );
+    // The refinement can never escalate scope — these stay out of the patch.
+    const patch = vi.mocked(updateRoutine).mock.calls[0][1];
+    expect(patch).not.toHaveProperty("purity");
+    expect(patch).not.toHaveProperty("cronSchedule");
+    expect(patch).not.toHaveProperty("reportMode");
+    expect(patch).not.toHaveProperty("enabled");
+    expect(patch).not.toHaveProperty("parameters"); // none supplied this run
+
+    expect(vi.mocked(recordProposalDecision)).toHaveBeenCalledWith(
+      "chat-1",
+      draft.signature,
+      "accepted",
+      expect.any(Object),
+    );
+  });
+
+  it("forwards newParameters only when supplied", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ version: 1 }));
+    vi.mocked(updateRoutine).mockResolvedValue({ version: 2 } as never);
+
+    await dispatchGatedAction(
+      "updateRoutinePrompt",
+      {
+        ...draft,
+        newParameters: [{ name: "date", type: "string", description: "the day", required: false }],
+      },
+      { chatId: "chat-1" },
+    );
+
+    expect(vi.mocked(updateRoutine).mock.calls[0][1]).toHaveProperty("parameters");
+  });
+
+  it("rejects a stale proposal when the routine version moved on (no clobber)", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ version: 3 }));
+
+    const result = await dispatchGatedAction("updateRoutinePrompt", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("version_conflict");
+    expect(result.detail).toMatchObject({ expected: 1, actual: 3 });
+    expect(vi.mocked(updateRoutine)).not.toHaveBeenCalled();
+    expect(vi.mocked(recordProposalDecision)).not.toHaveBeenCalled();
+  });
+
+  it("fails when the routine no longer exists", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(null);
+
+    const result = await dispatchGatedAction("updateRoutinePrompt", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("not_found");
+    expect(vi.mocked(updateRoutine)).not.toHaveBeenCalled();
+  });
+
+  it("fails cleanly when chat context is missing (never trusts args for chatId)", async () => {
+    const result = await dispatchGatedAction("updateRoutinePrompt", draft);
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("no_chat_context");
+    expect(vi.mocked(getRoutineById)).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed draft (missing newPrompt) before touching the db", async () => {
+    const result = await dispatchGatedAction(
+      "updateRoutinePrompt",
+      { signature: "x", routineId: ROUTINE_ID, baseVersion: 1 },
+      { chatId: "chat-1" },
+    );
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_args");
+    expect(vi.mocked(getRoutineById)).not.toHaveBeenCalled();
+  });
+});
+
 describe("recordProposalDeclineFromConfirmation", () => {
   it("records a decline for a createRoutine proposal (discriminates on action.tool)", async () => {
     await recordProposalDeclineFromConfirmation({
@@ -592,6 +713,20 @@ describe("recordProposalDeclineFromConfirmation", () => {
     expect(vi.mocked(recordProposalDecision)).toHaveBeenCalledWith(
       "chat-1",
       "sig#1",
+      "declined",
+      expect.any(Object),
+    );
+  });
+
+  it("records a decline for an updateRoutinePrompt refinement", async () => {
+    await recordProposalDeclineFromConfirmation({
+      chatId: "chat-1",
+      action: { tool: "updateRoutinePrompt", args: { signature: "refine:r#1#sig" } },
+    });
+
+    expect(vi.mocked(recordProposalDecision)).toHaveBeenCalledWith(
+      "chat-1",
+      "refine:r#1#sig",
       "declined",
       expect.any(Object),
     );
