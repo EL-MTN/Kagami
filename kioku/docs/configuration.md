@@ -45,7 +45,7 @@ LLM_MODEL=zai-org/glm-4.7-flash                  # provider-native model id
 EMBEDDING_KIND=openai-compatible
 EMBEDDING_BASE_URL=http://localhost:1234/v1
 EMBEDDING_API_KEY=lm-studio
-EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
 
 # ── Logging ─────────────────────────────────────────────
 # LOG_LEVEL=info                                 # pino level
@@ -64,7 +64,7 @@ EMBEDDING_MODEL=text-embedding-3-small
   EMBEDDING_KIND=openai-compatible
   EMBEDDING_BASE_URL=http://localhost:1234/v1
   EMBEDDING_API_KEY=lm-studio
-  EMBEDDING_MODEL=text-embedding-3-small
+  EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
   ```
 
 - **All-OpenAI** — paid chat + paid embeddings:
@@ -89,7 +89,7 @@ EMBEDDING_MODEL=text-embedding-3-small
   EMBEDDING_KIND=openai-compatible
   EMBEDDING_BASE_URL=http://localhost:1234/v1
   EMBEDDING_API_KEY=lm-studio
-  EMBEDDING_MODEL=text-embedding-3-small
+  EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
   ```
 
 `@kagami/llm` builds the chat and embedding providers independently; the
