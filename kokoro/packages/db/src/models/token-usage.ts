@@ -4,6 +4,7 @@ export type UsageCategory =
   | "conversation"
   | "proactive"
   | "routine"
+  | "routine-review"
   | "watcher"
   | "curation"
   | "image-selection"
@@ -40,6 +41,7 @@ const tokenUsageSchema = new Schema<ITokenUsage>(
         "conversation",
         "proactive",
         "routine",
+        "routine-review",
         "watcher",
         "curation",
         "image-selection",

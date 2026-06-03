@@ -51,6 +51,12 @@ vi.mock("../../../src/ai/tools/routine-proposals", () => ({
   createProposeRoutineTool: vi.fn(() => ({ __proposeRoutine: true })),
 }));
 
+// proposeRoutineRefinement likewise pulls in the db + confirmation rail; stub
+// it so these palette tests stay focused on which tools land where.
+vi.mock("../../../src/ai/tools/routine-refinements", () => ({
+  createProposeRoutineRefinementTool: vi.fn(() => ({ __proposeRoutineRefinement: true })),
+}));
+
 import { allTools, watcherTools, routineToolsUnderWatcher } from "../../../src/ai/tools/index";
 import { getMcpTools } from "../../../src/services/mcp";
 
@@ -180,40 +186,37 @@ describe("allTools — feature flags", () => {
   });
 });
 
-describe("allTools — proposeRoutine (self-authored routines)", () => {
-  // proposeRoutine is offered ONLY on a live conversational turn
-  // (ctx.conversational === true) AND with the flag on.
+describe("allTools — self-authored routines (proposeRoutine + proposeRoutineRefinement)", () => {
+  // Both are offered ONLY on a live conversational turn (ctx.conversational
+  // === true) — always on there, no feature flag.
   const convoCtx = { ...baseCtx, conversational: true };
 
-  it("is absent when the flag is unset/off, even on a conversational turn", () => {
-    expect(Object.keys(allTools(convoCtx))).not.toContain("proposeRoutine");
-    mockConfig.ROUTINE_PROPOSALS_ENABLED = false;
-    expect(Object.keys(allTools(convoCtx))).not.toContain("proposeRoutine");
+  it("registers proposeRoutine and proposeRoutineRefinement on a conversational turn", () => {
+    const names = Object.keys(allTools(convoCtx));
+    expect(names).toContain("proposeRoutine");
+    expect(names).toContain("proposeRoutineRefinement");
   });
 
-  it("registers proposeRoutine on a conversational turn when the flag is on", () => {
-    mockConfig.ROUTINE_PROPOSALS_ENABLED = true;
-    expect(Object.keys(allTools(convoCtx))).toContain("proposeRoutine");
-  });
-
-  it("is NEVER offered to watcher / under-watcher palettes even with the flag on", () => {
-    // Structural invariant: scheduled/observation runs can't self-author a
-    // routine — preserves the read-only watcher guarantee.
-    mockConfig.ROUTINE_PROPOSALS_ENABLED = true;
-    expect(Object.keys(watcherTools(convoCtx))).not.toContain("proposeRoutine");
-    expect(Object.keys(routineToolsUnderWatcher(convoCtx))).not.toContain("proposeRoutine");
+  it("is NEVER offered to watcher / under-watcher palettes", () => {
+    // Structural invariant: scheduled/observation runs can't self-author or
+    // self-edit a routine — preserves the read-only watcher guarantee.
+    for (const palette of [watcherTools(convoCtx), routineToolsUnderWatcher(convoCtx)]) {
+      const names = Object.keys(palette);
+      expect(names).not.toContain("proposeRoutine");
+      expect(names).not.toContain("proposeRoutineRefinement");
+    }
   });
 
   it("is withheld from every non-conversational main-context caller (routine runs, proactive)", () => {
     // Routine executions and proactive outreach call allTools under
     // callingContext "main" but leave `conversational` false — they must NOT
-    // be able to self-author a routine. Positive opt-in: no flag → no tool.
-    mockConfig.ROUTINE_PROPOSALS_ENABLED = true;
-    expect(Object.keys(allTools(baseCtx))).not.toContain("proposeRoutine");
-    expect(Object.keys(allTools({ ...baseCtx, conversational: false }))).not.toContain(
-      "proposeRoutine",
-    );
-    // ...but a live conversational turn still gets it.
+    // be able to self-author or self-edit a routine. Positive opt-in.
+    for (const ctx of [baseCtx, { ...baseCtx, conversational: false }]) {
+      const names = Object.keys(allTools(ctx));
+      expect(names).not.toContain("proposeRoutine");
+      expect(names).not.toContain("proposeRoutineRefinement");
+    }
+    // ...but a live conversational turn still gets both.
     expect(Object.keys(allTools(convoCtx))).toContain("proposeRoutine");
   });
 });

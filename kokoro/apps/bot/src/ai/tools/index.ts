@@ -11,6 +11,7 @@ import {
 import { createManageWatchersTool, reportWatcherResult } from "./watchers";
 import { createRequestConfirmationTool, createCancelConfirmationTool } from "./confirmations";
 import { createProposeRoutineTool } from "./routine-proposals";
+import { createProposeRoutineRefinementTool } from "./routine-refinements";
 import { createSearchMemoryTool, createRememberFactTool } from "./memory";
 import { createCrmTools, createCrmWriteTools } from "./crm";
 import { getMcpTools } from "../../services/mcp";
@@ -103,16 +104,19 @@ export function allTools(ctx: ToolContext) {
   tools.searchRoutines = createSearchRoutinesTool(ctx.chatId);
   tools.manageWatchers = createManageWatchersTool(ctx.chatId);
 
-  // Self-authored routines: let the model offer to save a just-completed task.
-  // Live conversational turns ONLY (`ctx.conversational`) — structurally absent
-  // from watcherTools / routineToolsUnderWatcher, and withheld from every other
-  // allTools caller that runs under callingContext: "main" but isn't a
-  // user-initiated turn (proactive outreach, routine executions). A
-  // scheduled/manual/composed routine — or an unprompted proactive message —
-  // must never self-author a routine. Approved action is the dispatch-only
-  // `createRoutine`, gated behind the approval rail.
-  if (config.ROUTINE_PROPOSALS_ENABLED && ctx.conversational) {
+  // Self-authored routines: let the model offer to save a just-completed task
+  // (`proposeRoutine`) or fix an underperforming routine's prompt
+  // (`proposeRoutineRefinement`). Live conversational turns ONLY
+  // (`ctx.conversational`) — structurally absent from watcherTools /
+  // routineToolsUnderWatcher, and withheld from every other allTools caller that
+  // runs under callingContext: "main" but isn't a user-initiated turn (proactive
+  // outreach, routine executions). A scheduled/manual/composed routine — or an
+  // unprompted proactive message — must never self-author or self-edit a
+  // routine. Both approved actions are dispatch-only (`createRoutine` /
+  // `updateRoutinePrompt`), gated behind the approval rail.
+  if (ctx.conversational) {
     tools.proposeRoutine = createProposeRoutineTool(ctx.chatId, ctx.adapter);
+    tools.proposeRoutineRefinement = createProposeRoutineRefinementTool(ctx.chatId, ctx.adapter);
   }
 
   tools.searchMemory = createSearchMemoryTool();

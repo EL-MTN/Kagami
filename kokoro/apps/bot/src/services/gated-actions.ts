@@ -3,7 +3,13 @@ import { sendEmail } from "./gmail";
 import { updateEvent, deleteEvent } from "./google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser, withBrowserLock } from "./browser";
 import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
-import { createRoutine, isDuplicateKeyError, recordProposalDecision } from "@kokoro/db";
+import {
+  createRoutine,
+  getRoutineById,
+  updateRoutineIfVersion,
+  isDuplicateKeyError,
+  recordProposalDecision,
+} from "@kokoro/db";
 import {
   createFollowupInputSchema,
   logInteractionInputSchema,
@@ -11,6 +17,7 @@ import {
   updatePersonInputSchema,
 } from "../ai/tools/crm";
 import { parameterSchema } from "../ai/tools/routine-schema";
+import { ROUTINE_PROPOSAL_TOOLS } from "../ai/tools/routine-proposal-tools";
 import { config, logger, runWithSpan } from "@kokoro/shared";
 import type { IPendingConfirmation } from "@kokoro/db";
 
@@ -38,12 +45,18 @@ type GatedToolName = (typeof GATED_TOOL_NAMES)[number];
 /**
  * Dispatch-only actions: executable through the approval rail but deliberately
  * NOT in `GATED_TOOL_NAMES`, so they're absent from `requestConfirmation`'s
- * enum. `createRoutine` is reachable only via `proposeRoutine` → the approval
- * bubble, which runs the durable anti-nag guard first; exposing it on
- * `requestConfirmation` would let the model self-author a routine while
- * bypassing that guard.
+ * enum. `createRoutine` is reachable only via `proposeRoutine`, and
+ * `updateRoutinePrompt` only via `proposeRoutineRefinement` → the approval
+ * bubble, which runs the durable anti-nag guard first; exposing either on
+ * `requestConfirmation` would let the model self-author or self-edit a routine
+ * while bypassing that guard. `disableRoutine` (routine retirement) is reachable
+ * only via the self-review pass's `proposeRetirement`.
  */
-const DISPATCH_ONLY_TOOL_NAMES = ["createRoutine"] as const;
+const DISPATCH_ONLY_TOOL_NAMES = [
+  "createRoutine",
+  "updateRoutinePrompt",
+  "disableRoutine",
+] as const;
 type DispatchOnlyToolName = (typeof DISPATCH_ONLY_TOOL_NAMES)[number];
 
 type DispatchableToolName = GatedToolName | DispatchOnlyToolName;
@@ -97,6 +110,29 @@ const createRoutineArgs = z.object({
   parameters: z.array(parameterSchema).optional(),
 });
 
+// Self-authored refinement of an existing routine's prompt. `baseVersion` is the
+// version the proposal was raised against — the dispatcher rejects the update if
+// the routine has since changed, so a stale 2h-old bubble can't clobber a newer
+// edit. Like `createRoutineArgs`, this schema deliberately omits `purity`,
+// `cronSchedule`, `reportMode`, and `enabled`: a refinement rewrites WHAT a
+// routine does, never escalates it to action-purity or bolts on a schedule.
+const updateRoutinePromptArgs = z.object({
+  signature: z.string().min(1),
+  routineId: z.string().min(1),
+  baseVersion: z.number().int().nonnegative(),
+  newPrompt: z.string().min(1).max(4000),
+  newParameters: z.array(parameterSchema).optional(),
+});
+
+// Routine retirement (disable, never delete). Same `baseVersion` staleness
+// guard as updateRoutinePrompt so a stale proposal can't disable a routine that
+// was edited (perhaps fixed) since the bubble was raised.
+const disableRoutineArgs = z.object({
+  signature: z.string().min(1),
+  routineId: z.string().min(1),
+  baseVersion: z.number().int().nonnegative(),
+});
+
 // CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the
 // dispatcher's re-validator and the tool's `inputSchema` are guaranteed to
 // stay in sync (Kizuna's API does not enforce the LLM-facing caps, so the
@@ -110,6 +146,8 @@ const GATED_ARG_SCHEMAS: Record<DispatchableToolName, z.ZodTypeAny> = {
   resolveFollowup: resolveFollowupInputSchema,
   updatePerson: updatePersonInputSchema,
   createRoutine: createRoutineArgs,
+  updateRoutinePrompt: updateRoutinePromptArgs,
+  disableRoutine: disableRoutineArgs,
 };
 
 interface DispatchResult {
@@ -353,6 +391,116 @@ export async function dispatchGatedAction(
               detail: { reason: "duplicate_name" },
             };
       }
+
+      case "updateRoutinePrompt": {
+        const args = parsed.data as z.infer<typeof updateRoutinePromptArgs>;
+        if (!ctx.chatId) {
+          return {
+            success: false,
+            summary: "cannot update routine — missing chat context",
+            detail: { reason: "no_chat_context" },
+          };
+        }
+
+        logger.info(
+          { chatId: ctx.chatId, routineId: args.routineId, baseVersion: args.baseVersion },
+          "Dispatching approved updateRoutinePrompt",
+        );
+
+        // Atomic compare-and-set on version: the write only lands if the routine
+        // is still at the version the proposal was raised against, so a
+        // concurrent edit (dashboard / self-review / another bubble) in the ≤2h
+        // the bubble sat is rejected, not clobbered. Only prompt (and optionally
+        // parameters) change — purity/cronSchedule/reportMode/enabled are absent
+        // from the schema, so a refinement can never escalate a read routine to
+        // action or add a schedule. No `accepted` decision is recorded: the
+        // prompt now equals the approved one (the proposeRefinement equality
+        // guard blocks an identical re-proposal) and a genuinely different future
+        // fix should be allowed — a version-scoped accept could never match it
+        // anyway (version just bumped).
+        const updated = await updateRoutineIfVersion(args.routineId, ctx.chatId, args.baseVersion, {
+          prompt: args.newPrompt,
+          ...(args.newParameters !== undefined ? { parameters: args.newParameters } : {}),
+        });
+        if (updated) {
+          return {
+            success: true,
+            summary: `routine "${updated.name}" updated (v${updated.version})`,
+            detail: { routineId: args.routineId, version: updated.version },
+          };
+        }
+        // Didn't update — disambiguate gone-vs-raced.
+        const current = await getRoutineById(args.routineId, ctx.chatId);
+        return current
+          ? {
+              success: false,
+              summary: `routine "${current.name}" changed since this was proposed — re-evaluate`,
+              detail: {
+                reason: "version_conflict",
+                expected: args.baseVersion,
+                actual: current.version,
+              },
+            }
+          : {
+              success: false,
+              summary: "routine not found",
+              detail: { reason: "not_found", routineId: args.routineId },
+            };
+      }
+
+      case "disableRoutine": {
+        const args = parsed.data as z.infer<typeof disableRoutineArgs>;
+        if (!ctx.chatId) {
+          return {
+            success: false,
+            summary: "cannot disable routine — missing chat context",
+            detail: { reason: "no_chat_context" },
+          };
+        }
+
+        logger.info(
+          { chatId: ctx.chatId, routineId: args.routineId, baseVersion: args.baseVersion },
+          "Dispatching approved disableRoutine",
+        );
+
+        // Atomic version-guarded disable (reversible via manageRoutines enable /
+        // the dashboard), never delete — deleting would also wipe RoutineLog
+        // history. No `accepted` decision is recorded: a disabled routine is
+        // excluded from health/review anyway, and on re-enable we WANT it
+        // reviewable again — a durable accept would suppress re-proposing
+        // retirement for ~90 days even after the user re-enables it.
+        const disabled = await updateRoutineIfVersion(
+          args.routineId,
+          ctx.chatId,
+          args.baseVersion,
+          {
+            enabled: false,
+          },
+        );
+        if (disabled) {
+          return {
+            success: true,
+            summary: `routine "${disabled.name}" disabled`,
+            detail: { routineId: args.routineId },
+          };
+        }
+        const current = await getRoutineById(args.routineId, ctx.chatId);
+        return current
+          ? {
+              success: false,
+              summary: `routine "${current.name}" changed since this was proposed — re-evaluate`,
+              detail: {
+                reason: "version_conflict",
+                expected: args.baseVersion,
+                actual: current.version,
+              },
+            }
+          : {
+              success: false,
+              summary: "routine not found",
+              detail: { reason: "not_found", routineId: args.routineId },
+            };
+      }
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unknown error";
@@ -366,17 +514,18 @@ export async function dispatchGatedAction(
 }
 
 /**
- * When a `createRoutine` proposal confirmation is denied or cancelled, record
- * the decline in the durable store so the model honors the "no" past the
- * 40-message context window / 1h session reset. Discriminates on the action
- * tool (NOT origin) so a routine-raised gated action — e.g. a running routine
- * asking to send an email — never trips this. No-op for every other action;
- * best-effort so a store blip never wedges the deny/cancel path.
+ * When a routine proposal confirmation — a `createRoutine` save, an
+ * `updateRoutinePrompt` refinement, or a `disableRoutine` retirement — is denied
+ * or cancelled, record the decline in the durable store so the model honors the
+ * "no" past the 40-message context window / 1h session reset. Discriminates on
+ * the action tool (NOT origin) so a routine-raised gated action — e.g. a running
+ * routine asking to send an email — never trips this. No-op for every other
+ * action; best-effort so a store blip never wedges the deny/cancel path.
  */
 export async function recordProposalDeclineFromConfirmation(
   row: Pick<IPendingConfirmation, "chatId" | "action">,
 ): Promise<void> {
-  if (row.action.tool !== "createRoutine") return;
+  if (!ROUTINE_PROPOSAL_TOOLS.has(row.action.tool)) return;
   const signature = row.action.args.signature;
   if (typeof signature !== "string" || signature.length === 0) return;
   try {
