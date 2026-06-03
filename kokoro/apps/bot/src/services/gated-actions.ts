@@ -158,7 +158,7 @@ interface DispatchResult {
   detail: Record<string, unknown>;
 }
 
-export interface DispatchContext {
+interface DispatchContext {
   /** Chat the confirmation belongs to. Required by chat-scoped actions
    * (`createRoutine`); ignored by the global Google/CRM actions. Sourced from
    * the resolved `PendingConfirmation` row, never from LLM-supplied args. */

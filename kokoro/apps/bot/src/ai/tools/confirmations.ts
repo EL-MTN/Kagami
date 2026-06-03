@@ -18,7 +18,7 @@ import { appendConfirmationResolution } from "../../services/confirmation-events
 
 // ─── raisePendingConfirmation ────────────────────────────────────────────────
 
-export interface RaiseConfirmationInput {
+interface RaiseConfirmationInput {
   summary: string;
   action: { tool: string; args: Record<string, unknown> };
   origin?: PendingConfirmationOrigin;

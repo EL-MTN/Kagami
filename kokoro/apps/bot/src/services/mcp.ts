@@ -23,7 +23,7 @@ const CONNECT_TIMEOUT_MS = 15_000;
 // server or tool name can't produce an over-length (provider-rejected) key.
 const MAX_TOOL_NAME_LEN = 64;
 
-export interface McpServerSummary {
+interface McpServerSummary {
   name: string;
   transport: McpServerConfig["transport"];
   /** Namespaced tool keys (mcp_<server>_<tool>) contributed by this server. */

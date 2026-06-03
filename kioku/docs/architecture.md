@@ -27,7 +27,7 @@ kioku/                              # subtree of the Kagami nested monorepo
 │   │   ├── eslint.config.js        # imports from @kagami/eslint-config/base
 │   │   ├── prompts/                # extraction.md (8K) + answer.md (3K)
 │   │   ├── tests/                  # vitest + mongodb-memory-server
-│   │   ├── scripts/                # bench worker, cc-ingest helpers, BM25 probe
+│   │   ├── scripts/                # bench worker, BM25 probe
 │   │   └── bench/longmemeval/      # benchmark harness + datasets + results
 │   └── dashboard/                  # Next.js 15 inspector (https://kioku.localhost)
 │       ├── tsconfig.json           # extends @kagami/tsconfig/nextjs.json
@@ -206,7 +206,7 @@ If `ensureIndexes()` throws, the process exits and logs `kioku startup failed` w
 | `apps/api/src/mcp.ts`         | Streamable-HTTP MCP transport. Seven tools (`recall`, `query`, `append_fact`, `append_facts`, `ingest_session`, `fact_count`, `fact_history`).                                                                                   |
 | `apps/api/src/llm.ts`         | Env resolution (canonical keys + legacy profile shim) and `@kagami/llm` `createInference` wiring; exports `model`, `getEmbeddingModel`, `embedQuestion`, `embedTexts`, `llmEndpoint`, `embeddingEndpoint`, `embeddingModelName`. |
 | `apps/api/prompts/`           | `extraction.md` (ingest), `answer.md` (answerer). Read at runtime by ingest/consolidate and query/answer respectively. Cached after first read.                                                                                  |
-| `apps/api/scripts/`           | One-off tools: `cc-to-transcript.ts` and `cc-ingest-chunked.ts` (Claude Code session import); `longmemeval.ts` + worker (bench); `probe-bm25-scores.ts` (BM25 sigmoid calibration).                                              |
+| `apps/api/scripts/`           | One-off tools: `longmemeval.ts` + worker (bench); `probe-bm25-scores.ts` (BM25 sigmoid calibration); `citation-recall.ts` + `variance-probe.ts` (recall probes).                                                                 |
 | `apps/api/bench/longmemeval/` | LongMemEval runner + datasets + results. See [bench.md](bench.md).                                                                                                                                                               |
 | `apps/dashboard/src/`         | Next.js 15 App Router inspector. See [dashboard.md](dashboard.md).                                                                                                                                                               |
 
