@@ -25,7 +25,11 @@ for (const role of ["LLM", "EMBEDDING"] as const) {
 const llm = resolveEndpoint("LLM");
 const emb = resolveEndpoint("EMBEDDING");
 
-const modelName = process.env.LLM_MODEL ?? "";
+// LLM_MODEL is canonical. MODEL is also honored: it's the longmemeval bench's
+// answerer-model variable — the bench reuses this `model` through
+// query/answer.ts (see apps/api/scripts/longmemeval*.ts), setting MODEL rather
+// than LLM_MODEL.
+const modelName = process.env.LLM_MODEL ?? process.env.MODEL ?? "";
 // Embedding model; override via EMBEDDING_MODEL in .env. The deployed config
 // sets it (+ base URL / key) to OpenAI `text-embedding-3-small`; see
 // .env.example.
@@ -33,6 +37,14 @@ export const embeddingModelName = process.env.EMBEDDING_MODEL ?? "text-embedding
 
 if (!modelName) {
   logger.warn("LLM_MODEL is unset. Set it in .env to whatever your provider exposes.");
+}
+// Empty base URLs reach @kagami/llm verbatim and only fail at first request with
+// an opaque "Invalid URL" — warn at boot so a no-env checkout fails legibly.
+if (!llm.baseURL) {
+  logger.warn("LLM_BASE_URL is unset. Set it in .env (e.g. https://api.openai.com/v1).");
+}
+if (!emb.baseURL) {
+  logger.warn("EMBEDDING_BASE_URL is unset. Set it in .env (e.g. https://api.openai.com/v1).");
 }
 
 // Provider construction, structured-output mode, the LM-Studio
