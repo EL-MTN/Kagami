@@ -14,14 +14,6 @@ Canonical keys are `LLM_KIND` / `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` /
 `LLM_TIMEOUT_MS` and the `EMBEDDING_*` counterparts. Chat and embedding
 endpoints are independent — set each separately.
 
-> **Deprecated (one more release, emits a startup warn):** the pre-gateway
-> keys `LLM_PROVIDER` (profile selector `lmstudio`/`openai`), `LLM_URL`, bare
-> `MODEL`, and the `EMBEDDING_PROVIDER`/`EMBEDDING_URL` counterparts. They are
-> still honored via a legacy profile table in `apps/api/src/llm.ts`
-> (`lmstudio` → `http://localhost:1234/v1`, `openai` →
-> `https://api.openai.com/v1` + `OPENAI_API_KEY`). Migrate to the canonical
-> keys above.
-
 ## Reference
 
 ```sh
@@ -54,9 +46,6 @@ EMBEDDING_KIND=openai-compatible
 EMBEDDING_BASE_URL=http://localhost:1234/v1
 EMBEDDING_API_KEY=lm-studio
 EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
-
-# ── Only used by the deprecated 'openai' legacy profile ──
-# OPENAI_API_KEY=sk-...
 
 # ── Logging ─────────────────────────────────────────────
 # LOG_LEVEL=info                                 # pino level

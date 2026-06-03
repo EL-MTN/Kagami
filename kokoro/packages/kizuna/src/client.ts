@@ -1,7 +1,7 @@
 import { z, ZodError } from "zod";
 import { config, tracedFetch } from "@kokoro/shared";
 
-type KizunaClientErrorKind = "disabled" | "timeout" | "transport" | "http" | "schema";
+type KizunaClientErrorKind = "timeout" | "transport" | "http" | "schema";
 
 export class KizunaClientError extends Error {
   constructor(
@@ -94,10 +94,6 @@ export async function getJson<T>(
   schema: z.ZodType<T>,
   signal: AbortSignal,
 ): Promise<T> {
-  if (!config.KIZUNA_ENABLED) {
-    throw new KizunaClientError("disabled", "Kizuna integration disabled");
-  }
-
   try {
     // tracedFetch stamps the active W3C traceparent so Kizuna's trace
     // middleware can link this call into the same trace as the inbound update.
@@ -128,10 +124,6 @@ export async function sendJson<T>(
   schema: z.ZodType<T>,
   signal: AbortSignal,
 ): Promise<T> {
-  if (!config.KIZUNA_ENABLED) {
-    throw new KizunaClientError("disabled", "Kizuna integration disabled");
-  }
-
   try {
     const res = await tracedFetch(`${baseUrl()}${pathAndQuery}`, {
       method,

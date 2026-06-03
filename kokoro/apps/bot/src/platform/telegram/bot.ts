@@ -338,90 +338,88 @@ export function createBot(token: string): Bot {
     }
   });
 
-  if (config.LOCATION_ENABLED) {
-    bot.on("message:location", async (ctx) => {
-      const incoming = adapter.normalizeLocation(ctx);
-      if (!incoming || !incoming.location) return;
+  bot.on("message:location", async (ctx) => {
+    const incoming = adapter.normalizeLocation(ctx);
+    if (!incoming || !incoming.location) return;
 
-      if (isRateLimited(incoming.userId)) {
-        logger.warn({ userId: incoming.userId }, "Rate limited");
-        return;
-      }
+    if (isRateLimited(incoming.userId)) {
+      logger.warn({ userId: incoming.userId }, "Rate limited");
+      return;
+    }
 
-      logger.info(
+    logger.info(
+      {
+        userId: incoming.userId,
+        lat: incoming.location.latitude,
+        lng: incoming.location.longitude,
+        live: !!incoming.location.livePeriod,
+      },
+      "Incoming location",
+    );
+
+    try {
+      const event = await processLocation(
+        incoming.chatId,
+        incoming.location.latitude,
+        incoming.location.longitude,
         {
-          userId: incoming.userId,
-          lat: incoming.location.latitude,
-          lng: incoming.location.longitude,
-          live: !!incoming.location.livePeriod,
+          accuracy: incoming.location.accuracy,
+          heading: incoming.location.heading,
+          isLive: !!incoming.location.livePeriod,
         },
-        "Incoming location",
       );
 
-      try {
-        const event = await processLocation(
-          incoming.chatId,
-          incoming.location.latitude,
-          incoming.location.longitude,
-          {
-            accuracy: incoming.location.accuracy,
-            heading: incoming.location.heading,
-            isLive: !!incoming.location.livePeriod,
-          },
-        );
+      // Run full AI pipeline so Mashiro can react
+      await ctx.replyWithChatAction("typing");
+      await handleMessage(incoming, adapter);
+      resetTimer(incoming.chatId);
 
-        // Run full AI pipeline so Mashiro can react
-        await ctx.replyWithChatAction("typing");
-        await handleMessage(incoming, adapter);
-        resetTimer(incoming.chatId);
-
-        if (event) {
-          triggerLocationProactive(incoming.chatId, incoming.userId);
-        }
-      } catch (error) {
-        logger.error(
-          { error: error, userId: incoming.userId, chatId: incoming.chatId },
-          "Error handling location message",
-        );
+      if (event) {
+        triggerLocationProactive(incoming.chatId, incoming.userId);
       }
-    });
+    } catch (error) {
+      logger.error(
+        { error: error, userId: incoming.userId, chatId: incoming.chatId },
+        "Error handling location message",
+      );
+    }
+  });
 
-    bot.on("edited_message:location", async (ctx) => {
-      const incoming = adapter.normalizeLocationEdit(ctx);
-      if (!incoming || !incoming.location) return;
+  bot.on("edited_message:location", async (ctx) => {
+    const incoming = adapter.normalizeLocationEdit(ctx);
+    if (!incoming || !incoming.location) return;
 
-      logger.debug(
+    logger.debug(
+      {
+        chatId: incoming.chatId,
+        lat: incoming.location.latitude,
+        lng: incoming.location.longitude,
+      },
+      "Live location update",
+    );
+
+    try {
+      const event = await processLocation(
+        incoming.chatId,
+        incoming.location.latitude,
+        incoming.location.longitude,
         {
-          chatId: incoming.chatId,
-          lat: incoming.location.latitude,
-          lng: incoming.location.longitude,
+          accuracy: incoming.location.accuracy,
+          heading: incoming.location.heading,
+          isLive: true,
         },
-        "Live location update",
       );
 
-      try {
-        const event = await processLocation(
-          incoming.chatId,
-          incoming.location.latitude,
-          incoming.location.longitude,
-          {
-            accuracy: incoming.location.accuracy,
-            heading: incoming.location.heading,
-            isLive: true,
-          },
-        );
-
-        if (event) {
-          triggerLocationProactive(incoming.chatId, incoming.userId);
-        }
-      } catch (error) {
-        logger.error(
-          { error: error, userId: incoming.userId, chatId: incoming.chatId },
-          "Error handling live location update",
-        );
+      if (event) {
+        triggerLocationProactive(incoming.chatId, incoming.userId);
       }
-    });
-  }
+    } catch (error) {
+      logger.error(
+        { error: error, userId: incoming.userId, chatId: incoming.chatId },
+        "Error handling live location update",
+      );
+    }
+  });
 
   bot.catch((err) => {
     logger.error({ error: err.error }, "Bot error");

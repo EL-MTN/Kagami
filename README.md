@@ -207,10 +207,13 @@ Kioku API config lives in `kioku/apps/api/.env`.
 Common local fields:
 
 ```bash
-LLM_PROVIDER=lmstudio
-MODEL=zai-org/glm-4.7-flash
-EMBEDDING_PROVIDER=lmstudio
-EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
+LLM_KIND=openai-compatible
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_API_KEY=your_openai_key_here
+LLM_MODEL=gpt-4o-mini
+EMBEDDING_BASE_URL=https://api.openai.com/v1
+EMBEDDING_API_KEY=your_openai_key_here
+EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 The default Mongo URI targets a local Atlas Search-capable instance. Start one with either:
@@ -247,8 +250,8 @@ Kokoro reaches Kioku through `KIOKU_URL`, which defaults to
 outside Portless.
 
 Kokoro reaches Kizuna through `KIZUNA_URL`, which defaults to
-`https://api.kizuna.localhost`. The read-only CRM tools are enabled by default; set
-`KIZUNA_ENABLED=false` in `kokoro/apps/bot/.env` to omit them from every tool palette.
+`https://api.kizuna.localhost`. The CRM tools are always registered; if Kizuna is
+unreachable they fail open with sanitized degraded results.
 
 For Google tools, set:
 

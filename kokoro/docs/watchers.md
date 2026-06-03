@@ -79,7 +79,7 @@ Suppression preserves observation accuracy (`lastState` still rolls forward) whi
 - `webSearch` — gated on `BRAVE_SEARCH_API_KEY`; Brave-backed lookups return titles/URLs/snippets without spinning the browser. When the API tool is registered, the read-only `browse` tool drops its `search` action so lookups land here.
 - `browse` — read-only variant (`createReadOnlyBrowseTool()`); only `search`/`visit`/`extract` are permitted (no `screenshot`, `act`, `agent`, `login`). The `search` action falls back to a DuckDuckGo HTML scrape via Stagehand when `BRAVE_SEARCH_API_KEY` is unset.
 - `searchMemory` — hybrid retrieval over Kioku. Read-only by construction.
-- Kizuna CRM tools — `findPeople`, `getPersonContext`, `recentInteractions`, and `listMyFollowups`, gated by `KIZUNA_ENABLED` (default `true`). These tools use the GET-only `@kokoro/kizuna` client and return compact projections, so watchers can observe relationship context without creating people, interactions, or followups.
+- Kizuna CRM tools — `findPeople`, `getPersonContext`, `recentInteractions`, and `listMyFollowups`, always registered. These tools use the GET-only `@kokoro/kizuna` client and return compact projections, so watchers can observe relationship context without creating people, interactions, or followups.
 - `checkEmail` (gated on `KAO_URL` — Google access vended by Kao)
 - `listCalendarEvents` — `createManageCalendarTool({ mode: "readOnly" })` returns a list-only tool
 - `useRoutine` — gated to read-purity routines via `callingContext: "watcher"`. Action-purity routines are rejected with a clear error.

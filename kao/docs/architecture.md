@@ -124,7 +124,6 @@ interface GrantDoc {
   name: string; // "kizuna" | "kokoro" — unique
   scopes: string[]; // the registry scope set consented for
   refreshToken: string | null; // AES-256-GCM envelope; null after revoke
-  googleSub: string | null; // reserved (identity sanity) — not captured yet
   grantedAt: Date | null;
   revokedAt: Date | null; // soft revoke marker
   updatedAt: Date;
