@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@kokoro/shared", async (orig) => ({
   ...(await orig()),
   config: {
-    BROWSER_ENABLED: false,
     KAO_URL: "stub",
   },
   logger: {

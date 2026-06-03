@@ -106,7 +106,6 @@ export function makeOauthRouter(config: Config, db: Db): Router {
       name: grant,
       scopes,
       refreshToken: enc,
-      googleSub: null,
     });
     clearAccessTokenCache(grant);
 

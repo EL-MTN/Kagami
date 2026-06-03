@@ -9,7 +9,7 @@ import {
   defaultExpiresAt,
   isDuplicateKeyError,
 } from "@kokoro/db";
-import { config, logger, computeNextRunAt, validateCronAndDefaults } from "@kokoro/shared";
+import { logger, computeNextRunAt, validateCronAndDefaults } from "@kokoro/shared";
 
 // ─── manageWatchers ──────────────────────────────────────────────────────────
 
@@ -102,17 +102,6 @@ export function createManageWatchersTool(chatId: string) {
 
             const cronError = validateCronAndDefaults(cronSchedule, []);
             if (cronError) return { success: false, reason: cronError.message };
-
-            // External observation tools aren't strictly required (memory-only
-            // watchers can detect new facts), but most useful watchers need
-            // webSearch, browse, or email. Warn so misconfigured deployments
-            // surface it.
-            if (!config.BRAVE_SEARCH_API_KEY && !config.BROWSER_ENABLED && !config.KAO_URL) {
-              logger.warn(
-                { chatId, name },
-                "Creating watcher with no external observation tools (BRAVE_SEARCH_API_KEY, BROWSER_ENABLED, KAO_URL all unset). Watcher will only see memory.",
-              );
-            }
 
             logger.debug(
               { chatId, name, cronSchedule, oneShot, maxFires, cooldownMinutes },

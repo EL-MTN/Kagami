@@ -30,11 +30,9 @@ const RELEVANT_ENV_KEYS = [
   "STT_PROVIDER",
   "STT_BASE_URL",
   "STT_API_KEY",
-  "BROWSER_ENABLED",
   "BROWSER_ENV",
   "BROWSERBASE_API_KEY",
   "BROWSERBASE_PROJECT_ID",
-  "LOCATION_ENABLED",
   "GOOGLE_MAPS_API_KEY",
   "PLACE_LEARNING_VISITS",
   "PLACE_LEARNING_RADIUS_M",
@@ -43,7 +41,6 @@ const RELEVANT_ENV_KEYS = [
   "BLUEBUBBLES_PASSWORD",
   "ALLOWED_IMESSAGE_HANDLES",
   "KIZUNA_URL",
-  "KIZUNA_ENABLED",
 ] as const;
 
 class ProcessExitSentinel extends Error {
@@ -101,11 +98,10 @@ describe("validateConfig — happy path", () => {
 });
 
 describe("config — Kizuna", () => {
-  it("defaults KIZUNA_URL to the Portless API URL and KIZUNA_ENABLED to true", async () => {
+  it("defaults KIZUNA_URL to the Portless API URL", async () => {
     const { config } = await loadConfig();
 
     expect(config.KIZUNA_URL).toBe("https://api.kizuna.localhost");
-    expect(config.KIZUNA_ENABLED).toBe(true);
   });
 
   it("validates and exposes a configured KIZUNA_URL", async () => {
@@ -117,37 +113,12 @@ describe("config — Kizuna", () => {
     expect(config.KIZUNA_URL).toBe("http://localhost:3000");
   });
 
-  it.each([
-    [undefined, true],
-    ["", true],
-    ["   ", true],
-    ["true", true],
-    [" true ", true],
-    ["false", false],
-    [" false ", false],
-  ] as const)("parses KIZUNA_ENABLED=%s as %s", async (raw, expected) => {
-    vi.stubEnv("KIZUNA_ENABLED", raw);
-    vi.resetModules();
-
-    const { config } = await loadConfig();
-
-    expect(config.KIZUNA_ENABLED).toBe(expected);
-  });
-
   it("fails module-load validation for invalid KIZUNA_URL", async () => {
     vi.stubEnv("KIZUNA_URL", "not-a-url");
     vi.resetModules();
 
     await expect(loadConfig()).rejects.toThrow(ProcessExitSentinel);
     expect(loggedMessages()).toMatch(/KIZUNA_URL/);
-  });
-
-  it("fails module-load validation for invalid KIZUNA_ENABLED", async () => {
-    vi.stubEnv("KIZUNA_ENABLED", "yes");
-    vi.resetModules();
-
-    await expect(loadConfig()).rejects.toThrow(ProcessExitSentinel);
-    expect(loggedMessages()).toMatch(/KIZUNA_ENABLED/);
   });
 });
 
@@ -336,7 +307,6 @@ describe("validateConfig — image generation", () => {
 
 describe("validateConfig — browser cloud mode", () => {
   it("rejects cloud browser without BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID", async () => {
-    vi.stubEnv("BROWSER_ENABLED", "true");
     vi.stubEnv("BROWSER_ENV", "cloud");
     vi.resetModules();
     const { validateConfig } = await loadConfig();
@@ -347,7 +317,6 @@ describe("validateConfig — browser cloud mode", () => {
   });
 
   it("accepts local browser mode without browserbase keys", async () => {
-    vi.stubEnv("BROWSER_ENABLED", "true");
     vi.stubEnv("BROWSER_ENV", "local");
     vi.resetModules();
     const { validateConfig } = await loadConfig();
@@ -375,16 +344,5 @@ describe("validateConfig — location", () => {
     expect(config.PLACE_LEARNING_VISITS).toBe(5);
     expect(config.PLACE_LEARNING_RADIUS_M).toBe(125.5);
     expect(config.PLACE_LEARNING_WINDOW_DAYS).toBe(14);
-  });
-
-  it("rejects LOCATION_ENABLED without GOOGLE_MAPS_API_KEY", async () => {
-    vi.stubEnv("LOCATION_ENABLED", "true");
-    vi.stubEnv("GOOGLE_MAPS_API_KEY", "");
-    vi.resetModules();
-    const { validateConfig } = await loadConfig();
-    expect(() => validateConfig()).toThrow(ProcessExitSentinel);
-    expect(loggedMessages()).toMatch(
-      /GOOGLE_MAPS_API_KEY is required when LOCATION_ENABLED is true/,
-    );
   });
 });

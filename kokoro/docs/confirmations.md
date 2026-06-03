@@ -105,7 +105,7 @@ Atomic transitions live in `resolvePendingConfirmation(id, verdict, resultText?)
 
 ## Tool surface
 
-`requestConfirmation({ summary, action: { tool, args } })` and `cancelConfirmation({ confirmationId, reason? })` are both registered in `allTools(ctx)` whenever any gated underlying tool is available (currently `KAO_URL`, `BROWSER_ENABLED`, or `KIZUNA_ENABLED`). Excluded from `watcherTools` (watchers can't mutate) and `routineToolsUnderWatcher` (transitive read-only invariant).
+`requestConfirmation({ summary, action: { tool, args } })` and `cancelConfirmation({ confirmationId, reason? })` are both always registered in `allTools(ctx)` (CRM writes and `browseAgent` are always-present gated tools). Excluded from `watcherTools` (watchers can't mutate) and `routineToolsUnderWatcher` (transitive read-only invariant).
 
 ## Adapter contract
 

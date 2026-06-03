@@ -3,42 +3,14 @@ import { createInference } from "@kagami/llm";
 import { embed, embedMany } from "ai";
 import { logger } from "./logger.js";
 
-// Canonical config is `{LLM,EMBEDDING}_KIND` (openai-compatible only here) +
-// `_BASE_URL` / `_API_KEY` / `LLM_MODEL` / `LLM_TIMEOUT_MS` /
-// `EMBEDDING_MODEL`. The pre-gateway keys (`{LLM,EMBEDDING}_PROVIDER` profile
-// selector, `_URL`, bare `MODEL`) are still honored for one release with a
-// startup deprecation warn — these legacy profiles only fill defaults for
-// that fallback path.
-const LEGACY_PROFILES = {
-  lmstudio: { baseURL: "http://localhost:1234/v1", apiKey: "lm-studio" },
-  openai: { baseURL: "https://api.openai.com/v1", apiKey: process.env.OPENAI_API_KEY ?? "" },
-} as const;
-type LegacyProfile = keyof typeof LEGACY_PROFILES;
-
-const deprecated: Record<string, string> = {};
-
+// Config is `{LLM,EMBEDDING}_KIND` (openai-compatible only here) + `_BASE_URL` /
+// `_API_KEY` / `LLM_MODEL` / `LLM_TIMEOUT_MS` / `EMBEDDING_MODEL`. See
+// .env.example; the deployed config points these at OpenAI.
 function resolveEndpoint(role: "LLM" | "EMBEDDING"): { baseURL: string; apiKey: string } {
-  const apiKey = process.env[`${role}_API_KEY`];
-  const canonicalBase = process.env[`${role}_BASE_URL`];
-  if (canonicalBase) {
-    return { baseURL: canonicalBase, apiKey: apiKey ?? "" };
-  }
-
-  // Legacy fallback: profile selector + `_URL`.
-  const legacyProvider = process.env[`${role}_PROVIDER`];
-  const legacyUrl = process.env[`${role}_URL`];
-  if (legacyProvider) deprecated[`${role}_PROVIDER`] = `${role}_KIND + ${role}_BASE_URL`;
-  if (legacyUrl) deprecated[`${role}_URL`] = `${role}_BASE_URL`;
-
-  const profileName = (legacyProvider ?? "lmstudio").toLowerCase();
-  if (!(profileName in LEGACY_PROFILES)) {
-    throw new Error(
-      `Unknown ${role}_PROVIDER='${profileName}'. Prefer ${role}_BASE_URL / ${role}_API_KEY; ` +
-        `the legacy profile selector accepts only 'lmstudio' | 'openai'.`,
-    );
-  }
-  const profile = LEGACY_PROFILES[profileName as LegacyProfile];
-  return { baseURL: legacyUrl ?? profile.baseURL, apiKey: apiKey ?? profile.apiKey };
+  return {
+    baseURL: process.env[`${role}_BASE_URL`] ?? "",
+    apiKey: process.env[`${role}_API_KEY`] ?? "",
+  };
 }
 
 // Kioku is openai-compatible only — reject a mis-set *_KIND loudly rather
@@ -53,24 +25,12 @@ for (const role of ["LLM", "EMBEDDING"] as const) {
 const llm = resolveEndpoint("LLM");
 const emb = resolveEndpoint("EMBEDDING");
 
-const modelName = process.env.LLM_MODEL ?? process.env.MODEL ?? "";
-if (process.env.LLM_MODEL === undefined && process.env.MODEL !== undefined) {
-  deprecated.MODEL = "LLM_MODEL";
-}
-// The default is the local LM Studio embedding model — coherent with the
-// `lmstudio` base-URL default in resolveEndpoint, so a no-env checkout is a
-// working local-dev setup. The deployed config sets EMBEDDING_MODEL (+ base
-// URL / key) to OpenAI `text-embedding-3-small` via .env; see .env.example.
-export const embeddingModelName =
-  process.env.EMBEDDING_MODEL ?? "text-embedding-nomic-embed-text-v1.5";
+const modelName = process.env.LLM_MODEL ?? "";
+// Embedding model; override via EMBEDDING_MODEL in .env. The deployed config
+// sets it (+ base URL / key) to OpenAI `text-embedding-3-small`; see
+// .env.example.
+export const embeddingModelName = process.env.EMBEDDING_MODEL ?? "text-embedding-3-small";
 
-if (Object.keys(deprecated).length > 0) {
-  logger.warn(
-    { deprecated },
-    "kioku: legacy LLM/EMBEDDING env keys are deprecated and will be removed next release — " +
-      "migrate to the listed canonical keys (old keys still honored this release)",
-  );
-}
 if (!modelName) {
   logger.warn("LLM_MODEL is unset. Set it in .env to whatever your provider exposes.");
 }
@@ -125,8 +85,7 @@ const inference = createInference({
 export const llmEndpoint = llm;
 
 // Resolved embedding endpoint — single source of truth for diagnostics
-// (e.g. indexes.ts) so they report what was actually resolved regardless
-// of whether canonical or legacy env keys were used.
+// (e.g. indexes.ts) so they report what was actually resolved.
 export const embeddingEndpoint = emb;
 
 export const model = inference.model();

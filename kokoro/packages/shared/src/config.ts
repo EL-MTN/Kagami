@@ -1,19 +1,6 @@
 import "dotenv/config";
 import { z } from "zod";
 
-const optionalEnabledFlag = z.preprocess(
-  (value) => {
-    if (value === undefined) return undefined;
-    if (typeof value !== "string") return value;
-    const trimmed = value.trim();
-    return trimmed === "" ? undefined : trimmed;
-  },
-  z
-    .enum(["true", "false"])
-    .default("true")
-    .transform((s) => s === "true"),
-);
-
 // MCP (Model Context Protocol) servers Kokoro connects to as a CLIENT, mounting
 // their tools alongside the built-in palette (namespaced `mcp_<server>_<tool>`).
 // Configured as a JSON array in MCP_SERVERS; empty / unset → no MCP tools. Each
@@ -82,7 +69,6 @@ const baseSchema = z.object({
 
   KIOKU_URL: z.string().url().default("https://api.kioku.localhost"),
   KIZUNA_URL: z.string().url().default("https://api.kizuna.localhost"),
-  KIZUNA_ENABLED: optionalEnabledFlag,
 
   // Kansoku observability — opt-in via env. Both must be set together; either
   // missing leaves the logger stdout-only. The shipper itself is fail-open.
@@ -126,10 +112,6 @@ const baseSchema = z.object({
 
   BRAVE_SEARCH_API_KEY: z.string().optional(),
 
-  BROWSER_ENABLED: z
-    .string()
-    .default("false")
-    .transform((s) => s === "true"),
   BROWSER_ENV: z.enum(["local", "cloud"]).default("local"),
   BROWSERBASE_API_KEY: z.string().optional(),
   BROWSERBASE_PROJECT_ID: z.string().optional(),
@@ -141,10 +123,6 @@ const baseSchema = z.object({
     .default("true")
     .transform((s) => s === "true"),
 
-  LOCATION_ENABLED: z
-    .string()
-    .default("false")
-    .transform((s) => s === "true"),
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   LOCATION_MOVEMENT_THRESHOLD_M: z.coerce.number().default(100),
   LOCATION_PROACTIVE_DELAY_MS: z.coerce.number().default(1_200_000),
@@ -284,17 +262,18 @@ export function validateConfig(): void {
     }
   }
 
-  if (config.BROWSER_ENABLED && config.BROWSER_ENV === "cloud") {
+  // Browser automation is always on; cloud mode (BROWSER_ENV="cloud") needs
+  // Browserbase credentials. Local mode (the default) drives Playwright and
+  // needs none. A missing GOOGLE_MAPS_API_KEY doesn't gate location — geocoding
+  // degrades to raw coordinates (reverseGeocode returns null), so it's never a
+  // hard requirement.
+  if (config.BROWSER_ENV === "cloud") {
     if (!config.BROWSERBASE_API_KEY) {
       errors.push('BROWSERBASE_API_KEY is required when BROWSER_ENV is "cloud"');
     }
     if (!config.BROWSERBASE_PROJECT_ID) {
       errors.push('BROWSERBASE_PROJECT_ID is required when BROWSER_ENV is "cloud"');
     }
-  }
-
-  if (config.LOCATION_ENABLED && !config.GOOGLE_MAPS_API_KEY) {
-    errors.push("GOOGLE_MAPS_API_KEY is required when LOCATION_ENABLED is true");
   }
 
   // MCP server names become tool-name prefixes (mcp_<name>_<tool>) and must be

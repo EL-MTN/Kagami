@@ -2,10 +2,10 @@ import { fakeAdapter } from "@kokoro/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * The registry's behavior is governed entirely by `config` flags:
- *   - KAO_URL gates email/calendar/reminders + the gated confirmation
- *     primitive (Google services are vended by Kao).
- *   - BROWSER_ENABLED gates browse + (also) the confirmation primitive.
+ * Browser automation, CRM (read+write), and the confirmation primitives are
+ * always registered — they have no enable flags. The rest of the surface is
+ * governed by `config` presence:
+ *   - KAO_URL gates email/calendar/reminders (Google services vended by Kao).
  *   - IMAGE_GENERATION_MODEL gates sendPhoto.
  *   - TTS_PROVIDER gates sendVoice.
  *
@@ -73,7 +73,6 @@ beforeEach(() => {
   for (const key of Object.keys(mockConfig)) {
     delete mockConfig[key];
   }
-  mockConfig.KIZUNA_ENABLED = true;
 });
 
 afterEach(() => {
@@ -81,13 +80,14 @@ afterEach(() => {
 });
 
 describe("allTools — minimum-config baseline", () => {
-  it("registers the always-on tools (routine mgmt, watcher mgmt, memory, CRM read+write, confirmation primitives) with KIZUNA_ENABLED on", () => {
-    // KIZUNA_ENABLED is set in beforeEach, so CRM reads + writes are present,
-    // and writes being gated triggers the confirmation primitives.
+  it("registers the always-on tools (browse, routine mgmt, watcher mgmt, memory, CRM read+write, confirmation primitives) at minimum config", () => {
+    // Browser automation, CRM reads+writes, and the confirmation primitives are
+    // all unconditional now, so they appear even with no optional env set.
     const tools = allTools(baseCtx);
     const names = Object.keys(tools).sort();
     expect(names).toEqual(
       [
+        "browse",
         "cancelConfirmation",
         "createFollowup",
         "findPeople",
@@ -135,52 +135,23 @@ describe("allTools — feature flags", () => {
     );
   });
 
-  it("registers browse + confirmation primitives when BROWSER_ENABLED is true", () => {
-    mockConfig.BROWSER_ENABLED = true;
+  it("always registers browse, CRM read+write, and the confirmation primitives regardless of optional config", () => {
+    // Browser automation and CRM have no enable flags anymore; the confirmation
+    // primitives ride along because CRM writes are always gated.
     const names = Object.keys(allTools(baseCtx));
-    expect(names).toContain("browse");
-    expect(names).toContain("requestConfirmation");
-    expect(names).toContain("cancelConfirmation");
-  });
-
-  it("omits CRM read AND write tools when parsed KIZUNA_ENABLED is false", () => {
-    mockConfig.KIZUNA_ENABLED = false;
-
-    const all = Object.keys(allTools(baseCtx));
-    const watcher = Object.keys(watcherTools(baseCtx));
-    const routine = Object.keys(routineToolsUnderWatcher(baseCtx));
-    for (const names of [all, watcher, routine]) {
-      expect(names).not.toContain("findPeople");
-      expect(names).not.toContain("getPersonContext");
-      expect(names).not.toContain("recentInteractions");
-      expect(names).not.toContain("listMyFollowups");
-      // Write tools must never leak out either, even in `allTools` — they
-      // depend on KIZUNA_ENABLED too, so if someone moves the registration
-      // outside the guard this assertion catches the regression.
-      expect(names).not.toContain("logInteraction");
-      expect(names).not.toContain("createFollowup");
-      expect(names).not.toContain("resolveFollowup");
-      expect(names).not.toContain("updatePerson");
-    }
-  });
-
-  it("does NOT register confirmation primitives when no gated tool is enabled (no Google OAuth, no browser, no Kizuna writes)", () => {
-    mockConfig.KIZUNA_ENABLED = false;
-    const names = Object.keys(allTools(baseCtx));
-    expect(names).not.toContain("requestConfirmation");
-    expect(names).not.toContain("cancelConfirmation");
-  });
-
-  it("registers confirmation primitives when KIZUNA_ENABLED alone is on (CRM writes are gated)", () => {
-    const names = Object.keys(allTools(baseCtx));
-    expect(names).toContain("requestConfirmation");
-    expect(names).toContain("cancelConfirmation");
     expect(names).toEqual(
       expect.arrayContaining([
+        "browse",
+        "findPeople",
+        "getPersonContext",
+        "recentInteractions",
+        "listMyFollowups",
         "logInteraction",
         "createFollowup",
         "resolveFollowup",
         "updatePerson",
+        "requestConfirmation",
+        "cancelConfirmation",
       ]),
     );
   });
@@ -257,7 +228,6 @@ describe("allTools — useRoutine recursion gate", () => {
 describe("watcherTools — read-only invariant", () => {
   it("excludes every mutating tool — sends, calendar writes, reminders, routine/watcher CRUD, confirmation primitives", () => {
     mockConfig.KAO_URL = "stub";
-    mockConfig.BROWSER_ENABLED = true;
     mockConfig.IMAGE_GENERATION_MODEL = "stub";
     mockConfig.TTS_PROVIDER = "stub";
 
@@ -286,7 +256,6 @@ describe("watcherTools — read-only invariant", () => {
 
   it("includes the watcher-specific terminator and read-only observation tools", () => {
     mockConfig.KAO_URL = "stub";
-    mockConfig.BROWSER_ENABLED = true;
 
     const names = Object.keys(watcherTools(baseCtx));
     expect(names).toEqual(
@@ -313,7 +282,6 @@ describe("watcherTools — read-only invariant", () => {
 describe("routineToolsUnderWatcher — read-only invariant transitive", () => {
   it("returns the same read-only subset as watcherTools — minus reportWatcherResult", () => {
     mockConfig.KAO_URL = "stub";
-    mockConfig.BROWSER_ENABLED = true;
 
     const watcher = Object.keys(watcherTools(baseCtx)).sort();
     const routine = Object.keys(routineToolsUnderWatcher(baseCtx)).sort();
@@ -322,7 +290,6 @@ describe("routineToolsUnderWatcher — read-only invariant transitive", () => {
 
   it("does not include any mutating surface", () => {
     mockConfig.KAO_URL = "stub";
-    mockConfig.BROWSER_ENABLED = true;
 
     const names = Object.keys(routineToolsUnderWatcher(baseCtx));
     expect(names).not.toContain("sendEmail");
