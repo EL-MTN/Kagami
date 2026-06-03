@@ -703,6 +703,67 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
   });
 });
 
+describe("dispatchGatedAction — disableRoutine (dispatch-only)", () => {
+  const ROUTINE_ID = "555555555555555555555555";
+  const draft = { signature: `retire:${ROUTINE_ID}#1`, routineId: ROUTINE_ID, baseVersion: 1 };
+
+  function fakeRoutine(over: Partial<{ name: string; version: number }> = {}) {
+    return {
+      _id: ROUTINE_ID,
+      name: over.name ?? "stale-digest",
+      version: over.version ?? 1,
+    } as never;
+  }
+
+  it("is dispatchable even though it is NOT in the requestConfirmation enum", () => {
+    expect(isGatedTool("disableRoutine")).toBe(false);
+    expect(GATED_TOOL_NAMES as readonly string[]).not.toContain("disableRoutine");
+  });
+
+  it("disables the routine (never deletes) and records the accept", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ version: 1 }));
+    vi.mocked(updateRoutine).mockResolvedValue({ enabled: false } as never);
+
+    const result = await dispatchGatedAction("disableRoutine", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe('routine "stale-digest" disabled');
+    expect(vi.mocked(updateRoutine)).toHaveBeenCalledWith(ROUTINE_ID, { enabled: false }, "chat-1");
+    expect(vi.mocked(recordProposalDecision)).toHaveBeenCalledWith(
+      "chat-1",
+      draft.signature,
+      "accepted",
+      expect.any(Object),
+    );
+  });
+
+  it("rejects a stale retirement when the routine version moved on", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ version: 5 }));
+
+    const result = await dispatchGatedAction("disableRoutine", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("version_conflict");
+    expect(vi.mocked(updateRoutine)).not.toHaveBeenCalled();
+    expect(vi.mocked(recordProposalDecision)).not.toHaveBeenCalled();
+  });
+
+  it("fails when the routine no longer exists", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(null);
+    const result = await dispatchGatedAction("disableRoutine", draft, { chatId: "chat-1" });
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("not_found");
+    expect(vi.mocked(updateRoutine)).not.toHaveBeenCalled();
+  });
+
+  it("fails cleanly when chat context is missing", async () => {
+    const result = await dispatchGatedAction("disableRoutine", draft);
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("no_chat_context");
+    expect(vi.mocked(getRoutineById)).not.toHaveBeenCalled();
+  });
+});
+
 describe("recordProposalDeclineFromConfirmation", () => {
   it("records a decline for a createRoutine proposal (discriminates on action.tool)", async () => {
     await recordProposalDeclineFromConfirmation({
@@ -727,6 +788,20 @@ describe("recordProposalDeclineFromConfirmation", () => {
     expect(vi.mocked(recordProposalDecision)).toHaveBeenCalledWith(
       "chat-1",
       "refine:r#1#sig",
+      "declined",
+      expect.any(Object),
+    );
+  });
+
+  it("records a decline for a disableRoutine retirement", async () => {
+    await recordProposalDeclineFromConfirmation({
+      chatId: "chat-1",
+      action: { tool: "disableRoutine", args: { signature: "retire:r#1" } },
+    });
+
+    expect(vi.mocked(recordProposalDecision)).toHaveBeenCalledWith(
+      "chat-1",
+      "retire:r#1",
       "declined",
       expect.any(Object),
     );

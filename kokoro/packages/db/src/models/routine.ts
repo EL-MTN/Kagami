@@ -364,6 +364,15 @@ export async function getRoutineHealth(
   );
 }
 
+/**
+ * Distinct chatIds that currently own at least one enabled routine. The
+ * self-review scheduler uses this to enumerate which chats to audit (no other
+ * scheduler keeps a chat list — routines are the source of truth).
+ */
+export async function listChatIdsWithRoutines(): Promise<string[]> {
+  return Routine.distinct("chatId", { enabled: true });
+}
+
 export async function cleanupOldRoutineLogs(olderThanDays = 90): Promise<number> {
   const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
   const result = await RoutineLog.deleteMany({

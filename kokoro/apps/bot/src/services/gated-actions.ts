@@ -48,9 +48,14 @@ type GatedToolName = (typeof GATED_TOOL_NAMES)[number];
  * `updateRoutinePrompt` only via `proposeRoutineRefinement` → the approval
  * bubble, which runs the durable anti-nag guard first; exposing either on
  * `requestConfirmation` would let the model self-author or self-edit a routine
- * while bypassing that guard.
+ * while bypassing that guard. `disableRoutine` (routine retirement) is reachable
+ * only via the self-review pass's `proposeRetirement`.
  */
-const DISPATCH_ONLY_TOOL_NAMES = ["createRoutine", "updateRoutinePrompt"] as const;
+const DISPATCH_ONLY_TOOL_NAMES = [
+  "createRoutine",
+  "updateRoutinePrompt",
+  "disableRoutine",
+] as const;
 type DispatchOnlyToolName = (typeof DISPATCH_ONLY_TOOL_NAMES)[number];
 
 type DispatchableToolName = GatedToolName | DispatchOnlyToolName;
@@ -118,6 +123,15 @@ const updateRoutinePromptArgs = z.object({
   newParameters: z.array(parameterSchema).optional(),
 });
 
+// Routine retirement (disable, never delete). Same `baseVersion` staleness
+// guard as updateRoutinePrompt so a stale proposal can't disable a routine that
+// was edited (perhaps fixed) since the bubble was raised.
+const disableRoutineArgs = z.object({
+  signature: z.string().min(1),
+  routineId: z.string().min(1),
+  baseVersion: z.number().int().nonnegative(),
+});
+
 // CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the
 // dispatcher's re-validator and the tool's `inputSchema` are guaranteed to
 // stay in sync (Kizuna's API does not enforce the LLM-facing caps, so the
@@ -132,6 +146,7 @@ const GATED_ARG_SCHEMAS: Record<DispatchableToolName, z.ZodTypeAny> = {
   updatePerson: updatePersonInputSchema,
   createRoutine: createRoutineArgs,
   updateRoutinePrompt: updateRoutinePromptArgs,
+  disableRoutine: disableRoutineArgs,
 };
 
 interface DispatchResult {
@@ -448,6 +463,66 @@ export async function dispatchGatedAction(
               detail: { reason: "not_found", routineId: args.routineId },
             };
       }
+
+      case "disableRoutine": {
+        const args = parsed.data as z.infer<typeof disableRoutineArgs>;
+        if (!ctx.chatId) {
+          return {
+            success: false,
+            summary: "cannot disable routine — missing chat context",
+            detail: { reason: "no_chat_context" },
+          };
+        }
+
+        const routine = await getRoutineById(args.routineId, ctx.chatId);
+        if (!routine) {
+          return {
+            success: false,
+            summary: "routine not found",
+            detail: { reason: "not_found", routineId: args.routineId },
+          };
+        }
+
+        // Same staleness guard as updateRoutinePrompt: if the routine changed
+        // since the retirement was proposed (it may have just been fixed),
+        // don't disable it — re-evaluate.
+        if (routine.version !== args.baseVersion) {
+          return {
+            success: false,
+            summary: `routine "${routine.name}" changed since this was proposed — re-evaluate`,
+            detail: {
+              reason: "version_conflict",
+              expected: args.baseVersion,
+              actual: routine.version,
+            },
+          };
+        }
+
+        logger.info(
+          { chatId: ctx.chatId, routineId: args.routineId, name: routine.name },
+          "Dispatching approved disableRoutine",
+        );
+
+        // Disable (reversible via the dashboard / manageRoutines enable), never
+        // delete — deleting would also wipe the RoutineLog history.
+        const disabled = await updateRoutine(args.routineId, { enabled: false }, ctx.chatId);
+
+        await recordProposalDecision(ctx.chatId, args.signature, "accepted", {
+          cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,
+        }).catch(() => {});
+
+        return disabled
+          ? {
+              success: true,
+              summary: `routine "${routine.name}" disabled`,
+              detail: { routineId: args.routineId },
+            }
+          : {
+              success: false,
+              summary: "routine not found",
+              detail: { reason: "not_found", routineId: args.routineId },
+            };
+      }
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unknown error";
@@ -460,19 +535,23 @@ export async function dispatchGatedAction(
   }
 }
 
+/** Actions raised through a routine proposal/self-review bubble — a deny or
+ * cancel on any of these records a durable decline so the model honors the "no". */
+const ROUTINE_PROPOSAL_TOOLS = new Set(["createRoutine", "updateRoutinePrompt", "disableRoutine"]);
+
 /**
- * When a routine proposal confirmation — a `createRoutine` save or an
- * `updateRoutinePrompt` refinement — is denied or cancelled, record the decline
- * in the durable store so the model honors the "no" past the 40-message context
- * window / 1h session reset. Discriminates on the action tool (NOT origin) so a
- * routine-raised gated action — e.g. a running routine asking to send an email —
- * never trips this. No-op for every other action; best-effort so a store blip
- * never wedges the deny/cancel path.
+ * When a routine proposal confirmation — a `createRoutine` save, an
+ * `updateRoutinePrompt` refinement, or a `disableRoutine` retirement — is denied
+ * or cancelled, record the decline in the durable store so the model honors the
+ * "no" past the 40-message context window / 1h session reset. Discriminates on
+ * the action tool (NOT origin) so a routine-raised gated action — e.g. a running
+ * routine asking to send an email — never trips this. No-op for every other
+ * action; best-effort so a store blip never wedges the deny/cancel path.
  */
 export async function recordProposalDeclineFromConfirmation(
   row: Pick<IPendingConfirmation, "chatId" | "action">,
 ): Promise<void> {
-  if (row.action.tool !== "createRoutine" && row.action.tool !== "updateRoutinePrompt") return;
+  if (!ROUTINE_PROPOSAL_TOOLS.has(row.action.tool)) return;
   const signature = row.action.args.signature;
   if (typeof signature !== "string" || signature.length === 0) return;
   try {

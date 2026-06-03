@@ -87,6 +87,7 @@ export {
   failRoutineLog,
   getRoutineLogs,
   getRoutineHealth,
+  listChatIdsWithRoutines,
   cleanupOldRoutineLogs,
   resetStaleRunningRoutineLogs,
   NO_REPORT_SENTINEL,
