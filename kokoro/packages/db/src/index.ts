@@ -86,14 +86,17 @@ export {
   completeRoutineLog,
   failRoutineLog,
   getRoutineLogs,
+  getRoutineHealth,
   cleanupOldRoutineLogs,
   resetStaleRunningRoutineLogs,
+  NO_REPORT_SENTINEL,
   type IRoutine,
   type IRoutineLog,
   type IRoutineParameter,
   type RoutineParameterType,
   type RoutineInput,
   type RoutinePurity,
+  type RoutineHealth,
 } from "./models/routine";
 export {
   PendingConfirmation,

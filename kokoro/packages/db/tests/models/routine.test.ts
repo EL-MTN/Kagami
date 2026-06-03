@@ -15,6 +15,7 @@ import {
   getDueRoutines,
   getRoutineById,
   getRoutineByName,
+  getRoutineHealth,
   getRoutineLogs,
   isRoutineRunning,
   listRoutinesForChat,
@@ -261,5 +262,86 @@ describe("routine logs", () => {
     expect(removed).toBe(1);
     expect(await RoutineLog.findById(old._id)).toBeNull();
     expect(await RoutineLog.findById(recent._id)).not.toBeNull();
+  });
+});
+
+describe("getRoutineHealth", () => {
+  const readInput: RoutineInput = { ...baseInput, purity: "read" };
+
+  async function logRun(
+    routineId: string,
+    trigger: "cron" | "manual" | "routine",
+    outcome: { fail?: string; summary?: string },
+  ) {
+    const log = await createRoutineLog(routineId, trigger);
+    if (outcome.fail !== undefined) await failRoutineLog(log.id, outcome.fail);
+    else await completeRoutineLog(log.id, outcome.summary ?? "ok");
+    return log;
+  }
+
+  it("tallies failed / empty / no-report runs and excludes composed sub-runs", async () => {
+    const s = await createRoutine("chat-1", readInput);
+    await logRun(s.id, "cron", { summary: "did the thing" });
+    await logRun(s.id, "cron", { fail: "boom" });
+    await logRun(s.id, "manual", { summary: "" }); // empty completion
+    await logRun(s.id, "cron", { summary: "[no report]" }); // healthy no-op
+    await logRun(s.id, "routine", { fail: "nested failure" }); // excluded sub-run
+
+    const [health] = await getRoutineHealth("chat-1");
+    expect(health.name).toBe(s.name);
+    expect(health.totalRuns).toBe(4); // the "routine"-trigger run is excluded
+    expect(health.failedRuns).toBe(1);
+    expect(health.emptyRuns).toBe(1);
+    expect(health.noReportRuns).toBe(1);
+  });
+
+  it("reports lastStatus/lastError/lastRunAt from the most recent counted run", async () => {
+    const s = await createRoutine("chat-1", readInput);
+    await logRun(s.id, "cron", { summary: "ok" });
+    await logRun(s.id, "cron", { fail: "API 429" });
+
+    const [health] = await getRoutineHealth("chat-1");
+    expect(health.lastStatus).toBe("failed");
+    expect(health.lastError).toBe("API 429");
+    expect(health.lastRunAt).toBeInstanceOf(Date);
+  });
+
+  it("ignores in-flight running logs", async () => {
+    const s = await createRoutine("chat-1", readInput);
+    await logRun(s.id, "cron", { summary: "ok" });
+    await createRoutineLog(s.id, "cron"); // left running
+
+    const [health] = await getRoutineHealth("chat-1");
+    expect(health.totalRuns).toBe(1);
+    expect(health.lastStatus).toBe("completed");
+  });
+
+  it("returns zeroed health for a routine with no runs", async () => {
+    await createRoutine("chat-1", readInput);
+    const [health] = await getRoutineHealth("chat-1");
+    expect(health.totalRuns).toBe(0);
+    expect(health.lastStatus).toBeNull();
+    expect(health.lastError).toBeUndefined();
+  });
+
+  it("honors the window limit (most recent N only)", async () => {
+    const s = await createRoutine("chat-1", readInput);
+    await logRun(s.id, "cron", { summary: "a" });
+    await logRun(s.id, "cron", { fail: "b" });
+    await logRun(s.id, "cron", { fail: "c" });
+
+    const [health] = await getRoutineHealth("chat-1", { window: 2 });
+    expect(health.totalRuns).toBe(2);
+    expect(health.failedRuns).toBe(2); // the two most recent runs are the failures
+  });
+
+  it("excludes disabled routines and scopes to the chat", async () => {
+    const enabled = await createRoutine("chat-1", { ...readInput, name: "on" });
+    const disabled = await createRoutine("chat-1", { ...readInput, name: "off" });
+    await updateRoutine(disabled.id, { enabled: false });
+    await createRoutine("chat-2", { ...readInput, name: "other-chat" });
+
+    const health = await getRoutineHealth("chat-1");
+    expect(health.map((h) => h.name)).toEqual([enabled.name]);
   });
 });

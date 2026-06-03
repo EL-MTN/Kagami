@@ -8,7 +8,9 @@ import {
   getRecentlyFiredReminders,
   getLatestLocation,
   listRoutinesForChat,
+  getRoutineHealth,
   listPendingConfirmations,
+  type RoutineHealth,
 } from "@kokoro/db";
 import { DATETIME_CONTEXT, moodForTimeOfDay, timeOfDayFor } from "./prompts";
 import { getMcpSummary } from "../services/mcp";
@@ -91,6 +93,8 @@ async function assemblePromptShell(
   if (includeProposalRule && config.ROUTINE_PROPOSALS_ENABLED) {
     const routineProposals = await readInstruction("routine-proposals");
     if (routineProposals) parts.push(routineProposals);
+    const routineRefinement = await readInstruction("routine-refinement");
+    if (routineRefinement) parts.push(routineRefinement);
   }
 
   // Only advertise MCP tools on turns that actually expose them. The
@@ -129,14 +133,54 @@ function assembleMcpContext(): string | null {
   );
 }
 
-async function assembleRoutineContext(chatId: string): Promise<string | null> {
+/**
+ * Display threshold for flagging a routine as underperforming in the prompt.
+ * This decides only whether to *show* the ⚠ marker (so a single flaky run
+ * doesn't nag the model into offering a fix); the decision to actually refine
+ * stays entirely with the LLM. `[no report]` runs are healthy and never count.
+ */
+function routineHealthNote(h: RoutineHealth): string | null {
+  if (h.totalRuns === 0) return null;
+  const bad = h.failedRuns + h.emptyRuns;
+  if (bad < 2 && h.lastStatus !== "failed") return null;
+  const kind = h.failedRuns >= h.emptyRuns ? "failing" : "returning empty";
+  const detail = h.lastError ? ` (last error: "${h.lastError.slice(0, 80)}")` : "";
+  return `⚠ ${kind} — ${bad} of last ${h.totalRuns} runs${detail}`;
+}
+
+/**
+ * Lists the chat's enabled routines for the prompt. On conversational turns
+ * (`withHealth`), routines with a poor recent track record are annotated so the
+ * model can notice and offer a `proposeRoutineRefinement`. Health is an
+ * enhancement, never a requirement — any failure falls back to plain names.
+ */
+async function assembleRoutineContext(chatId: string, withHealth: boolean): Promise<string | null> {
   try {
     const routines = await listRoutinesForChat(chatId);
     const enabled = routines.filter((s) => s.enabled);
     if (enabled.length === 0) return null;
 
-    const names = enabled.map((s) => s.name).join(", ");
-    return `## Available Routines\n${names}\nUse searchRoutines to look up details or discover routines by keyword.`;
+    let health: Map<string, RoutineHealth> | null = null;
+    if (withHealth) {
+      try {
+        const rows = await getRoutineHealth(chatId);
+        health = new Map(rows.map((h) => [h.name, h]));
+      } catch (error) {
+        logger.warn({ error }, "Failed to load routine health — listing names only");
+      }
+    }
+
+    const flagged = health !== null;
+    const lines = enabled.map((s) => {
+      const note = health?.get(s.name);
+      const annotation = note ? routineHealthNote(note) : null;
+      return annotation ? `${s.name} ${annotation}` : s.name;
+    });
+
+    const offerHint = flagged
+      ? "\nIf a routine is flagged ⚠ above, you may offer to fix its prompt with proposeRoutineRefinement — on a natural turn, one at a time."
+      : "";
+    return `## Available Routines\n${lines.join("\n")}\nUse searchRoutines to look up details or discover routines by keyword.${offerHint}`;
   } catch (error) {
     logger.warn({ error: error }, "Failed to load routine context");
     return null;
@@ -204,7 +248,12 @@ export async function assembleSystemPrompt(
   const { includeMcpHint = true } = opts;
   const parts = await assemblePromptShell(includeMcpHint);
 
-  const routineContext = await assembleRoutineContext(chatId);
+  // `includeMcpHint` is the conversational-turn signal (generate.ts uses the
+  // default true; the no-tools acknowledgment turn passes false) — the same
+  // gate `assemblePromptShell` uses for the proposal/refinement rule. Only
+  // conversational turns expose proposeRoutineRefinement, so only they pay the
+  // health lookup and show the ⚠ annotations.
+  const routineContext = await assembleRoutineContext(chatId, includeMcpHint);
   if (routineContext) parts.push(routineContext);
 
   const pendingContext = await assemblePendingConfirmationsContext(chatId);

@@ -115,6 +115,43 @@ export const RoutineLog =
   (mongoose.models.RoutineLog as mongoose.Model<IRoutineLog>) ??
   mongoose.model<IRoutineLog>("RoutineLog", routineLogSchema);
 
+/**
+ * A cron routine in `alert` reportMode returns exactly this when nothing was
+ * noteworthy — a *successful* run that intentionally produces no report. Shared
+ * with the routine executor (which writes it) and the health helper (which must
+ * not count it as an empty/failed run). Single source of truth.
+ */
+export const NO_REPORT_SENTINEL = "[no report]";
+
+// --- Routine Health ---
+
+/**
+ * Per-routine execution health over its most recent runs. Reports *facts only*
+ * — counts of failed / empty / no-report runs — never a verdict on whether a
+ * routine "needs fixing". That judgment belongs to the LLM: the conversational
+ * model sees these numbers in its routine context and may offer a refinement,
+ * and the self-review pass uses them only as a pre-filter for which routines to
+ * ask the model about.
+ */
+export interface RoutineHealth {
+  routineId: string;
+  name: string;
+  /** Number of recent runs considered. */
+  window: number;
+  totalRuns: number;
+  failedRuns: number;
+  /** Completed but produced a blank summary. */
+  emptyRuns: number;
+  /** Completed with the `[no report]` sentinel (expected for alert-mode cron). */
+  noReportRuns: number;
+  lastStatus: "completed" | "failed" | null;
+  /** Summary of the most recent failed run, if the latest run failed. */
+  lastError?: string;
+  lastRunAt?: Date;
+}
+
+const HEALTH_WINDOW_DEFAULT = 10;
+
 // --- Routine Helpers ---
 
 export interface RoutineInput {
@@ -268,6 +305,63 @@ export async function getRoutineLogs(routineId: string, limit = 50): Promise<IRo
   return RoutineLog.find({ routineId: new Types.ObjectId(routineId) })
     .sort({ startedAt: -1 })
     .limit(limit);
+}
+
+/**
+ * Recent execution health for every enabled routine in a chat. Sub-runs invoked
+ * via useRoutine (`trigger: "routine"`) are excluded so a parent routine's
+ * composed calls don't double-count against it; in-flight ("running") logs are
+ * skipped so a mid-execution tick doesn't skew the window. Returns facts only —
+ * see `RoutineHealth`.
+ */
+export async function getRoutineHealth(
+  chatId: string,
+  opts: { window?: number } = {},
+): Promise<RoutineHealth[]> {
+  const window = opts.window ?? HEALTH_WINDOW_DEFAULT;
+  const routines = await Routine.find({ chatId, enabled: true }).sort({ createdAt: -1 });
+
+  return Promise.all(
+    routines.map(async (routine) => {
+      const logs = await RoutineLog.find({
+        routineId: routine._id,
+        trigger: { $ne: "routine" },
+        status: { $ne: "running" },
+      })
+        // `_id` breaks startedAt ties so "latest" is deterministic — ObjectIds
+        // are monotonic within a process, so the most-recently-inserted run
+        // wins even when two runs share a millisecond.
+        .sort({ startedAt: -1, _id: -1 })
+        .limit(window);
+
+      let failedRuns = 0;
+      let emptyRuns = 0;
+      let noReportRuns = 0;
+      for (const log of logs) {
+        if (log.status === "failed") {
+          failedRuns++;
+          continue;
+        }
+        const summary = (log.summary ?? "").trim();
+        if (summary.length === 0) emptyRuns++;
+        else if (summary.toLowerCase() === NO_REPORT_SENTINEL.toLowerCase()) noReportRuns++;
+      }
+
+      const latest = logs[0];
+      return {
+        routineId: routine._id.toString(),
+        name: routine.name,
+        window,
+        totalRuns: logs.length,
+        failedRuns,
+        emptyRuns,
+        noReportRuns,
+        lastStatus: latest ? (latest.status as "completed" | "failed") : null,
+        lastError: latest && latest.status === "failed" ? (latest.summary ?? undefined) : undefined,
+        lastRunAt: latest?.startedAt,
+      };
+    }),
+  );
 }
 
 export async function cleanupOldRoutineLogs(olderThanDays = 90): Promise<number> {
