@@ -116,6 +116,19 @@ describe("reviewChatRoutines", () => {
     expect(vi.mocked(proposeRefinement)).not.toHaveBeenCalled();
   });
 
+  it("fetches the review run-history over the SAME window as the health counts", async () => {
+    // Otherwise the prompt header ("N failed of M") could claim more failures
+    // than the listed rows show. health().window === 10.
+    llmDecision({ action: "none", rationale: "fine" });
+
+    await reviewChatRoutines(CHAT, adapter);
+
+    expect(vi.mocked(getRoutineLogs)).toHaveBeenCalledWith("r1", 10, {
+      excludeComposed: true,
+      excludeRunning: true,
+    });
+  });
+
   it("raises a refinement when the LLM returns action=refine", async () => {
     llmDecision({
       action: "refine",

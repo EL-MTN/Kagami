@@ -31,8 +31,6 @@ const MAX_PROPOSALS_PER_RUN = 1;
 // of every one, every run. This bounds spend regardless of outcome.
 const MAX_REVIEWS_PER_RUN = 6;
 
-const REVIEW_LOG_LIMIT = 8;
-
 const reviewSchema = z.object({
   action: z.enum(["refine", "retire", "none"]),
   newPrompt: z
@@ -79,10 +77,11 @@ function buildReviewUser(routine: IRoutine, health: RoutineHealth, recentRuns: s
 }
 
 async function reviewRoutine(routine: IRoutine, health: RoutineHealth): Promise<ReviewDecision> {
-  // Filter at the DB (matching getRoutineHealth) so composed sub-runs and
-  // in-flight rows don't consume the limit window and leave the LLM with "(no
-  // run history)" while the header claims failures.
-  const logs = await getRoutineLogs(routine.id, REVIEW_LOG_LIMIT, {
+  // Filter at the DB (same helper as getRoutineHealth) so composed sub-runs and
+  // in-flight rows don't consume the window, AND use the SAME window the health
+  // counts came from — otherwise the header ("N failed of M") could claim more
+  // failures than the listed rows show.
+  const logs = await getRoutineLogs(routine.id, health.window, {
     excludeComposed: true,
     excludeRunning: true,
   });
@@ -151,10 +150,10 @@ export async function reviewChatRoutines(
 
     try {
       if (decision.action === "refine") {
-        if (!decision.newPrompt) {
+        if (!decision.newPrompt?.trim()) {
           logger.warn(
             { chatId, routineId: routine.id },
-            "Self-review returned action=refine without a newPrompt — skipping",
+            "Self-review returned action=refine without a usable newPrompt — skipping",
           );
           continue;
         }
