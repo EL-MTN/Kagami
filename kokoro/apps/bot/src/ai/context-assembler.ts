@@ -79,10 +79,8 @@ async function assemblePromptShell(
     if (webSearch) parts.push(webSearch);
   }
 
-  if (config.BROWSER_ENABLED) {
-    const browser = await readInstruction("browser");
-    if (browser) parts.push(browser);
-  }
+  const browser = await readInstruction("browser");
+  if (browser) parts.push(browser);
 
   const routines = await readInstruction("routines");
   if (routines) parts.push(routines);
@@ -236,8 +234,6 @@ async function assemblePendingConfirmationsContext(chatId: string): Promise<stri
 }
 
 async function assembleLocationContext(chatId: string): Promise<string | null> {
-  if (!config.LOCATION_ENABLED) return null;
-
   try {
     const latest = await getLatestLocation(chatId);
     if (!latest) return null;

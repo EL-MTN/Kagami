@@ -8,7 +8,6 @@ interface GrantDoc {
   name: string;
   scopes: string[];
   refreshToken: string | null;
-  googleSub: string | null;
   grantedAt: Date | null;
   revokedAt: Date | null;
   updatedAt: Date;
@@ -32,7 +31,7 @@ export async function listGrants(db: Db): Promise<GrantDoc[]> {
 
 export async function upsertGrant(
   db: Db,
-  input: { name: string; scopes: string[]; refreshToken: string; googleSub: string | null },
+  input: { name: string; scopes: string[]; refreshToken: string },
 ): Promise<void> {
   const now = new Date();
   await collection(db).updateOne(
@@ -41,7 +40,6 @@ export async function upsertGrant(
       $set: {
         scopes: input.scopes,
         refreshToken: input.refreshToken,
-        googleSub: input.googleSub,
         grantedAt: now,
         revokedAt: null,
         updatedAt: now,

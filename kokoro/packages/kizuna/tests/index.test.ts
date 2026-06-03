@@ -15,26 +15,21 @@ import {
 
 type ConfigWithKizuna = {
   KIZUNA_URL: string;
-  KIZUNA_ENABLED: boolean;
 };
 
 const KIZUNA_BASE = "http://kizuna.test";
 const server = setupMswServer();
 
 let originalUrl: string;
-let originalEnabled: boolean;
 
 beforeAll(() => {
   originalUrl = config.KIZUNA_URL;
-  originalEnabled = config.KIZUNA_ENABLED;
   (config as unknown as ConfigWithKizuna).KIZUNA_URL = KIZUNA_BASE;
-  (config as unknown as ConfigWithKizuna).KIZUNA_ENABLED = true;
   vi.spyOn(logger, "warn").mockImplementation(() => undefined);
 });
 
 afterAll(() => {
   (config as unknown as ConfigWithKizuna).KIZUNA_URL = originalUrl;
-  (config as unknown as ConfigWithKizuna).KIZUNA_ENABLED = originalEnabled;
   vi.restoreAllMocks();
 });
 
@@ -475,19 +470,6 @@ describe("updatePerson", () => {
 });
 
 describe("error handling", () => {
-  it("throws a disabled KizunaClientError when the integration is disabled", async () => {
-    (config as unknown as ConfigWithKizuna).KIZUNA_ENABLED = false;
-    try {
-      await expect(findPeople({ query: "Sarah" })).rejects.toMatchObject({
-        name: "KizunaClientError",
-        kind: "disabled",
-        message: "Kizuna integration disabled",
-      });
-    } finally {
-      (config as unknown as ConfigWithKizuna).KIZUNA_ENABLED = true;
-    }
-  });
-
   it("classifies non-2xx and schema failures without leaking request details into safe messages", async () => {
     server.use(
       http.get(`${KIZUNA_BASE}/people`, () =>

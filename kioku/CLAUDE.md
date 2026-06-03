@@ -20,7 +20,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 │   │   │   ├── storage/     # mongo singleton, idempotent indexes, facts, entities, transcripts, history
 │   │   │   ├── server.ts    # express bootstrap + ensureIndexes + graceful shutdown
 │   │   │   ├── mcp.ts       # streamable-HTTP MCP transport mounted at /mcp
-│   │   │   ├── llm.ts       # env resolution (canonical + legacy shim) + @kagami/llm createInference wiring + embed helpers
+│   │   │   ├── llm.ts       # env resolution (canonical keys) + @kagami/llm createInference wiring + embed helpers
 │   │   │   ├── paths.ts     # prompts directory pointer
 │   │   │   ├── types.ts     # Transcript / Turn / frontmatter zod schemas
 │   │   │   └── logger.ts    # pino logger

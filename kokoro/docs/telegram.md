@@ -103,7 +103,7 @@ createBot(token)
     │   ├─ handleMessage(incoming, adapter) — transcribes via STT if configured
     │   └─ resetTimer(chatId)
     │
-    ├─ message:location handler (gated on LOCATION_ENABLED)
+    ├─ message:location handler
     │   ├─ normalizeLocation(ctx) → IncomingMessage (with location)
     │   ├─ Rate limit check
     │   ├─ processLocation() → geocode, store, detect events
@@ -111,7 +111,7 @@ createBot(token)
     │   ├─ resetTimer(chatId)
     │   └─ If arrival event → triggerLocationProactive(chatId)
     │
-    ├─ edited_message:location handler (gated on LOCATION_ENABLED)
+    ├─ edited_message:location handler
     │   ├─ normalizeLocationEdit(ctx) → IncomingMessage (live update)
     │   ├─ processLocation() — silent store only (no AI pipeline)
     │   └─ If arrival event → triggerLocationProactive(chatId)

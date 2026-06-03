@@ -121,7 +121,6 @@ describe("vend surface is bearer-gated", () => {
           name: "kizuna",
           scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
           refreshToken: "not-a-valid-envelope",
-          googleSub: null,
           grantedAt: new Date(),
           revokedAt: null,
           updatedAt: new Date(),
