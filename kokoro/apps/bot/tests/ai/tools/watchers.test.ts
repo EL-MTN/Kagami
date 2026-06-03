@@ -3,9 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@kokoro/shared", async (orig) => ({
   ...(await orig()),
-  config: {
-    KAO_URL: "stub",
-  },
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
