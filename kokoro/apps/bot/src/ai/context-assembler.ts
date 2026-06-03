@@ -85,12 +85,13 @@ async function assemblePromptShell(
   const routines = await readInstruction("routines");
   if (routines) parts.push(routines);
 
-  // Load the proposeRoutine rule only where the tool is actually offered —
-  // live conversational turns. Excluded from the no-tools acknowledgment turn
-  // (includeProposalRule defaults to includeMcpHint = false there) and from
-  // proactive outreach (passes includeProposalRule: false explicitly), keeping
-  // the rule and the tool's `conversational` gate in lockstep.
-  if (includeProposalRule && config.ROUTINE_PROPOSALS_ENABLED) {
+  // Load the proposeRoutine / proposeRoutineRefinement rules only where the
+  // tools are actually offered — live conversational turns. Excluded from the
+  // no-tools acknowledgment turn (includeProposalRule defaults to
+  // includeMcpHint = false there) and from proactive outreach (passes
+  // includeProposalRule: false explicitly), keeping the rules and the tools'
+  // `conversational` gate in lockstep.
+  if (includeProposalRule) {
     const routineProposals = await readInstruction("routine-proposals");
     if (routineProposals) parts.push(routineProposals);
     const routineRefinement = await readInstruction("routine-refinement");

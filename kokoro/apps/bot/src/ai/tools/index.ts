@@ -114,7 +114,7 @@ export function allTools(ctx: ToolContext) {
   // unprompted proactive message — must never self-author or self-edit a
   // routine. Both approved actions are dispatch-only (`createRoutine` /
   // `updateRoutinePrompt`), gated behind the approval rail.
-  if (config.ROUTINE_PROPOSALS_ENABLED && ctx.conversational) {
+  if (ctx.conversational) {
     tools.proposeRoutine = createProposeRoutineTool(ctx.chatId, ctx.adapter);
     tools.proposeRoutineRefinement = createProposeRoutineRefinementTool(ctx.chatId, ctx.adapter);
   }
