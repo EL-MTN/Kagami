@@ -82,7 +82,7 @@ Action — choose exactly ONE:
 - "none": do nothing — a healthy routine, or one with no clear, confident fix, takes "none".
 Be conservative: prefer "none" over a speculative change, and prefer "refine" over "retire" whenever a prompt fix is plausible. Always give a one-line rationale.`;
 
-function buildReviewUser(routine: IRoutine, health: RoutineHealth, recentRuns: string): string {
+function buildReviewUser(routine: IRoutine, runsHeader: string, recentRuns: string): string {
   const params =
     routine.parameters.length > 0
       ? routine.parameters
@@ -100,29 +100,42 @@ function buildReviewUser(routine: IRoutine, health: RoutineHealth, recentRuns: s
     `Parameters:`,
     params,
     ``,
-    `Recent runs (newest first) — ${health.failedRuns} failed / ${health.emptyRuns} empty of last ${health.totalRuns}:`,
+    runsHeader,
     recentRuns || "(no run history)",
   ].join("\n");
 }
 
-async function reviewRoutine(routine: IRoutine, health: RoutineHealth): Promise<ReviewDecision> {
+async function reviewRoutine(
+  routine: IRoutine,
+  health: RoutineHealth,
+  opts: { since?: Date } = {},
+): Promise<ReviewDecision> {
   // Filter at the DB (same helper as getRoutineHealth) so composed sub-runs and
-  // in-flight rows don't consume the window, AND use the SAME window the health
-  // counts came from — otherwise the header ("N failed of M") could claim more
-  // failures than the listed rows show.
+  // in-flight rows don't consume the window. For a post-refine candidate, pass
+  // `since = lastRefinedAt` so the grade is computed ONLY over runs of the new
+  // prompt — otherwise up to window-1 pre-edit runs would contaminate the grade
+  // the regression decision hinges on.
   const logs = await getRoutineLogs(routine.id, health.window, {
     excludeComposed: true,
     excludeRunning: true,
+    ...(opts.since ? { since: opts.since } : {}),
   });
   const recentRuns = logs
     .map((l) => `- [${l.status}] ${(l.summary ?? "").trim().slice(0, 200) || "(no summary)"}`)
     .join("\n");
 
+  // When grading post-refine runs the health counts (last `window` across the
+  // edit boundary) wouldn't match the rows shown, so summarize from the listed
+  // runs instead; otherwise keep the precise health header.
+  const runsHeader = opts.since
+    ? `Runs since the prompt was last revised (newest first) — grade ONLY this current behavior:`
+    : `Recent runs (newest first) — ${health.failedRuns} failed / ${health.emptyRuns} empty of last ${health.totalRuns}:`;
+
   const result = await generateObject({
     model: getModel(ModelTier.Smart),
     schema: reviewSchema,
     system: REVIEW_SYSTEM,
-    messages: [{ role: "user", content: buildReviewUser(routine, health, recentRuns) }],
+    messages: [{ role: "user", content: buildReviewUser(routine, runsHeader, recentRuns) }],
     temperature: 0.2,
     abortSignal: AbortSignal.timeout(60_000),
   });
@@ -197,9 +210,19 @@ export async function reviewChatRoutines(
     if (!health) continue;
     reviewed++;
 
+    const isPostRefine = postRefineSet.has(id);
+
     let decision: ReviewDecision;
     try {
-      decision = await runWithSpan("routine.selfReview", () => reviewRoutine(routine, health));
+      decision = await runWithSpan("routine.selfReview", () =>
+        // Post-refine: grade only the runs SINCE the edit so the regression
+        // verdict reflects the new prompt, not pre-edit history.
+        reviewRoutine(
+          routine,
+          health,
+          isPostRefine ? { since: routine.lastRefinedAt ?? undefined } : {},
+        ),
+      );
     } catch (error) {
       logger.error(
         { error, chatId, routineId: id, name: routine.name },
@@ -211,33 +234,45 @@ export async function reviewChatRoutines(
     // Persist the grade (best-effort) — the measurement half of loop closure, so
     // a later cycle can compare this routine's grade before vs after its next
     // edit. Independent of whether a proposal is raised below.
-    await recordRoutineGrade(id, decision.grade).catch((error) => {
+    await recordRoutineGrade(id, chatId, decision.grade).catch((error) => {
       logger.warn({ error, chatId, routineId: id }, "Failed to persist routine grade");
     });
 
-    const isPostRefine = postRefineSet.has(id);
+    const { priorPrompt, priorParameters, preRefineGrade } = routine;
+    let regressed = false;
     try {
-      const { priorPrompt, preRefineGrade } = routine;
-      const regressed =
+      let proposed = false;
+      // The `priorPrompt?.trim()` / `preRefineGrade !== null` clauses both narrow
+      // the nullable fields and gate the comparison — no separate re-check below.
+      if (
         isPostRefine &&
+        priorPrompt?.trim() &&
         preRefineGrade !== null &&
-        !!priorPrompt?.trim() &&
-        decision.grade <= preRefineGrade - REGRESSION_MARGIN;
-
-      if (regressed && priorPrompt && preRefineGrade !== null) {
-        // Loop closure: the last edit measurably lowered quality — offer to
-        // revert to the prompt that scored better. trackForRegression:false so
-        // the revert itself isn't watched (no ping-pong between two prompts).
+        decision.grade <= preRefineGrade - REGRESSION_MARGIN
+      ) {
+        regressed = true;
+        // Loop closure: the last edit lowered quality — offer to revert to the
+        // prior prompt AND parameters (restore the full prior state, not a
+        // prompt/param hybrid). trackForRegression:false so the revert isn't
+        // re-watched (no ping-pong between two prompts).
         const result = await proposeRefinement({
           chatId,
           adapter,
           routine,
           newPrompt: priorPrompt,
+          ...(priorParameters ? { newParameters: priorParameters } : {}),
           rationale: `Quality dropped after the last edit (graded ${preRefineGrade}→${decision.grade}); revert to the previous version.`,
           trackForRegression: false,
         });
+        proposed = result.proposed;
         if (result.proposed) raised++;
-      } else if (decision.action === "refine") {
+      }
+
+      // Fall through to the LLM's own decision when no revert was raised — either
+      // the routine didn't regress, or the revert was anti-nag/one-pending
+      // suppressed (so a routine whose revert the user already declined still
+      // gets an alternative fix offered rather than nothing).
+      if (!proposed && decision.action === "refine") {
         if (!decision.newPrompt?.trim()) {
           logger.warn(
             { chatId, routineId: id },
@@ -253,7 +288,7 @@ export async function reviewChatRoutines(
           });
           if (result.proposed) raised++;
         }
-      } else if (decision.action === "retire") {
+      } else if (!proposed && decision.action === "retire") {
         const result = await proposeRetirement({
           chatId,
           adapter,
@@ -268,12 +303,16 @@ export async function reviewChatRoutines(
         "Failed to raise self-review proposal",
       );
     } finally {
-      // A post-refine routine has now had its verdict rendered (graded with
-      // enough fresh runs) — graduate it so we stop re-grading against the old
-      // baseline. If a forward refinement was just proposed, its approval
-      // re-arms tracking fresh; a revert clears the same fields on apply.
-      if (isPostRefine) {
-        await clearRefineTracking(id).catch((error) => {
+      // Graduate a post-refine routine ONLY when it held up (no regression):
+      // clearing tracking stops re-grading a good edit against a stale baseline.
+      // A regressed routine stays armed so its revert keeps being offered across
+      // weekly cycles, a missed (expired) bubble, or a transiently-suppressed
+      // proposal — tracking is cleared only when the revert actually applies
+      // (applyRoutineRefinement trackForRegression:false) or the user edits the
+      // routine (updateRoutine). Graduating a regressed routine here would
+      // silently lose the regression signal forever.
+      if (isPostRefine && !regressed) {
+        await clearRefineTracking(id, chatId).catch((error) => {
           logger.warn({ error, chatId, routineId: id }, "Failed to clear refine tracking");
         });
       }

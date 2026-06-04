@@ -476,19 +476,29 @@ describe("recordRoutineGrade", () => {
     const r = await createRoutine("chat-1", baseInput);
     expect(r.lastGrade).toBeNull();
 
-    await recordRoutineGrade(r.id, 62);
+    await recordRoutineGrade(r.id, "chat-1", 62);
 
     const after = await getRoutineById(r.id);
     expect(after?.lastGrade).toBe(62);
     expect(after?.lastGradedAt).toBeInstanceOf(Date);
     expect(after?.version).toBe(1); // a grade is metadata, not an edit
   });
+
+  it("is chatId-scoped — a wrong chat does not write the grade", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    await recordRoutineGrade(r.id, "chat-2", 99);
+    const after = await getRoutineById(r.id);
+    expect(after?.lastGrade).toBeNull();
+  });
 });
 
 describe("applyRoutineRefinement", () => {
-  it("applies a version-guarded edit and arms regression tracking (snapshots prior prompt + grade)", async () => {
-    const r = await createRoutine("chat-1", baseInput);
-    await recordRoutineGrade(r.id, 30); // pre-edit grade
+  it("applies a version-guarded edit and arms regression tracking (snapshots prior prompt, params + grade)", async () => {
+    const params = [
+      { name: "date", type: "string" as const, description: "the day", required: false },
+    ];
+    const r = await createRoutine("chat-1", { ...baseInput, parameters: params });
+    await recordRoutineGrade(r.id, "chat-1", 30); // pre-edit grade
 
     const updated = await applyRoutineRefinement(
       r.id,
@@ -501,6 +511,7 @@ describe("applyRoutineRefinement", () => {
     expect(updated?.prompt).toBe("a sharper prompt");
     expect(updated?.version).toBe(2);
     expect(updated?.priorPrompt).toBe(baseInput.prompt);
+    expect(updated?.priorParameters?.[0]?.name).toBe("date"); // snapshot of pre-edit params
     expect(updated?.preRefineGrade).toBe(30);
     expect(updated?.lastRefinedAt).toBeInstanceOf(Date);
     // The new prompt is ungraded again.
@@ -524,6 +535,7 @@ describe("applyRoutineRefinement", () => {
     expect(reverted?.prompt).toBe(baseInput.prompt);
     expect(reverted?.version).toBe(3);
     expect(reverted?.priorPrompt).toBeNull();
+    expect(reverted?.priorParameters).toBeNull();
     expect(reverted?.preRefineGrade).toBeNull();
     expect(reverted?.lastRefinedAt).toBeNull();
   });
@@ -563,15 +575,47 @@ describe("clearRefineTracking", () => {
     const r = await createRoutine("chat-1", baseInput);
     await applyRoutineRefinement(r.id, "chat-1", 1, { prompt: "v2" }, { trackForRegression: true });
 
-    await clearRefineTracking(r.id);
+    await clearRefineTracking(r.id, "chat-1");
 
     const after = await getRoutineById(r.id);
     expect(after?.priorPrompt).toBeNull();
+    expect(after?.priorParameters).toBeNull();
     expect(after?.preRefineGrade).toBeNull();
     expect(after?.lastRefinedAt).toBeNull();
     // The edit itself stands — only the tracking is cleared.
     expect(after?.prompt).toBe("v2");
     expect(after?.version).toBe(2);
+  });
+});
+
+describe("updateRoutine clears grade + tracking on a prompt edit", () => {
+  it("a prompt edit through the generic path invalidates grade and regression tracking", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    // Self-review armed tracking on an earlier refinement.
+    await applyRoutineRefinement(r.id, "chat-1", 1, { prompt: "v2" }, { trackForRegression: true });
+    await recordRoutineGrade(r.id, "chat-1", 55);
+
+    // User edits the prompt via dashboard / manageRoutines → generic updateRoutine.
+    const updated = await updateRoutine(r.id, { prompt: "user-edited prompt" }, "chat-1");
+
+    expect(updated?.prompt).toBe("user-edited prompt");
+    // Stale baseline must be gone so the review can't propose reverting THIS edit.
+    expect(updated?.priorPrompt).toBeNull();
+    expect(updated?.preRefineGrade).toBeNull();
+    expect(updated?.lastRefinedAt).toBeNull();
+    expect(updated?.lastGrade).toBeNull();
+  });
+
+  it("a non-prompt edit leaves grade + tracking intact", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    await applyRoutineRefinement(r.id, "chat-1", 1, { prompt: "v2" }, { trackForRegression: true });
+    await recordRoutineGrade(r.id, "chat-1", 55);
+
+    const updated = await updateRoutine(r.id, { description: "new description" }, "chat-1");
+
+    expect(updated?.description).toBe("new description");
+    expect(updated?.priorPrompt).toBe(baseInput.prompt); // tracking preserved
+    expect(updated?.lastGrade).toBe(55);
   });
 });
 
