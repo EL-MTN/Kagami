@@ -511,7 +511,14 @@ describe("applyRoutineRefinement", () => {
     expect(updated?.prompt).toBe("a sharper prompt");
     expect(updated?.version).toBe(2);
     expect(updated?.priorPrompt).toBe(baseInput.prompt);
-    expect(updated?.priorParameters?.[0]?.name).toBe("date"); // snapshot of pre-edit params
+    // The Mixed-field snapshot round-trips verbatim — full shape, not just the name.
+    expect(updated?.priorParameters).toHaveLength(1);
+    expect(updated?.priorParameters?.[0]).toMatchObject({
+      name: "date",
+      type: "string",
+      description: "the day",
+      required: false,
+    });
     expect(updated?.preRefineGrade).toBe(30);
     expect(updated?.lastRefinedAt).toBeInstanceOf(Date);
     // The new prompt is ungraded again.
@@ -588,7 +595,7 @@ describe("clearRefineTracking", () => {
   });
 });
 
-describe("updateRoutine clears grade + tracking on a prompt edit", () => {
+describe("updateRoutine clears grade + tracking on a behavior edit", () => {
   it("a prompt edit through the generic path invalidates grade and regression tracking", async () => {
     const r = await createRoutine("chat-1", baseInput);
     // Self-review armed tracking on an earlier refinement.
@@ -601,12 +608,33 @@ describe("updateRoutine clears grade + tracking on a prompt edit", () => {
     expect(updated?.prompt).toBe("user-edited prompt");
     // Stale baseline must be gone so the review can't propose reverting THIS edit.
     expect(updated?.priorPrompt).toBeNull();
+    expect(updated?.priorParameters).toBeNull();
     expect(updated?.preRefineGrade).toBeNull();
     expect(updated?.lastRefinedAt).toBeNull();
     expect(updated?.lastGrade).toBeNull();
   });
 
-  it("a non-prompt edit leaves grade + tracking intact", async () => {
+  it("a parameters-only edit also clears tracking (revert mustn't clobber the new params)", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    await applyRoutineRefinement(r.id, "chat-1", 1, { prompt: "v2" }, { trackForRegression: true });
+    await recordRoutineGrade(r.id, "chat-1", 55);
+
+    const updated = await updateRoutine(
+      r.id,
+      { parameters: [{ name: "topic", type: "string", description: "subject", required: false }] },
+      "chat-1",
+    );
+
+    expect(updated?.parameters?.[0]?.name).toBe("topic");
+    // A param edit invalidates the snapshot just like a prompt edit does.
+    expect(updated?.priorPrompt).toBeNull();
+    expect(updated?.priorParameters).toBeNull();
+    expect(updated?.preRefineGrade).toBeNull();
+    expect(updated?.lastRefinedAt).toBeNull();
+    expect(updated?.lastGrade).toBeNull();
+  });
+
+  it("a metadata-only edit (no prompt/params) leaves grade + tracking intact", async () => {
     const r = await createRoutine("chat-1", baseInput);
     await applyRoutineRefinement(r.id, "chat-1", 1, { prompt: "v2" }, { trackForRegression: true });
     await recordRoutineGrade(r.id, "chat-1", 55);

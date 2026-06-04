@@ -18,6 +18,11 @@ interface ProposalResult {
   proposed: boolean;
   confirmationId?: string;
   reason?: string;
+  /** True when suppressed specifically by the DURABLE anti-nag decline store
+   * (the user said "no" recently) — distinct from a transient one-pending
+   * suppression. The self-review pass uses this to stop re-offering a declined
+   * revert rather than re-grading it every cycle. */
+  declined?: boolean;
 }
 
 /** Recursively sort object keys so two structurally-equal values (incl. an
@@ -101,7 +106,7 @@ async function raiseRoutineProposal(opts: {
     isRecentlyDeclined(chatId, signature),
     listPendingConfirmations(chatId),
   ]);
-  if (declined) return { proposed: false, reason: declinedReason };
+  if (declined) return { proposed: false, declined: true, reason: declinedReason };
   // One routine proposal per chat at a time — across types — so we never stack
   // two bubbles and break iMessage's exactly-one-pending YES/NO reply path.
   if (hasPendingRoutineProposal(pending)) {
