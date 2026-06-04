@@ -43,6 +43,7 @@ vi.mock("@kokoro/db", () => ({
   createRoutine: vi.fn(),
   getRoutineById: vi.fn(),
   updateRoutineIfVersion: vi.fn(),
+  applyRoutineRefinement: vi.fn(),
   isDuplicateKeyError: vi.fn(() => false),
   recordProposalDecision: vi.fn(),
 }));
@@ -55,6 +56,7 @@ import {
   createRoutine,
   getRoutineById,
   updateRoutineIfVersion,
+  applyRoutineRefinement,
   isDuplicateKeyError,
   recordProposalDecision,
 } from "@kokoro/db";
@@ -79,6 +81,7 @@ beforeEach(() => {
   vi.mocked(createRoutine).mockReset();
   vi.mocked(getRoutineById).mockReset();
   vi.mocked(updateRoutineIfVersion).mockReset();
+  vi.mocked(applyRoutineRefinement).mockReset();
   // recordProposalDecision is async in production (callers chain .catch on it);
   // default the mock to a resolved promise so that chaining doesn't throw.
   vi.mocked(recordProposalDecision).mockReset().mockResolvedValue(undefined);
@@ -606,8 +609,8 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
     expect(GATED_TOOL_NAMES as readonly string[]).not.toContain("updateRoutinePrompt");
   });
 
-  it("applies the version-guarded edit (prompt only), records NO decision", async () => {
-    vi.mocked(updateRoutineIfVersion).mockResolvedValue({
+  it("applies the version-guarded edit (prompt only), arms loop-closure tracking, records NO decision", async () => {
+    vi.mocked(applyRoutineRefinement).mockResolvedValue({
       name: "morning-digest",
       version: 2,
     } as never);
@@ -618,12 +621,17 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
     expect(result.summary).toBe('routine "morning-digest" updated (v2)');
     expect(result.detail).toEqual({ routineId: ROUTINE_ID, version: 2 });
 
-    // Atomic compare-and-set against baseVersion (the helper bumps version).
-    expect(vi.mocked(updateRoutineIfVersion)).toHaveBeenCalledWith(ROUTINE_ID, "chat-1", 1, {
-      prompt: draft.newPrompt,
-    });
+    // Atomic compare-and-set against baseVersion (the helper bumps version);
+    // no trackForRegression in the draft → tracking armed by default.
+    expect(vi.mocked(applyRoutineRefinement)).toHaveBeenCalledWith(
+      ROUTINE_ID,
+      "chat-1",
+      1,
+      { prompt: draft.newPrompt },
+      { trackForRegression: true },
+    );
     // The refinement can never escalate scope — these never reach the patch.
-    const patch = vi.mocked(updateRoutineIfVersion).mock.calls[0][3];
+    const patch = vi.mocked(applyRoutineRefinement).mock.calls[0][3];
     expect(patch).not.toHaveProperty("purity");
     expect(patch).not.toHaveProperty("cronSchedule");
     expect(patch).not.toHaveProperty("reportMode");
@@ -635,7 +643,7 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
   });
 
   it("forwards newParameters only when supplied", async () => {
-    vi.mocked(updateRoutineIfVersion).mockResolvedValue({ name: "r", version: 2 } as never);
+    vi.mocked(applyRoutineRefinement).mockResolvedValue({ name: "r", version: 2 } as never);
 
     await dispatchGatedAction(
       "updateRoutinePrompt",
@@ -646,11 +654,25 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
       { chatId: "chat-1" },
     );
 
-    expect(vi.mocked(updateRoutineIfVersion).mock.calls[0][3]).toHaveProperty("parameters");
+    expect(vi.mocked(applyRoutineRefinement).mock.calls[0][3]).toHaveProperty("parameters");
+  });
+
+  it("clears regression tracking (trackForRegression:false) for a revert", async () => {
+    vi.mocked(applyRoutineRefinement).mockResolvedValue({ name: "r", version: 2 } as never);
+
+    await dispatchGatedAction(
+      "updateRoutinePrompt",
+      { ...draft, trackForRegression: false },
+      { chatId: "chat-1" },
+    );
+
+    expect(vi.mocked(applyRoutineRefinement).mock.calls[0][4]).toEqual({
+      trackForRegression: false,
+    });
   });
 
   it("reports version_conflict when the atomic update is rejected and the routine still exists", async () => {
-    vi.mocked(updateRoutineIfVersion).mockResolvedValue(null);
+    vi.mocked(applyRoutineRefinement).mockResolvedValue(null);
     vi.mocked(getRoutineById).mockResolvedValue({ name: "morning-digest", version: 5 } as never);
 
     const result = await dispatchGatedAction("updateRoutinePrompt", draft, { chatId: "chat-1" });
@@ -662,7 +684,7 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
   });
 
   it("reports not_found when the atomic update is rejected and the routine is gone", async () => {
-    vi.mocked(updateRoutineIfVersion).mockResolvedValue(null);
+    vi.mocked(applyRoutineRefinement).mockResolvedValue(null);
     vi.mocked(getRoutineById).mockResolvedValue(null);
 
     const result = await dispatchGatedAction("updateRoutinePrompt", draft, { chatId: "chat-1" });
@@ -675,7 +697,7 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
     const result = await dispatchGatedAction("updateRoutinePrompt", draft);
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("no_chat_context");
-    expect(vi.mocked(updateRoutineIfVersion)).not.toHaveBeenCalled();
+    expect(vi.mocked(applyRoutineRefinement)).not.toHaveBeenCalled();
   });
 
   it("rejects a malformed draft (missing newPrompt) before touching the db", async () => {
@@ -686,7 +708,7 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
     );
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("invalid_args");
-    expect(vi.mocked(updateRoutineIfVersion)).not.toHaveBeenCalled();
+    expect(vi.mocked(applyRoutineRefinement)).not.toHaveBeenCalled();
   });
 });
 
