@@ -1,10 +1,13 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 import {
+  clearRefineTracking,
   getRoutineHealth,
   getRoutineById,
   getRoutineLogs,
   listChatIdsWithRoutines,
+  listRoutinesAwaitingPostRefineReview,
+  recordRoutineGrade,
   routineNeedsAttention,
   type IRoutine,
   type RoutineHealth,
@@ -31,7 +34,25 @@ const MAX_PROPOSALS_PER_RUN = 1;
 // of every one, every run. This bounds spend regardless of outcome.
 const MAX_REVIEWS_PER_RUN = 6;
 
+// --- Loop-closure tuning (policy lives here, caller-side; the db model stays
+// facts-only). ---
+// A refined routine is re-graded once it has accumulated this many fresh real
+// runs, so the grade reflects the new prompt rather than the old one.
+const MIN_RUNS_TO_REGRADE = 3;
+// A revert is offered only when the post-edit grade falls at least this far
+// below the pre-edit grade — a margin so ordinary grade jitter doesn't read as a
+// regression. Grades are 0-100.
+const REGRESSION_MARGIN = 15;
+
 const reviewSchema = z.object({
+  grade: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .describe(
+      "Quality of the routine's recent performance, 0-100: how reliably it fulfills its stated purpose AND produces output worth acting on.",
+    ),
   action: z.enum(["refine", "retire", "none"]),
   newPrompt: z
     .string()
@@ -47,10 +68,18 @@ const reviewSchema = z.object({
 
 type ReviewDecision = z.infer<typeof reviewSchema>;
 
-const REVIEW_SYSTEM = `You are auditing an automated routine that has been underperforming (failing or returning empty results). Choose exactly ONE action:
+const REVIEW_SYSTEM = `You audit one automated routine: first GRADE its recent performance, then choose at most one corrective action.
+
+Grade (0-100) — how well it fulfills its stated purpose AND produces output worth acting on, judged from its recent runs:
+- 80-100: reliably does its job; the output is genuinely useful.
+- 40-79: runs, but is noisy, shallow, partially failing, or of marginal value.
+- 0-39: mostly failing, empty, or off-target.
+Weigh BOTH reliability (failed / empty runs) and value (would the user actually act on this output) — not merely whether it executed.
+
+Action — choose exactly ONE:
 - "refine": rewrite its prompt to fix the problem. Provide newPrompt — a complete replacement prompt that addresses the failures. Preserve any {parameter} references the routine relies on.
 - "retire": recommend disabling it, if it is fundamentally broken, obsolete, or cannot be fixed by a prompt change.
-- "none": do nothing, if there is no clear, confident fix.
+- "none": do nothing — a healthy routine, or one with no clear, confident fix, takes "none".
 Be conservative: prefer "none" over a speculative change, and prefer "refine" over "retire" whenever a prompt fix is plausible. Always give a one-line rationale.`;
 
 function buildReviewUser(routine: IRoutine, health: RoutineHealth, recentRuns: string): string {
@@ -107,34 +136,65 @@ async function reviewRoutine(routine: IRoutine, health: RoutineHealth): Promise<
 }
 
 /**
- * Audit one chat's underperforming routines and raise (gated) refinement /
- * retirement proposals. Returns the number of proposals raised. Each routine is
- * pre-filtered mechanically, reviewed by a constrained LLM pass, and any
- * proposal still passes through the durable anti-nag guard — so a routine the
- * user already said "no" to stays quiet. Exported for testing.
+ * Audit one chat's routines: GRADE each candidate, raise (gated) refinement /
+ * retirement / revert proposals, and persist the grade so the next cycle can
+ * tell whether a fix helped. Returns the number of proposals raised.
+ *
+ * Two candidate sources, post-refine first (loop closure is the higher-value
+ * signal):
+ *  1. routines whose last edit has now run enough times to judge
+ *     (`listRoutinesAwaitingPostRefineReview`), so a silently-worse edit is
+ *     caught even when the routine still looks healthy; and
+ *  2. routines whose recent record trips the mechanical bad-rate pre-filter
+ *     (`routineNeedsAttention`).
+ *
+ * Every candidate is graded by a constrained LLM pass; a regressed post-refine
+ * routine is offered a revert to its previous prompt, otherwise the LLM's
+ * refine/retire/none decision stands. Each proposal still passes the durable
+ * anti-nag guard, so a routine the user already said "no" to stays quiet.
+ * Exported for testing.
  */
 export async function reviewChatRoutines(
   chatId: string,
   adapter: PlatformAdapter,
 ): Promise<number> {
-  const flagged = (await getRoutineHealth(chatId)).filter(needsReview);
-  if (flagged.length === 0) return 0;
+  const allHealth = await getRoutineHealth(chatId);
+  if (allHealth.length === 0) return 0;
+  const healthById = new Map(allHealth.map((h) => [h.routineId, h]));
+
+  const postRefineIds = await listRoutinesAwaitingPostRefineReview(chatId, MIN_RUNS_TO_REGRADE);
+  const postRefineSet = new Set(postRefineIds);
+  const flaggedIds = allHealth.filter(needsReview).map((h) => h.routineId);
+
+  // Post-refine ids first, then flagged; dedupe, keeping only currently-enabled
+  // routines (healthById is built from enabled routines only).
+  const candidateIds: string[] = [];
+  const seen = new Set<string>();
+  for (const id of [...postRefineIds, ...flaggedIds]) {
+    if (!seen.has(id) && healthById.has(id)) {
+      seen.add(id);
+      candidateIds.push(id);
+    }
+  }
+  if (candidateIds.length === 0) return 0;
 
   let raised = 0;
   let reviewed = 0;
-  for (const health of flagged) {
+  for (const id of candidateIds) {
     // Stop once we've raised a proposal (only one can be pending per chat) or hit
     // the review-spend cap — whichever comes first. Defer the rest to next run.
     if (raised >= MAX_PROPOSALS_PER_RUN || reviewed >= MAX_REVIEWS_PER_RUN) {
       logger.info(
-        { chatId, raised, reviewed, deferred: flagged.length - reviewed },
+        { chatId, raised, reviewed, deferred: candidateIds.length - reviewed },
         "Routine self-review hit a per-run cap — remaining routines deferred to the next run",
       );
       break;
     }
 
-    const routine = await getRoutineById(health.routineId, chatId);
+    const routine = await getRoutineById(id, chatId);
     if (!routine || !routine.enabled) continue;
+    const health = healthById.get(id);
+    if (!health) continue;
     reviewed++;
 
     let decision: ReviewDecision;
@@ -142,29 +202,57 @@ export async function reviewChatRoutines(
       decision = await runWithSpan("routine.selfReview", () => reviewRoutine(routine, health));
     } catch (error) {
       logger.error(
-        { error, chatId, routineId: health.routineId, name: routine.name },
+        { error, chatId, routineId: id, name: routine.name },
         "Routine self-review LLM pass failed",
       );
       continue;
     }
 
+    // Persist the grade (best-effort) — the measurement half of loop closure, so
+    // a later cycle can compare this routine's grade before vs after its next
+    // edit. Independent of whether a proposal is raised below.
+    await recordRoutineGrade(id, decision.grade).catch((error) => {
+      logger.warn({ error, chatId, routineId: id }, "Failed to persist routine grade");
+    });
+
+    const isPostRefine = postRefineSet.has(id);
     try {
-      if (decision.action === "refine") {
-        if (!decision.newPrompt?.trim()) {
-          logger.warn(
-            { chatId, routineId: routine.id },
-            "Self-review returned action=refine without a usable newPrompt — skipping",
-          );
-          continue;
-        }
+      const { priorPrompt, preRefineGrade } = routine;
+      const regressed =
+        isPostRefine &&
+        preRefineGrade !== null &&
+        !!priorPrompt?.trim() &&
+        decision.grade <= preRefineGrade - REGRESSION_MARGIN;
+
+      if (regressed && priorPrompt && preRefineGrade !== null) {
+        // Loop closure: the last edit measurably lowered quality — offer to
+        // revert to the prompt that scored better. trackForRegression:false so
+        // the revert itself isn't watched (no ping-pong between two prompts).
         const result = await proposeRefinement({
           chatId,
           adapter,
           routine,
-          newPrompt: decision.newPrompt,
-          rationale: decision.rationale,
+          newPrompt: priorPrompt,
+          rationale: `Quality dropped after the last edit (graded ${preRefineGrade}→${decision.grade}); revert to the previous version.`,
+          trackForRegression: false,
         });
         if (result.proposed) raised++;
+      } else if (decision.action === "refine") {
+        if (!decision.newPrompt?.trim()) {
+          logger.warn(
+            { chatId, routineId: id },
+            "Self-review returned action=refine without a usable newPrompt — skipping",
+          );
+        } else {
+          const result = await proposeRefinement({
+            chatId,
+            adapter,
+            routine,
+            newPrompt: decision.newPrompt,
+            rationale: decision.rationale,
+          });
+          if (result.proposed) raised++;
+        }
       } else if (decision.action === "retire") {
         const result = await proposeRetirement({
           chatId,
@@ -176,9 +264,19 @@ export async function reviewChatRoutines(
       }
     } catch (error) {
       logger.error(
-        { error, chatId, routineId: routine.id, action: decision.action },
+        { error, chatId, routineId: id, action: decision.action },
         "Failed to raise self-review proposal",
       );
+    } finally {
+      // A post-refine routine has now had its verdict rendered (graded with
+      // enough fresh runs) — graduate it so we stop re-grading against the old
+      // baseline. If a forward refinement was just proposed, its approval
+      // re-arms tracking fresh; a revert clears the same fields on apply.
+      if (isPostRefine) {
+        await clearRefineTracking(id).catch((error) => {
+          logger.warn({ error, chatId, routineId: id }, "Failed to clear refine tracking");
+        });
+      }
     }
   }
 

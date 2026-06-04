@@ -170,8 +170,16 @@ export async function proposeRefinement(opts: {
   newPrompt: string;
   rationale: string;
   newParameters?: RoutineParameter[];
+  /**
+   * Loop closure: defaults to true (the apply snapshots this prompt as the new
+   * `priorPrompt` so a later review can tell if the edit helped). Pass false for
+   * a revert — the apply then CLEARS regression tracking instead of arming it,
+   * so the review can't ping-pong between two prompts.
+   */
+  trackForRegression?: boolean;
 }): Promise<ProposalResult> {
-  const { chatId, adapter, routine, newPrompt, rationale, newParameters } = opts;
+  const { chatId, adapter, routine, newPrompt, rationale, newParameters, trackForRegression } =
+    opts;
   if (!routine.enabled) return { proposed: false, reason: `Routine "${routine.name}" is disabled` };
 
   // Reject an empty / whitespace-only prompt at the single choke point both the
@@ -218,6 +226,9 @@ export async function proposeRefinement(opts: {
         baseVersion: routine.version,
         newPrompt,
         ...(newParameters !== undefined ? { newParameters } : {}),
+        // Only thread the flag when turning tracking OFF (a revert); omitting it
+        // lets the dispatcher default to arming loop-closure tracking.
+        ...(trackForRegression === false ? { trackForRegression: false } : {}),
       },
     },
   });
