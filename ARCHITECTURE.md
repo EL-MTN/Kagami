@@ -8,7 +8,7 @@ Kagami ("mirror") is a personal-AI workspace housing five TypeScript projects in
 ┌──────────────────────────────────────────────────────────────────────┐
 │                              Kagami (root)                           │
 │                                                                      │
-│   dev-all.sh  →  Kioku, Kokoro, Kizuna, Kansoku (all parallel)       │
+│   dev-all.sh  →  Kioku, Kokoro, Kizuna, Kansoku, Kao (all parallel)  │
 └──────────────────────────────────────────────────────────────────────┘
 
       ┌──────────────────────────────┐
