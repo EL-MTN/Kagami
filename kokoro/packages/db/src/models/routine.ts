@@ -69,6 +69,10 @@ export interface IRoutine extends Document {
    * `applyRoutineRefinement` / `clearRefineTracking`.
    */
   priorPrompt: string | null;
+  /** Snapshot of the pre-edit parameters, paired with `priorPrompt`, so a revert
+   * restores the full prior configuration — not the old prompt against the new
+   * parameters (an untested hybrid). */
+  priorParameters: IRoutineParameter[] | null;
   preRefineGrade: number | null;
   lastRefinedAt: Date | null;
   createdAt: Date;
@@ -92,6 +96,9 @@ const routineSchema = new Schema<IRoutine>(
     lastGrade: { type: Number, default: null },
     lastGradedAt: { type: Date, default: null },
     priorPrompt: { type: String, default: null },
+    // Stored as Mixed (a verbatim snapshot restored on revert) to avoid Mongoose
+    // coercing a null default on a typed array field back to [].
+    priorParameters: { type: Schema.Types.Mixed, default: null },
     preRefineGrade: { type: Number, default: null },
     lastRefinedAt: { type: Date, default: null },
   },
@@ -229,7 +236,25 @@ export async function updateRoutine(
 ): Promise<IRoutine | null> {
   const filter: Record<string, unknown> = { _id: routineId };
   if (chatId) filter.chatId = chatId;
-  return Routine.findOneAndUpdate(filter, patch, { returnDocument: "after" });
+  // A prompt edit through this generic path (dashboard PATCH, `manageRoutines
+  // update`) invalidates the quality grade AND any in-flight regression
+  // tracking — the snapshot describes a prompt that no longer exists. Clear
+  // both so the self-review pass can't later propose reverting THIS edit back to
+  // a now-stale `priorPrompt`. The armed path (`applyRoutineRefinement`) sets
+  // these deliberately and never routes through here, so it's unaffected.
+  const update: Record<string, unknown> =
+    patch.prompt !== undefined
+      ? {
+          ...patch,
+          lastGrade: null,
+          lastGradedAt: null,
+          priorPrompt: null,
+          priorParameters: null,
+          preRefineGrade: null,
+          lastRefinedAt: null,
+        }
+      : patch;
+  return Routine.findOneAndUpdate(filter, update, { returnDocument: "after" });
 }
 
 /**
@@ -289,10 +314,12 @@ export async function applyRoutineRefinement(
   if (patch.parameters !== undefined) update.parameters = patch.parameters;
   if (opts.trackForRegression) {
     update.priorPrompt = before.prompt;
+    update.priorParameters = before.parameters;
     update.preRefineGrade = before.lastGrade;
     update.lastRefinedAt = new Date();
   } else {
     update.priorPrompt = null;
+    update.priorParameters = null;
     update.preRefineGrade = null;
     update.lastRefinedAt = null;
   }
@@ -307,19 +334,27 @@ export async function applyRoutineRefinement(
  * — a grade is metadata about a routine, not an edit to it. Best-effort; callers
  * treat a write failure as non-fatal so a blip never wedges the review pass.
  */
-export async function recordRoutineGrade(routineId: string, grade: number): Promise<void> {
-  await Routine.updateOne({ _id: routineId }, { lastGrade: grade, lastGradedAt: new Date() });
+export async function recordRoutineGrade(
+  routineId: string,
+  chatId: string,
+  grade: number,
+): Promise<void> {
+  await Routine.updateOne(
+    { _id: routineId, chatId },
+    { lastGrade: grade, lastGradedAt: new Date() },
+  );
 }
 
 /**
  * Drop the loop-closure snapshot once a post-refine verdict has been rendered
  * ("graduate"), so the routine stops being re-graded against a now-stale
- * baseline. Idempotent — a revert apply clears the same fields.
+ * baseline. Idempotent — a revert apply clears the same fields. `chatId`-scoped
+ * like every other routine write, so a cross-chat id can't touch the wrong row.
  */
-export async function clearRefineTracking(routineId: string): Promise<void> {
+export async function clearRefineTracking(routineId: string, chatId: string): Promise<void> {
   await Routine.updateOne(
-    { _id: routineId },
-    { priorPrompt: null, preRefineGrade: null, lastRefinedAt: null },
+    { _id: routineId, chatId },
+    { priorPrompt: null, priorParameters: null, preRefineGrade: null, lastRefinedAt: null },
   );
 }
 
@@ -415,17 +450,27 @@ export async function failRoutineLog(logId: string, reason: string): Promise<voi
   );
 }
 
+// Shared "real run" filter fragments — a real run is a user-facing attempt: not
+// a composed `useRoutine` sub-run, not an in-flight row. One source of truth so
+// getRoutineLogs (the health window) and countRealRunsSince can't drift on what
+// "real" means.
+const NOT_COMPOSED_RUN = { $ne: "routine" as const };
+const NOT_RUNNING = { $ne: "running" as const };
+
 export async function getRoutineLogs(
   routineId: string,
   limit = 50,
-  opts: { excludeComposed?: boolean; excludeRunning?: boolean } = {},
+  opts: { excludeComposed?: boolean; excludeRunning?: boolean; since?: Date } = {},
 ): Promise<IRoutineLog[]> {
   const filter: Record<string, unknown> = { routineId: new Types.ObjectId(routineId) };
   // Push the filters into the query so callers that want only real, finished
   // runs (the self-review pass) get them within the limit window, instead of
   // limiting first and dropping rows after — which can leave nothing behind.
-  if (opts.excludeComposed) filter.trigger = { $ne: "routine" };
-  if (opts.excludeRunning) filter.status = { $ne: "running" };
+  if (opts.excludeComposed) filter.trigger = NOT_COMPOSED_RUN;
+  if (opts.excludeRunning) filter.status = NOT_RUNNING;
+  // `since` lets the post-refine grade window count only runs after the edit, so
+  // the grade reflects the NEW prompt and not the pre-edit history.
+  if (opts.since) filter.startedAt = { $gt: opts.since };
   // `_id` breaks startedAt ties so "newest" is deterministic — ObjectIds are
   // monotonic within a process, so the most-recently-inserted run wins even when
   // two share a millisecond.
@@ -434,15 +479,15 @@ export async function getRoutineLogs(
 
 /**
  * Count a routine's *real* finished runs since `since` — same exclusions as
- * `getRoutineHealth` (no composed `useRoutine` sub-runs, no in-flight rows). The
- * self-review pass uses it to decide whether a just-refined routine has run
- * enough fresh times that a re-grade reflects the new prompt, not the old one.
+ * `getRoutineHealth`/`getRoutineLogs` (no composed `useRoutine` sub-runs, no
+ * in-flight rows). The self-review pass uses it to decide whether a just-refined
+ * routine has run enough fresh times that a re-grade reflects the new prompt.
  */
 export async function countRealRunsSince(routineId: string, since: Date): Promise<number> {
   return RoutineLog.countDocuments({
     routineId: new Types.ObjectId(routineId),
-    trigger: { $ne: "routine" },
-    status: { $ne: "running" },
+    trigger: NOT_COMPOSED_RUN,
+    status: NOT_RUNNING,
     startedAt: { $gt: since },
   });
 }
@@ -553,11 +598,22 @@ export async function listRoutinesAwaitingPostRefineReview(
   minRunsSince: number,
 ): Promise<string[]> {
   const refined = await Routine.find({ chatId, enabled: true, lastRefinedAt: { $ne: null } });
+  // Each routine has its own `lastRefinedAt` cutoff, so the counts can't share
+  // one query — but they're independent, so run them concurrently rather than
+  // serially awaiting one round-trip per routine.
+  const counted = await Promise.all(
+    refined.map(async (r) =>
+      r.lastRefinedAt
+        ? {
+            id: r._id.toString(),
+            runs: await countRealRunsSince(r._id.toString(), r.lastRefinedAt),
+          }
+        : null,
+    ),
+  );
   const ready: string[] = [];
-  for (const r of refined) {
-    if (!r.lastRefinedAt) continue;
-    const runs = await countRealRunsSince(r._id.toString(), r.lastRefinedAt);
-    if (runs >= minRunsSince) ready.push(r._id.toString());
+  for (const c of counted) {
+    if (c && c.runs >= minRunsSince) ready.push(c.id);
   }
   return ready;
 }
