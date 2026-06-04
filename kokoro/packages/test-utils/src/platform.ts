@@ -1,4 +1,4 @@
-import type { IncomingMessage, PlatformAdapter } from "@kokoro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
 
 export interface FakeAdapterCalls {
   sendText: Array<{ chatId: string; text: string }>;
@@ -83,17 +83,5 @@ export function fakeAdapter(
       calls.editConfirmationPrompt.push({ chatId, messageId, text });
       return Promise.resolve();
     },
-  };
-}
-
-export function fakeIncoming(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
-  return {
-    platform: "telegram",
-    chatId: "1001",
-    userId: "u1",
-    userName: "test-user",
-    text: "hello",
-    timestamp: new Date("2026-01-01T00:00:00Z"),
-    ...overrides,
   };
 }

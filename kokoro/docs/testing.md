@@ -70,10 +70,8 @@ kokoro/
 │   └── test-utils/                 # internal package
 │       └── src/
 │           ├── db.ts               # withTestDb() — Mongo lifecycle + index sync
-│           ├── platform.ts         # fakeAdapter(), fakeIncoming()
-│           ├── http.ts             # MSW server with default handlers
-│           ├── time.ts             # advanceTimersByAsync helper
-│           └── fixtures/
+│           ├── platform.ts         # fakeAdapter()
+│           └── http.ts             # MSW server with default handlers
 ├── vitest.config.ts                # `projects` config (one per package)
 └── tests/
     └── e2e/                        # cross-package pipeline tests (planned)
@@ -211,20 +209,19 @@ covered.
 
 ## Mocking strategy
 
-| Surface                         | Approach                                                                       | Helper                              |
-| ------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------- |
-| MongoDB                         | `mongodb-memory-server` per test file; truncate between tests                  | `@kokoro/test-utils` `withTestDb()` |
-| LLM (Vercel AI SDK)             | Mock at the wrapper boundary — `vi.mock` the service / tool that calls the SDK | (per-test)                          |
-| Memory (Kioku)                  | `vi.mock("@kokoro/memory")` and replace the client functions used in the test  | (per-test)                          |
-| CRM (Kizuna)                    | MSW in `@kokoro/kizuna`; `vi.mock("@kokoro/kizuna")` in bot tool tests         | `setupMswServer()` / per-test mock  |
-| `PlatformAdapter`               | In-memory recorder, assertable via `adapter.calls.<method>`                    | `fakeAdapter()`                     |
-| BlueBubbles HTTP                | MSW handlers                                                                   | `setupMswServer()`                  |
-| Gmail / Calendar (`googleapis`) | `vi.mock` the service module per test                                          | (per-test)                          |
-| Whisper / OpenAI STT            | MSW handler returning `{ text, duration }`                                     | bundled in `setupMswServer()`       |
-| Stagehand (browser)             | `vi.mock("../../services/browser")` per test                                   | (per-test)                          |
-| Timers (schedulers)             | `vi.useFakeTimers()` + `vi.advanceTimersByTimeAsync`                           | `advanceTimersByAsync(ms)`          |
-| File system (soul.md, fixtures) | Real reads from `packages/test-utils/src/fixtures/`                            | (no helper needed)                  |
-| Pino logger                     | `vi.mock("@kokoro/shared", ...)` overriding only `logger`                      | (per-test)                          |
+| Surface                         | Approach                                                                       | Helper                                        |
+| ------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------- |
+| MongoDB                         | `mongodb-memory-server` per test file; truncate between tests                  | `@kokoro/test-utils` `withTestDb()`           |
+| LLM (Vercel AI SDK)             | Mock at the wrapper boundary — `vi.mock` the service / tool that calls the SDK | (per-test)                                    |
+| Memory (Kioku)                  | `vi.mock("@kokoro/memory")` and replace the client functions used in the test  | (per-test)                                    |
+| CRM (Kizuna)                    | MSW in `@kokoro/kizuna`; `vi.mock("@kokoro/kizuna")` in bot tool tests         | `setupMswServer()` / per-test mock            |
+| `PlatformAdapter`               | In-memory recorder, assertable via `adapter.calls.<method>`                    | `fakeAdapter()`                               |
+| BlueBubbles HTTP                | MSW handlers                                                                   | `setupMswServer()`                            |
+| Gmail / Calendar (`googleapis`) | `vi.mock` the service module per test                                          | (per-test)                                    |
+| Whisper / OpenAI STT            | MSW handler returning `{ text, duration }`                                     | bundled in `setupMswServer()`                 |
+| Stagehand (browser)             | `vi.mock("../../services/browser")` per test                                   | (per-test)                                    |
+| Timers (schedulers)             | `vi.useFakeTimers()` + `vi.advanceTimersByTimeAsync`                           | (call `vi.advanceTimersByTimeAsync` directly) |
+| Pino logger                     | `vi.mock("@kokoro/shared", ...)` overriding only `logger`                      | (per-test)                                    |
 
 ## Patterns worth knowing
 
