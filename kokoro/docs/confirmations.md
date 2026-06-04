@@ -68,7 +68,7 @@ After dispatch settles and the bracketed resolution event is appended to convers
 
 - Reuses the regular system prompt (so personality, memory, pending-approvals context are all loaded)
 - Appends the acknowledgment-turn instructions from `apps/bot/context/instructions/acknowledgment.md` (loaded via `readInstruction("acknowledgment")`) directing a single short in-character bubble
-- Caps at 2 steps, 60s timeout, temperature 0.6
+- Runs with no tools — a single in-character speaking turn (the tool set is withheld rather than capped by a step count), 60s timeout, temperature 0.6
 - Tracks token usage under category `conversation`
 
 If the turn fails, the bracketed event still lives in conversation history, so Mashiro can reference the resolution on the next user message anyway.
@@ -127,7 +127,7 @@ The tool's underlying service stays untouched; the dispatcher calls it directly 
 
 ### Dispatch-only actions (not LLM-raisable)
 
-Some actions should be executable through the approval rail but **not** selectable by the model via `requestConfirmation`. `createRoutine` (self-authored routines) is the worked example: it lives in `DISPATCH_ONLY_TOOL_NAMES`, not `GATED_TOOL_NAMES`, so it is **absent from `requestConfirmation`'s enum** (the model can't raise it directly and bypass the `proposeRoutine` anti-nag guard) yet `dispatchGatedAction` still routes it (the guard is `isDispatchable`, = gated ∪ dispatch-only). The only way to reach it is `proposeRoutine` → `raisePendingConfirmation` → approve. `raisePendingConfirmation` is the single rail writer extracted from `requestConfirmation` so both paths share identical create → send → `setPromptMessageId` plumbing; proposals pass a shorter `ttlMs` and a `promptText` that shows the full routine prompt. On deny/cancel, the platform callback calls `recordProposalDeclineFromConfirmation(row)`, which discriminates on `action.tool === "createRoutine"` (not origin, so a routine-raised gated action never trips it). See [ai-layer.md](ai-layer.md#proposeroutine-conditional--routine_proposals_enabled-default-on-main-palette-only).
+Some actions should be executable through the approval rail but **not** selectable by the model via `requestConfirmation`. `createRoutine` (self-authored routines) is the worked example: it lives in `DISPATCH_ONLY_TOOL_NAMES`, not `GATED_TOOL_NAMES`, so it is **absent from `requestConfirmation`'s enum** (the model can't raise it directly and bypass the `proposeRoutine` anti-nag guard) yet `dispatchGatedAction` still routes it (the guard is `isDispatchable`, = gated ∪ dispatch-only). The only way to reach it is `proposeRoutine` → `raisePendingConfirmation` → approve. `raisePendingConfirmation` is the single rail writer extracted from `requestConfirmation` so both paths share identical create → send → `setPromptMessageId` plumbing; proposals pass a shorter `ttlMs` and a `promptText` that shows the full routine prompt. On deny/cancel, the platform callback calls `recordProposalDeclineFromConfirmation(row)`, which discriminates on `action.tool === "createRoutine"` (not origin, so a routine-raised gated action never trips it). See [ai-layer.md](ai-layer.md#proposeroutine-live-conversational-turns-only).
 
 ## On non-button platforms
 

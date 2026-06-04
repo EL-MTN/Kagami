@@ -54,7 +54,7 @@ export function appendSingleFact(input: AppendFactInput): Promise<AppendFactResu
 
 // Bulk infer=false add. The mem0 OSS equivalent of `add([texts...],
 // infer=False)`: persist N caller-supplied facts verbatim, bypassing the
-// LLM extraction pipeline. Each input gets its own md5 + cosine dedup,
+// LLM extraction pipeline. Each input gets its own cosine dedup,
 // embed, and entity-upsert pass — same contract as appendSingleFact.
 //
 // Sequenced under the same append lock as the single-fact path, so the

@@ -18,8 +18,8 @@ client-side island for the SSE live tail. Reads from `KANSOKU_API_URL`
 
 ## Design
 
-Cool-slate palette ([globals.css](../apps/dashboard/src/app/globals.css)).
-DM Sans + JetBrains Mono. shadcn-shaped components live under
+Mashiro Daylight palette ([globals.css](../apps/dashboard/src/app/globals.css)).
+Instrument Serif (display) + DM Sans + JetBrains Mono. shadcn-shaped components live under
 `src/components/`; per-page composition lives under `src/app/<route>/`.
 
 ## Live-tail wire format

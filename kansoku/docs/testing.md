@@ -7,13 +7,19 @@ Vitest + `mongodb-memory-server`. Config at
 
 ```
 apps/api/tests/
-├── global-setup.ts       boots a single MongoMemoryReplSet for the suite
+├── global-setup.ts            boots a single MongoMemoryReplSet for the suite
 ├── helpers/
-│   └── mongo.ts          per-suite isolated DB + closeMongo teardown
-├── fingerprint.test.ts   pure-unit; no Mongo
-├── tail.test.ts          SSE; no Mongo (uses publishLog directly)
-├── ingest.test.ts        ingest round trip; Mongo
-└── indexes.test.ts       ensureIndexes; Mongo
+│   ├── mongo.ts               per-suite isolated DB + closeMongo teardown
+│   ├── quiescence.ts          quiesce() — poll until async ingest/egress settles
+│   └── webhook-receiver.ts    startWebhookReceiver() — in-test HTTP sink for alerts
+├── fingerprint.test.ts        pure-unit; no Mongo
+├── tail.test.ts               SSE; no Mongo (uses publishLog directly)
+├── cardinality.test.ts        metaField distinct-tuple budget guard; no Mongo
+├── ingest.test.ts             ingest round trip; Mongo
+├── ingest-durability.test.ts  write-then-ack, retry, 503 requeue (storage mocked)
+├── indexes.test.ts            ensureIndexes; Mongo
+├── spans.test.ts              span folding + /v1/traces/:id trace view; Mongo
+└── alert-spike.test.ts        new-error + spike webhook semantics; Mongo
 ```
 
 ## Running
@@ -45,16 +51,18 @@ next `getDb()` call.
 
 ## What's covered
 
-| Surface                                                 | Covered by                        |
-| ------------------------------------------------------- | --------------------------------- |
-| Time-series creation + indexes                          | `indexes.test.ts`                 |
-| `POST /v1/logs` auth + happy path + level normalization | `ingest.test.ts`                  |
-| Fingerprint extraction / normalizer / cause chains      | `fingerprint.test.ts`             |
-| SSE delivery + filter + replay                          | `tail.test.ts`                    |
-| `recordErrors` upsert semantics                         | not yet — relies on Mongo harness |
-| Alert webhook                                           | not yet                           |
-| `/v1/services` aggregations                             | not yet                           |
-| `/v1/traces/:id` query                                  | not yet                           |
+| Surface                                                 | Covered by                  |
+| ------------------------------------------------------- | --------------------------- |
+| Time-series creation + indexes                          | `indexes.test.ts`           |
+| `POST /v1/logs` auth + happy path + level normalization | `ingest.test.ts`            |
+| Fingerprint extraction / normalizer / cause chains      | `fingerprint.test.ts`       |
+| SSE delivery + filter + replay                          | `tail.test.ts`              |
+| `recordErrors` upsert semantics (order/replay-safe)     | `alert-spike.test.ts`       |
+| Alert webhook (new-error + spike + cooldown)            | `alert-spike.test.ts`       |
+| Span folding + `/v1/traces/:id` trace view              | `spans.test.ts`             |
+| Cardinality budget guard                                | `cardinality.test.ts`       |
+| Ingest durability (write-then-ack, 503 requeue)         | `ingest-durability.test.ts` |
+| `/v1/services` aggregations                             | not yet                     |
 
 ## Convention
 

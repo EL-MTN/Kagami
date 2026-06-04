@@ -41,22 +41,24 @@ The full S subset (`longmemeval_s_cleaned.json`, 277 MB) and M subset (`longmeme
 
 From `apps/api/`:
 
+> **Set `MODEL` as well as `LLM_MODEL`.** The orchestrator and judge read `MODEL` (the answerer model id), not `LLM_MODEL`. The answerer itself still resolves from `LLM_MODEL` when `MODEL` is unset, but the judge default then resolves to the literal `(unset)` and the judge fails — so export `MODEL` (or always pass `--judge-model`). The examples below set both.
+
 ```sh
 # All-local LM Studio + GLM-4.7-flash
 LLM_KIND=openai-compatible LLM_BASE_URL=http://localhost:1234/v1 LLM_API_KEY=lm-studio \
-  LLM_MODEL=zai-org/glm-4.7-flash \
+  LLM_MODEL=zai-org/glm-4.7-flash MODEL=zai-org/glm-4.7-flash \
   npx tsx scripts/longmemeval.ts --limit 5
 
 # All-OpenAI gpt-4o-mini + text-embedding-3-small (the most-tested config)
 LLM_KIND=openai-compatible LLM_BASE_URL=https://api.openai.com/v1 LLM_API_KEY=$OPENAI_API_KEY \
-  LLM_MODEL=gpt-4o-mini \
+  LLM_MODEL=gpt-4o-mini MODEL=gpt-4o-mini \
   EMBEDDING_KIND=openai-compatible EMBEDDING_BASE_URL=https://api.openai.com/v1 \
   EMBEDDING_API_KEY=$OPENAI_API_KEY EMBEDDING_MODEL=text-embedding-3-small \
   npx tsx scripts/longmemeval.ts --limit 100
 
 # Hybrid: OpenAI chat, local embeddings
 LLM_KIND=openai-compatible LLM_BASE_URL=https://api.openai.com/v1 LLM_API_KEY=$OPENAI_API_KEY \
-  LLM_MODEL=gpt-4o-mini \
+  LLM_MODEL=gpt-4o-mini MODEL=gpt-4o-mini \
   EMBEDDING_KIND=openai-compatible EMBEDDING_BASE_URL=http://localhost:1234/v1 \
   EMBEDDING_API_KEY=lm-studio EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5 \
   npx tsx scripts/longmemeval.ts --limit 100

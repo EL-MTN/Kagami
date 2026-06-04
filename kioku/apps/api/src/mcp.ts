@@ -93,7 +93,7 @@ function buildServer(): McpServer {
     "append_fact",
     {
       description:
-        'Add a single atomic fact to the vault. Dedups against existing facts (md5 + cosine). Returns {id, status: "added"|"duplicate"}.',
+        'Add a single atomic fact to the vault. Dedups against existing facts (cosine). Returns {id, status: "added"|"duplicate"}.',
       inputSchema: {
         text: z.string(),
         event_date: z
@@ -138,7 +138,7 @@ function buildServer(): McpServer {
     "append_facts",
     {
       description:
-        "Add multiple atomic facts to the vault in one call (no LLM extraction). Equivalent to mem0 add(infer=False). Each input is independently deduped (md5 + cosine). Returns {results, added, duplicates}.",
+        "Add multiple atomic facts to the vault in one call (no LLM extraction). Equivalent to mem0 add(infer=False). Each input is independently deduped (cosine). Returns {results, added, duplicates}.",
       inputSchema: {
         facts: z.array(z.object(appendFactInputShape)).min(1).max(500),
       },

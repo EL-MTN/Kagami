@@ -40,7 +40,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 └── docs/
 ```
 
-**Stack**: Kioku is a _subtree_ inside the Kagami nested monorepo. The Kagami workspace root owns `package.json`, `turbo.json`, and `package-lock.json`; npm workspaces and Turborepo span all four sibling projects (Kioku, Kokoro, Kizuna, Kansoku). Tooling and runtime helpers are shared via the workspace-level `@kagami/eslint-config`, `@kagami/tsconfig`, `@kagami/logger`, and `@kagami/llm` packages (which live in `shared/packages/` at the Kagami root). Kioku has no project-internal TypeScript packages today — `kioku/packages/` is empty (or absent). Apps depend on each other only via HTTP (the dashboard calls the API at `KIOKU_API_URL`).
+**Stack**: Kioku is a _subtree_ inside the Kagami nested monorepo. The Kagami workspace root owns `package.json`, `turbo.json`, and `package-lock.json`; npm workspaces and Turborepo span all five sibling projects (Kioku, Kokoro, Kizuna, Kansoku, Kao). Tooling and runtime helpers are shared via the workspace-level `@kagami/eslint-config`, `@kagami/tsconfig`, `@kagami/logger`, and `@kagami/llm` packages (which live in `shared/packages/` at the Kagami root). Kioku has no project-internal TypeScript packages today — `kioku/packages/` is empty (or absent). Apps depend on each other only via HTTP (the dashboard calls the API at `KIOKU_API_URL`).
 
 ## Commands
 
@@ -48,7 +48,7 @@ All commands run from the **Kagami workspace root** (`/Users/mastermind/Desktop/
 
 ```bash
 # From Kagami root:
-./dev-all.sh                  # boot all four (Kioku, Kokoro, Kizuna, Kansoku) with prefixed output
+./dev-all.sh                  # boot all five (Kioku, Kokoro, Kizuna, Kansoku, Kao) with prefixed output
 npm run kioku:dev             # both Kioku apps under Portless (https://kioku.localhost + https://api.kioku.localhost)
 npm run kioku:dev:api         # API only
 npm run kioku:dev:dashboard   # Dashboard only

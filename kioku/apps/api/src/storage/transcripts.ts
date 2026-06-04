@@ -4,8 +4,8 @@ import type { Transcript } from "../types.js";
 
 // Source-of-truth for the messages a session was extracted from. Holds
 // the parsed transcript so re-ingest is filesystem-free: consolidate()
-// reads from this collection, hash-dedups against the existing facts
-// pass, and short-circuits writes when nothing has changed.
+// reads from this collection, cosine-dedups against the existing facts,
+// and short-circuits writes when nothing has changed.
 //
 // Keyed by sessionId (the value of frontmatter.id). Facts reference back
 // via `source_session: "raw/<sessionId>"` — the "raw/" prefix is a

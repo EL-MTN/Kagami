@@ -19,6 +19,7 @@ KAO_TOKEN=<same bearer Kao expects (KAO_TOKEN in kao/apps/api/.env)>
 
 # Optional
 NEWSLETTER_DOMAIN_BLOCKLIST=mailchimp.com,substack.com    # comma-separated; lowercased
+# KIZUNA_DASHBOARD_ORIGIN=https://kizuna.localhost:8080   # extra browser origin(s) allowed to POST /oauth/google/start; comma-separated; default empty (https://kizuna.localhost is always allowed)
 KIZUNA_GMAIL_BACKFILL_DAYS=30                              # default 30; range 1–365
 KIZUNA_GCAL_BACKFILL_DAYS=60                               # default 60; range 1–365
 KIZUNA_INGEST_INTERVAL_SEC=0                               # default 0 (scheduler disabled); 300 ≈ 5 min for typical dev

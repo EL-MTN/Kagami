@@ -20,7 +20,7 @@ import { logger } from "../logger.js";
 //     - call the extraction prompt (prompts/extraction.md) for that batch
 //     - embed each new fact and cosine-dedup it against existing in-scope
 //       facts, prior batches' extractions, and earlier-accepted facts in
-//       this batch (NEAR_DUPE_COSINE = 0.92)
+//       this batch (NEAR_DUPE_COSINE = 0.97)
 //     - persist surviving facts to the facts collection
 //     - upsert mentioned entities into the entities collection with
 //       linked fact ids for the entity-boost retrieval channel
@@ -252,7 +252,7 @@ export async function consolidate(
 
     if (extraction.memory.length === 0) continue;
 
-    // Deterministic post-extraction clip of low-value / non-durable
+    // LLM-judged post-extraction clip of low-value / non-durable
     // memories (greetings, affection, assistant self-narration). The
     // extraction prompt biases against these but a stochastic model
     // still emits them on casual chat; see ingest/relevance.ts. Default

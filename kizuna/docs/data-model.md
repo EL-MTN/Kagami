@@ -13,8 +13,7 @@ apps/api/src/db/
 │   ├── Organization.ts
 │   ├── Interaction.ts
 │   ├── Followup.ts
-│   ├── SyncState.ts           # per-provider sync cursor + pause state
-│   └── index.ts               # registers every model so syncIndexes finds them
+│   └── SyncState.ts           # per-provider sync cursor + pause state
 └── recordInteraction.ts       # the only insert path for `interactions`
 ```
 
