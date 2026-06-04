@@ -10,7 +10,7 @@ Kansoku consolidates those streams:
 
 - **Logs** — every `logger.*` call from Kioku/Kokoro/Kizuna ships to Kansoku via a Pino transport added to `@kagami/logger`.
 - **Traces** — incoming HTTP requests get a W3C `traceparent`-compatible context; outgoing `fetch` calls in Kokoro propagate it to Kioku/Kizuna; logs auto-include `traceId`/`spanId` via `AsyncLocalStorage`.
-- **Errors** — `level >= error` events are fingerprinted (hash of `error.name + error.message + top stack frame`) and rolled up into a per-fingerprint document with `firstSeen`, `lastSeen`, `count`, and a bounded list of recent trace IDs.
+- **Errors** — `level >= error` events are fingerprinted (hash of `error.name + error.message + top stack frame`, plus a bounded `.cause` / `AggregateError` chain when present) and rolled up into a per-fingerprint document with `firstSeen`, `lastSeen`, `count`, and a bounded list of recent trace IDs.
 - **Metrics** — derived from logs in Phase 1 (counts, error rates, `durationMs` percentiles), with an explicit `metric(name, value, tags?)` API added in Phase 6 when log-derived isn't enough.
 
 ## Posture
@@ -271,15 +271,19 @@ fingerprint. The hash inputs are:
   timestamps, UUIDs, Mongo ObjectIds, and long numeric runs with placeholders
   so the same failure with varying IDs collapses to one fingerprint
 - first non-internal stack frame when a `stack` field is present
+- a bounded `.cause` / `AggregateError` chain (each link normalized like the
+  message) when present
 
-Each upsert:
+Each upsert is a single aggregation-pipeline `updateOne` (so first-seen fields
+seed once and the counters fold in the same op):
 
-- `$setOnInsert` — `service`, `component`, `name`, `message`, `sampleMsg`,
-  `sampleStack`, `firstSeen` (the original sample is kept verbatim, not
-  overwritten by later churn)
-- `$set { lastSeen }`, `$inc { count: 1 }`
-- `$push { recentTraceIds: { $each: [traceId], $slice: -20 } }` so the
-  dashboard can drill straight into the most recent trace
+- `$min firstSeen` / `$max lastSeen`
+- `$add` to `count`
+- `$concatArrays` + `$slice: -20` on `recentTraceIds` so the dashboard can
+  drill straight into the most recent trace
+- `$ifNull` seeds for `service`, `component`, `name`, `message`, `sampleMsg`,
+  `sampleStack` (the original sample is kept verbatim, not overwritten by
+  later churn)
 
 `GET /v1/errors?service=&limit=` returns the registry sorted by `lastSeen`
 desc. The dashboard `/errors` page renders each group with name + message,
@@ -307,14 +311,14 @@ Phase 1 uses a shared HMAC token (`KANSOKU_INGEST_TOKEN`) carried as a request h
 
 ## Dashboard surfaces
 
-| Page          | Purpose                                                   | Backed by                             | Status |
-| ------------- | --------------------------------------------------------- | ------------------------------------- | ------ |
-| `/`           | Overview cards + status                                   | `/health`, `/version`                 | live   |
-| `/tail`       | Live stream, filter by service / level, pause/clear       | SSE `/v1/tail` (+ ring-buffer replay) | live   |
-| `/search`     | Historical log search, time-range + service/level filters | `/v1/logs?service&level&since&until`  | live   |
-| `/traces/:id` | Single-trace waterfall, log timeline                      | `/v1/traces/:id`                      | live   |
-| `/errors`     | Grouped by fingerprint, sortable by `lastSeen` / `count`  | `/v1/errors`                          | live   |
-| `/services`   | Per-service log volume sparklines, error rate, last-seen  | aggregations                          | live   |
+| Page          | Purpose                                                                      | Backed by                             | Status |
+| ------------- | ---------------------------------------------------------------------------- | ------------------------------------- | ------ |
+| `/`           | Overview cards + status                                                      | `/health`, `/version`                 | live   |
+| `/tail`       | Live stream, filter by service / level, pause/clear                          | SSE `/v1/tail` (+ ring-buffer replay) | live   |
+| `/search`     | Historical log search, time-range + service/level filters                    | `/v1/logs?service&level&since&until`  | live   |
+| `/traces/:id` | Single-trace waterfall, log timeline                                         | `/v1/traces/:id`                      | live   |
+| `/errors`     | Grouped by fingerprint, ordered by `lastSeen` desc (filter by service/limit) | `/v1/errors`                          | live   |
+| `/services`   | Per-service log volume sparklines, error rate, last-seen                     | aggregations                          | live   |
 
 ### Live-tail wire format (Phase 2)
 

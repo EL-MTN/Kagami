@@ -56,7 +56,7 @@ People / Interactions remain read-only from the dashboard — the API supports P
 src/lib/
 ├── api.ts             # Typed fetch wrapper around the REST surface
 ├── types.ts           # Hand-mirrored response shapes (keep in sync with apps/api/src/lib/serialize.ts)
-├── format.ts          # fmtDateTime, fmtDate, fmtRelative, fmtBytes  (America/New_York)
+├── format.ts          # fmtDateTime, fmtDate, fmtRelative  (America/New_York)
 └── utils.ts           # cn(...) — clsx + tailwind-merge
 ```
 
@@ -100,7 +100,6 @@ src/components/
 ├── shell/
 │   ├── page-header.tsx              # h2 title + optional description + meta slot
 │   ├── data-table.tsx               # DataTable + DataRow over @/components/ui/table
-│   ├── empty-state.tsx
 │   └── index.ts
 └── ui/                              # shadcn-shaped primitives (only what the app uses)
     ├── badge.tsx                    # cva-driven variants (default, positive, caution, critical, muted, outline, secondary)

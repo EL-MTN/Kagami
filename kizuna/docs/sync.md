@@ -26,7 +26,8 @@ Both workers go through `getAccessToken(config, options?)` in `apps/api/src/lib/
 4. Kao taxonomy → `OAuthError` on the boundary so workers keep their stable matching:
    - Kao 409 `no_grant` → `OAuthError('no_grant')`
    - Kao 409 `invalid_grant` / `decrypt_failed` → `OAuthError('invalid_grant')`
-   - Kao unreachable, 401/404, malformed body, or implausible `expiresAt` → `OAuthError('refresh_failed')`
+   - Kao 401 (bad bearer / wrong `KAO_TOKEN`) → `OAuthError('kao_unauthorized')`
+   - Kao unreachable, wrong host (404), 5xx, malformed body, or implausible `expiresAt` → `OAuthError('refresh_failed')`
 
 `clearAccessTokenCache()` clears both `cache` and `inflight` together so a force-refresh isn't overwritten by a stale in-flight result.
 
@@ -208,7 +209,8 @@ That's the whole point of `sourceRef` carrying the provider's stable ID instead 
 | Kao 409 `no_grant` (no consent yet on Kao)          | `OAuthError('no_grant')` → `result.status = 'no_grant'`. Not a pause; just an empty run.                                                                              |
 | `KAO_URL`/`KAO_TOKEN` missing                       | Caught at the route level (`POST /sync/.../run`) — `400 bad_request`. Direct calls to `getAccessToken` raise `OAuthError('refresh_failed')`.                          |
 | Kao 409 `invalid_grant` / `decrypt_failed`          | `OAuthError('invalid_grant')` → `pauseWith('invalid_grant')`. Operator re-consents at `${KAO_URL}/oauth/kizuna/start`, then `force: true` clears the pause.           |
-| Kao unreachable / 5xx / bad bearer (401)            | `OAuthError('refresh_failed')` → `recordFailedRun(msg)`, `errorCount++`. Next scheduler tick (or manual run) retries.                                                 |
+| Kao 401 (bad bearer / wrong `KAO_TOKEN`)            | `OAuthError('kao_unauthorized')` → `recordFailedRun('kao_unauthorized')`, `errorCount++`, `result.status = 'error'`. Next tick retries.                               |
+| Kao unreachable / wrong host (404) / 5xx            | `OAuthError('refresh_failed')` → `recordFailedRun('kao_unreachable')`, `errorCount++`, `result.status = 'error'`. Next scheduler tick (or manual run) retries.        |
 | Google 401 inside a client call                     | Client transparently retries with `getAccessToken({ force: true })` (Kao bypasses **its** cache via `?force=1`). A persistent 401 escapes → pause as `invalid_grant`. |
 | Calendar 410 on syncToken                           | `clearSyncToken()` + rebootstrap; `resyncedFromBootstrap: true` in the result.                                                                                        |
 | Single message / event fails to fetch or parse      | `result.errors++`, `logger.warn`, continue to next ID. Whole run still succeeds.                                                                                      |

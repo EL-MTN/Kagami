@@ -46,16 +46,14 @@ interface SearchIndexSpec {
 async function ensureBtreeIndexes(db: Db): Promise<void> {
   const facts: Collection = db.collection("facts");
 
-  // Hash-dedup index. Scoped by (user_id, run_id, agent_id) so identical
-  // text under different scopes does not collide. The legacy index was
-  // {hash:1} unscoped — drop it on first startup after the scope upgrade
-  // and replace with the scoped version. Mongo treats a missing field as
-  // null, so existing rows with no run_id/agent_id still satisfy uniqueness
-  // within the (user_id='default', null, null) scope they were written in.
+  // Legacy hash-dedup index cleanup. Dedup moved off the storage layer
+  // (a {hash:1} unique constraint) to the ingest layer (cosine in
+  // append.ts and consolidate.ts), so no hash index is created anymore —
+  // we only drop the legacy one if an older deploy left it behind.
   //
   // facts.indexes() throws NamespaceNotFound when the collection has
   // never been written to — fresh deployments and fresh test DBs hit
-  // this. In that case there's no legacy state to migrate from.
+  // this. In that case there's no legacy state to drop.
   let existingIndexes: Array<{ name?: string; key?: Record<string, unknown> }> = [];
   try {
     existingIndexes = await facts.indexes();

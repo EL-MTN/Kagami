@@ -22,7 +22,7 @@ Google access is **delegated to the Kao identity service** — Kizuna does not o
 
 ## OAuth grant flow
 
-The consent flow lives entirely in Kao. Kizuna's `POST /oauth/google/start` is a 303 redirect to `${KAO_URL}/oauth/kizuna/start`, so the dashboard's "Connect Google" / "Re-authorize" button (now a `<form method="post">`) keeps working. The Google Cloud OAuth client is registered with **one** redirect URI — `${KAO_PUBLIC_URL}/oauth/callback` — and Kao routes responses back to the right grant via its signed CSRF state. POST is intentional: a GET that mutates SyncState would be reachable by browser preloaders, link unfurlers, and `<img src>` tags; an Origin check (allowlist of `https://kizuna.localhost` + `https://api.kizuna.localhost`) defends against cross-origin form-CSRF from a malicious tab.
+The consent flow lives entirely in Kao. Kizuna's `POST /oauth/google/start` is a 303 redirect to `${KAO_URL}/oauth/kizuna/start`, so the dashboard's "Connect Google" / "Re-authorize" button (now a `<form method="post">`) keeps working. The Google Cloud OAuth client is registered with **one** redirect URI — `${KAO_PUBLIC_URL}/oauth/callback` — and Kao routes responses back to the right grant via its signed CSRF state. POST is intentional: a GET that mutates SyncState would be reachable by browser preloaders, link unfurlers, and `<img src>` tags; an Origin check (allowlist of `https://kizuna.localhost` plus any `KIZUNA_DASHBOARD_ORIGIN` extras) defends against cross-origin form-CSRF from a malicious tab.
 
 After consent, the operator lands on Kao's success page; the grant is persisted under the name `kizuna` (read-only Gmail + Calendar — see `kao/apps/api/src/grant-registry.ts`). The next sync run vends an access token from Kao and proceeds normally.
 
@@ -30,7 +30,7 @@ A re-grant invalidates Kao's cached access token for the `kizuna` grant immediat
 
 ### `POST /oauth/google/start` (Kizuna)
 
-Validates that `KAO_URL` + `KAO_TOKEN` are set (otherwise `400`) and that the `Origin` header, if present, is in the allowlist (`https://kizuna.localhost` + `https://api.kizuna.localhost`); otherwise `401`. Clears `pausedAt` and resets `errorCount` on any SyncState row with `pausedAt: {$type: "date"}`, then drops the local access-token cache. Redirects 303 to `${KAO_URL}/oauth/kizuna/start`. `lastError` is intentionally NOT cleared here — recordSuccessfulRun/recordIdleRun handle it on the next tick.
+Validates that `KAO_URL` + `KAO_TOKEN` are set (otherwise `400`) and that the `Origin` header, if present, is in the allowlist (`https://kizuna.localhost` plus any `KIZUNA_DASHBOARD_ORIGIN` extras); otherwise `401`. Clears `pausedAt` and resets `errorCount` on any SyncState row with `pausedAt: {$type: "date"}`, then drops the local access-token cache. Redirects 303 to `${KAO_URL}/oauth/kizuna/start`. `lastError` is intentionally NOT cleared here — recordSuccessfulRun/recordIdleRun handle it on the next tick.
 
 ### `GET /oauth/google/status` (Kizuna)
 
@@ -71,11 +71,12 @@ The Gmail and Calendar HTTP clients (`apps/api/src/ingest/{gmail,calendar}-clien
 
 `OAuthError` codes returned by `getAccessToken`:
 
-| `OAuthError.code`  | Origin                                                          | `result.status` | Side effect on `SyncState`          |
-| ------------------ | --------------------------------------------------------------- | --------------- | ----------------------------------- |
-| `'no_grant'`       | Kao 409 with `code:'no_grant'` (no consent yet / grant revoked) | `'no_grant'`    | None — no row to mutate             |
-| `'invalid_grant'`  | Kao 409 with `code:'invalid_grant'` or `'decrypt_failed'`       | `'paused'`      | `pauseWith('invalid_grant')`        |
-| `'refresh_failed'` | Kao unreachable, bearer rejected (401/404), or misconfigured    | `'error'`       | `lastError` written, `errorCount++` |
+| `OAuthError.code`    | Origin                                                          | `result.status` | Side effect on `SyncState`                            |
+| -------------------- | --------------------------------------------------------------- | --------------- | ----------------------------------------------------- |
+| `'no_grant'`         | Kao 409 with `code:'no_grant'` (no consent yet / grant revoked) | `'no_grant'`    | None — no row to mutate                               |
+| `'invalid_grant'`    | Kao 409 with `code:'invalid_grant'` or `'decrypt_failed'`       | `'paused'`      | `pauseWith('invalid_grant')`                          |
+| `'kao_unauthorized'` | Kao 401 (bad bearer — wrong `KAO_TOKEN`)                        | `'error'`       | `recordFailedRun('kao_unauthorized')`, `errorCount++` |
+| `'refresh_failed'`   | Kao unreachable, wrong host (404), 5xx, or misconfigured        | `'error'`       | `recordFailedRun('kao_unreachable')`, `errorCount++`  |
 
 Kao-specific error classes (`KaoNoGrantError`, `KaoUnreachableError`, `KaoMisconfiguredError`) are kept internal to `kao-client.ts` and translated on the boundary so the ingest workers keep matching on the stable `OAuthError` taxonomy.
 

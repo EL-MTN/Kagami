@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll } from "vitest";
  * These defaults intentionally return minimal happy-path responses; suites
  * that exercise error paths should override.
  */
-export const defaultHandlers = [
+const defaultHandlers = [
   // Whisper / OpenAI STT
   http.post("https://api.openai.com/v1/audio/transcriptions", () =>
     HttpResponse.json({ text: "stub transcription", duration: 1.5 }),

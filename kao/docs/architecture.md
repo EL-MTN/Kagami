@@ -62,7 +62,7 @@ the inline-HTML operator page covers, plus revoke and a token probe.
 
 | Page                      | Role                                                                                                                         |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `/` (`src/app/page.tsx`)  | Lists every registry grant. Inline Connect/Re-consent (anchor → `${KAO_PUBLIC_URL}/oauth/:n/start`) and a two-step Revoke.   |
+| `/` (`src/app/page.tsx`)  | Lists every registry grant. Inline Connect/Re-consent (anchor → `${KAO_API_URL}/oauth/:n/start`) and a two-step Revoke.      |
 | `/grants/:grant` (detail) | Full audit timestamps + scope list + Revoke + **Token Probe** (force-refresh; surfaces live access token + expiry + scopes). |
 
 **Bearer model.** `/grants/*` is bearer-gated; the dashboard runs every call

@@ -7,8 +7,9 @@ import { upsertTranscript } from "../storage/transcripts.js";
 // `transcripts` collection so it can be replayed without touching disk,
 // and runs the transcript-batch fact extraction.
 //
-// Concurrent callers are safe: writes go through appendFacts (unique-hash
-// dedup) and upsertEntitiesFromFacts (atomic per-entity upserts).
+// Concurrent callers are safe: fact dedup happens at the ingest layer
+// (cosine in consolidate, scope-bound) and entity writes go through
+// upsertEntitiesFromFacts (atomic per-entity upserts).
 
 interface IngestSessionInput {
   transcript: string; // raw markdown body (frontmatter + turns)
