@@ -76,6 +76,7 @@ Single status (same shape, unwrapped). Unknown grant → `404`.
 
 - unknown grant → `404 not_found`
 - no token on file / revoked → `409 conflict`, `details: { code: "no_grant" }`
+- stored token undecryptable (rotated/corrupt `KAO_ENCRYPTION_KEY`) → `409 conflict`, `details: { code: "decrypt_failed" }` (re-consent required)
 - Google rejected the refresh → `409 conflict`, `details: { code: "invalid_grant" }`
   (consumer should surface "re-consent at Kao")
 - transient refresh failure → `502 bad_gateway`

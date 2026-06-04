@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Boot Kioku, Kokoro, Kizuna, and Kansoku under Turbo's TUI multiplexer.
+# Boot Kioku, Kokoro, Kizuna, Kansoku, and Kao under Turbo's TUI multiplexer.
 # Prints the Portless URL table, then hands off to `turbo run dev`.
 # Ctrl-C stops everything (Turbo owns the process tree).
 #
@@ -19,7 +19,7 @@
 #   ./dev-all.sh --only kioku:api            # just the Kioku API
 #   ./dev-all.sh --no kokoro:dashboard kizuna:dashboard --stream
 #
-# All four boot in parallel. Kokoro's Kioku client is fail-open: if Kioku
+# All five boot in parallel. Kokoro's Kioku client is fail-open: if Kioku
 # is slow or down, calls degrade in-place and a 5-min sweeper retries any
 # pending writes. The Kansoku log shipper installed by `@kagami/logger`
 # is fail-open on every sibling — if Kansoku is unreachable, services

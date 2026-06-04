@@ -14,7 +14,7 @@ Kioku has a small but growing automated-test suite. Pure helpers are tested with
 - **Test runner:** Vitest (`vitest run`), driven by `npm run test` which is `turbo run test` → `apps/api`'s test script. Config lives at `kioku/vitest.config.ts`; the `apps/api/tests/**/*.test.ts` glob is anchored to the project root.
 - **Mongo:** one `mongodb-memory-server` `MongoMemoryReplSet` (`count: 1`) booted by Vitest's `globalSetup` (`apps/api/tests/global-setup.ts`) and shared across the whole run. Each test file calls `setupTestMongo(<facet>)` in `beforeAll` to point Kioku's lazy mongo singleton at a unique database name on that shared instance, and `teardownTestMongo` in `afterAll` to reset the singleton so the next file in the same worker connects fresh.
 - **Index setup:** `ensureIndexes({ allowMissingSearch: true })` — `mongodb-memory-server` is vanilla mongo without mongot. `$listSearchIndexes` throws before any embed call would happen, and `allowMissingSearch` swallows that error. No embedding provider is reached.
-- **LLM-touching code:** not exercised. Tests focus on pure helpers (`scoring.ts`, `text.ts`, `query/answer.ts` formatters) and storage primitives (`appendFacts`, `recordEvents`, `parseTranscript`).
+- **LLM-touching code:** no live provider is reached. Where an LLM/embedding path is tested, the `ai` SDK is mocked (`ingest-session.test.ts` forces every batch to reject, covering the all-batches-fail error path) or only its non-LLM short-circuit is checked (`relevance.test.ts`). The bulk of the suite focuses on pure helpers (`scoring.ts`, `text.ts`, `query/answer.ts` formatters), storage primitives (`appendFacts`, `recordEvents`, `parseTranscript`), and route handlers (`meta.test.ts`, `rate-limit.test.ts`).
 
 ## Layout
 
@@ -23,12 +23,17 @@ apps/api/tests/
 ├── facts.test.ts             # appendFacts roundtrip, scope reads, category/metadata persistence
 ├── entities.test.ts          # upsertEntitiesFromFacts race semantics
 ├── history.test.ts           # ADD events + readHistoryFor newest-first
+├── ingest-session.test.ts    # session-ingest "all batches fail" path throws a retryable error (ai SDK mocked to reject)
+├── meta.test.ts              # meta router (/health, /version, /meta/categories) over a real express server
 ├── mongo.test.ts             # ensureIndexes idempotency + index shapes
 ├── query.test.ts             # answer.ts formatters + citation helpers (pure)
+├── rate-limit.test.ts        # createPerMinuteRateLimit + parseRateLimitPerMinute
+├── relevance.test.ts         # filterDurableFacts empty-input short-circuit (no LLM invoked)
 ├── scoring.test.ts           # scoring.ts + text.ts (pure)
 ├── session-summary.test.ts   # cache hit/miss semantics
 ├── transcript.test.ts        # parseTranscript shape
 ├── logger.test.ts            # stable service/component/env bindings on the @kagami/logger wrapper
+├── helpers/                  # shared mongo + http test harness
 └── fixtures/
     └── transcript-1.md
 ```
@@ -103,8 +108,8 @@ Turbo's `test` task depends on `^build`, but neither workspace has a build step 
 ## What's not covered (yet)
 
 - The hybrid ranker pipeline end-to-end (`defaultFactRanker` against a populated DB).
-- LLM-driven paths (`consolidate`, `appendSingleFact` cosine dedup, narrative summary generation, answerer). These would need stubbed embeddings + a faked provider to run offline.
-- The MCP transport. Today the REST surface is hit by tests indirectly through the storage layer; the MCP wrapper is untested.
+- LLM-driven happy paths (`consolidate` extraction, `appendSingleFact` cosine dedup, narrative summary generation, answerer). Only the `consolidate` all-batches-fail error path is covered today (`ingest-session.test.ts`, with the `ai` SDK mocked to reject); the success paths would need stubbed embeddings + a faked provider to run offline.
+- The MCP transport (`mcp.ts`) is untested. Among REST routers only the meta router is hit directly so far (`meta.test.ts` mounts it on a real express server); the facts/recall/query/sessions routers are still exercised only indirectly through the storage layer.
 - The dashboard.
 
 When adding tests for these, the rule is the same as Kokoro's: no live LLM/API calls in the default run. Stub embeddings via `vi.fn()` and inject the faked provider rather than calling out.

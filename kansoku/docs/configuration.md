@@ -55,7 +55,8 @@ into their local ring buffers — by design.
 
 `POST /v1/logs` is the only token-gated endpoint. All read routes
 (`/v1/logs`, `/v1/tail`, `/v1/traces/:id`, `/v1/errors`, `/v1/services`)
-are unauthenticated, matching the single-user-localhost convention from
+and the meta routes (`/health`, `/ready`, `/version`) are
+unauthenticated, matching the single-user-localhost convention from
 the sibling APIs. The OS user is the trust boundary; Portless binds
 loopback only.
 

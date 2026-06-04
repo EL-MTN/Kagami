@@ -11,7 +11,7 @@ apps/api/src/retrieval/
 └── text.ts         # lemmatizeForBm25 + extractEntities
 ```
 
-`apps/api/src/llm.ts` exposes `embedQuestion(q)` and `embedTexts(texts)`. They're re-exported from `embeddings.ts` so callers (ingest, query) can import everything from a single module — the implementations live in `llm.ts` to avoid a circular dep with `entities.ts`.
+`apps/api/src/llm.ts` exposes `embedQuestion(q)` and `embedTexts(texts)`. Callers (ingest, retrieval, query) import them directly from `llm.ts`; `embeddings.ts` imports them for internal use but does not re-export them. The implementations live in `llm.ts` to avoid a circular dep with `entities.ts`.
 
 ## Hybrid ranker (`embeddings.ts`)
 
