@@ -236,24 +236,25 @@ export async function updateRoutine(
 ): Promise<IRoutine | null> {
   const filter: Record<string, unknown> = { _id: routineId };
   if (chatId) filter.chatId = chatId;
-  // A prompt edit through this generic path (dashboard PATCH, `manageRoutines
-  // update`) invalidates the quality grade AND any in-flight regression
-  // tracking — the snapshot describes a prompt that no longer exists. Clear
-  // both so the self-review pass can't later propose reverting THIS edit back to
-  // a now-stale `priorPrompt`. The armed path (`applyRoutineRefinement`) sets
-  // these deliberately and never routes through here, so it's unaffected.
-  const update: Record<string, unknown> =
-    patch.prompt !== undefined
-      ? {
-          ...patch,
-          lastGrade: null,
-          lastGradedAt: null,
-          priorPrompt: null,
-          priorParameters: null,
-          preRefineGrade: null,
-          lastRefinedAt: null,
-        }
-      : patch;
+  // A prompt OR parameters edit through this generic path (dashboard PATCH,
+  // `manageRoutines update`) invalidates the quality grade AND any in-flight
+  // regression tracking — the snapshot describes a prompt/parameter set that no
+  // longer exists. Clear both so the self-review pass can't later propose
+  // reverting THIS edit back to a now-stale `priorPrompt`/`priorParameters`. The
+  // armed path (`applyRoutineRefinement`) sets these deliberately and never
+  // routes through here, so it's unaffected.
+  const editsBehavior = patch.prompt !== undefined || patch.parameters !== undefined;
+  const update: Record<string, unknown> = editsBehavior
+    ? {
+        ...patch,
+        lastGrade: null,
+        lastGradedAt: null,
+        priorPrompt: null,
+        priorParameters: null,
+        preRefineGrade: null,
+        lastRefinedAt: null,
+      }
+    : patch;
   return Routine.findOneAndUpdate(filter, update, { returnDocument: "after" });
 }
 

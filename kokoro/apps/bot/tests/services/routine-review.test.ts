@@ -246,11 +246,17 @@ describe("reviewChatRoutines", () => {
   });
 
   it("persists the LLM grade (chatId-scoped) for every reviewed routine", async () => {
+    vi.mocked(getRoutineHealth).mockResolvedValue([
+      health({ routineId: "r1" }),
+      health({ routineId: "r2" }),
+    ]);
     llmDecision({ grade: 55, action: "none", rationale: "fine-ish" });
 
     await reviewChatRoutines(CHAT, adapter);
 
+    // Grading is independent of proposal-raising — BOTH reviewed routines get graded.
     expect(vi.mocked(recordRoutineGrade)).toHaveBeenCalledWith("r1", CHAT, 55);
+    expect(vi.mocked(recordRoutineGrade)).toHaveBeenCalledWith("r2", CHAT, 55);
   });
 });
 
@@ -263,6 +269,7 @@ describe("reviewChatRoutines — loop closure (post-refine regression)", () => {
   });
 
   it("offers a revert to the prior prompt+parameters when the grade regressed past the margin", async () => {
+    const refinedAt = new Date();
     const priorParameters = [
       { name: "topic", type: "string", description: "subject", required: false },
     ];
@@ -271,7 +278,7 @@ describe("reviewChatRoutines — loop closure (post-refine regression)", () => {
         preRefineGrade: 70,
         priorPrompt: "the previous prompt",
         priorParameters,
-        lastRefinedAt: new Date(),
+        lastRefinedAt: refinedAt,
       }),
     );
     llmDecision({ grade: 40, action: "none", rationale: "graded post-refine" }); // 70→40, drop 30 ≥ 15
@@ -279,6 +286,13 @@ describe("reviewChatRoutines — loop closure (post-refine regression)", () => {
     const raised = await reviewChatRoutines(CHAT, adapter);
 
     expect(raised).toBe(1);
+    // The post-refine grade is computed over ONLY the runs since the edit
+    // (since = lastRefinedAt), not the pre-edit window.
+    expect(vi.mocked(getRoutineLogs)).toHaveBeenCalledWith(
+      "r1",
+      10,
+      expect.objectContaining({ since: refinedAt }),
+    );
     expect(vi.mocked(proposeRefinement)).toHaveBeenCalledWith(
       expect.objectContaining({
         newPrompt: "the previous prompt",
@@ -289,6 +303,30 @@ describe("reviewChatRoutines — loop closure (post-refine regression)", () => {
     // A regressed routine stays ARMED so the revert keeps being offered — it is
     // NOT graduated here (that would lose the baseline if the revert is ignored).
     expect(vi.mocked(clearRefineTracking)).not.toHaveBeenCalled();
+  });
+
+  it("graduates a regressed routine whose revert was durably DECLINED (stops re-offering)", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(
+      routine({
+        preRefineGrade: 70,
+        priorPrompt: "the previous prompt",
+        lastRefinedAt: new Date(),
+      }),
+    );
+    llmDecision({ grade: 40, action: "none", rationale: "regressed" });
+    // The revert is suppressed specifically because the user DECLINED it before.
+    vi.mocked(proposeRefinement).mockResolvedValue({
+      proposed: false,
+      declined: true,
+      reason: "declined recently",
+    });
+
+    const raised = await reviewChatRoutines(CHAT, adapter);
+
+    expect(raised).toBe(0);
+    // Declined → graduate, so we don't re-grade + re-offer it every weekly cycle
+    // (which would starve other routines under the review cap).
+    expect(vi.mocked(clearRefineTracking)).toHaveBeenCalledWith("r1", CHAT);
   });
 
   it("when the revert is suppressed, falls through to the LLM's own refine (and stays armed)", async () => {
@@ -344,8 +382,10 @@ describe("reviewChatRoutines — loop closure (post-refine regression)", () => {
         lastRefinedAt: new Date(),
       }),
     );
-    // Same low grade as the regression case — the ONLY thing preventing a revert
-    // is the missing baseline, so this isolates the preRefineGrade !== null guard.
+    // A routine that was never graded before its edit has no baseline to compare
+    // against — it must not revert, and (not regressed) it graduates. Documents
+    // the null-baseline behavior; the null check is also belt-and-suspenders since
+    // `40 <= null - 15` is already false.
     llmDecision({ grade: 40, action: "none", rationale: "no baseline to compare" });
 
     const raised = await reviewChatRoutines(CHAT, adapter);

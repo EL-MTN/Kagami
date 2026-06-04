@@ -240,6 +240,7 @@ export async function reviewChatRoutines(
 
     const { priorPrompt, priorParameters, preRefineGrade } = routine;
     let regressed = false;
+    let revertDeclined = false;
     try {
       let proposed = false;
       // The `priorPrompt?.trim()` / `preRefineGrade !== null` clauses both narrow
@@ -265,6 +266,9 @@ export async function reviewChatRoutines(
           trackForRegression: false,
         });
         proposed = result.proposed;
+        // A DURABLE decline (vs a transient one-pending suppression) means the
+        // user said no — stop re-offering this revert (see the finally below).
+        revertDeclined = result.declined === true;
         if (result.proposed) raised++;
       }
 
@@ -303,15 +307,18 @@ export async function reviewChatRoutines(
         "Failed to raise self-review proposal",
       );
     } finally {
-      // Graduate a post-refine routine ONLY when it held up (no regression):
-      // clearing tracking stops re-grading a good edit against a stale baseline.
-      // A regressed routine stays armed so its revert keeps being offered across
-      // weekly cycles, a missed (expired) bubble, or a transiently-suppressed
-      // proposal — tracking is cleared only when the revert actually applies
-      // (applyRoutineRefinement trackForRegression:false) or the user edits the
-      // routine (updateRoutine). Graduating a regressed routine here would
-      // silently lose the regression signal forever.
-      if (isPostRefine && !regressed) {
+      // Graduate a post-refine routine (clear tracking → stop re-grading against
+      // a stale baseline) when EITHER it held up (no regression) OR its revert
+      // was durably DECLINED — in the decline case the user has said no, so
+      // re-offering the same revert every weekly cycle would just burn the review
+      // budget (and, since post-refine routines are reviewed first, starve
+      // genuinely-failing ones); a still-bad routine falls back to the normal
+      // bad-rate path. A regressed routine whose revert was merely ignored
+      // (expired bubble) or transiently one-pending-suppressed stays armed so the
+      // offer survives to the next cycle; tracking otherwise clears only when the
+      // revert actually applies (applyRoutineRefinement trackForRegression:false)
+      // or the user edits the routine (updateRoutine).
+      if (isPostRefine && (!regressed || revertDeclined)) {
         await clearRefineTracking(id, chatId).catch((error) => {
           logger.warn({ error, chatId, routineId: id }, "Failed to clear refine tracking");
         });
