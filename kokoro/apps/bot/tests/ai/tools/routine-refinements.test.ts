@@ -29,6 +29,7 @@ import {
   createProposeRoutineRefinementTool,
   computeRefinementSignature,
   computeRetirementSignature,
+  proposeRefinement,
   proposeRetirement,
 } from "../../../src/ai/tools/routine-refinements";
 
@@ -232,6 +233,29 @@ describe("proposeRoutineRefinement — raising the bubble", () => {
     await runTool(input);
     const [, , raised] = vi.mocked(raisePendingConfirmation).mock.calls[0];
     expect(raised.action.args).not.toHaveProperty("newParameters");
+  });
+
+  it("omits trackForRegression for a normal refinement (dispatcher defaults it to true)", async () => {
+    await runTool(input);
+    const [, , raised] = vi.mocked(raisePendingConfirmation).mock.calls[0];
+    expect(raised.action.args).not.toHaveProperty("trackForRegression");
+  });
+
+  it("threads trackForRegression:false into the action args for a revert", async () => {
+    const result = await proposeRefinement({
+      chatId: CHAT,
+      adapter,
+      routine: fakeRoutine({ prompt: "the regressed prompt", version: 4 }),
+      newPrompt: "the previous prompt",
+      rationale: "revert — quality dropped after the last edit",
+      trackForRegression: false,
+    });
+
+    expect(result.proposed).toBe(true);
+    const [, , raised] = vi.mocked(raisePendingConfirmation).mock.calls[0];
+    expect(raised.action.tool).toBe("updateRoutinePrompt");
+    expect(raised.action.args.trackForRegression).toBe(false);
+    expect(raised.action.args.newPrompt).toBe("the previous prompt");
   });
 
   it("returns proposed:false if raising the bubble throws", async () => {

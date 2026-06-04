@@ -5,9 +5,12 @@ import {
   Routine,
   RoutineLog,
   advanceRoutineNextRunAt,
+  applyRoutineRefinement,
   claimPendingManualRun,
   cleanupOldRoutineLogs,
+  clearRefineTracking,
   completeRoutineLog,
+  countRealRunsSince,
   createRoutine,
   createRoutineLog,
   deleteRoutine,
@@ -18,7 +21,9 @@ import {
   getRoutineHealth,
   getRoutineLogs,
   isRoutineRunning,
+  listRoutinesAwaitingPostRefineReview,
   listRoutinesForChat,
+  recordRoutineGrade,
   requestManualRun,
   resetStaleRunningRoutineLogs,
   routineNeedsAttention,
@@ -463,5 +468,252 @@ describe("getRoutineLogs filtering", () => {
     expect(filtered).toHaveLength(1);
     expect(filtered[0]?.trigger).toBe("cron");
     expect(filtered[0]?.status).toBe("completed");
+  });
+});
+
+describe("recordRoutineGrade", () => {
+  it("stores the grade and stamps lastGradedAt without bumping version", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    expect(r.lastGrade).toBeNull();
+
+    await recordRoutineGrade(r.id, "chat-1", 62);
+
+    const after = await getRoutineById(r.id);
+    expect(after?.lastGrade).toBe(62);
+    expect(after?.lastGradedAt).toBeInstanceOf(Date);
+    expect(after?.version).toBe(1); // a grade is metadata, not an edit
+  });
+
+  it("is chatId-scoped — a wrong chat does not write the grade", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    await recordRoutineGrade(r.id, "chat-2", 99);
+    const after = await getRoutineById(r.id);
+    expect(after?.lastGrade).toBeNull();
+  });
+});
+
+describe("applyRoutineRefinement", () => {
+  it("applies a version-guarded edit and arms regression tracking (snapshots prior prompt, params + grade)", async () => {
+    const params = [
+      { name: "date", type: "string" as const, description: "the day", required: false },
+    ];
+    const r = await createRoutine("chat-1", { ...baseInput, parameters: params });
+    await recordRoutineGrade(r.id, "chat-1", 30); // pre-edit grade
+
+    const updated = await applyRoutineRefinement(
+      r.id,
+      "chat-1",
+      1,
+      { prompt: "a sharper prompt" },
+      { trackForRegression: true },
+    );
+
+    expect(updated?.prompt).toBe("a sharper prompt");
+    expect(updated?.version).toBe(2);
+    expect(updated?.priorPrompt).toBe(baseInput.prompt);
+    // The Mixed-field snapshot round-trips verbatim — full shape, not just the name.
+    expect(updated?.priorParameters).toHaveLength(1);
+    expect(updated?.priorParameters?.[0]).toMatchObject({
+      name: "date",
+      type: "string",
+      description: "the day",
+      required: false,
+    });
+    expect(updated?.preRefineGrade).toBe(30);
+    expect(updated?.lastRefinedAt).toBeInstanceOf(Date);
+    // The new prompt is ungraded again.
+    expect(updated?.lastGrade).toBeNull();
+    expect(updated?.lastGradedAt).toBeNull();
+  });
+
+  it("clears regression tracking on a revert (trackForRegression:false)", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    // Arm tracking first.
+    await applyRoutineRefinement(r.id, "chat-1", 1, { prompt: "v2" }, { trackForRegression: true });
+
+    const reverted = await applyRoutineRefinement(
+      r.id,
+      "chat-1",
+      2,
+      { prompt: baseInput.prompt },
+      { trackForRegression: false },
+    );
+
+    expect(reverted?.prompt).toBe(baseInput.prompt);
+    expect(reverted?.version).toBe(3);
+    expect(reverted?.priorPrompt).toBeNull();
+    expect(reverted?.priorParameters).toBeNull();
+    expect(reverted?.preRefineGrade).toBeNull();
+    expect(reverted?.lastRefinedAt).toBeNull();
+  });
+
+  it("rejects a stale baseVersion (atomic compare-and-set) and leaves the routine untouched", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+
+    const res = await applyRoutineRefinement(
+      r.id,
+      "chat-1",
+      99,
+      { prompt: "should not land" },
+      { trackForRegression: true },
+    );
+
+    expect(res).toBeNull();
+    const after = await getRoutineById(r.id);
+    expect(after?.prompt).toBe(baseInput.prompt);
+    expect(after?.version).toBe(1);
+  });
+
+  it("scopes by chatId — refuses to edit another chat's routine", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    const res = await applyRoutineRefinement(
+      r.id,
+      "chat-2",
+      1,
+      { prompt: "x" },
+      { trackForRegression: true },
+    );
+    expect(res).toBeNull();
+  });
+});
+
+describe("clearRefineTracking", () => {
+  it("drops the loop-closure snapshot fields", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    await applyRoutineRefinement(r.id, "chat-1", 1, { prompt: "v2" }, { trackForRegression: true });
+
+    await clearRefineTracking(r.id, "chat-1");
+
+    const after = await getRoutineById(r.id);
+    expect(after?.priorPrompt).toBeNull();
+    expect(after?.priorParameters).toBeNull();
+    expect(after?.preRefineGrade).toBeNull();
+    expect(after?.lastRefinedAt).toBeNull();
+    // The edit itself stands — only the tracking is cleared.
+    expect(after?.prompt).toBe("v2");
+    expect(after?.version).toBe(2);
+  });
+});
+
+describe("updateRoutine clears grade + tracking on a behavior edit", () => {
+  it("a prompt edit through the generic path invalidates grade and regression tracking", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    // Self-review armed tracking on an earlier refinement.
+    await applyRoutineRefinement(r.id, "chat-1", 1, { prompt: "v2" }, { trackForRegression: true });
+    await recordRoutineGrade(r.id, "chat-1", 55);
+
+    // User edits the prompt via dashboard / manageRoutines → generic updateRoutine.
+    const updated = await updateRoutine(r.id, { prompt: "user-edited prompt" }, "chat-1");
+
+    expect(updated?.prompt).toBe("user-edited prompt");
+    // Stale baseline must be gone so the review can't propose reverting THIS edit.
+    expect(updated?.priorPrompt).toBeNull();
+    expect(updated?.priorParameters).toBeNull();
+    expect(updated?.preRefineGrade).toBeNull();
+    expect(updated?.lastRefinedAt).toBeNull();
+    expect(updated?.lastGrade).toBeNull();
+  });
+
+  it("a parameters-only edit also clears tracking (revert mustn't clobber the new params)", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    await applyRoutineRefinement(r.id, "chat-1", 1, { prompt: "v2" }, { trackForRegression: true });
+    await recordRoutineGrade(r.id, "chat-1", 55);
+
+    const updated = await updateRoutine(
+      r.id,
+      { parameters: [{ name: "topic", type: "string", description: "subject", required: false }] },
+      "chat-1",
+    );
+
+    expect(updated?.parameters?.[0]?.name).toBe("topic");
+    // A param edit invalidates the snapshot just like a prompt edit does.
+    expect(updated?.priorPrompt).toBeNull();
+    expect(updated?.priorParameters).toBeNull();
+    expect(updated?.preRefineGrade).toBeNull();
+    expect(updated?.lastRefinedAt).toBeNull();
+    expect(updated?.lastGrade).toBeNull();
+  });
+
+  it("a metadata-only edit (no prompt/params) leaves grade + tracking intact", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    await applyRoutineRefinement(r.id, "chat-1", 1, { prompt: "v2" }, { trackForRegression: true });
+    await recordRoutineGrade(r.id, "chat-1", 55);
+
+    const updated = await updateRoutine(r.id, { description: "new description" }, "chat-1");
+
+    expect(updated?.description).toBe("new description");
+    expect(updated?.priorPrompt).toBe(baseInput.prompt); // tracking preserved
+    expect(updated?.lastGrade).toBe(55);
+  });
+});
+
+describe("countRealRunsSince", () => {
+  it("counts only real finished runs after the cutoff (excludes sub-runs, in-flight, and older runs)", async () => {
+    const r = await createRoutine("chat-1", baseInput);
+    // In production the cutoff (a refine timestamp) always precedes the runs it
+    // gates; put it a second in the past so the strict `$gt` isn't tripped by a
+    // same-millisecond collision with the runs created right below.
+    const cutoff = new Date(Date.now() - 1000);
+
+    // Two real completed runs after the cutoff.
+    const a = await createRoutineLog(r.id, "cron");
+    await completeRoutineLog(a.id, "ok");
+    const b = await createRoutineLog(r.id, "manual");
+    await completeRoutineLog(b.id, "ok");
+    // A composed sub-run (excluded) and an in-flight run (excluded).
+    const sub = await createRoutineLog(r.id, "routine");
+    await completeRoutineLog(sub.id, "nested");
+    await createRoutineLog(r.id, "cron"); // left running
+    // A run BEFORE the cutoff (excluded).
+    const old = await createRoutineLog(r.id, "cron");
+    await completeRoutineLog(old.id, "ok");
+    await RoutineLog.collection.updateOne(
+      { _id: old._id },
+      { $set: { startedAt: new Date(cutoff.getTime() - 60_000) } },
+    );
+
+    expect(await countRealRunsSince(r.id, cutoff)).toBe(2);
+  });
+});
+
+describe("listRoutinesAwaitingPostRefineReview", () => {
+  it("returns only refined, enabled routines with enough fresh runs since the edit", async () => {
+    // Refined + enough runs → returned. Backdate the refine timestamp so the
+    // runs created below are strictly after it (as they always are in
+    // production, where cron runs follow the edit by minutes).
+    const ready = await createRoutine("chat-1", { ...baseInput, name: "ready" });
+    await applyRoutineRefinement(
+      ready.id,
+      "chat-1",
+      1,
+      { prompt: "v2" },
+      { trackForRegression: true },
+    );
+    await Routine.collection.updateOne(
+      { _id: ready._id },
+      { $set: { lastRefinedAt: new Date(Date.now() - 1000) } },
+    );
+    for (let i = 0; i < 3; i++) {
+      const log = await createRoutineLog(ready.id, "cron");
+      await completeRoutineLog(log.id, "ok");
+    }
+
+    // Refined but only one run since → not enough fresh signal yet.
+    const tooFew = await createRoutine("chat-1", { ...baseInput, name: "too-few" });
+    await applyRoutineRefinement(
+      tooFew.id,
+      "chat-1",
+      1,
+      { prompt: "v2" },
+      { trackForRegression: true },
+    );
+    const oneLog = await createRoutineLog(tooFew.id, "cron");
+    await completeRoutineLog(oneLog.id, "ok");
+
+    // Never refined → not a candidate.
+    await createRoutine("chat-1", { ...baseInput, name: "never-refined" });
+
+    const ids = await listRoutinesAwaitingPostRefineReview("chat-1", 3);
+    expect(ids).toEqual([ready.id]);
   });
 });

@@ -18,6 +18,11 @@ interface ProposalResult {
   proposed: boolean;
   confirmationId?: string;
   reason?: string;
+  /** True when suppressed specifically by the DURABLE anti-nag decline store
+   * (the user said "no" recently) — distinct from a transient one-pending
+   * suppression. The self-review pass uses this to stop re-offering a declined
+   * revert rather than re-grading it every cycle. */
+  declined?: boolean;
 }
 
 /** Recursively sort object keys so two structurally-equal values (incl. an
@@ -101,7 +106,7 @@ async function raiseRoutineProposal(opts: {
     isRecentlyDeclined(chatId, signature),
     listPendingConfirmations(chatId),
   ]);
-  if (declined) return { proposed: false, reason: declinedReason };
+  if (declined) return { proposed: false, declined: true, reason: declinedReason };
   // One routine proposal per chat at a time — across types — so we never stack
   // two bubbles and break iMessage's exactly-one-pending YES/NO reply path.
   if (hasPendingRoutineProposal(pending)) {
@@ -170,8 +175,16 @@ export async function proposeRefinement(opts: {
   newPrompt: string;
   rationale: string;
   newParameters?: RoutineParameter[];
+  /**
+   * Loop closure: defaults to true (the apply snapshots this prompt as the new
+   * `priorPrompt` so a later review can tell if the edit helped). Pass false for
+   * a revert — the apply then CLEARS regression tracking instead of arming it,
+   * so the review can't ping-pong between two prompts.
+   */
+  trackForRegression?: boolean;
 }): Promise<ProposalResult> {
-  const { chatId, adapter, routine, newPrompt, rationale, newParameters } = opts;
+  const { chatId, adapter, routine, newPrompt, rationale, newParameters, trackForRegression } =
+    opts;
   if (!routine.enabled) return { proposed: false, reason: `Routine "${routine.name}" is disabled` };
 
   // Reject an empty / whitespace-only prompt at the single choke point both the
@@ -218,6 +231,9 @@ export async function proposeRefinement(opts: {
         baseVersion: routine.version,
         newPrompt,
         ...(newParameters !== undefined ? { newParameters } : {}),
+        // Only thread the flag when turning tracking OFF (a revert); omitting it
+        // lets the dispatcher default to arming loop-closure tracking.
+        ...(trackForRegression === false ? { trackForRegression: false } : {}),
       },
     },
   });

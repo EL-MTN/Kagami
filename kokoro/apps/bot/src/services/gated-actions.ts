@@ -7,6 +7,7 @@ import {
   createRoutine,
   getRoutineById,
   updateRoutineIfVersion,
+  applyRoutineRefinement,
   isDuplicateKeyError,
   recordProposalDecision,
 } from "@kokoro/db";
@@ -122,6 +123,9 @@ const updateRoutinePromptArgs = z.object({
   baseVersion: z.number().int().nonnegative(),
   newPrompt: z.string().min(1).max(4000),
   newParameters: z.array(parameterSchema).optional(),
+  // Loop closure: omitted (→ true) for a normal refinement, which arms
+  // regression tracking; false for a self-review revert, which clears it.
+  trackForRegression: z.boolean().optional(),
 });
 
 // Routine retirement (disable, never delete). Same `baseVersion` staleness
@@ -417,11 +421,19 @@ export async function dispatchGatedAction(
         // prompt now equals the approved one (the proposeRefinement equality
         // guard blocks an identical re-proposal) and a genuinely different future
         // fix should be allowed — a version-scoped accept could never match it
-        // anyway (version just bumped).
-        const updated = await updateRoutineIfVersion(args.routineId, ctx.chatId, args.baseVersion, {
-          prompt: args.newPrompt,
-          ...(args.newParameters !== undefined ? { parameters: args.newParameters } : {}),
-        });
+        // anyway (version just bumped). `applyRoutineRefinement` also snapshots
+        // the pre-edit prompt + grade for loop-closure unless this is a revert
+        // (trackForRegression:false), in which case it clears that tracking.
+        const updated = await applyRoutineRefinement(
+          args.routineId,
+          ctx.chatId,
+          args.baseVersion,
+          {
+            prompt: args.newPrompt,
+            ...(args.newParameters !== undefined ? { parameters: args.newParameters } : {}),
+          },
+          { trackForRegression: args.trackForRegression !== false },
+        );
         if (updated) {
           return {
             success: true,

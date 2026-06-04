@@ -18,6 +18,9 @@ vi.mock("@kokoro/db", () => ({
   getRoutineById: vi.fn(),
   getRoutineLogs: vi.fn(),
   listChatIdsWithRoutines: vi.fn(),
+  listRoutinesAwaitingPostRefineReview: vi.fn(),
+  recordRoutineGrade: vi.fn(),
+  clearRefineTracking: vi.fn(),
   // Real-equivalent predicate so the orchestration tests flag the same rows the
   // production code would. The predicate itself is unit-tested in the db model.
   routineNeedsAttention: (h: {
@@ -47,7 +50,14 @@ vi.mock("../../src/ai/tools/routine-refinements", () => ({
 }));
 
 import { generateObject } from "ai";
-import { getRoutineHealth, getRoutineById, getRoutineLogs } from "@kokoro/db";
+import {
+  getRoutineHealth,
+  getRoutineById,
+  getRoutineLogs,
+  listRoutinesAwaitingPostRefineReview,
+  recordRoutineGrade,
+  clearRefineTracking,
+} from "@kokoro/db";
 import { proposeRefinement, proposeRetirement } from "../../src/ai/tools/routine-refinements";
 import { reviewChatRoutines } from "../../src/services/routine-review";
 
@@ -87,7 +97,9 @@ function routine(over: Record<string, unknown> = {}) {
 
 function llmDecision(object: Record<string, unknown>) {
   vi.mocked(generateObject).mockResolvedValue({
-    object,
+    // grade is required by the schema — default it so callers that only care
+    // about the action don't have to spell it out.
+    object: { grade: 70, ...object },
     usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
   } as never);
 }
@@ -96,6 +108,9 @@ beforeEach(() => {
   vi.mocked(getRoutineHealth).mockResolvedValue([health()]);
   vi.mocked(getRoutineById).mockImplementation((id: string) => Promise.resolve(routine({ id })));
   vi.mocked(getRoutineLogs).mockResolvedValue([]);
+  vi.mocked(listRoutinesAwaitingPostRefineReview).mockResolvedValue([]);
+  vi.mocked(recordRoutineGrade).mockResolvedValue(undefined);
+  vi.mocked(clearRefineTracking).mockResolvedValue(undefined);
   llmDecision({ action: "none", rationale: "looks fine" });
   vi.mocked(proposeRefinement).mockResolvedValue({ proposed: true, confirmationId: "c1" });
   vi.mocked(proposeRetirement).mockResolvedValue({ proposed: true, confirmationId: "c2" });
@@ -228,5 +243,155 @@ describe("reviewChatRoutines", () => {
     expect(raised).toBe(0);
     // MAX_REVIEWS_PER_RUN bounds spend — not all 10 flagged routines are reviewed.
     expect(vi.mocked(generateObject)).toHaveBeenCalledTimes(6);
+  });
+
+  it("persists the LLM grade (chatId-scoped) for every reviewed routine", async () => {
+    vi.mocked(getRoutineHealth).mockResolvedValue([
+      health({ routineId: "r1" }),
+      health({ routineId: "r2" }),
+    ]);
+    llmDecision({ grade: 55, action: "none", rationale: "fine-ish" });
+
+    await reviewChatRoutines(CHAT, adapter);
+
+    // Grading is independent of proposal-raising — BOTH reviewed routines get graded.
+    expect(vi.mocked(recordRoutineGrade)).toHaveBeenCalledWith("r1", CHAT, 55);
+    expect(vi.mocked(recordRoutineGrade)).toHaveBeenCalledWith("r2", CHAT, 55);
+  });
+});
+
+describe("reviewChatRoutines — loop closure (post-refine regression)", () => {
+  // A healthy routine (not flagged) becomes a candidate ONLY because it was
+  // refined and has run enough times since — isolating the loop-closure path.
+  beforeEach(() => {
+    vi.mocked(getRoutineHealth).mockResolvedValue([health({ failedRuns: 0, totalRuns: 6 })]);
+    vi.mocked(listRoutinesAwaitingPostRefineReview).mockResolvedValue(["r1"]);
+  });
+
+  it("offers a revert to the prior prompt+parameters when the grade regressed past the margin", async () => {
+    const refinedAt = new Date();
+    const priorParameters = [
+      { name: "topic", type: "string", description: "subject", required: false },
+    ];
+    vi.mocked(getRoutineById).mockResolvedValue(
+      routine({
+        preRefineGrade: 70,
+        priorPrompt: "the previous prompt",
+        priorParameters,
+        lastRefinedAt: refinedAt,
+      }),
+    );
+    llmDecision({ grade: 40, action: "none", rationale: "graded post-refine" }); // 70→40, drop 30 ≥ 15
+
+    const raised = await reviewChatRoutines(CHAT, adapter);
+
+    expect(raised).toBe(1);
+    // The post-refine grade is computed over ONLY the runs since the edit
+    // (since = lastRefinedAt), not the pre-edit window.
+    expect(vi.mocked(getRoutineLogs)).toHaveBeenCalledWith(
+      "r1",
+      10,
+      expect.objectContaining({ since: refinedAt }),
+    );
+    expect(vi.mocked(proposeRefinement)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        newPrompt: "the previous prompt",
+        newParameters: priorParameters, // restores full prior state, not a hybrid
+        trackForRegression: false,
+      }),
+    );
+    // A regressed routine stays ARMED so the revert keeps being offered — it is
+    // NOT graduated here (that would lose the baseline if the revert is ignored).
+    expect(vi.mocked(clearRefineTracking)).not.toHaveBeenCalled();
+  });
+
+  it("graduates a regressed routine whose revert was durably DECLINED (stops re-offering)", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(
+      routine({
+        preRefineGrade: 70,
+        priorPrompt: "the previous prompt",
+        lastRefinedAt: new Date(),
+      }),
+    );
+    llmDecision({ grade: 40, action: "none", rationale: "regressed" });
+    // The revert is suppressed specifically because the user DECLINED it before.
+    vi.mocked(proposeRefinement).mockResolvedValue({
+      proposed: false,
+      declined: true,
+      reason: "declined recently",
+    });
+
+    const raised = await reviewChatRoutines(CHAT, adapter);
+
+    expect(raised).toBe(0);
+    // Declined → graduate, so we don't re-grade + re-offer it every weekly cycle
+    // (which would starve other routines under the review cap).
+    expect(vi.mocked(clearRefineTracking)).toHaveBeenCalledWith("r1", CHAT);
+  });
+
+  it("when the revert is suppressed, falls through to the LLM's own refine (and stays armed)", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(
+      routine({
+        preRefineGrade: 70,
+        priorPrompt: "the previous prompt",
+        lastRefinedAt: new Date(),
+      }),
+    );
+    llmDecision({ grade: 40, action: "refine", newPrompt: "a fresh fix", rationale: "alt fix" });
+    // First call (the revert) is anti-nag/one-pending suppressed; the fall-through
+    // forward refine then succeeds.
+    vi.mocked(proposeRefinement)
+      .mockResolvedValueOnce({ proposed: false, reason: "declined recently" })
+      .mockResolvedValueOnce({ proposed: true, confirmationId: "c9" });
+
+    const raised = await reviewChatRoutines(CHAT, adapter);
+
+    expect(raised).toBe(1);
+    expect(vi.mocked(proposeRefinement)).toHaveBeenCalledTimes(2);
+    // Second call is the LLM's forward refine, not another revert.
+    expect(vi.mocked(proposeRefinement).mock.calls[1]?.[0]).toMatchObject({
+      newPrompt: "a fresh fix",
+    });
+    // Still regressed → not graduated.
+    expect(vi.mocked(clearRefineTracking)).not.toHaveBeenCalled();
+  });
+
+  it("does not revert (and graduates) when the refined routine held up", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(
+      routine({
+        preRefineGrade: 70,
+        priorPrompt: "the previous prompt",
+        lastRefinedAt: new Date(),
+      }),
+    );
+    llmDecision({ grade: 80, action: "none", rationale: "improved" }); // 70→80, no regression
+
+    const raised = await reviewChatRoutines(CHAT, adapter);
+
+    expect(raised).toBe(0);
+    expect(vi.mocked(proposeRefinement)).not.toHaveBeenCalled();
+    expect(vi.mocked(recordRoutineGrade)).toHaveBeenCalledWith("r1", CHAT, 80);
+    expect(vi.mocked(clearRefineTracking)).toHaveBeenCalledWith("r1", CHAT);
+  });
+
+  it("does not revert without a pre-refine baseline (preRefineGrade null), still graduates", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(
+      routine({
+        preRefineGrade: null,
+        priorPrompt: "the previous prompt",
+        lastRefinedAt: new Date(),
+      }),
+    );
+    // A routine that was never graded before its edit has no baseline to compare
+    // against — it must not revert, and (not regressed) it graduates. Documents
+    // the null-baseline behavior; the null check is also belt-and-suspenders since
+    // `40 <= null - 15` is already false.
+    llmDecision({ grade: 40, action: "none", rationale: "no baseline to compare" });
+
+    const raised = await reviewChatRoutines(CHAT, adapter);
+
+    expect(raised).toBe(0);
+    expect(vi.mocked(proposeRefinement)).not.toHaveBeenCalled();
+    expect(vi.mocked(clearRefineTracking)).toHaveBeenCalledWith("r1", CHAT);
   });
 });
