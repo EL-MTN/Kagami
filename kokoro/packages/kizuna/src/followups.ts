@@ -1,4 +1,4 @@
-import { logger } from "@kokoro/shared";
+import { logger, mapLimit } from "@kokoro/shared";
 import {
   KizunaClientError,
   getJson,
@@ -177,24 +177,4 @@ async function hydratePeopleForFollowups(followups: FollowupWire[], signal: Abor
     },
   );
   return new Map(entries);
-}
-
-async function mapLimit<T, R>(
-  items: T[],
-  limit: number,
-  mapper: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  let nextIndex = 0;
-
-  async function worker() {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await mapper(items[index]);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
-  return results;
 }

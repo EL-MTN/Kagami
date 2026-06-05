@@ -143,8 +143,13 @@ export function allTools(ctx: ToolContext) {
     // sub-task runs on `readOnlyToolSubset` — the same read-only palette the
     // watcher invariant uses — so a fan-out can only gather/analyse, never
     // mutate, and (lacking `delegate` itself) can't deepen the tree further.
-    // Gated by the same depth bound as useRoutine.
-    tools.delegate = createDelegateTool(ctx, readOnlyToolSubset);
+    // Gated by the same depth bound as useRoutine, AND restricted to "main"
+    // context: an observation (watcher) run must never fan out fresh LLM calls.
+    // allTools is only ever called for main today, so this is defense-in-depth —
+    // a future allTools(ctx, "watcher") caller can't inherit delegate.
+    if (callingContext === "main") {
+      tools.delegate = createDelegateTool(ctx, readOnlyToolSubset);
+    }
   }
 
   // External MCP tools mounted at startup (initMcp). Namespaced `mcp_*` so they

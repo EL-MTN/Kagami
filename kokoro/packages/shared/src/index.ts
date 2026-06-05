@@ -2,6 +2,7 @@ export { config, validateConfig, mcpServerSchema } from "./config";
 export type { McpServerConfig } from "./config";
 export { logger } from "./logger";
 export { haversineMeters } from "./geo";
+export { mapLimit } from "./concurrency";
 export { parseMarkdown } from "./markdown";
 export type { ParsedMarkdown } from "./markdown";
 export type { IncomingMessage, PlatformAdapter } from "./types";

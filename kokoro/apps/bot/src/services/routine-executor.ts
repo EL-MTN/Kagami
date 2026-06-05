@@ -6,6 +6,7 @@ import {
   failRoutineLog,
   advanceRoutineNextRunAt,
   NO_REPORT_SENTINEL,
+  MAX_ROUTINE_DEPTH,
   type IRoutine,
 } from "@kokoro/db";
 import { logger, computeNextRunAt } from "@kokoro/shared";
@@ -16,7 +17,9 @@ import { getModelName } from "../ai/provider";
 import { DATETIME_CONTEXT } from "../ai/prompts";
 import { runTaskAgent } from "./task-agent";
 
-export const MAX_ROUTINE_DEPTH = 3;
+// Re-export the canonical depth bound (defined in @kokoro/db so the dashboard
+// shares it) for the tool layer, which imports it from here.
+export { MAX_ROUTINE_DEPTH };
 
 const ROUTINE_EXECUTOR_IDENTITY = `You are a task executor. Complete the routine described below using your tools. Be concise and factual — return results, not commentary. Do not adopt a persona or use conversational tone.`;
 
@@ -76,6 +79,14 @@ interface ExecuteRoutineOptions {
    * is gated against action-purity routines. Defaults to "main".
    */
   callingContext?: "main" | "watcher";
+  /**
+   * When true, a mid-run failure is re-thrown after logging instead of being
+   * swallowed and returned as an `"Error: …"` string. Composed callers that
+   * need to distinguish success from failure (e.g. `delegate`, which reports a
+   * per-branch `{ success: false }`) opt in; the default false preserves the
+   * scheduler/useRoutine contract of returning the error text.
+   */
+  rethrow?: boolean;
 }
 
 /**
@@ -95,6 +106,7 @@ export async function executeRoutine(
     parentLogId,
     silent = false,
     callingContext = "main",
+    rethrow = false,
   } = options;
   const routineId = routine._id.toString();
   const chatId = routine.chatId;
@@ -211,6 +223,12 @@ export async function executeRoutine(
       } catch {
         // If cron computation fails, don't block error handling
       }
+    }
+
+    // Opt-in callers (delegate) want the failure as a thrown error so they can
+    // mark the branch failed, rather than a success-shaped "Error: …" string.
+    if (rethrow) {
+      throw error instanceof Error ? error : new Error(reason);
     }
 
     // Alert user about the failure (only for direct, non-silent triggers)

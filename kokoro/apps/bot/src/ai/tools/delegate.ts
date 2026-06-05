@@ -1,6 +1,6 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
-import { logger, runWithSpan } from "@kokoro/shared";
+import { logger, runWithSpan, mapLimit } from "@kokoro/shared";
 import { getRoutineByName } from "@kokoro/db";
 import { runTaskAgent } from "../../services/task-agent";
 import { executeRoutine } from "../../services/routine-executor";
@@ -38,32 +38,6 @@ type SubtaskResult =
   | { label: string; success: false; error: string };
 
 /**
- * Run `items` through `fn` with at most `limit` in flight at once, preserving
- * input order in the returned array. `fn` is expected to never reject (each
- * sub-task catches its own errors), so a slow or failing branch can't starve
- * or abort its siblings.
- */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (true) {
-      const i = next++;
-      if (i >= items.length) return;
-      const item = items[i];
-      if (item === undefined) continue;
-      results[i] = await fn(item, i);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
-
-/**
  * Run an existing routine as a read-only fan-out branch. Mirrors `useRoutine`'s
  * lookup + purity gate + parameter validation, but pins the run read-only:
  * delegate only fans out gathering, so an `action`-purity routine is rejected,
@@ -94,12 +68,16 @@ async function runRoutineSubtask(
   // result to the caller); callingContext "watcher" → transitive read-only;
   // depth + 1 shares the recursion ceiling with useRoutine; parentLogId links
   // the spawned run to the calling routine's RoutineLog for the dashboard tree.
+  // rethrow → a mid-run failure surfaces as a thrown error (caught per-branch
+  // below into { success: false }) instead of executeRoutine's "Error: …"
+  // string masquerading as a successful gather.
   return executeRoutine(routine, ctx.adapter, {
     trigger: "routine",
     parameters: validation.resolved,
     depth: depth + 1,
     callingContext: "watcher",
     parentLogId: ctx.routineLogId,
+    rethrow: true,
   });
 }
 
@@ -139,6 +117,7 @@ export function createDelegateTool(
                 .describe("Short identifier for this sub-task (e.g. 'weather', 'inbox')"),
               prompt: z
                 .string()
+                .min(1)
                 .optional()
                 .describe("Inline read-only instructions. Provide EITHER prompt OR routineName."),
               routineName: z
@@ -166,16 +145,21 @@ export function createDelegateTool(
       // Sub-tasks run one nesting level deeper on the read-only palette. The
       // injected builder is the watcher read-only subset, so any nested
       // `useRoutine` is gated read-only and no further `delegate` is exposed.
+      // Build the inline-branch palette + system prompt lazily — a fan-out of
+      // only routine-backed branches never touches them.
       const childCtx: ToolContext = { ...ctx, routineDepth: depth + 1 };
-      const tools = buildSubtaskTools(childCtx);
-      const baseSystem = `${SUBTASK_IDENTITY}\n\n---\n\n${DATETIME_CONTEXT(new Date())}`;
+      const hasInlineBranch = subtasks.some((st) => st.prompt != null);
+      const tools = hasInlineBranch ? buildSubtaskTools(childCtx) : ({} as ToolSet);
+      const baseSystem = hasInlineBranch
+        ? `${SUBTASK_IDENTITY}\n\n---\n\n${DATETIME_CONTEXT(new Date())}`
+        : "";
 
       logger.debug(
         { chatId: ctx.chatId, depth, count: subtasks.length },
         "Tool: delegate (parallel fan-out)",
       );
 
-      const results = await mapWithConcurrency<SubtaskInput, SubtaskResult>(
+      const results = await mapLimit<SubtaskInput, SubtaskResult>(
         subtasks,
         SUBTASK_CONCURRENCY,
         async (st) => {

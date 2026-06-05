@@ -1,12 +1,13 @@
-import { Routine, RoutineLog, type IRoutineParameter } from "@kokoro/db";
+import { Routine, RoutineLog, MAX_ROUTINE_DEPTH, type IRoutineParameter } from "@kokoro/db";
 import { Types } from "mongoose";
 import { ensureDB } from "../db";
 import type { RoutineListItem, RoutineLogItem, RoutineParameter } from "../routine-schema";
 
-// Bounds the descendant walk for the run tree. Matches MAX_ROUTINE_DEPTH (3) in
-// the bot — a top-level run can spawn children at depths 1..3 — so three levels
-// of children below a root covers any legal composition.
-const MAX_TREE_LEVELS = 3;
+// Bounds the descendant walk for the run tree. A top-level run can spawn
+// children at depths 1..MAX_ROUTINE_DEPTH, so that many levels below a root
+// covers any legal composition. Sourced from the shared @kokoro/db constant so
+// it can't drift from the bot's recursion ceiling.
+const MAX_TREE_LEVELS = MAX_ROUTINE_DEPTH;
 
 interface RoutineLogLean {
   _id: { toString(): string };
@@ -49,9 +50,9 @@ async function attachDescendants(roots: RoutineLogItem[]): Promise<RoutineLogIte
 
   for (let level = 0; level < MAX_TREE_LEVELS && frontier.length > 0; level++) {
     const parentIds = frontier.map((id) => new Types.ObjectId(id));
-    const docs = (await RoutineLog.find({ parentLogId: { $in: parentIds } })
+    const docs = await RoutineLog.find({ parentLogId: { $in: parentIds } })
       .sort({ startedAt: 1 })
-      .lean()) as unknown as RoutineLogLean[];
+      .lean<RoutineLogLean[]>();
     if (docs.length === 0) break;
 
     const missing = [
@@ -60,9 +61,9 @@ async function attachDescendants(roots: RoutineLogItem[]): Promise<RoutineLogIte
       ),
     ];
     if (missing.length > 0) {
-      const named = (await Routine.find({ _id: { $in: missing } })
+      const named = await Routine.find({ _id: { $in: missing } })
         .select("name")
-        .lean()) as unknown as Array<{ _id: { toString(): string }; name: string }>;
+        .lean<Array<{ _id: { toString(): string }; name: string }>>();
       for (const r of named) nameByRoutineId.set(r._id.toString(), r.name);
     }
 
@@ -78,7 +79,13 @@ async function attachDescendants(roots: RoutineLogItem[]): Promise<RoutineLogIte
     frontier = docs.map((d) => d._id.toString());
   }
 
+  // `seen` guards against a malformed parentLogId cycle (data corruption): the
+  // BFS above is bounded by level count, but the recursion below would otherwise
+  // revisit nodes if the collected edges ever formed a loop.
+  const seen = new Set<string>();
   const nest = (item: RoutineLogItem): void => {
+    if (seen.has(item.id)) return;
+    seen.add(item.id);
     const kids = childrenByParent.get(item.id);
     if (kids && kids.length > 0) {
       item.children = kids;
@@ -183,7 +190,11 @@ export async function getRoutineLogList(
 ): Promise<{ logs: RoutineLogItem[]; hasMore: boolean }> {
   await ensureDB();
 
-  const filter: Record<string, unknown> = { routineId };
+  // Top-level rows are this routine's OWN runs only — a run that was spawned by
+  // another run (parentLogId set, possibly the same routineId via self-
+  // composition) appears nested under its parent via attachDescendants, never
+  // as a duplicate root. `parentLogId` absent ⇒ true root.
+  const filter: Record<string, unknown> = { routineId, parentLogId: { $exists: false } };
   if (before) {
     filter.startedAt = { $lt: new Date(before) };
   }
@@ -191,10 +202,10 @@ export async function getRoutineLogList(
   const logs = await RoutineLog.find(filter)
     .sort({ startedAt: -1 })
     .limit(limit + 1)
-    .lean();
+    .lean<RoutineLogLean[]>();
 
   const hasMore = logs.length > limit;
-  const items = logs.slice(0, limit) as unknown as RoutineLogLean[];
+  const items = logs.slice(0, limit);
 
   const roots = items.map((l) => serializeLog(l));
   await attachDescendants(roots);
