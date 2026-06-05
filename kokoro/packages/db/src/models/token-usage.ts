@@ -5,6 +5,7 @@ export type UsageCategory =
   | "proactive"
   | "routine"
   | "routine-review"
+  | "delegate"
   | "watcher"
   | "curation"
   | "image-selection"

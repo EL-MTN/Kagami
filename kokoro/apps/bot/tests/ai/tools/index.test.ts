@@ -90,6 +90,7 @@ describe("allTools — minimum-config baseline", () => {
         "browse",
         "cancelConfirmation",
         "createFollowup",
+        "delegate",
         "findPeople",
         "getPersonContext",
         "listMyFollowups",
@@ -223,6 +224,14 @@ describe("allTools — useRoutine recursion gate", () => {
   it("excludes useRoutine at MAX_ROUTINE_DEPTH (= 3)", () => {
     expect(Object.keys(allTools({ ...baseCtx, routineDepth: 3 }))).not.toContain("useRoutine");
   });
+
+  it("gates delegate on the same depth bound as useRoutine", () => {
+    // delegate sub-tasks run one level deeper, so it shares useRoutine's
+    // recursion ceiling: available below MAX, withheld at it.
+    expect(Object.keys(allTools({ ...baseCtx, routineDepth: 0 }))).toContain("delegate");
+    expect(Object.keys(allTools({ ...baseCtx, routineDepth: 2 }))).toContain("delegate");
+    expect(Object.keys(allTools({ ...baseCtx, routineDepth: 3 }))).not.toContain("delegate");
+  });
 });
 
 describe("watcherTools — read-only invariant", () => {
@@ -243,6 +252,7 @@ describe("watcherTools — read-only invariant", () => {
       "requestConfirmation",
       "cancelConfirmation",
       "searchRoutines",
+      "delegate", // fans out a fresh LLM call per sub-task; never offered to observation runs
       "rememberFact", // mutates the vault; searchMemory (read-only) is allowed
       "logInteraction", // CRM writes — read tools are allowed
       "createFollowup",

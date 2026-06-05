@@ -1,0 +1,140 @@
+import { tool, type ToolSet } from "ai";
+import { z } from "zod";
+import { logger, runWithSpan } from "@kokoro/shared";
+import { runTaskAgent } from "../../services/task-agent";
+import { getModelName } from "../provider";
+import { trackUsage } from "../token-tracker";
+import { DATETIME_CONTEXT } from "../prompts";
+import type { ToolContext } from "./index";
+
+// Width and concurrency bounds. The width cap forces the model to fan out only
+// genuinely independent work; the concurrency cap keeps the number of in-flight
+// LLM calls bounded even when a fan-out is issued from inside a routine. Each
+// sub-task runs on the read-only palette and cannot itself `delegate` (the
+// builder injected at registration is the watcher read-only subset, which has
+// no `delegate`), so the tree can never deepen past a single fan-out level.
+const MAX_SUBTASKS = 6;
+const SUBTASK_CONCURRENCY = 4;
+// Sub-tasks are short, single-purpose read/gather jobs — same lean budget as a
+// depth>0 composed routine call.
+const SUBTASK_MAX_STEPS = 5;
+const SUBTASK_TEMPERATURE = 0.4;
+
+const SUBTASK_IDENTITY = `You are a focused sub-task worker dispatched as one branch of a parallel fan-out. Complete ONLY the single task described below using your read-only tools (web/browser search, memory recall, email/calendar reads, CRM reads). You cannot send, write, or modify anything — gather and analyse, then return your findings concisely and factually. Do not adopt a persona or use conversational tone.`;
+
+interface SubtaskInput {
+  label: string;
+  prompt: string;
+}
+
+type SubtaskResult =
+  | { label: string; success: true; result: string }
+  | { label: string; success: false; error: string };
+
+/**
+ * Run `items` through `fn` with at most `limit` in flight at once, preserving
+ * input order in the returned array. `fn` is expected to never reject (each
+ * sub-task catches its own errors), so a slow or failing branch can't starve
+ * or abort its siblings.
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      const item = items[i];
+      if (item === undefined) continue;
+      results[i] = await fn(item, i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * `delegate` — fan out several INDEPENDENT read-only sub-tasks in parallel and
+ * collect their results, instead of running them one after another with
+ * serial tool calls or `useRoutine`.
+ *
+ * Each sub-task executes as its own `runTaskAgent` call on the read-only tool
+ * palette (`buildSubtaskTools`, injected from the tool registry so this module
+ * never imports back into `./index`). Writes stay with the caller: fan out the
+ * gathering, then act on the results yourself, sequentially and gated.
+ */
+export function createDelegateTool(
+  ctx: ToolContext,
+  buildSubtaskTools: (ctx: ToolContext) => ToolSet,
+) {
+  const depth = ctx.routineDepth ?? 0;
+
+  return tool({
+    description:
+      "Run several INDEPENDENT read-only sub-tasks in parallel and collect their results. " +
+      "Each sub-task runs as its own LLM call with a read-only tool palette (web/browser search, " +
+      "memory recall, email/calendar reads, CRM reads) — sub-tasks CANNOT send, write, or mutate anything. " +
+      "Use this to fan out independent lookups or research at once (e.g. weather + calendar + unread email) " +
+      "instead of doing them one after another. Do any sending or writing yourself, after the results return. " +
+      "If one task depends on another's output, run them in order instead.",
+    inputSchema: z.object({
+      subtasks: z
+        .array(
+          z.object({
+            label: z
+              .string()
+              .describe("Short identifier for this sub-task (e.g. 'weather', 'inbox')"),
+            prompt: z.string().describe("Self-contained instructions for this sub-task"),
+          }),
+        )
+        .min(2)
+        .max(MAX_SUBTASKS)
+        .describe(
+          `Between 2 and ${MAX_SUBTASKS} independent read-only sub-tasks to run in parallel`,
+        ),
+    }),
+    execute: async ({ subtasks }: { subtasks: SubtaskInput[] }) => {
+      // Sub-tasks run one nesting level deeper on the read-only palette. The
+      // injected builder is the watcher read-only subset, so any nested
+      // `useRoutine` is gated read-only and no further `delegate` is exposed.
+      const childCtx: ToolContext = { ...ctx, routineDepth: depth + 1 };
+      const tools = buildSubtaskTools(childCtx);
+      const baseSystem = `${SUBTASK_IDENTITY}\n\n---\n\n${DATETIME_CONTEXT(new Date())}`;
+
+      logger.debug(
+        { chatId: ctx.chatId, depth, count: subtasks.length },
+        "Tool: delegate (parallel fan-out)",
+      );
+
+      const results = await mapWithConcurrency<SubtaskInput, SubtaskResult>(
+        subtasks,
+        SUBTASK_CONCURRENCY,
+        async (st) => {
+          try {
+            const { text, usage, steps } = await runWithSpan("delegate.subtask", () =>
+              runTaskAgent({
+                system: `${baseSystem}\n\n---\n\n## Sub-task: ${st.label}`,
+                prompt: st.prompt,
+                tools,
+                maxSteps: SUBTASK_MAX_STEPS,
+                temperature: SUBTASK_TEMPERATURE,
+              }),
+            );
+            trackUsage("delegate", getModelName(), usage, { chatId: ctx.chatId, steps });
+            return { label: st.label, success: true, result: text };
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : "Sub-task failed";
+            logger.warn({ error, label: st.label }, "delegate sub-task failed");
+            return { label: st.label, success: false, error: reason };
+          }
+        },
+      );
+
+      return { success: true, results };
+    },
+  });
+}
