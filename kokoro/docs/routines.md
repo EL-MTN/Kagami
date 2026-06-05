@@ -129,17 +129,17 @@ CRUD operations for routine definitions. Actions: `create`, `list`, `update`, `d
 
 **Parameters:**
 
-| Parameter      | Required for                 | Description                                                      |
-| -------------- | ---------------------------- | ---------------------------------------------------------------- |
-| `action`       | all                          | One of `create`, `list`, `update`, `delete`, `enable`, `disable` |
-| `routineId`    | update/delete/enable/disable | Routine document ID                                              |
-| `name`         | create                       | Unique routine name within the chat                              |
-| `description`  | create                       | What the routine does                                            |
-| `prompt`       | create                       | Execution instructions (natural language task description)       |
-| `parameters`   | optional                     | Typed parameter definitions array                                |
-| `cronSchedule` | optional                     | Cron expression (omit for on-demand only)                        |
-| `reportMode`   | create                       | `"always"` or `"alert"`                                          |
-| `purity`       | optional                     | `"read"` or `"action"` — defaults to `"action"` if omitted       |
+| Parameter      | Required for                 | Description                                                                                                                                                   |
+| -------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `action`       | all                          | One of `create`, `list`, `update`, `delete`, `enable`, `disable`                                                                                              |
+| `routineId`    | update/delete/enable/disable | Routine document ID **or** unique name — resolved via `resolveRoutineRef` (guarded id cast, else name lookup) so passing the name doesn't throw a `CastError` |
+| `name`         | create                       | Unique routine name within the chat                                                                                                                           |
+| `description`  | create                       | What the routine does                                                                                                                                         |
+| `prompt`       | create                       | Execution instructions (natural language task description)                                                                                                    |
+| `parameters`   | optional                     | Typed parameter definitions array                                                                                                                             |
+| `cronSchedule` | optional                     | Cron expression (omit for on-demand only)                                                                                                                     |
+| `reportMode`   | create                       | `"always"` or `"alert"`                                                                                                                                       |
+| `purity`       | optional                     | `"read"` or `"action"` — defaults to `"action"` if omitted                                                                                                    |
 
 **Validation rules:**
 

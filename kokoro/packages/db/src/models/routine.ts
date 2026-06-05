@@ -227,6 +227,29 @@ export async function getRoutineByName(chatId: string, name: string): Promise<IR
   return Routine.findOne({ chatId, name });
 }
 
+/**
+ * Resolve a routine by EITHER its ObjectId string OR its (chat-unique) name.
+ * The `manageRoutines` tool exposes both an `id` and a `name` to the model, and
+ * the model routinely passes the human-facing NAME where an id is expected —
+ * elsewhere (e.g. `useRoutine`) the name *is* the canonical handle. A raw
+ * `findOne({ _id: name })` then throws a Mongoose CastError, so update / delete /
+ * enable / disable would fail outright. Guard the id cast with `isValid` and
+ * fall back to a name lookup so the mutating actions work with whichever
+ * identifier the model supplies. Returns the routine or null. `chatId`-scoped
+ * like every other routine read, so a cross-chat identifier can't resolve the
+ * wrong row.
+ */
+export async function resolveRoutineRef(
+  chatId: string,
+  identifier: string,
+): Promise<IRoutine | null> {
+  if (Types.ObjectId.isValid(identifier)) {
+    const byId = await getRoutineById(identifier, chatId);
+    if (byId) return byId;
+  }
+  return getRoutineByName(chatId, identifier);
+}
+
 export async function updateRoutine(
   routineId: string,
   patch: Partial<

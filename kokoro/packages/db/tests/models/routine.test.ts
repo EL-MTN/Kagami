@@ -18,6 +18,7 @@ import {
   getDueRoutines,
   getRoutineById,
   getRoutineByName,
+  resolveRoutineRef,
   getRoutineHealth,
   getRoutineLogs,
   isRoutineRunning,
@@ -90,6 +91,38 @@ describe("getRoutineById / getRoutineByName", () => {
   it("getRoutineByName returns null for non-matching chat", async () => {
     await createRoutine("chat-1", baseInput);
     expect(await getRoutineByName("chat-2", baseInput.name)).toBeNull();
+  });
+});
+
+describe("resolveRoutineRef", () => {
+  it("resolves by a valid ObjectId", async () => {
+    const s = await createRoutine("chat-1", baseInput);
+    const found = await resolveRoutineRef("chat-1", s.id);
+    expect(found?.id).toBe(s.id);
+  });
+
+  it("resolves by name (the model's usual handle) without a CastError", async () => {
+    const s = await createRoutine("chat-1", baseInput);
+    const found = await resolveRoutineRef("chat-1", baseInput.name);
+    expect(found?.id).toBe(s.id);
+  });
+
+  it("returns null for an unknown name instead of throwing", async () => {
+    await expect(resolveRoutineRef("chat-1", "does-not-exist")).resolves.toBeNull();
+  });
+
+  it("is chat-scoped — a name in another chat does not resolve", async () => {
+    await createRoutine("chat-2", baseInput);
+    expect(await resolveRoutineRef("chat-1", baseInput.name)).toBeNull();
+  });
+
+  it("falls back to name lookup when an id-shaped string isn't a real id", async () => {
+    // 12-char strings pass Types.ObjectId.isValid but won't match any _id; the
+    // resolver must still fall through to the name lookup.
+    const s = await createRoutine("chat-1", { ...baseInput, name: "twelvecharss" });
+    expect("twelvecharss".length).toBe(12);
+    const found = await resolveRoutineRef("chat-1", "twelvecharss");
+    expect(found?.id).toBe(s.id);
   });
 });
 

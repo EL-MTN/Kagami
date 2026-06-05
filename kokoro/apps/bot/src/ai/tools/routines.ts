@@ -3,8 +3,8 @@ import { z } from "zod";
 import {
   createRoutine,
   listRoutinesForChat,
-  getRoutineById,
   getRoutineByName,
+  resolveRoutineRef,
   updateRoutine,
   deleteRoutine,
   isDuplicateKeyError,
@@ -32,7 +32,7 @@ export function createManageRoutinesTool(chatId: string) {
       routineId: z
         .string()
         .optional()
-        .describe("Routine ID (required for update/delete/enable/disable)"),
+        .describe("Routine ID or its unique name (required for update/delete/enable/disable)"),
       name: z
         .string()
         .optional()
@@ -116,7 +116,7 @@ export function createManageRoutinesTool(chatId: string) {
             });
             return {
               success: true,
-              routineId: routine._id,
+              routineId: routine._id.toString(),
               name,
               description,
               cronSchedule: cronSchedule ?? null,
@@ -155,10 +155,11 @@ export function createManageRoutinesTool(chatId: string) {
             }
             logger.debug({ routineId }, "Tool: manageRoutines (update)");
 
-            const existing = await getRoutineById(routineId, chatId);
+            const existing = await resolveRoutineRef(chatId, routineId);
             if (!existing) {
               return { success: false, reason: "Routine not found" };
             }
+            const resolvedId = existing._id.toString();
 
             const patch: Record<string, unknown> = {};
             if (name) patch.name = name;
@@ -187,9 +188,14 @@ export function createManageRoutinesTool(chatId: string) {
             // Increment version on any update
             patch.version = existing.version + 1;
 
-            const updated = await updateRoutine(routineId, patch, chatId);
+            const updated = await updateRoutine(resolvedId, patch, chatId);
             return updated
-              ? { success: true, routineId, version: updated.version, updated: Object.keys(patch) }
+              ? {
+                  success: true,
+                  routineId: resolvedId,
+                  version: updated.version,
+                  updated: Object.keys(patch),
+                }
               : { success: false, reason: "Routine not found" };
           }
 
@@ -198,9 +204,14 @@ export function createManageRoutinesTool(chatId: string) {
               return { success: false, reason: "routineId is required for delete" };
             }
             logger.debug({ routineId }, "Tool: manageRoutines (delete)");
-            const deleted = await deleteRoutine(routineId, chatId);
+            const target = await resolveRoutineRef(chatId, routineId);
+            if (!target) {
+              return { success: false, reason: "Routine not found" };
+            }
+            const deletedId = target._id.toString();
+            const deleted = await deleteRoutine(deletedId, chatId);
             return deleted
-              ? { success: true, deleted: routineId }
+              ? { success: true, deleted: deletedId }
               : { success: false, reason: "Routine not found" };
           }
 
@@ -209,9 +220,14 @@ export function createManageRoutinesTool(chatId: string) {
               return { success: false, reason: "routineId is required for enable" };
             }
             logger.debug({ routineId }, "Tool: manageRoutines (enable)");
-            const enabled = await updateRoutine(routineId, { enabled: true }, chatId);
+            const target = await resolveRoutineRef(chatId, routineId);
+            if (!target) {
+              return { success: false, reason: "Routine not found" };
+            }
+            const enableId = target._id.toString();
+            const enabled = await updateRoutine(enableId, { enabled: true }, chatId);
             return enabled
-              ? { success: true, routineId, enabled: true }
+              ? { success: true, routineId: enableId, enabled: true }
               : { success: false, reason: "Routine not found" };
           }
 
@@ -220,9 +236,14 @@ export function createManageRoutinesTool(chatId: string) {
               return { success: false, reason: "routineId is required for disable" };
             }
             logger.debug({ routineId }, "Tool: manageRoutines (disable)");
-            const disabled = await updateRoutine(routineId, { enabled: false }, chatId);
+            const target = await resolveRoutineRef(chatId, routineId);
+            if (!target) {
+              return { success: false, reason: "Routine not found" };
+            }
+            const disableId = target._id.toString();
+            const disabled = await updateRoutine(disableId, { enabled: false }, chatId);
             return disabled
-              ? { success: true, routineId, enabled: false }
+              ? { success: true, routineId: disableId, enabled: false }
               : { success: false, reason: "Routine not found" };
           }
         }
