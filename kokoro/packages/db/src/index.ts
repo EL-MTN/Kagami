@@ -71,6 +71,7 @@ export {
 export {
   Routine,
   RoutineLog,
+  MAX_ROUTINE_DEPTH,
   createRoutine,
   listRoutinesForChat,
   getRoutineById,

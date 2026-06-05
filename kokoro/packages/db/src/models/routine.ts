@@ -116,6 +116,14 @@ export const Routine =
 
 // --- Routine Log ---
 
+/**
+ * Maximum routine composition nesting depth (conversation/cron run = 0; each
+ * `useRoutine`/`delegate` hop adds 1). Canonical here so both the bot
+ * (recursion gate) and the dashboard (run-tree descendant walk) share one
+ * source of truth and can't drift.
+ */
+export const MAX_ROUTINE_DEPTH = 3;
+
 export interface IRoutineLog extends Document {
   id: string;
   routineId: Types.ObjectId;
@@ -140,6 +148,10 @@ const routineLogSchema = new Schema<IRoutineLog>({
 });
 
 routineLogSchema.index({ routineId: 1, startedAt: -1 });
+// Serves the dashboard run-tree descendant walk (`attachDescendants` queries
+// `{ parentLogId: { $in } }` sorted by startedAt); without it each tree level is
+// a full collection scan that grows with total log volume.
+routineLogSchema.index({ parentLogId: 1, startedAt: 1 });
 
 export const RoutineLog =
   (mongoose.models.RoutineLog as mongoose.Model<IRoutineLog>) ??

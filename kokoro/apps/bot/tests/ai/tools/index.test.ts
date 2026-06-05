@@ -232,6 +232,16 @@ describe("allTools — useRoutine recursion gate", () => {
     expect(Object.keys(allTools({ ...baseCtx, routineDepth: 2 }))).toContain("delegate");
     expect(Object.keys(allTools({ ...baseCtx, routineDepth: 3 }))).not.toContain("delegate");
   });
+
+  it("withholds delegate from a watcher calling context (defense-in-depth)", () => {
+    // delegate must never let an observation run fan out fresh LLM calls. The
+    // protection is positional today (watchers use watcherTools), so guard the
+    // gate explicitly in case a future caller routes allTools with "watcher".
+    const names = Object.keys(allTools({ ...baseCtx, callingContext: "watcher" }));
+    expect(names).not.toContain("delegate");
+    // useRoutine is still offered (purity-gated internally), only delegate is cut.
+    expect(names).toContain("useRoutine");
+  });
 });
 
 describe("watcherTools — read-only invariant", () => {

@@ -180,8 +180,27 @@ describe("delegate tool — fan-out", () => {
       subtasks: Array.from({ length: 6 }, (_, i) => ({ label: `s${i}`, prompt: `p${i}` })),
     });
 
-    expect(maxInFlight).toBeLessThanOrEqual(4);
+    // Exactly 4 — proves both the cap (not >4) and real parallelism (a serial
+    // implementation would peak at 1).
+    expect(maxInFlight).toBe(4);
     expect(mockRunTaskAgent).toHaveBeenCalledTimes(6);
+  });
+
+  it("reports an inline sub-task with empty text as a success with empty result", async () => {
+    mockRunTaskAgent.mockResolvedValue({ text: "", usage: {}, steps: 1 });
+    const tool = createDelegateTool(makeCtx(0), noopBuilder) as unknown as ExecutableTool;
+
+    const res = await tool.execute({
+      subtasks: [
+        { label: "a", prompt: "A" },
+        { label: "b", prompt: "B" },
+      ],
+    });
+
+    expect(res.results).toEqual([
+      { label: "a", success: true, result: "" },
+      { label: "b", success: true, result: "" },
+    ]);
   });
 
   it("preserves input order even when later branches finish first", async () => {
@@ -307,8 +326,33 @@ describe("delegate tool — routine-backed branches", () => {
 
     const call = mockExecuteRoutine.mock.calls[0];
     expect(call[2]).toEqual(
-      expect.objectContaining({ parentLogId: "parent-log-123", depth: 2, trigger: "routine" }),
+      expect.objectContaining({
+        parentLogId: "parent-log-123",
+        depth: 2,
+        trigger: "routine",
+        // rethrow → a failed routine run surfaces as a failed branch, not an
+        // "Error: …" string masquerading as success.
+        rethrow: true,
+      }),
     );
+  });
+
+  it("reports a routine-backed branch as failed when executeRoutine throws", async () => {
+    mockGetRoutineByName.mockResolvedValue(seedRoutine({ name: "gather" }));
+    mockExecuteRoutine.mockRejectedValue(new Error("routine blew up"));
+    const tool = createDelegateTool(makeCtx(0), noopBuilder) as unknown as ExecutableTool;
+
+    const res = await tool.execute({
+      subtasks: [
+        { label: "a", routineName: "gather" },
+        { label: "b", routineName: "gather" },
+      ],
+    });
+
+    expect(res.results).toEqual([
+      { label: "a", success: false, error: "routine blew up" },
+      { label: "b", success: false, error: "routine blew up" },
+    ]);
   });
 });
 
