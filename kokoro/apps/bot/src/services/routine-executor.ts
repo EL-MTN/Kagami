@@ -119,6 +119,9 @@ export async function executeRoutine(
       sessionId: `routine-${routineId}`,
       routineDepth: depth,
       callingContext,
+      // This run's RoutineLog id — so a composed `useRoutine`/`delegate` call
+      // links its spawned runs to this one (dashboard parent→children tree).
+      routineLogId: logId,
       // `conversational` is left false: a routine run must never self-author
       // another routine. proposeRoutine is a user-initiated-turn affordance.
     };

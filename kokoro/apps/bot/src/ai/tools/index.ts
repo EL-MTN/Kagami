@@ -38,6 +38,15 @@ export interface ToolContext {
   /** Current routine nesting depth. 0 = top-level conversation or manual routine trigger. */
   routineDepth?: number;
   /**
+   * The RoutineLog id of the currently-executing routine run, set by
+   * `executeRoutine` on the tool context it assembles. Composition tools
+   * (`useRoutine`, `delegate`) forward it as the `parentLogId` of any routine
+   * they spawn, so the dashboard can render a parent→children run tree.
+   * Absent on conversational/proactive turns — those aren't a RoutineLog, so a
+   * spawned routine run is a standalone root.
+   */
+  routineLogId?: string;
+  /**
    * True only for a live, user-initiated conversational turn (`generate.ts`).
    * Proactive outreach, routine executions, watcher ticks, and the
    * acknowledgment turn all leave it false — they share `callingContext: "main"`
@@ -123,7 +132,13 @@ export function allTools(ctx: ToolContext) {
 
   // Only provide useRoutine when below max depth (prevents infinite recursion)
   if (depth < MAX_ROUTINE_DEPTH) {
-    tools.useRoutine = createUseRoutineTool(ctx.chatId, ctx.adapter, depth, callingContext);
+    tools.useRoutine = createUseRoutineTool(
+      ctx.chatId,
+      ctx.adapter,
+      depth,
+      callingContext,
+      ctx.routineLogId,
+    );
     // `delegate` fans out independent read-only sub-tasks in parallel. Each
     // sub-task runs on `readOnlyToolSubset` — the same read-only palette the
     // watcher invariant uses — so a fan-out can only gather/analyse, never
@@ -175,7 +190,13 @@ function readOnlyToolSubset(ctx: ToolContext): ToolSet {
   });
 
   if (depth < MAX_ROUTINE_DEPTH) {
-    tools.useRoutine = createUseRoutineTool(ctx.chatId, ctx.adapter, depth, "watcher");
+    tools.useRoutine = createUseRoutineTool(
+      ctx.chatId,
+      ctx.adapter,
+      depth,
+      "watcher",
+      ctx.routineLogId,
+    );
   }
 
   // Memory reads are pure — watchers observe what's already in the vault.

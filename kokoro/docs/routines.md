@@ -344,6 +344,8 @@ RoutineLog (Routine A, trigger: "cron")
         +-- RoutineLog (Routine C, trigger: "routine", parentLogId: ^)
 ```
 
+The linkage is wired through the tool context: `executeRoutine` stamps its own log ID onto `ToolContext.routineLogId`, and both composition tools forward it as the spawned run's `parentLogId` — `useRoutine` directly, and `delegate` for its routine-backed branches (see [ai-layer.md](ai-layer.md)). A spawned run started from a conversational turn (no surrounding routine run) has no `parentLogId` and is a standalone root. The dashboard renders this tree under each run in the routine's **Execution History**: rows with children get an expand toggle, and nested child rows show the (possibly different) routine's name. The query walks `parentLogId` links breadth-first, bounded to the `MAX_ROUTINE_DEPTH` nesting depth (`getRoutineLogList` → `attachDescendants` in `apps/dashboard/src/lib/queries/routines.ts`).
+
 ### Behavioral Differences for Composed Calls
 
 - **No concurrency guard** — composed calls skip `isRoutineRunning()` since the parent already holds execution context
