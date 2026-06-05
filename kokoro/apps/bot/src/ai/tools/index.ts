@@ -12,6 +12,7 @@ import { createManageWatchersTool, reportWatcherResult } from "./watchers";
 import { createRequestConfirmationTool, createCancelConfirmationTool } from "./confirmations";
 import { createProposeRoutineTool } from "./routine-proposals";
 import { createProposeRoutineRefinementTool } from "./routine-refinements";
+import { createDelegateTool } from "./delegate";
 import { createSearchMemoryTool, createRememberFactTool } from "./memory";
 import { createCrmTools, createCrmWriteTools } from "./crm";
 import { getMcpTools } from "../../services/mcp";
@@ -123,6 +124,12 @@ export function allTools(ctx: ToolContext) {
   // Only provide useRoutine when below max depth (prevents infinite recursion)
   if (depth < MAX_ROUTINE_DEPTH) {
     tools.useRoutine = createUseRoutineTool(ctx.chatId, ctx.adapter, depth, callingContext);
+    // `delegate` fans out independent read-only sub-tasks in parallel. Each
+    // sub-task runs on `readOnlyToolSubset` — the same read-only palette the
+    // watcher invariant uses — so a fan-out can only gather/analyse, never
+    // mutate, and (lacking `delegate` itself) can't deepen the tree further.
+    // Gated by the same depth bound as useRoutine.
+    tools.delegate = createDelegateTool(ctx, readOnlyToolSubset);
   }
 
   // External MCP tools mounted at startup (initMcp). Namespaced `mcp_*` so they

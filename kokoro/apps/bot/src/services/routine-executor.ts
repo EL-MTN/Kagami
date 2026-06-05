@@ -1,5 +1,3 @@
-import { generateText, stepCountIs } from "ai";
-import { getModel } from "../ai/provider";
 import { allTools, routineToolsUnderWatcher, type ToolContext } from "../ai/tools/index";
 import {
   isRoutineRunning,
@@ -12,13 +10,13 @@ import {
 } from "@kokoro/db";
 import { logger, computeNextRunAt } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
-import { extractResponseText, sendSegmented } from "../ai/response";
+import { sendSegmented } from "../ai/response";
 import { trackUsage } from "../ai/token-tracker";
 import { getModelName } from "../ai/provider";
 import { DATETIME_CONTEXT } from "../ai/prompts";
+import { runTaskAgent } from "./task-agent";
 
 export const MAX_ROUTINE_DEPTH = 3;
-const LLM_TIMEOUT_MS = 180_000; // 3 minutes
 
 const ROUTINE_EXECUTOR_IDENTITY = `You are a task executor. Complete the routine described below using your tools. Be concise and factual — return results, not commentary. Do not adopt a persona or use conversational tone.`;
 
@@ -147,23 +145,23 @@ export async function executeRoutine(
     const tools =
       callingContext === "watcher" ? routineToolsUnderWatcher(toolContext) : allTools(toolContext);
 
-    const result = await generateText({
-      model: getModel(),
+    const {
+      text: responseText,
+      usage,
+      steps,
+    } = await runTaskAgent({
       system: systemPrompt,
-      messages: [{ role: "user", content: routine.prompt }],
+      prompt: routine.prompt,
       tools,
-      stopWhen: stepCountIs(maxSteps),
+      maxSteps,
       temperature,
-      abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
 
-    const responseText = result.text || extractResponseText(result.steps) || "";
-
     // Track token usage
-    trackUsage("routine", getModelName(), result.usage, {
+    trackUsage("routine", getModelName(), usage, {
       chatId,
       routineId,
-      steps: result.steps.length,
+      steps,
     });
 
     // Log completion
