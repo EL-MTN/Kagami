@@ -12,6 +12,7 @@ import { createManageWatchersTool, reportWatcherResult } from "./watchers";
 import { createRequestConfirmationTool, createCancelConfirmationTool } from "./confirmations";
 import { createProposeRoutineTool } from "./routine-proposals";
 import { createProposeRoutineRefinementTool } from "./routine-refinements";
+import { createDelegateTool } from "./delegate";
 import { createSearchMemoryTool, createRememberFactTool } from "./memory";
 import { createCrmTools, createCrmWriteTools } from "./crm";
 import { getMcpTools } from "../../services/mcp";
@@ -36,6 +37,15 @@ export interface ToolContext {
   userId?: string;
   /** Current routine nesting depth. 0 = top-level conversation or manual routine trigger. */
   routineDepth?: number;
+  /**
+   * The RoutineLog id of the currently-executing routine run, set by
+   * `executeRoutine` on the tool context it assembles. Composition tools
+   * (`useRoutine`, `delegate`) forward it as the `parentLogId` of any routine
+   * they spawn, so the dashboard can render a parent→children run tree.
+   * Absent on conversational/proactive turns — those aren't a RoutineLog, so a
+   * spawned routine run is a standalone root.
+   */
+  routineLogId?: string;
   /**
    * True only for a live, user-initiated conversational turn (`generate.ts`).
    * Proactive outreach, routine executions, watcher ticks, and the
@@ -122,7 +132,24 @@ export function allTools(ctx: ToolContext) {
 
   // Only provide useRoutine when below max depth (prevents infinite recursion)
   if (depth < MAX_ROUTINE_DEPTH) {
-    tools.useRoutine = createUseRoutineTool(ctx.chatId, ctx.adapter, depth, callingContext);
+    tools.useRoutine = createUseRoutineTool(
+      ctx.chatId,
+      ctx.adapter,
+      depth,
+      callingContext,
+      ctx.routineLogId,
+    );
+    // `delegate` fans out independent read-only sub-tasks in parallel. Each
+    // sub-task runs on `readOnlyToolSubset` — the same read-only palette the
+    // watcher invariant uses — so a fan-out can only gather/analyse, never
+    // mutate, and (lacking `delegate` itself) can't deepen the tree further.
+    // Gated by the same depth bound as useRoutine, AND restricted to "main"
+    // context: an observation (watcher) run must never fan out fresh LLM calls.
+    // allTools is only ever called for main today, so this is defense-in-depth —
+    // a future allTools(ctx, "watcher") caller can't inherit delegate.
+    if (callingContext === "main") {
+      tools.delegate = createDelegateTool(ctx, readOnlyToolSubset);
+    }
   }
 
   // External MCP tools mounted at startup (initMcp). Namespaced `mcp_*` so they
@@ -168,7 +195,13 @@ function readOnlyToolSubset(ctx: ToolContext): ToolSet {
   });
 
   if (depth < MAX_ROUTINE_DEPTH) {
-    tools.useRoutine = createUseRoutineTool(ctx.chatId, ctx.adapter, depth, "watcher");
+    tools.useRoutine = createUseRoutineTool(
+      ctx.chatId,
+      ctx.adapter,
+      depth,
+      "watcher",
+      ctx.routineLogId,
+    );
   }
 
   // Memory reads are pure — watchers observe what's already in the vault.

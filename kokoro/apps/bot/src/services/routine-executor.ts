@@ -1,5 +1,3 @@
-import { generateText, stepCountIs } from "ai";
-import { getModel } from "../ai/provider";
 import { allTools, routineToolsUnderWatcher, type ToolContext } from "../ai/tools/index";
 import {
   isRoutineRunning,
@@ -8,17 +6,20 @@ import {
   failRoutineLog,
   advanceRoutineNextRunAt,
   NO_REPORT_SENTINEL,
+  MAX_ROUTINE_DEPTH,
   type IRoutine,
 } from "@kokoro/db";
 import { logger, computeNextRunAt } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
-import { extractResponseText, sendSegmented } from "../ai/response";
+import { sendSegmented } from "../ai/response";
 import { trackUsage } from "../ai/token-tracker";
 import { getModelName } from "../ai/provider";
 import { DATETIME_CONTEXT } from "../ai/prompts";
+import { runTaskAgent } from "./task-agent";
 
-export const MAX_ROUTINE_DEPTH = 3;
-const LLM_TIMEOUT_MS = 180_000; // 3 minutes
+// Re-export the canonical depth bound (defined in @kokoro/db so the dashboard
+// shares it) for the tool layer, which imports it from here.
+export { MAX_ROUTINE_DEPTH };
 
 const ROUTINE_EXECUTOR_IDENTITY = `You are a task executor. Complete the routine described below using your tools. Be concise and factual — return results, not commentary. Do not adopt a persona or use conversational tone.`;
 
@@ -78,6 +79,14 @@ interface ExecuteRoutineOptions {
    * is gated against action-purity routines. Defaults to "main".
    */
   callingContext?: "main" | "watcher";
+  /**
+   * When true, a mid-run failure is re-thrown after logging instead of being
+   * swallowed and returned as an `"Error: …"` string. Composed callers that
+   * need to distinguish success from failure (e.g. `delegate`, which reports a
+   * per-branch `{ success: false }`) opt in; the default false preserves the
+   * scheduler/useRoutine contract of returning the error text.
+   */
+  rethrow?: boolean;
 }
 
 /**
@@ -97,6 +106,7 @@ export async function executeRoutine(
     parentLogId,
     silent = false,
     callingContext = "main",
+    rethrow = false,
   } = options;
   const routineId = routine._id.toString();
   const chatId = routine.chatId;
@@ -121,6 +131,9 @@ export async function executeRoutine(
       sessionId: `routine-${routineId}`,
       routineDepth: depth,
       callingContext,
+      // This run's RoutineLog id — so a composed `useRoutine`/`delegate` call
+      // links its spawned runs to this one (dashboard parent→children tree).
+      routineLogId: logId,
       // `conversational` is left false: a routine run must never self-author
       // another routine. proposeRoutine is a user-initiated-turn affordance.
     };
@@ -147,23 +160,23 @@ export async function executeRoutine(
     const tools =
       callingContext === "watcher" ? routineToolsUnderWatcher(toolContext) : allTools(toolContext);
 
-    const result = await generateText({
-      model: getModel(),
+    const {
+      text: responseText,
+      usage,
+      steps,
+    } = await runTaskAgent({
       system: systemPrompt,
-      messages: [{ role: "user", content: routine.prompt }],
+      prompt: routine.prompt,
       tools,
-      stopWhen: stepCountIs(maxSteps),
+      maxSteps,
       temperature,
-      abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
 
-    const responseText = result.text || extractResponseText(result.steps) || "";
-
     // Track token usage
-    trackUsage("routine", getModelName(), result.usage, {
+    trackUsage("routine", getModelName(), usage, {
       chatId,
       routineId,
-      steps: result.steps.length,
+      steps,
     });
 
     // Log completion
@@ -210,6 +223,12 @@ export async function executeRoutine(
       } catch {
         // If cron computation fails, don't block error handling
       }
+    }
+
+    // Opt-in callers (delegate) want the failure as a thrown error so they can
+    // mark the branch failed, rather than a success-shaped "Error: …" string.
+    if (rethrow) {
+      throw error instanceof Error ? error : new Error(reason);
     }
 
     // Alert user about the failure (only for direct, non-silent triggers)
