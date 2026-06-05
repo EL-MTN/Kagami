@@ -32,8 +32,41 @@ vi.mock("../../../src/ai/provider", () => ({
 const { mockTrackUsage } = vi.hoisted(() => ({ mockTrackUsage: vi.fn() }));
 vi.mock("../../../src/ai/token-tracker", () => ({ trackUsage: mockTrackUsage }));
 
+// Routine-backed branches: stub the executor (the routine-run path) and the
+// DB lookup so these tests stay DB-free and focus on delegate's gate +
+// dispatch. validateParameters (the routine-params leaf) runs for real.
+const { mockExecuteRoutine } = vi.hoisted(() => ({ mockExecuteRoutine: vi.fn() }));
+vi.mock("../../../src/services/routine-executor", () => ({
+  MAX_ROUTINE_DEPTH: 3,
+  executeRoutine: mockExecuteRoutine,
+}));
+const { mockGetRoutineByName } = vi.hoisted(() => ({ mockGetRoutineByName: vi.fn() }));
+vi.mock("@kokoro/db", () => ({ getRoutineByName: mockGetRoutineByName }));
+
 import { createDelegateTool } from "../../../src/ai/tools/delegate";
 import type { ToolContext } from "../../../src/ai/tools/index";
+
+interface SeedRoutine {
+  name: string;
+  enabled: boolean;
+  purity: "read" | "action";
+  parameters: Array<{
+    name: string;
+    type: "string" | "number" | "boolean" | "array" | "object";
+    description: string;
+    required: boolean;
+    default?: unknown;
+  }>;
+}
+
+function seedRoutine(overrides: Partial<SeedRoutine> = {}): SeedRoutine {
+  return {
+    name: overrides.name ?? "gather",
+    enabled: overrides.enabled ?? true,
+    purity: overrides.purity ?? "read",
+    parameters: overrides.parameters ?? [],
+  };
+}
 
 interface ExecutableTool {
   inputSchema: { safeParse: (v: unknown) => { success: boolean } };
@@ -56,6 +89,8 @@ const noopBuilder = (_ctx?: ToolContext): ToolSet => ({});
 beforeEach(() => {
   mockRunTaskAgent.mockReset();
   mockTrackUsage.mockReset();
+  mockExecuteRoutine.mockReset();
+  mockGetRoutineByName.mockReset();
 });
 
 describe("delegate tool — fan-out", () => {
@@ -167,6 +202,97 @@ describe("delegate tool — fan-out", () => {
   });
 });
 
+describe("delegate tool — routine-backed branches", () => {
+  it("runs a read-purity routine via executeRoutine (trigger routine, watcher, depth+1)", async () => {
+    mockGetRoutineByName.mockResolvedValue(seedRoutine({ name: "gather-news" }));
+    mockExecuteRoutine.mockResolvedValue("the news");
+    mockRunTaskAgent.mockReturnValue({ text: "sunny", usage: {}, steps: 1 });
+    const tool = createDelegateTool(makeCtx(0), noopBuilder) as unknown as ExecutableTool;
+
+    const res = await tool.execute({
+      subtasks: [
+        { label: "news", routineName: "gather-news" },
+        { label: "weather", prompt: "forecast" },
+      ],
+    });
+
+    expect((res.results as DelegateResult[])[0]).toEqual({
+      label: "news",
+      success: true,
+      result: "the news",
+    });
+    expect(mockExecuteRoutine).toHaveBeenCalledTimes(1);
+    const call = mockExecuteRoutine.mock.calls[0];
+    expect(call[2]).toEqual(
+      expect.objectContaining({ trigger: "routine", callingContext: "watcher", depth: 1 }),
+    );
+  });
+
+  it("rejects an action-purity routine — never executes it", async () => {
+    mockGetRoutineByName.mockResolvedValue(seedRoutine({ name: "send-it", purity: "action" }));
+    const tool = createDelegateTool(makeCtx(0), noopBuilder) as unknown as ExecutableTool;
+
+    const res = await tool.execute({
+      subtasks: [
+        { label: "x", routineName: "send-it" },
+        { label: "y", routineName: "send-it" },
+      ],
+    });
+
+    const results = res.results as DelegateResult[];
+    expect(results[0].success).toBe(false);
+    expect(results[0].error).toMatch(/purity "action"/);
+    expect(mockExecuteRoutine).not.toHaveBeenCalled();
+  });
+
+  it("fails a branch when the routine is missing or disabled", async () => {
+    mockGetRoutineByName.mockImplementation((_chatId: string, name: string) =>
+      name === "off" ? seedRoutine({ name: "off", enabled: false }) : null,
+    );
+    const tool = createDelegateTool(makeCtx(0), noopBuilder) as unknown as ExecutableTool;
+
+    const res = await tool.execute({
+      subtasks: [
+        { label: "missing", routineName: "ghost" },
+        { label: "disabled", routineName: "off" },
+      ],
+    });
+
+    const results = res.results as DelegateResult[];
+    expect(results[0]).toEqual({
+      label: "missing",
+      success: false,
+      error: 'Routine "ghost" not found',
+    });
+    expect(results[1].error).toMatch(/is disabled/);
+    expect(mockExecuteRoutine).not.toHaveBeenCalled();
+  });
+
+  it("validates + coerces routine parameters before executing", async () => {
+    mockGetRoutineByName.mockResolvedValue(
+      seedRoutine({
+        name: "lookup",
+        parameters: [{ name: "limit", type: "number", description: "n", required: true }],
+      }),
+    );
+    mockExecuteRoutine.mockResolvedValue("done");
+    const tool = createDelegateTool(makeCtx(0), noopBuilder) as unknown as ExecutableTool;
+
+    // valid: "5" coerces to number 5
+    await tool.execute({
+      subtasks: [
+        { label: "ok", routineName: "lookup", parameters: { limit: "5" } },
+        { label: "bad", routineName: "lookup", parameters: {} },
+      ],
+    });
+
+    const okCall = mockExecuteRoutine.mock.calls[0];
+    expect(okCall[2]).toEqual(expect.objectContaining({ parameters: { limit: 5 } }));
+    // the missing-required-param branch never reaches the executor
+    expect(mockExecuteRoutine).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("delegate tool — input bounds", () => {
   const tool = createDelegateTool(makeCtx(0), noopBuilder) as unknown as ExecutableTool;
 
@@ -181,12 +307,30 @@ describe("delegate tool — input bounds", () => {
     expect(tool.inputSchema.safeParse({ subtasks: seven }).success).toBe(false);
   });
 
-  it("accepts 2 well-formed sub-tasks", () => {
+  it("requires exactly one of prompt or routineName per sub-task", () => {
+    // neither
+    expect(
+      tool.inputSchema.safeParse({
+        subtasks: [{ label: "a" }, { label: "b", prompt: "B" }],
+      }).success,
+    ).toBe(false);
+    // both
+    expect(
+      tool.inputSchema.safeParse({
+        subtasks: [
+          { label: "a", prompt: "A", routineName: "r" },
+          { label: "b", prompt: "B" },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts a mix of inline-prompt and routine-backed sub-tasks", () => {
     expect(
       tool.inputSchema.safeParse({
         subtasks: [
           { label: "a", prompt: "A" },
-          { label: "b", prompt: "B" },
+          { label: "b", routineName: "gather", parameters: { x: 1 } },
         ],
       }).success,
     ).toBe(true);
