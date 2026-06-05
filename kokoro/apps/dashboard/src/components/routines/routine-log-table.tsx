@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -34,10 +35,40 @@ function formatDuration(start: string, end?: string): string {
   return `${mins}m ${remSecs}s`;
 }
 
+interface FlatLog {
+  log: RoutineLogItem;
+  depth: number;
+}
+
+/**
+ * Depth-first flatten of the run tree, skipping the children of any collapsed
+ * row, so the table can render the tree as indented rows.
+ */
+function flattenTree(logs: RoutineLogItem[], expanded: Set<string>, depth = 0): FlatLog[] {
+  const out: FlatLog[] = [];
+  for (const log of logs) {
+    out.push({ log, depth });
+    if (log.children && log.children.length > 0 && expanded.has(log.id)) {
+      out.push(...flattenTree(log.children, expanded, depth + 1));
+    }
+  }
+  return out;
+}
+
 export function RoutineLogTable({ routineId, initialLogs, initialHasMore }: RoutineLogTableProps) {
   const [logs, setLogs] = useState(initialLogs);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggle(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   async function loadMore() {
     if (!hasMore || loading) return;
@@ -57,6 +88,8 @@ export function RoutineLogTable({ routineId, initialLogs, initialHasMore }: Rout
       setLoading(false);
     }
   }
+
+  const rows = flattenTree(logs, expanded);
 
   return (
     <div className="space-y-3">
@@ -82,60 +115,87 @@ export function RoutineLogTable({ routineId, initialLogs, initialHasMore }: Rout
             </TableRow>
           </TableHeader>
           <TableBody>
-            {logs.map((log) => (
-              <TableRow
-                key={log.id}
-                className="border-border/50 transition-colors hover:bg-primary/[0.02]"
-              >
-                <TableCell className="text-xs tabular-nums text-muted-foreground">
-                  {new Date(log.startedAt).toLocaleString()}
-                </TableCell>
-                <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
-                  {formatDuration(log.startedAt, log.completedAt)}
-                </TableCell>
-                <TableCell>
-                  <span className="text-xs text-muted-foreground">{log.trigger}</span>
-                </TableCell>
-                <TableCell>
-                  <span
-                    className={`inline-flex items-center gap-1.5 text-xs ${
-                      log.status === "completed"
-                        ? "text-primary/60"
-                        : log.status === "failed"
-                          ? "text-destructive-foreground"
-                          : "text-muted-foreground"
-                    }`}
-                  >
+            {rows.map(({ log, depth }) => {
+              const hasChildren = !!log.children && log.children.length > 0;
+              const isOpen = expanded.has(log.id);
+              return (
+                <TableRow
+                  key={log.id}
+                  className="border-border/50 transition-colors hover:bg-primary/[0.02]"
+                >
+                  <TableCell className="text-xs tabular-nums text-muted-foreground">
+                    <div className="flex items-center gap-1" style={{ paddingLeft: depth * 18 }}>
+                      {hasChildren ? (
+                        <button
+                          type="button"
+                          onClick={() => toggle(log.id)}
+                          aria-label={isOpen ? "Collapse sub-runs" : "Expand sub-runs"}
+                          className="flex h-3.5 w-3.5 items-center justify-center text-muted-foreground hover:text-foreground"
+                        >
+                          {isOpen ? (
+                            <ChevronDown className="h-3 w-3" />
+                          ) : (
+                            <ChevronRight className="h-3 w-3" />
+                          )}
+                        </button>
+                      ) : depth > 0 ? (
+                        <span className="w-3.5 text-center text-faint">&#8627;</span>
+                      ) : (
+                        <span className="w-3.5" />
+                      )}
+                      <span>{new Date(log.startedAt).toLocaleString()}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {formatDuration(log.startedAt, log.completedAt)}
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-xs text-muted-foreground">{log.trigger}</span>
+                    {log.routineName && (
+                      <span className="ml-1.5 text-xs text-faint">· {log.routineName}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
                     <span
-                      className={`h-1.5 w-1.5 rounded-full ${
+                      className={`inline-flex items-center gap-1.5 text-xs ${
                         log.status === "completed"
-                          ? "bg-primary/60"
+                          ? "text-primary/60"
                           : log.status === "failed"
-                            ? "bg-destructive/60"
-                            : "bg-muted-foreground/50 animate-pulse"
+                            ? "text-destructive-foreground"
+                            : "text-muted-foreground"
                       }`}
-                    />
-                    {log.status}
-                  </span>
-                </TableCell>
-                <TableCell className="max-w-md">
-                  {log.summary ? (
-                    <details>
-                      <summary className="max-w-md cursor-pointer truncate text-xs text-foreground/70">
-                        {log.summary.slice(0, 120)}
-                        {log.summary.length > 120 ? "..." : ""}
-                      </summary>
-                      <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-                        {log.summary}
-                      </p>
-                    </details>
-                  ) : (
-                    <span className="text-xs text-faint">&mdash;</span>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-            {logs.length === 0 && (
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          log.status === "completed"
+                            ? "bg-primary/60"
+                            : log.status === "failed"
+                              ? "bg-destructive/60"
+                              : "bg-muted-foreground/50 animate-pulse"
+                        }`}
+                      />
+                      {log.status}
+                    </span>
+                  </TableCell>
+                  <TableCell className="max-w-md">
+                    {log.summary ? (
+                      <details>
+                        <summary className="max-w-md cursor-pointer truncate text-xs text-foreground/70">
+                          {log.summary.slice(0, 120)}
+                          {log.summary.length > 120 ? "..." : ""}
+                        </summary>
+                        <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                          {log.summary}
+                        </p>
+                      </details>
+                    ) : (
+                      <span className="text-xs text-faint">&mdash;</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
                   No executions yet.

@@ -440,6 +440,21 @@ describe("useRoutine tool — invocation", () => {
     expect(call[2]).toEqual(expect.objectContaining({ depth: 2, callingContext: "main" }));
   });
 
+  it("forwards parentLogId to executeRoutine for the dashboard run tree", async () => {
+    const tool = createUseRoutineTool(
+      "chat-1",
+      adapter,
+      0,
+      "main",
+      "parent-log-9",
+    ) as unknown as ExecutableTool;
+    await seedRoutine("child");
+    mockExecuteRoutine.mockResolvedValue("ok");
+    await tool.execute({ routineName: "child" });
+    const call = mockExecuteRoutine.mock.calls[0];
+    expect(call[2]).toEqual(expect.objectContaining({ parentLogId: "parent-log-9" }));
+  });
+
   it("forwards executor errors as a failed result", async () => {
     const tool = createUseRoutineTool("chat-1", adapter) as unknown as ExecutableTool;
     await seedRoutine("fail");

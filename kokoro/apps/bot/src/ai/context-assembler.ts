@@ -85,6 +85,9 @@ async function assemblePromptShell(
   const routines = await readInstruction("routines");
   if (routines) parts.push(routines);
 
+  const delegate = await readInstruction("delegate");
+  if (delegate) parts.push(delegate);
+
   // Load the proposeRoutine / proposeRoutineRefinement rules only where the
   // tools are actually offered — live conversational turns. Excluded from the
   // no-tools acknowledgment turn (includeProposalRule defaults to

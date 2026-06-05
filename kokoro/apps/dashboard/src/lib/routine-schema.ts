@@ -134,4 +134,12 @@ export interface RoutineLogItem {
   summary?: string;
   startedAt: string;
   completedAt?: string;
+  /**
+   * Name of the routine this log belongs to. Only populated on nested child
+   * runs (which may belong to a different routine than the one being viewed);
+   * top-level rows omit it since the page already knows the routine.
+   */
+  routineName?: string;
+  /** Routine runs this run spawned via `useRoutine` / `delegate`, nested. */
+  children?: RoutineLogItem[];
 }
