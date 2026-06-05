@@ -252,6 +252,84 @@ describe("manageRoutines — delete / enable / disable", () => {
   });
 });
 
+describe("manageRoutines — resolve by name (id-or-name)", () => {
+  // Regression: the model is told to use a routine's NAME as its handle
+  // everywhere (e.g. useRoutine), and routinely passes the name where an id is
+  // expected. A raw findOne({ _id: name }) threw a Mongoose CastError, so
+  // disable/enable/delete/update by name failed outright. They must now resolve
+  // the routine by either its ObjectId or its unique name.
+
+  const tool = createManageRoutinesTool("chat-1") as unknown as ExecutableTool;
+
+  async function seed(name: string) {
+    const created = await tool.execute({
+      action: "create",
+      name,
+      description: "x",
+      prompt: "p",
+      reportMode: "always",
+    });
+    return created.routineId as string;
+  }
+
+  it("disable accepts the routine NAME (was a CastError)", async () => {
+    const id = await seed("robinhood_daily_return");
+    const result = await tool.execute({ action: "disable", routineId: "robinhood_daily_return" });
+    expect(result).toEqual({ success: true, routineId: id, enabled: false });
+    expect((await getRoutineById(id))?.enabled).toBe(false);
+  });
+
+  it("enable accepts the routine NAME", async () => {
+    const id = await seed("nightly");
+    await tool.execute({ action: "disable", routineId: "nightly" });
+    const result = await tool.execute({ action: "enable", routineId: "nightly" });
+    expect(result).toEqual({ success: true, routineId: id, enabled: true });
+    expect((await getRoutineById(id))?.enabled).toBe(true);
+  });
+
+  it("delete accepts the routine NAME and returns the resolved id", async () => {
+    const id = await seed("scratch");
+    const result = await tool.execute({ action: "delete", routineId: "scratch" });
+    expect(result).toEqual({ success: true, deleted: id });
+    expect(await Routine.findById(id)).toBeNull();
+  });
+
+  it("update accepts the routine NAME and resolves to its id", async () => {
+    const id = await seed("editable");
+    const result = await tool.execute({
+      action: "update",
+      routineId: "editable",
+      description: "new desc",
+    });
+    expect(result.success).toBe(true);
+    expect(result.routineId).toBe(id);
+    expect(result.version).toBe(2);
+    expect((await getRoutineById(id))?.description).toBe("new desc");
+  });
+
+  it("still resolves by a valid ObjectId", async () => {
+    const id = await seed("by-id");
+    const result = await tool.execute({ action: "disable", routineId: id });
+    expect(result).toEqual({ success: true, routineId: id, enabled: false });
+  });
+
+  it("an unknown name (not an id) returns 'Routine not found', not a thrown CastError", async () => {
+    const result = await tool.execute({ action: "disable", routineId: "no_such_routine" });
+    expect(result).toEqual({ success: false, reason: "Routine not found" });
+  });
+
+  it("does not cross chat boundaries when resolving by name", async () => {
+    await createRoutine("chat-2", {
+      name: "foreign",
+      description: "x",
+      prompt: "p",
+      reportMode: "always",
+    });
+    const result = await tool.execute({ action: "disable", routineId: "foreign" });
+    expect(result).toEqual({ success: false, reason: "Routine not found" });
+  });
+});
+
 // ─── searchRoutines ──────────────────────────────────────────────────────────
 
 describe("searchRoutines tool", () => {

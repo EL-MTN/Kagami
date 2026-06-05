@@ -76,6 +76,7 @@ export {
   listRoutinesForChat,
   getRoutineById,
   getRoutineByName,
+  resolveRoutineRef,
   updateRoutine,
   updateRoutineIfVersion,
   applyRoutineRefinement,
