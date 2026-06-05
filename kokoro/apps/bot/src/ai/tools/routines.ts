@@ -323,6 +323,7 @@ export function createUseRoutineTool(
   adapter: PlatformAdapter,
   depth = 0,
   callingContext: UseRoutineCallingContext = "main",
+  parentLogId?: string,
 ) {
   return tool({
     description:
@@ -380,6 +381,9 @@ export function createUseRoutineTool(
           // Propagate the gate so a watcher → read-purity routine chain cannot
           // call into action-purity routines on a deeper hop.
           callingContext,
+          // Link the child run to the parent routine's RoutineLog so the
+          // dashboard can render the composition as a parent→children tree.
+          parentLogId,
         });
 
         return {

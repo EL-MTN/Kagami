@@ -110,6 +110,7 @@ interface ToolContext {
   sessionId: string;
   userId?: string; // user driving the turn; absent for cron-triggered routines
   routineDepth?: number; // Current routine nesting depth (0 = top-level)
+  routineLogId?: string; // RoutineLog id of the running routine; forwarded as parentLogId by useRoutine/delegate
   callingContext?: "main" | "watcher"; // gates routine purity; defaults to "main"
 }
 
@@ -273,7 +274,7 @@ Autonomous multi-step browsing (`stagehand.agent().execute()`, up to 25 steps) i
 - **Returns**: `{ success: true, results: Array<{ label, success: true, result } | { label, success: false, error }> }`, in input order.
 - **Behavior**: Two branch kinds, both read-only and both wrapped in `runWithSpan("delegate.subtask", …)` (so the fan-out renders as a parallel waterfall in Kansoku):
   - **Inline (`prompt`)** — runs as its own `runTaskAgent` call (5 steps, temp 0.4) on the **read-only palette** (`readOnlyToolSubset`, the same subset the watcher invariant uses: web/browser search, memory recall, email/calendar reads, CRM reads; no sends, writes, or confirmations). The palette is injected from `index.ts` at registration, so `delegate.ts` never imports back into the barrel. Usage tracked under the `delegate` category.
-  - **Routine-backed (`routineName`)** — mirrors `useRoutine`'s lookup + parameter validation (via the shared `./routine-params` leaf), but **rejects `action`-purity routines** (delegate only fans out gathering) and runs the routine via `executeRoutine` with `trigger: "routine"` + `callingContext: "watcher"`, so even a `read` routine runs on the transitive read-only palette and never delivers its own report. Usage tracked under the routine executor's own `routine` category.
+  - **Routine-backed (`routineName`)** — mirrors `useRoutine`'s lookup + parameter validation (via the shared `./routine-params` leaf), but **rejects `action`-purity routines** (delegate only fans out gathering) and runs the routine via `executeRoutine` with `trigger: "routine"` + `callingContext: "watcher"`, so even a `read` routine runs on the transitive read-only palette and never delivers its own report. It forwards `ctx.routineLogId` as the spawned run's `parentLogId`, so a fan-out issued from inside a routine shows up as nested child runs in the dashboard's run tree. Usage tracked under the routine executor's own `routine` category.
   - Sub-tasks run one nesting level deeper (`routineDepth + 1`) and, because neither branch exposes `delegate`, **cannot fan out further** — the tree can never deepen past a single fan-out level. Branches run behind a concurrency cap of `SUBTASK_CONCURRENCY = 4` in-flight via `mapWithConcurrency`; one branch failing is isolated (`{ success: false, error }`) and never aborts its siblings.
 - **Depth gate**: registered in `allTools` only when `routineDepth < MAX_ROUTINE_DEPTH` (same bound as `useRoutine`); deliberately **absent from `watcherTools` / `routineToolsUnderWatcher`** — observation runs stay single-purpose and never fan out.
 

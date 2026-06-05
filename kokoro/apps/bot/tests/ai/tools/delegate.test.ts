@@ -291,6 +291,25 @@ describe("delegate tool — routine-backed branches", () => {
     // the missing-required-param branch never reaches the executor
     expect(mockExecuteRoutine).toHaveBeenCalledTimes(1);
   });
+
+  it("links a routine-backed branch to the parent run via parentLogId", async () => {
+    mockGetRoutineByName.mockResolvedValue(seedRoutine({ name: "gather" }));
+    mockExecuteRoutine.mockResolvedValue("ok");
+    const ctx: ToolContext = { ...makeCtx(1), routineLogId: "parent-log-123" };
+    const tool = createDelegateTool(ctx, noopBuilder) as unknown as ExecutableTool;
+
+    await tool.execute({
+      subtasks: [
+        { label: "a", routineName: "gather" },
+        { label: "b", routineName: "gather" },
+      ],
+    });
+
+    const call = mockExecuteRoutine.mock.calls[0];
+    expect(call[2]).toEqual(
+      expect.objectContaining({ parentLogId: "parent-log-123", depth: 2, trigger: "routine" }),
+    );
+  });
 });
 
 describe("delegate tool — input bounds", () => {

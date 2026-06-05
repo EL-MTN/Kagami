@@ -92,12 +92,14 @@ async function runRoutineSubtask(
 
   // trigger "routine" → never delivers its own report (delegate returns the
   // result to the caller); callingContext "watcher" → transitive read-only;
-  // depth + 1 shares the recursion ceiling with useRoutine.
+  // depth + 1 shares the recursion ceiling with useRoutine; parentLogId links
+  // the spawned run to the calling routine's RoutineLog for the dashboard tree.
   return executeRoutine(routine, ctx.adapter, {
     trigger: "routine",
     parameters: validation.resolved,
     depth: depth + 1,
     callingContext: "watcher",
+    parentLogId: ctx.routineLogId,
   });
 }
 
