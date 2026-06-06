@@ -56,12 +56,9 @@ Create `apps/dashboard/.env.local`:
 
 ```
 MONGODB_URI=mongodb://localhost:27017/kokoro
-DASHBOARD_PASSWORD=your-password-here  # optional — HTTP Basic Auth gate
 ```
 
 No LLM/embedding API keys needed — the config refactor (see below) ensures the dashboard can import `@kokoro/db` and `@kokoro/shared` without triggering validation for those keys.
-
-When `DASHBOARD_PASSWORD` is set, the `middleware.ts` middleware enforces HTTP Basic Auth on all routes. The browser handles the native login dialog. If unset, all routes are open (dev convenience).
 
 ## Running
 

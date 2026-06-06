@@ -194,7 +194,7 @@ Environment files are app-local and ignored by git. Keep secrets out of committe
 | Kioku API         | `kioku/apps/api/.env.example`         | `kioku/apps/api/.env`              | Mongo, chat model, embedding model, provider keys                 |
 | Kioku dashboard   | `kioku/apps/dashboard/.env.example`   | `kioku/apps/dashboard/.env`        | `KIOKU_API_URL`                                                   |
 | Kokoro bot        | `kokoro/apps/bot/.env.example`        | `kokoro/apps/bot/.env`             | Telegram, Mongo, LLM, Kioku, Kizuna, optional tools               |
-| Kokoro dashboard  | none currently                        | `kokoro/apps/dashboard/.env.local` | Optional `MONGODB_URI` and `DASHBOARD_PASSWORD`                   |
+| Kokoro dashboard  | none currently                        | `kokoro/apps/dashboard/.env.local` | Optional `MONGODB_URI`                                            |
 | Kizuna API        | `kizuna/apps/api/.env.example`        | `kizuna/apps/api/.env`             | Mongo, Google OAuth, ingest scheduler                             |
 | Kizuna dashboard  | `kizuna/apps/dashboard/.env.example`  | `kizuna/apps/dashboard/.env`       | API URL, user emails                                              |
 | Kansoku API       | `kansoku/apps/api/.env.example`       | `kansoku/apps/api/.env`            | Mongo, shared ingest token, log retention, optional alert webhook |
@@ -267,9 +267,8 @@ To generate the refresh token from the root workspace:
 npm run kokoro:auth:google
 ```
 
-The Kokoro dashboard defaults to `mongodb://localhost:27017/kokoro`. Set
-`DASHBOARD_PASSWORD` in `kokoro/apps/dashboard/.env.local` to enable basic auth in front of the
-dashboard.
+The Kokoro dashboard defaults to `mongodb://localhost:27017/kokoro`. Override
+`MONGODB_URI` in `kokoro/apps/dashboard/.env.local` when pointing it at another database.
 
 ### Kizuna
 
