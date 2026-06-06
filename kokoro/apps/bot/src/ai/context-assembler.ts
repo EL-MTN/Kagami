@@ -13,7 +13,7 @@ import {
   listPendingConfirmations,
   type RoutineHealth,
 } from "@kokoro/db";
-import { DATETIME_CONTEXT, moodForTimeOfDay, timeOfDayFor } from "./prompts";
+import { DATE_CONTEXT, moodForTimeOfDay, timeOfDayFor } from "./prompts";
 import { ROUTINE_PROPOSAL_TOOLS } from "./tools/routine-proposal-tools";
 import { getMcpSummary } from "../services/mcp";
 import { config, logger, parseMarkdown } from "@kokoro/shared";
@@ -64,7 +64,10 @@ async function assemblePromptShell(
 
   parts.push(`## Current Mood\n${moodForTimeOfDay(timeOfDayFor(now))}`);
 
-  parts.push(DATETIME_CONTEXT(now));
+  // Date-only here keeps the system prompt (the cached prefix) stable across a
+  // conversation; the precise minute-level time is injected as a trailing system
+  // message per turn in generate.ts (see `currentTimeContext`).
+  parts.push(DATE_CONTEXT(now));
 
   const toolBehavior = await readInstruction("tool-behavior");
   if (toolBehavior) parts.push(toolBehavior);

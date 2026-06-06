@@ -92,6 +92,7 @@ describe("allTools — minimum-config baseline", () => {
         "createFollowup",
         "delegate",
         "findPeople",
+        "getCurrentTime",
         "getPersonContext",
         "listMyFollowups",
         "logInteraction",
@@ -283,6 +284,7 @@ describe("watcherTools — read-only invariant", () => {
         "checkEmail",
         "listCalendarEvents", // the readOnly variant exposed under this name
         "browse",
+        "getCurrentTime", // pure read — allowed in observation runs
         "findPeople",
         "getPersonContext",
         "listMyFollowups",
