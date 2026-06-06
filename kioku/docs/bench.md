@@ -16,7 +16,6 @@ apps/api/bench/longmemeval/
 ├── README.md
 ├── data/        # downloaded LongMemEval JSON (gitignored)
 ├── results/     # per-run output (timestamped JSON)
-├── tmp/         # interim per-item state (e.g. partial-predictions.json)
 └── vaults/      # per-item kept facts (when --keep-vaults is used)
 
 apps/api/scripts/
@@ -74,7 +73,7 @@ Flags:
 - `--data <path>` — dataset JSON path (default: `bench/longmemeval/data/longmemeval_oracle.json`)
 - `--keep-vaults` — skip the per-item Mongo DB drop; reuse the existing facts for the query/judge passes (saves ingest cost on prompt iterations)
 - `--clean-vaults` — delete each vault after its item finishes (default: kept on disk)
-- `--resume` — pick up from `tmp/partial-predictions.json` if a prior run was interrupted
+- `--resume` — pick up from the partial-predictions JSON checkpoint under `bench/longmemeval/` if a prior run was interrupted
 
 ## Output
 
@@ -87,7 +86,7 @@ Per-item record includes the question, ground truth, Kioku's prediction, judge v
 ## Architecture
 
 - `scripts/longmemeval.ts` — orchestrator. Iterates items, spawns one worker subprocess per item with a per-item Mongo database spliced into `MONGODB_URI`, then runs the judge pass.
-- `scripts/longmemeval-worker.ts` — single-item worker. Parses each `haystack_session` into a `Transcript`, calls `consolidate()` to extract atomic facts into the per-item Mongo DB, then `query()`. Auto-skips ingest when the per-item DB already has facts (lets `--keep-vaults` cycle the query/judge layer cheaply).
+- `scripts/longmemeval-worker.ts` — single-item worker. Parses each `haystack_sessions` entry into a `Transcript`, calls `consolidate()` to extract atomic facts into the per-item Mongo DB, then `query()`. Auto-skips ingest when the per-item DB already has facts (lets `--keep-vaults` cycle the query/judge layer cheaply).
 - `scripts/citation-recall.ts` — `computeCitationRecall(citations, truth)` helper. Set-overlap recall used by the orchestrator's summary; lives in its own file so the test suite can import it without triggering the orchestrator's top-level `main()` call.
 
 Per-item subprocesses give clean DB isolation without refactoring `apps/api/src/storage/mongo.ts` (which freezes the DB name at module load).
