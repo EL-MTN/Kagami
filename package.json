@@ -17,6 +17,8 @@
     "kansoku/packages/*",
     "kao/apps/*",
     "kao/packages/*",
+    "cockpit/apps/*",
+    "cockpit/packages/*",
     "shared/packages/*"
   ],
   "scripts": {
@@ -38,6 +40,8 @@
     "kao:dev": "turbo run dev --filter=\"@kao/*\"",
     "kao:dev:api": "turbo run dev --filter=@kao/api",
     "kao:dev:dashboard": "turbo run dev --filter=@kao/dashboard",
+    "cockpit:dev": "turbo run dev --filter=\"@cockpit/*\"",
+    "cockpit:dev:dashboard": "turbo run dev --filter=@cockpit/dashboard",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "lint": "turbo run lint",

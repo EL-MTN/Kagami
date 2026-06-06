@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Boot Kioku, Kokoro, Kizuna, Kansoku, and Kao under Turbo's TUI multiplexer.
+# Boot Kioku, Kokoro, Kizuna, Kansoku, Kao, and Cockpit under Turbo's TUI multiplexer.
 # Prints the Portless URL table, then hands off to `turbo run dev`.
 # Ctrl-C stops everything (Turbo owns the process tree).
 #
@@ -9,8 +9,8 @@
 #   --stream             force streamed [prefix] output instead of TUI
 #   -h, --help           show this help
 #
-# A <target> is either a project ("kioku" / "kokoro" / "kizuna" / "kansoku" / "kao")
-# or a single component ("kioku:api", "kokoro:bot", "kansoku:dashboard", ...).
+# A <target> is either a project ("kioku" / "kokoro" / "kizuna" / "kansoku" / "kao" / "cockpit")
+# or a single component ("kioku:api", "kokoro:bot", "cockpit:dashboard", ...).
 #
 # Examples:
 #   ./dev-all.sh                             # everything
@@ -37,7 +37,7 @@ if [[ ! -f "$ROOT/package.json" ]]; then
 fi
 
 # Canonical component list (also defines display order in the URL banner).
-ALL="kioku:api kioku:dashboard kokoro:bot kokoro:dashboard kizuna:api kizuna:dashboard kansoku:api kansoku:dashboard kao:api kao:dashboard"
+ALL="kioku:api kioku:dashboard kokoro:bot kokoro:dashboard kizuna:api kizuna:dashboard kansoku:api kansoku:dashboard kao:api kao:dashboard cockpit:dashboard"
 
 pkg_for() {
   case "$1" in
@@ -51,6 +51,7 @@ pkg_for() {
     kansoku:dashboard) echo @kansoku/dashboard ;;
     kao:api)           echo @kao/api ;;
     kao:dashboard)     echo @kao/dashboard ;;
+    cockpit:dashboard) echo @cockpit/dashboard ;;
     *) return 1 ;;
   esac
 }
@@ -66,6 +67,7 @@ url_for() {
     kansoku:dashboard) echo "https://kansoku.localhost" ;;
     kao:api)           echo "https://api.kao.localhost" ;;
     kao:dashboard)     echo "https://kao.localhost" ;;
+    cockpit:dashboard) echo "https://kagami.localhost" ;;
     *) echo "" ;;
   esac
 }
@@ -77,6 +79,7 @@ expand() {
     kizuna)  echo "kizuna:api kizuna:dashboard" ;;
     kansoku) echo "kansoku:api kansoku:dashboard" ;;
     kao)     echo "kao:api kao:dashboard" ;;
+    cockpit) echo "cockpit:dashboard" ;;
     *)       echo "$1" ;;
   esac
 }

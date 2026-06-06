@@ -1,0 +1,5 @@
+{
+  "apps": {
+    "apps/dashboard": { "name": "kagami" }
+  }
+}
