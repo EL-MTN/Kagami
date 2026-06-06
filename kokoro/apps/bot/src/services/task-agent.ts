@@ -2,11 +2,11 @@ import { generateText, stepCountIs, type LanguageModel, type ToolSet } from "ai"
 import { getModel } from "../ai/provider";
 import { extractResponseText } from "../ai/response";
 
-export const TASK_AGENT_TIMEOUT_MS = 180_000; // 3 minutes
+const TASK_AGENT_TIMEOUT_MS = 180_000; // 3 minutes
 
 type GenerateTextResult = Awaited<ReturnType<typeof generateText>>;
 
-export interface TaskAgentResult {
+interface TaskAgentResult {
   text: string;
   usage: GenerateTextResult["usage"];
   steps: number;

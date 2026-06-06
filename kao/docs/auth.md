@@ -42,7 +42,7 @@ dashboard pass that ships in this file's history, those are:
   crosses into the rendered HTML (no `NEXT_PUBLIC_` prefix, no client
   bundle reads `process.env.KAO_TOKEN`). For threat-model purposes
   `apps/dashboard/.env` is the same sensitivity level as `apps/api/.env`.
-- **Kokoro** (the only currently-live API consumer; `kokoro/.env`).
+- **Kokoro** (`kokoro/.env`) and **Kizuna** (`kizuna/apps/api/.env`) as the currently-live API consumers.
 
 ### Rotating the bearer
 
