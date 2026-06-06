@@ -3,6 +3,7 @@ import { createCheckEmailTool, createSendEmailTool } from "./email";
 import { createManageCalendarTool, createManageRemindersTool } from "./calendar";
 import { createBrowseTool, createReadOnlyBrowseTool } from "./browse";
 import { createWebSearchTool } from "./web-search";
+import { createGetCurrentTimeTool } from "./time";
 import {
   createManageRoutinesTool,
   createSearchRoutinesTool,
@@ -96,6 +97,10 @@ export function allTools(ctx: ToolContext) {
   tools.browse = createBrowseTool(ctx.chatId, ctx.adapter, {
     includeSearch: !config.BRAVE_SEARCH_API_KEY,
   });
+
+  // Read-only, local: a fresh precise-time read (the user's local time is
+  // ambient every turn; this covers long-task drift and other timezones).
+  tools.getCurrentTime = createGetCurrentTimeTool();
 
   // Approval-gated wrappers. Always registered now that browser automation and
   // CRM writes are unconditional (sendEmail/manageCalendar still require Kao for
@@ -193,6 +198,9 @@ function readOnlyToolSubset(ctx: ToolContext): ToolSet {
   tools.browse = createReadOnlyBrowseTool({
     includeSearch: !config.BRAVE_SEARCH_API_KEY,
   });
+
+  // Pure read — safe for watcher/observation runs.
+  tools.getCurrentTime = createGetCurrentTimeTool();
 
   if (depth < MAX_ROUTINE_DEPTH) {
     tools.useRoutine = createUseRoutineTool(

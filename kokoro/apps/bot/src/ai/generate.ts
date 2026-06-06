@@ -22,6 +22,7 @@ import {
 } from "./response";
 import { trackUsage } from "./token-tracker";
 import { getModelName } from "./provider";
+import { currentTimeContext } from "./prompts";
 import { ingestClosedSession } from "@kokoro/memory";
 
 const LLM_TIMEOUT_MS = 120_000; // 2 minutes
@@ -151,6 +152,13 @@ export async function handleMessage(
   // 5. Generate response with tools
   logger.debug("Calling generateText...");
 
+  // Inject the precise current time as a trailing system message instead of
+  // baking it into `systemPrompt`. The system prompt carries only the date +
+  // time-of-day (a stable, cacheable prefix); minute-level precision rides this
+  // always-new tail so it never invalidates the cached prefix. The `getCurrentTime`
+  // tool covers fresh reads mid-task and other timezones. See docs/ai-layer.md.
+  messages.push({ role: "system", content: currentTimeContext(new Date()) });
+
   const result = await generateText({
     model: getModel(),
     system: systemPrompt,
@@ -158,6 +166,10 @@ export async function handleMessage(
     tools: allTools(toolContext),
     stopWhen: stepCountIs(5),
     temperature: 0.7,
+    // The trailing time message above is the only system message in `messages`,
+    // and it's server-generated (not user input), so the SDK's prompt-injection
+    // warning for system-in-messages doesn't apply — opt in deliberately.
+    allowSystemInMessages: true,
     abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
