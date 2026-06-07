@@ -14,7 +14,7 @@ kokoro/                          # subtree of Kagami workspace (npm workspaces +
 │   ├── bot/                      # Telegram + iMessage bot app
 │   │   ├── src/
 │   │   │   ├── ai/               # provider, prompts, response, context-assembler, generate, acknowledge, token-tracker
-│   │   │   │   └── tools/        # tool files grouped by domain (memory, CRM, media, email, calendar, browse, web-search, routines, watchers, confirmations)
+│   │   │   │   └── tools/        # tool files grouped by domain (memory, CRM, media, email, calendar, browse, web-search, routines, skills, watchers, confirmations)
 │   │   │   ├── context/          # image generation (generator.ts, types.ts)
 │   │   │   ├── platform/         # registry.ts + telegram/ + imessage/ (multi-adapter)
 │   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, web-search, routine-executor, watcher-executor, location, geocoding, gated-actions, confirmation-events
@@ -22,7 +22,7 @@ kokoro/                          # subtree of Kagami workspace (npm workspaces +
 │   │   │   ├── stt/              # speech-to-text (cloud Whisper / local whisper.cpp)
 │   │   │   └── tts/              # text-to-speech generation
 │   │   └── context/              # soul.md (personality), instructions/*.md (operational), reference images, settings, image-prefix (data)
-│   └── dashboard/                # Next.js dashboard (routine + watcher management, observability)
+│   └── dashboard/                # Next.js dashboard (routine + skill + watcher management, observability)
 ├── packages/
 │   ├── shared/                   # config, logger, markdown, types
 │   ├── db/                       # MongoDB connection, models, GridFS
@@ -43,7 +43,7 @@ kokoro/                          # subtree of Kagami workspace (npm workspaces +
 Mongo/GridFS    Kioku client    Kizuna CRM client
        ↑              ↑              ↑
 @kokoro/bot     ← AI layer, tools, platform, schedulers
-@kokoro/dashboard ← Next.js (routine + watcher management, observability)
+@kokoro/dashboard ← Next.js (routine + skill + watcher management, observability)
 ```
 
 Tooling bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from the Kagami workspace and are consumed via `extends` in each tsconfig and ESLint config.
@@ -95,6 +95,7 @@ Tooling bases (`@kagami/eslint-config`, `@kagami/tsconfig`) come from the Kagami
 │Reminder  │  │  + sweeper │  │ /mcp             │
 │Routine   │  └────────────┘  │                  │
 │RoutineLog│                  │ facts.jsonl      │
+│Skill     │                  │ entities.jsonl   │
 │TokenUsage│                  │ entities.jsonl   │
 │Location  │                  │ hybrid retrieval │
 │History   │                  └──────────────────┘
@@ -259,14 +260,14 @@ Daily cleanup and the Kioku sweepers used to live here, but have been extracted 
 
 ## Package Boundaries
 
-| Package             | Purpose                                              | Key Exports                                                                                                                                                                                                                                                                      |
-| ------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@kokoro/shared`    | Config, logging, markdown, platform types            | `config`, `validateConfig`, `logger`, `parseMarkdown`, `haversineMeters`, `IncomingMessage`, `PlatformAdapter`, `computeNextRunAt`, `validateCronAndDefaults`                                                                                                                    |
-| `@kokoro/db`        | MongoDB connection, all models, GridFS               | `connectDB`, `disconnectDB`, `Conversation`, `PendingFact`, `Reminder`, `SchedulerState`, `TokenUsage`, `Routine`, `RoutineLog`, `Watcher`, `WatcherLog`, `LocationHistory`, `PendingConfirmation`, `readImage`/`writeImage`, `readAudio`/`writeAudio`, all model CRUD functions |
-| `@kokoro/memory`    | Kioku HTTP client + conversation/fact retry glue     | `recall`, `appendFact`, `appendFactWithRetryQueue`, `getFactById`, `getFactCount`, `hasFactsForSession`, `ingestSession`, `buildTranscript`, `ingestClosedSession`, `sweepPendingIngests`, `sweepPendingFacts`, `sweepStaleActiveSessions`, `KiokuClientError`                   |
-| `@kokoro/kizuna`    | Kizuna read-only CRM client + compact projections    | `findPeople`, `getPerson`, `getPersonContext`, `recentInteractions`, `listMyFollowups`, `KizunaClientError`, `PersonSummary`, `InteractionSummary`, `FollowupSummary`                                                                                                            |
-| `@kokoro/bot`       | Telegram + iMessage bot, AI layer, tools, schedulers | App entry point — not imported by other packages                                                                                                                                                                                                                                 |
-| `@kokoro/dashboard` | Next.js dashboard (read + write CRUD)                | Overview, conversations, reminders, routines, watchers, confirmations, usage pages                                                                                                                                                                                               |
+| Package             | Purpose                                              | Key Exports                                                                                                                                                                                                                                                                               |
+| ------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@kokoro/shared`    | Config, logging, markdown, platform types            | `config`, `validateConfig`, `logger`, `parseMarkdown`, `haversineMeters`, `IncomingMessage`, `PlatformAdapter`, `computeNextRunAt`, `validateCronAndDefaults`                                                                                                                             |
+| `@kokoro/db`        | MongoDB connection, all models, GridFS               | `connectDB`, `disconnectDB`, `Conversation`, `PendingFact`, `Reminder`, `SchedulerState`, `TokenUsage`, `Routine`, `RoutineLog`, `Skill`, `Watcher`, `WatcherLog`, `LocationHistory`, `PendingConfirmation`, `readImage`/`writeImage`, `readAudio`/`writeAudio`, all model CRUD functions |
+| `@kokoro/memory`    | Kioku HTTP client + conversation/fact retry glue     | `recall`, `appendFact`, `appendFactWithRetryQueue`, `getFactById`, `getFactCount`, `hasFactsForSession`, `ingestSession`, `buildTranscript`, `ingestClosedSession`, `sweepPendingIngests`, `sweepPendingFacts`, `sweepStaleActiveSessions`, `KiokuClientError`                            |
+| `@kokoro/kizuna`    | Kizuna read-only CRM client + compact projections    | `findPeople`, `getPerson`, `getPersonContext`, `recentInteractions`, `listMyFollowups`, `KizunaClientError`, `PersonSummary`, `InteractionSummary`, `FollowupSummary`                                                                                                                     |
+| `@kokoro/bot`       | Telegram + iMessage bot, AI layer, tools, schedulers | App entry point — not imported by other packages                                                                                                                                                                                                                                          |
+| `@kokoro/dashboard` | Next.js dashboard (read + write CRUD)                | Overview, conversations, reminders, routines, skills, watchers, confirmations, usage pages                                                                                                                                                                                                |
 
 ### Bot-Internal Modules
 
@@ -310,7 +311,7 @@ Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop p
 - **Sweepers as correctness layer for Kioku writes** — session-close ingest fires fire-and-forget at four call sites for latency, but a 5-minute sweeper backstops failures: any `closed && ingestStatus: "pending"` conversation gets retried until Kioku confirms. One-off `rememberFact` and learned-place writes use `appendFactWithRetryQueue()`, which queues failed appends in `PendingFact` for the same maintenance tick to retry.
 - **Config stays unified** — single config module in `@kokoro/shared`. Base parse always succeeds (defaults for everything). `validateConfig()` must be called explicitly by apps that need LLM/embedding keys (the bot). The dashboard only needs `MONGODB_URI`.
 - **Tool-augmented LLM** — the model reads/writes its own memory via `searchMemory` / `rememberFact` tools, not hardcoded logic
-- **MongoDB stores deterministic state only** — sessions, reminders, confirmations, routines, watchers, location history. Long-term memory lives in Kioku's vault.
+- **MongoDB stores deterministic state only** — sessions, reminders, confirmations, routines, skills, watchers, location history. Long-term memory lives in Kioku's vault.
 - **GridFS image storage** — user-sent photos stored in MongoDB GridFS (`images` bucket) instead of inline base64
 - **Platform abstraction** — `PlatformAdapter` interface enables future platform support
 - **Segmented sending** — responses split on `\n\n` for natural pacing

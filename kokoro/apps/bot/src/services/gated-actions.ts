@@ -5,11 +5,13 @@ import { acquireBrowser, releaseBrowser, resetBrowser, withBrowserLock } from ".
 import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
 import {
   createRoutine,
+  createSkill,
   getRoutineById,
   updateRoutineIfVersion,
   applyRoutineRefinement,
   isDuplicateKeyError,
   recordProposalDecision,
+  recordSkillProposalDecision,
 } from "@kokoro/db";
 import {
   createFollowupInputSchema,
@@ -19,6 +21,7 @@ import {
 } from "../ai/tools/crm";
 import { parameterSchema } from "../ai/tools/routine-schema";
 import { ROUTINE_PROPOSAL_TOOLS } from "../ai/tools/routine-proposal-tools";
+import { SKILL_PROPOSAL_TOOLS } from "../ai/tools/skill-proposal-tools";
 import { config, logger, runWithSpan } from "@kokoro/shared";
 import type { IPendingConfirmation } from "@kokoro/db";
 
@@ -55,6 +58,7 @@ type GatedToolName = (typeof GATED_TOOL_NAMES)[number];
  */
 const DISPATCH_ONLY_TOOL_NAMES = [
   "createRoutine",
+  "createSkill",
   "updateRoutinePrompt",
   "disableRoutine",
 ] as const;
@@ -111,6 +115,19 @@ const createRoutineArgs = z.object({
   parameters: z.array(parameterSchema).optional(),
 });
 
+const createSkillArgs = z.object({
+  signature: z.string().min(1),
+  name: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z0-9-]+$/, "Skill names must be lowercase alphanumeric with dashes"),
+  description: z.string().min(1).max(500),
+  body: z.string().min(1).max(6000),
+  triggers: z.array(z.string().min(1).max(140)).max(20).optional(),
+  tags: z.array(z.string().min(1).max(140)).max(20).optional(),
+});
+
 // Self-authored refinement of an existing routine's prompt. `baseVersion` is the
 // version the proposal was raised against — the dispatcher rejects the update if
 // the routine has since changed, so a stale 2h-old bubble can't clobber a newer
@@ -150,6 +167,7 @@ const GATED_ARG_SCHEMAS: Record<DispatchableToolName, z.ZodTypeAny> = {
   resolveFollowup: resolveFollowupInputSchema,
   updatePerson: updatePersonInputSchema,
   createRoutine: createRoutineArgs,
+  createSkill: createSkillArgs,
   updateRoutinePrompt: updateRoutinePromptArgs,
   disableRoutine: disableRoutineArgs,
 };
@@ -396,6 +414,51 @@ export async function dispatchGatedAction(
             };
       }
 
+      case "createSkill": {
+        const args = parsed.data as z.infer<typeof createSkillArgs>;
+        if (!ctx.chatId) {
+          return {
+            success: false,
+            summary: "cannot save skill — missing chat context",
+            detail: { reason: "no_chat_context" },
+          };
+        }
+
+        logger.info({ chatId: ctx.chatId, name: args.name }, "Dispatching approved createSkill");
+
+        let skillId: string | null = null;
+        try {
+          const skill = await createSkill(ctx.chatId, {
+            name: args.name,
+            description: args.description,
+            body: args.body,
+            triggers: args.triggers ?? [],
+            tags: args.tags ?? [],
+            enabled: true,
+            source: "distilled",
+          });
+          skillId = String(skill._id);
+        } catch (error) {
+          if (!isDuplicateKeyError(error)) throw error;
+        }
+
+        await recordSkillProposalDecision(ctx.chatId, args.signature, "accepted", {
+          cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,
+        }).catch(() => {});
+
+        return skillId
+          ? {
+              success: true,
+              summary: `skill "${args.name}" saved`,
+              detail: { skillId },
+            }
+          : {
+              success: false,
+              summary: `a skill named "${args.name}" already exists`,
+              detail: { reason: "duplicate_name" },
+            };
+      }
+
       case "updateRoutinePrompt": {
         const args = parsed.data as z.infer<typeof updateRoutinePromptArgs>;
         if (!ctx.chatId) {
@@ -537,9 +600,21 @@ export async function dispatchGatedAction(
 export async function recordProposalDeclineFromConfirmation(
   row: Pick<IPendingConfirmation, "chatId" | "action">,
 ): Promise<void> {
-  if (!ROUTINE_PROPOSAL_TOOLS.has(row.action.tool)) return;
   const signature = row.action.args.signature;
   if (typeof signature !== "string" || signature.length === 0) return;
+
+  if (SKILL_PROPOSAL_TOOLS.has(row.action.tool)) {
+    try {
+      await recordSkillProposalDecision(row.chatId, signature, "declined", {
+        cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,
+      });
+    } catch (error) {
+      logger.warn({ error, chatId: row.chatId }, "Failed to record skill-proposal decline");
+    }
+    return;
+  }
+
+  if (!ROUTINE_PROPOSAL_TOOLS.has(row.action.tool)) return;
   try {
     await recordProposalDecision(row.chatId, signature, "declined", {
       cooldownDays: config.ROUTINE_PROPOSAL_COOLDOWN_DAYS,

@@ -9,6 +9,7 @@ import {
   createSearchRoutinesTool,
   createUseRoutineTool,
 } from "./routines";
+import { createProposeSkillTool, createReadSkillTool, createSearchSkillsTool } from "./skills";
 import { createManageWatchersTool, reportWatcherResult } from "./watchers";
 import { createRequestConfirmationTool, createCancelConfirmationTool } from "./confirmations";
 import { createProposeRoutineTool } from "./routine-proposals";
@@ -112,6 +113,8 @@ export function allTools(ctx: ToolContext) {
 
   tools.manageRoutines = createManageRoutinesTool(ctx.chatId);
   tools.searchRoutines = createSearchRoutinesTool(ctx.chatId);
+  tools.searchSkills = createSearchSkillsTool(ctx.chatId);
+  tools.readSkill = createReadSkillTool(ctx.chatId);
   tools.manageWatchers = createManageWatchersTool(ctx.chatId);
 
   // Self-authored routines: let the model offer to save a just-completed task
@@ -127,6 +130,7 @@ export function allTools(ctx: ToolContext) {
   if (ctx.conversational) {
     tools.proposeRoutine = createProposeRoutineTool(ctx.chatId, ctx.adapter);
     tools.proposeRoutineRefinement = createProposeRoutineRefinementTool(ctx.chatId, ctx.adapter);
+    tools.proposeSkill = createProposeSkillTool(ctx.chatId, ctx.adapter);
   }
 
   tools.searchMemory = createSearchMemoryTool();
@@ -215,6 +219,11 @@ function readOnlyToolSubset(ctx: ToolContext): ToolSet {
   // Memory reads are pure — watchers observe what's already in the vault.
   // rememberFact is omitted because it mutates.
   tools.searchMemory = createSearchMemoryTool();
+
+  // Skills are procedural context reads. They do not execute or mutate state,
+  // so they are safe for watcher/under-watcher observation runs.
+  tools.searchSkills = createSearchSkillsTool(ctx.chatId);
+  tools.readSkill = createReadSkillTool(ctx.chatId);
 
   Object.assign(tools, createCrmTools());
 
