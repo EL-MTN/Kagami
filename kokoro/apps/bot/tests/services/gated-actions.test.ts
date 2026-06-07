@@ -41,11 +41,13 @@ vi.mock("@kokoro/kizuna", () => ({
 // real @kokoro/db pulls in mongoose/models we don't want to load here.
 vi.mock("@kokoro/db", () => ({
   createRoutine: vi.fn(),
+  createSkill: vi.fn(),
   getRoutineById: vi.fn(),
   updateRoutineIfVersion: vi.fn(),
   applyRoutineRefinement: vi.fn(),
   isDuplicateKeyError: vi.fn(() => false),
   recordProposalDecision: vi.fn(),
+  recordSkillProposalDecision: vi.fn(),
 }));
 
 import { sendEmail } from "../../src/services/gmail";
@@ -54,11 +56,13 @@ import { acquireBrowser, releaseBrowser, resetBrowser } from "../../src/services
 import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
 import {
   createRoutine,
+  createSkill,
   getRoutineById,
   updateRoutineIfVersion,
   applyRoutineRefinement,
   isDuplicateKeyError,
   recordProposalDecision,
+  recordSkillProposalDecision,
 } from "@kokoro/db";
 import {
   dispatchGatedAction,
@@ -79,12 +83,14 @@ beforeEach(() => {
   vi.mocked(resolveFollowup).mockReset();
   vi.mocked(updatePerson).mockReset();
   vi.mocked(createRoutine).mockReset();
+  vi.mocked(createSkill).mockReset();
   vi.mocked(getRoutineById).mockReset();
   vi.mocked(updateRoutineIfVersion).mockReset();
   vi.mocked(applyRoutineRefinement).mockReset();
   // recordProposalDecision is async in production (callers chain .catch on it);
   // default the mock to a resolved promise so that chaining doesn't throw.
   vi.mocked(recordProposalDecision).mockReset().mockResolvedValue(undefined);
+  vi.mocked(recordSkillProposalDecision).mockReset().mockResolvedValue(undefined);
   vi.mocked(isDuplicateKeyError).mockReset().mockReturnValue(false);
 });
 
@@ -102,6 +108,7 @@ describe("isGatedTool", () => {
   it("returns false for tools not in the gated set", () => {
     expect(isGatedTool("sendText")).toBe(false);
     expect(isGatedTool("createRoutine")).toBe(false);
+    expect(isGatedTool("createSkill")).toBe(false);
     expect(isGatedTool("")).toBe(false);
   });
 
@@ -595,6 +602,95 @@ describe("dispatchGatedAction — createRoutine (dispatch-only)", () => {
   });
 });
 
+describe("dispatchGatedAction — createSkill (dispatch-only)", () => {
+  const draft = {
+    signature: "meeting-followup-style#abcd1234",
+    name: "meeting-followup-style",
+    description: "Write followups after meetings",
+    body: "Use concise bullets and a single next action.",
+    triggers: ["after a meeting"],
+    tags: ["writing"],
+  };
+
+  it("is dispatchable even though it is NOT in the requestConfirmation enum", () => {
+    expect(isGatedTool("createSkill")).toBe(false);
+    expect(GATED_TOOL_NAMES as readonly string[]).not.toContain("createSkill");
+  });
+
+  it("creates an enabled distilled skill and records the accept", async () => {
+    vi.mocked(createSkill).mockResolvedValue({ _id: "skill-1" } as never);
+
+    const result = await dispatchGatedAction("createSkill", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe('skill "meeting-followup-style" saved');
+    expect(result.detail).toEqual({ skillId: "skill-1" });
+    expect(vi.mocked(createSkill)).toHaveBeenCalledWith(
+      "chat-1",
+      expect.objectContaining({
+        name: draft.name,
+        body: draft.body,
+        triggers: draft.triggers,
+        tags: draft.tags,
+        enabled: true,
+        source: "distilled",
+      }),
+    );
+    expect(vi.mocked(createSkill).mock.calls[0][1]).not.toHaveProperty("signature");
+    expect(vi.mocked(recordSkillProposalDecision)).toHaveBeenCalledWith(
+      "chat-1",
+      draft.signature,
+      "accepted",
+      expect.any(Object),
+    );
+  });
+
+  it("fails cleanly when chat context is missing", async () => {
+    const result = await dispatchGatedAction("createSkill", draft);
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("no_chat_context");
+    expect(vi.mocked(createSkill)).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed skill names before touching the db", async () => {
+    const result = await dispatchGatedAction(
+      "createSkill",
+      { ...draft, name: "Bad Name" },
+      { chatId: "chat-1" },
+    );
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_args");
+    expect(vi.mocked(createSkill)).not.toHaveBeenCalled();
+  });
+
+  it("treats a duplicate name as a graceful no-op and still records the accept", async () => {
+    vi.mocked(createSkill).mockRejectedValue(new Error("E11000 dup key"));
+    vi.mocked(isDuplicateKeyError).mockReturnValue(true);
+
+    const result = await dispatchGatedAction("createSkill", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(false);
+    expect(result.summary).toBe('a skill named "meeting-followup-style" already exists');
+    expect(result.detail.reason).toBe("duplicate_name");
+    expect(vi.mocked(recordSkillProposalDecision)).toHaveBeenCalledWith(
+      "chat-1",
+      draft.signature,
+      "accepted",
+      expect.any(Object),
+    );
+  });
+
+  it("propagates a non-duplicate db error as a failed dispatch", async () => {
+    vi.mocked(createSkill).mockRejectedValue(new Error("mongo down"));
+    vi.mocked(isDuplicateKeyError).mockReturnValue(false);
+
+    const result = await dispatchGatedAction("createSkill", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(false);
+    expect(result.summary).toBe("failed: mongo down");
+  });
+});
+
 describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
   const ROUTINE_ID = "444444444444444444444444";
   const draft = {
@@ -810,12 +906,28 @@ describe("recordProposalDeclineFromConfirmation", () => {
     );
   });
 
+  it("records a decline for a createSkill proposal in the skill proposal store", async () => {
+    await recordProposalDeclineFromConfirmation({
+      chatId: "chat-1",
+      action: { tool: "createSkill", args: { signature: "skill#1" } },
+    });
+
+    expect(vi.mocked(recordSkillProposalDecision)).toHaveBeenCalledWith(
+      "chat-1",
+      "skill#1",
+      "declined",
+      expect.any(Object),
+    );
+    expect(vi.mocked(recordProposalDecision)).not.toHaveBeenCalled();
+  });
+
   it("is a no-op for a non-proposal confirmation (e.g. a routine-raised sendEmail)", async () => {
     await recordProposalDeclineFromConfirmation({
       chatId: "chat-1",
       action: { tool: "sendEmail", args: { signature: "sig#1" } },
     });
     expect(vi.mocked(recordProposalDecision)).not.toHaveBeenCalled();
+    expect(vi.mocked(recordSkillProposalDecision)).not.toHaveBeenCalled();
   });
 
   it("is a no-op when the signature is missing or not a string", async () => {
@@ -824,6 +936,7 @@ describe("recordProposalDeclineFromConfirmation", () => {
       action: { tool: "createRoutine", args: {} },
     });
     expect(vi.mocked(recordProposalDecision)).not.toHaveBeenCalled();
+    expect(vi.mocked(recordSkillProposalDecision)).not.toHaveBeenCalled();
   });
 
   it("swallows a store error (best-effort — never wedges the deny path)", async () => {
@@ -832,6 +945,16 @@ describe("recordProposalDeclineFromConfirmation", () => {
       recordProposalDeclineFromConfirmation({
         chatId: "chat-1",
         action: { tool: "createRoutine", args: { signature: "sig#1" } },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("swallows a skill proposal store error", async () => {
+    vi.mocked(recordSkillProposalDecision).mockRejectedValue(new Error("mongo down"));
+    await expect(
+      recordProposalDeclineFromConfirmation({
+        chatId: "chat-1",
+        action: { tool: "createSkill", args: { signature: "skill#1" } },
       }),
     ).resolves.toBeUndefined();
   });

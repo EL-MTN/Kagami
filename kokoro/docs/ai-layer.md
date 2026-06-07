@@ -46,7 +46,7 @@ The `ModelTier` enum lets call sites declare intent rather than hardcoding model
 
 ## Context Assembly Pipeline
 
-Implemented in `apps/bot/src/ai/context-assembler.ts`. The system prompt carries no facts — long-term memory is on-demand via the `searchMemory` tool, not pre-loaded. The shell is small and largely static; only routines, pending approvals, location, and (for proactive) reminders pull from MongoDB.
+Implemented in `apps/bot/src/ai/context-assembler.ts`. The system prompt carries no facts — long-term memory is on-demand via the `searchMemory` tool, not pre-loaded. The shell is small and largely static; only routines, skills, pending approvals, location, and (for proactive) reminders pull from MongoDB.
 
 ```
 assembleSystemPrompt(chatId)
@@ -59,16 +59,18 @@ assembleSystemPrompt(chatId)
     ├─ 6. Web search                 ← apps/bot/context/instructions/web-search.md (conditional on BRAVE_SEARCH_API_KEY)
     ├─ 7. Browser                    ← apps/bot/context/instructions/browser.md (always)
     ├─ 8. Routine behavior           ← apps/bot/context/instructions/routines.md (always)
-    ├─ 9. Routine context            ← listRoutinesForChat → enabled routine names (Mongo)
-    ├─ 10. Pending approvals         ← listPendingConfirmations (Mongo)
-    ├─ 11. Location context          ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (Mongo, always)
-    └─ 12. Response format           ← apps/bot/context/instructions/response-format.md
+    ├─ 9. Skill behavior             ← apps/bot/context/instructions/skills.md (always)
+    ├─ 10. Routine context           ← listRoutinesForChat → enabled routine names (Mongo)
+    ├─ 11. Skill context             ← listSkillsForChat → enabled skill catalog (Mongo)
+    ├─ 12. Pending approvals         ← listPendingConfirmations (Mongo)
+    ├─ 13. Location context          ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (Mongo, always)
+    └─ 14. Response format           ← apps/bot/context/instructions/response-format.md
 
     All parts joined with "\n\n---\n\n"
 
 assembleProactiveSystemPrompt(chatId)
     │
-    ├─ shell (1–8 above)
+    ├─ shell (1–9 above)
     ├─ Active reminders              ← pending + recently fired (Mongo)
     ├─ Pending approvals             ← (Mongo)
     ├─ Location context              ← (Mongo, conditional)
@@ -106,7 +108,7 @@ The time-of-day buckets (`timeOfDayFor`, driving `moodForTimeOfDay`):
 
 ## Tool Definitions
 
-Defined in `apps/bot/src/ai/tools/`. Tool files are consolidated by domain: `media.ts` (sendPhoto, sendVoice), `email.ts` (checkEmail, sendEmail), `calendar.ts` (manageCalendar, manageReminders), `confirmations.ts` (requestConfirmation, cancelConfirmation), `memory.ts` (searchMemory, rememberFact), `crm.ts` (read: findPeople, getPersonContext, recentInteractions, listMyFollowups; write: logInteraction, createFollowup, resolveFollowup, updatePerson — writes must be wrapped in `requestConfirmation`), `routines.ts` (manageRoutines, searchRoutines, useRoutine), `delegate.ts` (delegate — parallel read-only fan-out), `watchers.ts` (manageWatchers, reportWatcherResult), `browse.ts`, `web-search.ts`, and `time.ts` (getCurrentTime — local, no MCP). The barrel `index.ts` exports `allTools(ctx)` / `watcherTools(ctx)` / `routineToolsUnderWatcher(ctx)`. All tools are passed to `generateText()` and the LLM can invoke them across up to 5 steps.
+Defined in `apps/bot/src/ai/tools/`. Tool files are consolidated by domain: `media.ts` (sendPhoto, sendVoice), `email.ts` (checkEmail, sendEmail), `calendar.ts` (manageCalendar, manageReminders), `confirmations.ts` (requestConfirmation, cancelConfirmation), `memory.ts` (searchMemory, rememberFact), `crm.ts` (read: findPeople, getPersonContext, recentInteractions, listMyFollowups; write: logInteraction, createFollowup, resolveFollowup, updatePerson — writes must be wrapped in `requestConfirmation`), `routines.ts` (manageRoutines, searchRoutines, useRoutine), `skills.ts` (searchSkills, readSkill, proposeSkill), `delegate.ts` (delegate — parallel read-only fan-out), `watchers.ts` (manageWatchers, reportWatcherResult), `browse.ts`, `web-search.ts`, and `time.ts` (getCurrentTime — local, no MCP). The barrel `index.ts` exports `allTools(ctx)` / `watcherTools(ctx)` / `routineToolsUnderWatcher(ctx)`. All tools are passed to `generateText()` and the LLM can invoke them across up to 5 steps.
 
 ### Tool Context
 
@@ -121,15 +123,15 @@ interface ToolContext {
   callingContext?: "main" | "watcher"; // gates routine purity; defaults to "main"
 }
 
-allTools(ctx) → { rememberFact, searchMemory, getCurrentTime, findPeople?, getPersonContext?, recentInteractions?, listMyFollowups?, logInteraction?, createFollowup?, resolveFollowup?, updatePerson?, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, webSearch?, browse?, requestConfirmation?, cancelConfirmation?, manageRoutines, searchRoutines, useRoutine?, delegate?, manageWatchers }
+allTools(ctx) → { rememberFact, searchMemory, searchSkills, readSkill, getCurrentTime, findPeople?, getPersonContext?, recentInteractions?, listMyFollowups?, logInteraction?, createFollowup?, resolveFollowup?, updatePerson?, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, webSearch?, browse?, requestConfirmation?, cancelConfirmation?, manageRoutines, searchRoutines, useRoutine?, delegate?, manageWatchers, proposeSkill? }
 
-watcherTools(ctx) → { searchMemory, findPeople?, getPersonContext?, recentInteractions?, listMyFollowups?, reportWatcherResult, checkEmail?, listCalendarEvents?, webSearch?, browse? (read-only), useRoutine? }
+watcherTools(ctx) → { searchMemory, searchSkills, readSkill, findPeople?, getPersonContext?, recentInteractions?, listMyFollowups?, reportWatcherResult, checkEmail?, listCalendarEvents?, webSearch?, browse? (read-only), useRoutine? }
 ```
 
 Two distinct tool sets are assembled depending on the calling context:
 
-- **`allTools(ctx)`** — full surface available to Mashiro in conversation and inside routine executors. Includes side-effecting tools (`sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, etc.) plus CRM lookup tools (always).
-- **`watcherTools(ctx)`** — read-only subset for watcher executor ticks (`apps/bot/src/services/watcher-executor.ts`). Watchers observe; they never mutate external state. `searchMemory` and the Kizuna CRM **read** tools are included; `rememberFact` and the Kizuna CRM **write** tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are excluded. The browse tool is the `createReadOnlyBrowseTool()` variant, which restricts actions to `search`/`visit`/`extract` and excludes `screenshot` (sends a photo), `act` (mutates page state), and `login`. The calendar variant is `createManageCalendarTool({ mode: "readOnly" })`. `manageWatchers` is also excluded — watchers cannot create watchers.
+- **`allTools(ctx)`** — full surface available to Mashiro in conversation and inside routine executors. Includes side-effecting tools (`sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, etc.) plus CRM lookup tools (always), routine tools, and skill read tools. `proposeSkill` is added only on live conversational turns.
+- **`watcherTools(ctx)`** — read-only subset for watcher executor ticks (`apps/bot/src/services/watcher-executor.ts`). Watchers observe; they never mutate external state. `searchMemory`, `searchSkills`, `readSkill`, and the Kizuna CRM **read** tools are included; `rememberFact`, `proposeSkill`, and the Kizuna CRM **write** tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are excluded. The browse tool is the `createReadOnlyBrowseTool()` variant, which restricts actions to `search`/`visit`/`extract` and excludes `screenshot` (sends a photo), `act` (mutates page state), and `login`. The calendar variant is `createManageCalendarTool({ mode: "readOnly" })`. `manageWatchers` is also excluded — watchers cannot create watchers.
 
 ### searchMemory
 
@@ -247,6 +249,24 @@ Autonomous multi-step browsing (`stagehand.agent().execute()`, up to 25 steps) i
 **Architecture**: Two independent LLM streams — Kokoro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENV` (`local`/`cloud`), `BROWSER_DATA_DIR`, `BROWSER_HEADLESS`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
 
 **Observability (Kansoku)**: Each action runs inside `runWithSpan(\`browse.<action>\`)`and browser init inside`runWithSpan("browser.init")`, so a browse turn renders as a real waterfall (per-action durations, nested under the conversation trace) in Kansoku. Stagehand's own steps are bridged into the `@kokoro/shared`logger via its`logger(line)` hook (`stagehandLogger`in`browser.ts`): each `LogLine`ships as a`browser: …`log line tagged with its`category` (`init`/`extraction`/`act`/`aisdk`/…) and auto-correlated to the active trace/span. Stagehand `verbose`is gated on log level —`1`(step-level) normally,`2`(full prompts/responses/DOM, the`aisdk`lines) when`LOG_LEVEL=debug`— and`auxiliary`values are truncated (~4 KB) so a DOM dump can't bloat ingest. Net: to deep-debug a browse turn, **start** the bot with `LOG_LEVEL=debug` and open its trace in Kansoku. (`STAGEHAND_VERBOSE`is fixed at the first browser init from the process-level`LOG_LEVEL`, so this is start-time, not hot-toggleable.) The confirmation-gated `browseAgent` path (`services/gated-actions.ts`) is spanned the same way (`browse.agent`). **Caution:** at `verbose: 2`the`aisdk`lines carry the full LLM prompt/response and page content, and`@kokoro/logger`does no secret/PII redaction (local-trust only) — so a`login`/`agent`flow run under`LOG_LEVEL=debug`can ship typed credentials or page secrets to Kansoku. Use debug verbosity deliberately, and treat it as a pre-VPS redaction blocker (see`ARCHITECTURE.md`).
+
+### searchSkills / readSkill
+
+- **Purpose**: Discover and load reusable procedural context. Skills guide how Mashiro should work; they do not execute anything.
+- **Parameters**: `searchSkills({ query?: string })`, `readSkill({ name: string })`
+- **Returns**: `searchSkills` returns a compact enabled-skill catalog (`name`, `description`, `triggers`, `tags`, `source`, `version`); `readSkill` returns the full `body` and increments usage metadata.
+- **Behavior**: The system prompt lists only a compact `## Available Skills` catalog. The model calls `searchSkills` for discovery and `readSkill` before applying detailed guidance. Both tools are pure reads and are available in `allTools`, `watcherTools`, and `routineToolsUnderWatcher`.
+
+### proposeSkill (live conversational turns only)
+
+- **Purpose**: Let the conversational model offer to save reusable procedural guidance — preferences, heuristics, style, project rules, or operating procedure — as a skill. Skills are context, not automation.
+- **Parameters**: `{ name, description, body, triggers?, tags? }`
+- **Returns**: `{ proposed: true, confirmationId }` or `{ proposed: false, reason }`
+- **Behavior**: Does not create anything directly. It computes a signature from normalized name + body hash, runs the `SkillProposalDecision` anti-nag guard, then raises a tap-to-approve bubble whose approved action is dispatch-only `createSkill`. On approve, the dispatcher creates an enabled `source: "distilled"` skill; on deny/cancel it records a declined skill proposal.
+- **Offered on live conversational turns only**: `allTools` registers `proposeSkill` only when `ToolContext.conversational === true`, matching `proposeRoutine`. Routines, proactive turns, watchers, and watcher-safe routines can read skills but cannot author them.
+- **`createSkill` is dispatch-only**: absent from `GATED_TOOL_NAMES`, so the model cannot raise it through `requestConfirmation` and bypass the proposal guard.
+
+**Architecture**: Tool in `apps/bot/src/ai/tools/skills.ts`; proposal helper in `apps/bot/src/ai/tools/skill-proposal-tools.ts`; dispatch case and decline recording in `apps/bot/src/services/gated-actions.ts`; DB models in `packages/db/src/models/skill.ts` and `packages/db/src/models/skill-proposal.ts`; prompt rule in `apps/bot/context/instructions/skills.md`; dashboard in `/skills`. See [skills.md](skills.md).
 
 ### searchRoutines
 

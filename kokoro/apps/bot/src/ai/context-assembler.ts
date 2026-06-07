@@ -8,6 +8,7 @@ import {
   getRecentlyFiredReminders,
   getLatestLocation,
   listRoutinesForChat,
+  listSkillsForChat,
   getRoutineHealth,
   routineNeedsAttention,
   listPendingConfirmations,
@@ -15,6 +16,7 @@ import {
 } from "@kokoro/db";
 import { DATE_CONTEXT, moodForTimeOfDay, timeOfDayFor } from "./prompts";
 import { ROUTINE_PROPOSAL_TOOLS } from "./tools/routine-proposal-tools";
+import { SKILL_PROPOSAL_TOOLS } from "./tools/skill-proposal-tools";
 import { getMcpSummary } from "../services/mcp";
 import { config, logger, parseMarkdown } from "@kokoro/shared";
 import type { ModelMessage, UserContent, ToolContent } from "ai";
@@ -87,6 +89,9 @@ async function assemblePromptShell(
 
   const routines = await readInstruction("routines");
   if (routines) parts.push(routines);
+
+  const skills = await readInstruction("skills");
+  if (skills) parts.push(skills);
 
   const delegate = await readInstruction("delegate");
   if (delegate) parts.push(delegate);
@@ -161,6 +166,25 @@ function buildRoutineList(names: string[], offerHint = ""): string {
   return `## Available Routines\n${names.join("\n")}\nUse searchRoutines to look up details or discover routines by keyword.${offerHint}`;
 }
 
+async function assembleSkillContext(chatId: string): Promise<string | null> {
+  try {
+    const enabled = (await listSkillsForChat(chatId)).filter((s) => s.enabled);
+    if (enabled.length === 0) return null;
+    const lines = enabled.map((s) => {
+      const tags = s.tags.length > 0 ? ` [${s.tags.join(", ")}]` : "";
+      return `- **${s.name}** — ${s.description}${tags}`;
+    });
+    return (
+      "## Available Skills\n" +
+      lines.join("\n") +
+      "\nSkills are procedural context. Use searchSkills to discover matches and readSkill to load the full body before applying one."
+    );
+  } catch (error) {
+    logger.warn({ error }, "Failed to load skill context");
+    return null;
+  }
+}
+
 /** Plain enabled-routine name list (one Routine read). Used on non-conversational
  * turns and as the fallback when the health lookup fails. */
 async function assembleRoutineNames(chatId: string): Promise<string | null> {
@@ -221,7 +245,8 @@ async function assemblePendingConfirmationsContext(chatId: string): Promise<stri
       // an ignored "want me to do this?" offer should just TTL out (it's
       // short-lived), not nag the model to cancel it. They're still listed so
       // the model knows one is pending and won't re-propose.
-      const isProposal = ROUTINE_PROPOSAL_TOOLS.has(row.action.tool);
+      const isProposal =
+        ROUTINE_PROPOSAL_TOOLS.has(row.action.tool) || SKILL_PROPOSAL_TOOLS.has(row.action.tool);
       const stale =
         !isProposal && ageMs > 60 * 60_000
           ? " (stale — consider cancelling if no longer wanted)"
@@ -276,12 +301,14 @@ export async function assembleSystemPrompt(
   // These three reads are independent and each fail-soft — run them
   // concurrently so prompt-build latency is the slowest, not the sum. Pushed in
   // a fixed order afterward so the assembled prompt stays deterministic.
-  const [routineContext, pendingContext, locationContext] = await Promise.all([
+  const [routineContext, skillContext, pendingContext, locationContext] = await Promise.all([
     assembleRoutineContext(chatId, includeMcpHint),
+    assembleSkillContext(chatId),
     assemblePendingConfirmationsContext(chatId),
     assembleLocationContext(chatId),
   ]);
   if (routineContext) parts.push(routineContext);
+  if (skillContext) parts.push(skillContext);
   if (pendingContext) parts.push(pendingContext);
   if (locationContext) parts.push(locationContext);
 

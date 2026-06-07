@@ -1,0 +1,52 @@
+import { z } from "zod";
+
+export const skillSources = ["manual", "distilled", "imported"] as const;
+
+const skillNameSchema = z
+  .string()
+  .min(1, "Name is required")
+  .max(64)
+  .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with dashes");
+
+const listFieldSchema = z.array(z.string().min(1).max(140)).max(20).default([]);
+
+export const skillCreateSchema = z.object({
+  chatId: z.string().min(1, "Chat ID is required"),
+  name: skillNameSchema,
+  description: z.string().min(1, "Description is required").max(500),
+  body: z.string().min(1, "Body is required").max(6000),
+  triggers: listFieldSchema,
+  tags: listFieldSchema,
+  enabled: z.boolean().default(true),
+  source: z.enum(skillSources).default("manual"),
+  linkedRoutineIds: z.array(z.string().min(1)).default([]),
+});
+
+export const skillPatchSchema = z.object({
+  name: skillNameSchema.optional(),
+  description: z.string().min(1).max(500).optional(),
+  body: z.string().min(1).max(6000).optional(),
+  triggers: z.array(z.string().min(1).max(140)).max(20).optional(),
+  tags: z.array(z.string().min(1).max(140)).max(20).optional(),
+  enabled: z.boolean().optional(),
+  source: z.enum(skillSources).optional(),
+  linkedRoutineIds: z.array(z.string().min(1)).optional(),
+});
+
+export interface SkillListItem {
+  id: string;
+  chatId: string;
+  name: string;
+  description: string;
+  body: string;
+  triggers: string[];
+  tags: string[];
+  enabled: boolean;
+  source: (typeof skillSources)[number];
+  linkedRoutineIds: string[];
+  version: number;
+  lastUsedAt: string | null;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}

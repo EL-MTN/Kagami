@@ -130,6 +130,31 @@ export {
   type RecordProposalDecisionOptions,
 } from "./models/routine-proposal";
 export {
+  Skill,
+  createSkill,
+  listSkillsForChat,
+  listEnabledSkillsForChat,
+  getSkillById,
+  getSkillByName,
+  resolveSkillRef,
+  updateSkill,
+  deleteSkill,
+  recordSkillUsed,
+  type ISkill,
+  type ISkillSourceRef,
+  type SkillInput,
+  type SkillSource,
+  type SkillSourceRefKind,
+} from "./models/skill";
+export {
+  SkillProposalDecision,
+  recordSkillProposalDecision,
+  isSkillRecentlyDeclined,
+  type ISkillProposalDecision,
+  type SkillProposalVerdict,
+  type RecordSkillProposalDecisionOptions,
+} from "./models/skill-proposal";
+export {
   Watcher,
   WatcherLog,
   createWatcher,

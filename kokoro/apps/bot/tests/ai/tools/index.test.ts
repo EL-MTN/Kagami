@@ -57,6 +57,12 @@ vi.mock("../../../src/ai/tools/routine-refinements", () => ({
   createProposeRoutineRefinementTool: vi.fn(() => ({ __proposeRoutineRefinement: true })),
 }));
 
+vi.mock("../../../src/ai/tools/skills", () => ({
+  createSearchSkillsTool: vi.fn(() => ({ __searchSkills: true })),
+  createReadSkillTool: vi.fn(() => ({ __readSkill: true })),
+  createProposeSkillTool: vi.fn(() => ({ __proposeSkill: true })),
+}));
+
 import { allTools, watcherTools, routineToolsUnderWatcher } from "../../../src/ai/tools/index";
 import { getMcpTools } from "../../../src/services/mcp";
 
@@ -99,11 +105,13 @@ describe("allTools — minimum-config baseline", () => {
         "manageRoutines",
         "manageWatchers",
         "recentInteractions",
+        "readSkill",
         "rememberFact",
         "requestConfirmation",
         "resolveFollowup",
         "searchMemory",
         "searchRoutines",
+        "searchSkills",
         "updatePerson",
         "useRoutine",
       ].sort(),
@@ -159,15 +167,16 @@ describe("allTools — feature flags", () => {
   });
 });
 
-describe("allTools — self-authored routines (proposeRoutine + proposeRoutineRefinement)", () => {
+describe("allTools — self-authored proposals", () => {
   // Both are offered ONLY on a live conversational turn (ctx.conversational
   // === true) — always on there, no feature flag.
   const convoCtx = { ...baseCtx, conversational: true };
 
-  it("registers proposeRoutine and proposeRoutineRefinement on a conversational turn", () => {
+  it("registers proposeRoutine, proposeRoutineRefinement, and proposeSkill on a conversational turn", () => {
     const names = Object.keys(allTools(convoCtx));
     expect(names).toContain("proposeRoutine");
     expect(names).toContain("proposeRoutineRefinement");
+    expect(names).toContain("proposeSkill");
   });
 
   it("is NEVER offered to watcher / under-watcher palettes", () => {
@@ -177,6 +186,7 @@ describe("allTools — self-authored routines (proposeRoutine + proposeRoutineRe
       const names = Object.keys(palette);
       expect(names).not.toContain("proposeRoutine");
       expect(names).not.toContain("proposeRoutineRefinement");
+      expect(names).not.toContain("proposeSkill");
     }
   });
 
@@ -188,9 +198,11 @@ describe("allTools — self-authored routines (proposeRoutine + proposeRoutineRe
       const names = Object.keys(allTools(ctx));
       expect(names).not.toContain("proposeRoutine");
       expect(names).not.toContain("proposeRoutineRefinement");
+      expect(names).not.toContain("proposeSkill");
     }
     // ...but a live conversational turn still gets both.
     expect(Object.keys(allTools(convoCtx))).toContain("proposeRoutine");
+    expect(Object.keys(allTools(convoCtx))).toContain("proposeSkill");
   });
 });
 
@@ -263,6 +275,7 @@ describe("watcherTools — read-only invariant", () => {
       "requestConfirmation",
       "cancelConfirmation",
       "searchRoutines",
+      "proposeSkill",
       "delegate", // fans out a fresh LLM call per sub-task; never offered to observation runs
       "rememberFact", // mutates the vault; searchMemory (read-only) is allowed
       "logInteraction", // CRM writes — read tools are allowed
@@ -292,6 +305,8 @@ describe("watcherTools — read-only invariant", () => {
         "useRoutine",
         "reportWatcherResult",
         "searchMemory",
+        "searchSkills",
+        "readSkill",
       ]),
     );
   });
