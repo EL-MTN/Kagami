@@ -25,8 +25,8 @@ import { proposeRefinement, proposeRetirement } from "../ai/tools/routine-refine
 // still decides what (if anything) to do.
 const needsReview = routineNeedsAttention;
 
-// At most one routine proposal can be pending per chat (the one-tap iMessage
-// invariant — see hasPendingRoutineProposal), so a run raises at most one.
+// At most one routine-or-skill proposal can be pending per chat (the one-tap
+// iMessage invariant), so a run raises at most one.
 const MAX_PROPOSALS_PER_RUN = 1;
 // Hard cap on paid LLM reviews per chat per run. `raised` does NOT climb when a
 // review returns "none" or its proposal is anti-nag-suppressed, so without this

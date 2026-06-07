@@ -14,6 +14,7 @@ import type { PlatformAdapter } from "@kokoro/shared";
 import { raisePendingConfirmation } from "./confirmations";
 import { PROPOSAL_TTL_MS } from "./routine-proposals";
 import { hasPendingSkillProposal } from "./skill-proposal-tools";
+import { hasPendingRoutineProposal } from "./routine-proposal-tools";
 
 const skillNameSchema = z
   .string()
@@ -200,8 +201,8 @@ export function createProposeSkillTool(chatId: string, adapter: PlatformAdapter)
         if (declined) {
           return { proposed: false, reason: "Goshujin-sama declined a similar skill recently" };
         }
-        if (hasPendingSkillProposal(pending)) {
-          return { proposed: false, reason: "a skill proposal is already awaiting approval" };
+        if (hasPendingSkillProposal(pending) || hasPendingRoutineProposal(pending)) {
+          return { proposed: false, reason: "another proposal is already awaiting approval" };
         }
 
         const confirmationId = await raisePendingConfirmation(chatId, adapter, {

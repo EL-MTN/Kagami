@@ -117,16 +117,17 @@ export function allTools(ctx: ToolContext) {
   tools.readSkill = createReadSkillTool(ctx.chatId);
   tools.manageWatchers = createManageWatchersTool(ctx.chatId);
 
-  // Self-authored routines: let the model offer to save a just-completed task
-  // (`proposeRoutine`) or fix an underperforming routine's prompt
-  // (`proposeRoutineRefinement`). Live conversational turns ONLY
+  // Self-authored artifacts: let the model offer to save a just-completed task
+  // (`proposeRoutine`), save durable procedural guidance (`proposeSkill`), or
+  // fix an underperforming routine's prompt (`proposeRoutineRefinement`). Live
+  // conversational turns ONLY
   // (`ctx.conversational`) — structurally absent from watcherTools /
   // routineToolsUnderWatcher, and withheld from every other allTools caller that
   // runs under callingContext: "main" but isn't a user-initiated turn (proactive
   // outreach, routine executions). A scheduled/manual/composed routine — or an
   // unprompted proactive message — must never self-author or self-edit a
-  // routine. Both approved actions are dispatch-only (`createRoutine` /
-  // `updateRoutinePrompt`), gated behind the approval rail.
+  // routine or skill. Approved actions are dispatch-only (`createRoutine` /
+  // `createSkill` / `updateRoutinePrompt`), gated behind the approval rail.
   if (ctx.conversational) {
     tools.proposeRoutine = createProposeRoutineTool(ctx.chatId, ctx.adapter);
     tools.proposeRoutineRefinement = createProposeRoutineRefinementTool(ctx.chatId, ctx.adapter);

@@ -78,7 +78,7 @@ normal turn → model judges "this was a reusable multi-step task"
        1. signature = norm(name) + short hash(prompt)
        2. GUARD (code-side, durable):
             • isRecentlyDeclined(chatId, signature)?      → return "skip: declined recently"
-            • a routine proposal already pending?          → return "skip: one already pending"
+            • any routine/skill proposal already pending?  → return "skip: one already pending"
        3. raisePendingConfirmation(chatId, adapter, {
             summary, origin: "routine",
             action: { tool: "createRoutine", args: { ...draft, signature } } })
