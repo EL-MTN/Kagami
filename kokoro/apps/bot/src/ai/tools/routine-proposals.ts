@@ -7,6 +7,7 @@ import type { PlatformAdapter } from "@kokoro/shared";
 import { parameterSchema } from "./routine-schema";
 import { raisePendingConfirmation } from "./confirmations";
 import { hasPendingRoutineProposal } from "./routine-proposal-tools";
+import { hasPendingSkillProposal } from "./skill-proposal-tools";
 
 // Proposals expire faster than action confirmations (24h): an ignored "want me
 // to save this?" bubble shouldn't linger for a day. Two hours is long enough
@@ -97,8 +98,8 @@ export function createProposeRoutineTool(chatId: string, adapter: PlatformAdapte
         // Both guards are independent reads — run them concurrently.
         // GUARD 1 — durable decline memory: honors a prior "no" past the
         //   40-message window / 1h session reset the LLM can't see.
-        // GUARD 2 — one routine proposal at a time, across ALL proposal types
-        //   (save/refine/retire): also protects iMessage's "exactly one pending"
+        // GUARD 2 — one proposal at a time, across routine save/refine/retire
+        //   and skill saves: also protects iMessage's "exactly one pending"
         //   YES/NO resolver from stacked bubbles.
         const [declined, pending] = await Promise.all([
           isRecentlyDeclined(chatId, signature),
@@ -107,8 +108,8 @@ export function createProposeRoutineTool(chatId: string, adapter: PlatformAdapte
         if (declined) {
           return { proposed: false, reason: "Goshujin-sama declined a similar routine recently" };
         }
-        if (hasPendingRoutineProposal(pending)) {
-          return { proposed: false, reason: "a routine proposal is already awaiting approval" };
+        if (hasPendingRoutineProposal(pending) || hasPendingSkillProposal(pending)) {
+          return { proposed: false, reason: "another proposal is already awaiting approval" };
         }
 
         const confirmationId = await raisePendingConfirmation(chatId, adapter, {

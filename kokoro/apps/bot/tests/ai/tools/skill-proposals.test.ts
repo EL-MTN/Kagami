@@ -89,7 +89,18 @@ describe("proposeSkill — guard", () => {
     expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
   });
 
-  it("does not suppress for a non-skill pending confirmation", async () => {
+  it("suppresses when a routine proposal is already pending", async () => {
+    vi.mocked(listPendingConfirmations).mockResolvedValue([
+      { action: { tool: "updateRoutinePrompt", args: {} } },
+    ] as never);
+
+    const result = await runTool(draft);
+
+    expect(result.proposed).toBe(false);
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
+  });
+
+  it("does not suppress for a non-proposal pending confirmation", async () => {
     vi.mocked(listPendingConfirmations).mockResolvedValue([
       { action: { tool: "sendEmail", args: {} } },
     ] as never);

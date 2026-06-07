@@ -9,6 +9,7 @@ const skillNameSchema = z
   .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with dashes");
 
 const listFieldSchema = z.array(z.string().min(1).max(140)).max(20).default([]);
+const objectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid routine ID");
 
 export const skillCreateSchema = z.object({
   chatId: z.string().min(1, "Chat ID is required"),
@@ -19,7 +20,7 @@ export const skillCreateSchema = z.object({
   tags: listFieldSchema,
   enabled: z.boolean().default(true),
   source: z.enum(skillSources).default("manual"),
-  linkedRoutineIds: z.array(z.string().min(1)).default([]),
+  linkedRoutineIds: z.array(objectIdSchema).default([]),
 });
 
 export const skillPatchSchema = z.object({
@@ -30,7 +31,7 @@ export const skillPatchSchema = z.object({
   tags: z.array(z.string().min(1).max(140)).max(20).optional(),
   enabled: z.boolean().optional(),
   source: z.enum(skillSources).optional(),
-  linkedRoutineIds: z.array(z.string().min(1)).optional(),
+  linkedRoutineIds: z.array(objectIdSchema).optional(),
 });
 
 export interface SkillListItem {

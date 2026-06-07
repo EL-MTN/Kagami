@@ -8,6 +8,7 @@ import type { IRoutine, IRoutineParameter } from "@kokoro/db";
 import { parameterSchema } from "./routine-schema";
 import { raisePendingConfirmation } from "./confirmations";
 import { hasPendingRoutineProposal } from "./routine-proposal-tools";
+import { hasPendingSkillProposal } from "./skill-proposal-tools";
 // Self-review proposals (refine/retire) expire on the same short window as a
 // creation proposal — share the constant so the two can't drift apart.
 import { PROPOSAL_TTL_MS } from "./routine-proposals";
@@ -107,10 +108,11 @@ async function raiseRoutineProposal(opts: {
     listPendingConfirmations(chatId),
   ]);
   if (declined) return { proposed: false, declined: true, reason: declinedReason };
-  // One routine proposal per chat at a time — across types — so we never stack
-  // two bubbles and break iMessage's exactly-one-pending YES/NO reply path.
-  if (hasPendingRoutineProposal(pending)) {
-    return { proposed: false, reason: "another routine proposal is already awaiting approval" };
+  // One proposal per chat at a time — across routine and skill proposal types —
+  // so we never stack two bubbles and break iMessage's exactly-one-pending
+  // YES/NO reply path.
+  if (hasPendingRoutineProposal(pending) || hasPendingSkillProposal(pending)) {
+    return { proposed: false, reason: "another proposal is already awaiting approval" };
   }
   const confirmationId = await raisePendingConfirmation(chatId, adapter, {
     summary,

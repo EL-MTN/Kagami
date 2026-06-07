@@ -89,6 +89,17 @@ describe("proposeRoutine — guard", () => {
     expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
   });
 
+  it("suppresses when a skill proposal is already pending", async () => {
+    vi.mocked(listPendingConfirmations).mockResolvedValue([
+      { action: { tool: "createSkill", args: {} } },
+    ] as never);
+
+    const result = await runTool(draft);
+
+    expect(result.proposed).toBe(false);
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
+  });
+
   it("does NOT suppress when the only pending confirmation is a non-proposal action", async () => {
     vi.mocked(listPendingConfirmations).mockResolvedValue([
       { action: { tool: "sendEmail", args: {} } },

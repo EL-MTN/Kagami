@@ -33,9 +33,10 @@ Skill creation uses the same confirmation primitive as routine proposals:
 
 1. `proposeSkill` computes a stable signature from normalized name + body hash.
 2. It checks `SkillProposalDecision` (`packages/db/src/models/skill-proposal.ts`) so declined proposals stay quiet past the chat window.
-3. It raises a pending confirmation with the dispatch-only action `createSkill`.
-4. On approve, `dispatchGatedAction("createSkill", ...)` creates an enabled `source: "distilled"` skill.
-5. On deny/cancel, `recordProposalDeclineFromConfirmation()` records a declined skill proposal.
+3. It checks the shared one-pending proposal guard so skill and routine proposal bubbles cannot stack.
+4. It raises a pending confirmation with the dispatch-only action `createSkill`.
+5. On approve, `dispatchGatedAction("createSkill", ...)` creates an enabled `source: "distilled"` skill.
+6. On deny/cancel, `recordProposalDeclineFromConfirmation()` records a declined skill proposal.
 
 `createSkill` is deliberately absent from `GATED_TOOL_NAMES`, so the model cannot bypass `proposeSkill` by calling `requestConfirmation` directly.
 
@@ -49,7 +50,7 @@ The Kokoro dashboard exposes `/skills` and `/skills/[id]`:
 - edit body, triggers, tags, source, description, and name
 - delete skills
 
-API routes live under `apps/dashboard/src/app/api/skills`. Content edits bump `version`; enabled-only toggles do not.
+API routes live under `apps/dashboard/src/app/api/skills`. Content edits bump `version`; enabled-only toggles do not. `linkedRoutineIds` must be Mongo ObjectId-shaped strings.
 
 ## Routines Relationship
 

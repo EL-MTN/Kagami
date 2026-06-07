@@ -6,7 +6,8 @@ import type { IPendingConfirmation } from "@kokoro/db";
  * `disableRoutine` retirement. Single source of truth for the three places that
  * must treat "a routine proposal" as one category:
  *  - the gated dispatcher records a durable decline on deny/cancel of any of them,
- *  - the proposal builders keep at most one pending per chat (`hasPendingRoutineProposal`),
+ *  - the routine proposal builders identify already-pending routine proposals
+ *    before applying the cross-family one-pending guard,
  *  - the prompt assembler exempts them from the "stale — consider cancelling" nudge.
  *
  * Lives in its own leaf module (one type-only import) so all four consumers
@@ -21,9 +22,9 @@ export const ROUTINE_PROPOSAL_TOOLS = new Set<string>([
 
 /**
  * True if the chat already has ANY routine proposal (save/refine/retire)
- * awaiting approval. The builders suppress on this so one chat never stacks two
- * proposal bubbles — which would drop below iMessage's exactly-one-pending
- * YES/NO reply fast path.
+ * awaiting approval. Callers combine this with the skill proposal guard so one
+ * chat never stacks two proposal bubbles — which would drop below iMessage's
+ * exactly-one-pending YES/NO reply fast path.
  */
 export function hasPendingRoutineProposal(
   pending: Pick<IPendingConfirmation, "action">[],

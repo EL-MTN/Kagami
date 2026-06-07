@@ -96,17 +96,18 @@ async function assemblePromptShell(
   const delegate = await readInstruction("delegate");
   if (delegate) parts.push(delegate);
 
-  // Load the proposeRoutine / proposeRoutineRefinement rules only where the
-  // tools are actually offered — live conversational turns. Excluded from the
-  // no-tools acknowledgment turn (includeProposalRule defaults to
-  // includeMcpHint = false there) and from proactive outreach (passes
-  // includeProposalRule: false explicitly), keeping the rules and the tools'
-  // `conversational` gate in lockstep.
+  // Load proposal rules only where those tools are actually offered — live
+  // conversational turns. Excluded from the no-tools acknowledgment turn
+  // (includeProposalRule defaults to includeMcpHint = false there) and from
+  // proactive outreach (passes includeProposalRule: false explicitly), keeping
+  // the rules and the tools' `conversational` gate in lockstep.
   if (includeProposalRule) {
     const routineProposals = await readInstruction("routine-proposals");
     if (routineProposals) parts.push(routineProposals);
     const routineRefinement = await readInstruction("routine-refinement");
     if (routineRefinement) parts.push(routineRefinement);
+    const skillProposals = await readInstruction("skill-proposals");
+    if (skillProposals) parts.push(skillProposals);
   }
 
   // Only advertise MCP tools on turns that actually expose them. The
