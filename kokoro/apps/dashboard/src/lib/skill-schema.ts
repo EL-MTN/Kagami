@@ -23,6 +23,24 @@ export const skillCreateSchema = z.object({
   linkedRoutineIds: z.array(objectIdSchema).default([]),
 });
 
+const skillPackageItemSchema = z.object({
+  name: skillNameSchema,
+  description: z.string().min(1, "Description is required").max(500),
+  body: z.string().min(1, "Body is required").max(6000),
+  triggers: listFieldSchema,
+  tags: listFieldSchema,
+  enabled: z.boolean().default(true),
+});
+
+export const skillPackageBundleSchema = z.object({
+  version: z.literal(1),
+  exportedAt: z.string().optional(),
+  count: z.number().optional(),
+  skills: z.array(skillPackageItemSchema).min(1, "At least one skill required"),
+});
+
+export type SkillPackageBundle = z.infer<typeof skillPackageBundleSchema>;
+
 export const skillPatchSchema = z.object({
   name: skillNameSchema.optional(),
   description: z.string().min(1).max(500).optional(),
