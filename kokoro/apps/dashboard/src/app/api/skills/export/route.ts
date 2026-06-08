@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Skill } from "@kokoro/db";
 import { ensureDB } from "@/lib/db";
-import type { SkillPackageBundle } from "@/lib/skill-schema";
+import { createSkillPackageBundle } from "@/lib/skill-package";
 
 export async function GET(request: Request) {
   await ensureDB();
@@ -10,21 +10,7 @@ export async function GET(request: Request) {
   const chatId = url.searchParams.get("chatId");
   const filter = chatId ? { chatId } : {};
   const skills = await Skill.find(filter).sort({ createdAt: -1 }).lean();
-
-  const bundle: SkillPackageBundle = {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    count: skills.length,
-    skills: skills.map((skill) => ({
-      chatId: skill.chatId,
-      name: skill.name,
-      description: skill.description,
-      body: skill.body,
-      triggers: skill.triggers,
-      tags: skill.tags,
-      enabled: skill.enabled,
-    })),
-  };
+  const bundle = createSkillPackageBundle(skills);
 
   const date = new Date().toISOString().slice(0, 10);
 
