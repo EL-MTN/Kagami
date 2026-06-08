@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const skillSources = ["manual", "distilled", "imported"] as const;
 
+const chatIdSchema = z.string().min(1, "Chat ID is required");
+
 const skillNameSchema = z
   .string()
   .min(1, "Name is required")
@@ -12,7 +14,7 @@ const listFieldSchema = z.array(z.string().min(1).max(140)).max(20).default([]);
 const objectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid routine ID");
 
 export const skillCreateSchema = z.object({
-  chatId: z.string().min(1, "Chat ID is required"),
+  chatId: chatIdSchema,
   name: skillNameSchema,
   description: z.string().min(1, "Description is required").max(500),
   body: z.string().min(1, "Body is required").max(6000),
@@ -22,6 +24,25 @@ export const skillCreateSchema = z.object({
   source: z.enum(skillSources).default("manual"),
   linkedRoutineIds: z.array(objectIdSchema).default([]),
 });
+
+const skillPackageItemSchema = z.object({
+  chatId: chatIdSchema.optional(),
+  name: skillNameSchema,
+  description: z.string().min(1, "Description is required").max(500),
+  body: z.string().min(1, "Body is required").max(6000),
+  triggers: listFieldSchema,
+  tags: listFieldSchema,
+  enabled: z.boolean().default(true),
+});
+
+export const skillPackageBundleSchema = z.object({
+  version: z.literal(1),
+  exportedAt: z.string().optional(),
+  count: z.number().optional(),
+  skills: z.array(skillPackageItemSchema),
+});
+
+export type SkillPackageBundle = z.infer<typeof skillPackageBundleSchema>;
 
 export const skillPatchSchema = z.object({
   name: skillNameSchema.optional(),
