@@ -104,8 +104,8 @@ export function startRoutineScheduler(registry: AdapterRegistry): () => void {
   // Startup recovery: await stale reset before first poll
   void startupRecovery(registry);
 
-  // Each tick is its own root trace so cron-fire logs / manual-fire logs
-  // and any downstream Kioku/Kizuna calls share a single traceId per fire.
+  // Each tick is traced for scheduler bookkeeping; executeRoutine opens a
+  // fresh root trace for each top-level cron/manual routine execution.
   interval = setInterval(
     withRootTrace(() => runDueRoutines(registry)),
     POLL_INTERVAL_MS,

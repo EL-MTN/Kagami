@@ -247,7 +247,12 @@ describe("emitUsage", () => {
     expect(info).toHaveBeenCalledTimes(1);
     const [fields, msg] = info.mock.calls[0] as [Record<string, unknown>, string];
     expect(msg).toBe("llm.generate");
-    expect(fields.event).toEqual({ kind: "span" });
+    expect(fields.event).toEqual({
+      kind: "span",
+      name: "llm.generate",
+      duration_ms: 12,
+      status: "ok",
+    });
     expect(fields.llm).toMatchObject({ service: "kioku", prompt_tokens: 3, fallback_used: false });
     expect(fields.trace).toBeUndefined();
   });
@@ -268,6 +273,7 @@ describe("emitUsage", () => {
     );
     const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
     expect(fields.trace).toEqual({ id: ctx.traceId });
+    expect(fields.span).toMatchObject({ parent: { id: ctx.spanId } });
   });
 });
 

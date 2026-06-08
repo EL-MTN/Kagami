@@ -20,12 +20,15 @@ export function emitUsage(logger: Logger, ev: UsageEvent): void {
   const span = ctx ? childSpan(ctx) : undefined;
 
   const fields: Record<string, unknown> = {
-    event: { kind: "span" },
-    span: {
-      id: span?.spanId ?? generateSpanId(),
+    event: {
+      kind: "span",
       name: "llm.generate",
       duration_ms: ev.durationMs,
-      ...(span ? { parent_id: span.parentSpanId } : {}),
+      status: "ok",
+    },
+    span: {
+      id: span?.spanId ?? generateSpanId(),
+      ...(span ? { parent: { id: span.parentSpanId } } : {}),
     },
     llm: {
       service: ev.service,
