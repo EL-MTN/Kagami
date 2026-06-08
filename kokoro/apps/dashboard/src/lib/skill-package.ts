@@ -1,6 +1,6 @@
 import type { SkillPackageBundle } from "./skill-schema";
 
-export interface SkillPackageSourceItem {
+interface SkillPackageSourceItem {
   chatId: string;
   name: string;
   description: string;
