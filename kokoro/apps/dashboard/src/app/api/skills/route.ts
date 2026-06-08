@@ -80,18 +80,13 @@ async function handleImport(request: Request) {
   }
 
   const url = new URL(request.url);
-  let chatId = url.searchParams.get("chatId");
+  const requestedChatId = url.searchParams.get("chatId") || null;
+  const needsFallbackChatId = !requestedChatId && parsed.data.skills.some((item) => !item.chatId);
+  let fallbackChatId = requestedChatId;
 
-  if (!chatId) {
+  if (needsFallbackChatId) {
     const existing = await Skill.findOne().lean();
-    chatId = existing?.chatId ?? null;
-  }
-
-  if (!chatId) {
-    return NextResponse.json(
-      { error: "No chatId provided and no existing skills to infer from" },
-      { status: 400 },
-    );
+    fallbackChatId = existing?.chatId ?? null;
   }
 
   let imported = 0;
@@ -99,8 +94,15 @@ async function handleImport(request: Request) {
   const errors: string[] = [];
 
   for (const item of parsed.data.skills) {
+    const targetChatId = requestedChatId ?? item.chatId ?? fallbackChatId;
+
+    if (!targetChatId) {
+      errors.push(`"${item.name}": missing chatId`);
+      continue;
+    }
+
     try {
-      await createSkill(chatId, {
+      await createSkill(targetChatId, {
         name: item.name,
         description: item.description,
         body: item.body,
