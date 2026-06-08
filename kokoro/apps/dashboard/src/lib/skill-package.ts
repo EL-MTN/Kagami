@@ -41,3 +41,8 @@ export function resolveSkillPackageImportChatId({
 }): string | null {
   return requestedChatId ?? itemChatId ?? fallbackChatId;
 }
+
+export function inferLegacySkillPackageChatId(chatIds: readonly string[]): string | null {
+  const uniqueChatIds = [...new Set(chatIds.filter((chatId) => chatId.length > 0))];
+  return uniqueChatIds.length === 1 ? uniqueChatIds[0] : null;
+}

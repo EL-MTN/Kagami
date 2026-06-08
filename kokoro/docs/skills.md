@@ -85,8 +85,9 @@ POST /api/skills?action=import&chatId=<chatId>
 
 When `chatId` is present on the import URL, every package item is imported into
 that chat. Otherwise, each package item's own `chatId` is used. Legacy package
-items without `chatId` fall back to an existing skill's chat if one can be
-inferred; items that still have no target chat are reported in `errors`.
+items without `chatId` fall back only when there is exactly one existing chat
+scope to infer from; items that still have no target chat are reported in
+`errors`.
 Imported rows are written as `source: "imported"`; duplicates by `(chatId, name)`
 are skipped and returned in the summary instead of failing the whole import.
 Empty packages import successfully with a zero-count summary.
