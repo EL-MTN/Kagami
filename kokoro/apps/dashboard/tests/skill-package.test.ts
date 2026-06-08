@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createSkillPackageBundle,
+  inferLegacySkillPackageChatId,
   resolveSkillPackageImportChatId,
 } from "../src/lib/skill-package";
 import { skillPackageBundleSchema } from "../src/lib/skill-schema";
@@ -63,5 +64,12 @@ describe("skill packages", () => {
         fallbackChatId: "chat-fallback",
       }),
     ).toBe("chat-requested");
+  });
+
+  it("infers a legacy package chat only from one existing chat scope", () => {
+    expect(inferLegacySkillPackageChatId(["chat-a"])).toBe("chat-a");
+    expect(inferLegacySkillPackageChatId(["chat-a", "chat-a"])).toBe("chat-a");
+    expect(inferLegacySkillPackageChatId(["chat-a", "chat-b"])).toBeNull();
+    expect(inferLegacySkillPackageChatId([])).toBeNull();
   });
 });

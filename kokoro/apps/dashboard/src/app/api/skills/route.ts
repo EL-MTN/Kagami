@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { Skill, createSkill, isDuplicateKeyError } from "@kokoro/db";
 import { ensureDB } from "@/lib/db";
-import { resolveSkillPackageImportChatId } from "@/lib/skill-package";
+import {
+  inferLegacySkillPackageChatId,
+  resolveSkillPackageImportChatId,
+} from "@/lib/skill-package";
 import { skillCreateSchema, skillPackageBundleSchema } from "@/lib/skill-schema";
 import { getSkillList } from "@/lib/queries/skills";
 
@@ -86,8 +89,8 @@ async function handleImport(request: Request) {
   let fallbackChatId = requestedChatId;
 
   if (needsFallbackChatId) {
-    const existing = await Skill.findOne().lean();
-    fallbackChatId = existing?.chatId ?? null;
+    const existingChatIds = await Skill.distinct("chatId");
+    fallbackChatId = inferLegacySkillPackageChatId(existingChatIds);
   }
 
   let imported = 0;
