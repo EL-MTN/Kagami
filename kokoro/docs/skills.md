@@ -52,6 +52,54 @@ The Kokoro dashboard exposes `/skills` and `/skills/[id]`:
 
 API routes live under `apps/dashboard/src/app/api/skills`. Content edits bump `version`; enabled-only toggles do not. `linkedRoutineIds` must be Mongo ObjectId-shaped strings.
 
+## Package Import/Export
+
+Skill packages are versioned JSON bundles for moving procedural context between
+Kokoro installs or sharing a curated set of skills with another chat. Packages
+remain context-only: importing a package creates `Skill` rows, but does not
+create routines, schedule jobs, or grant new tool permissions.
+
+Export all skills from the dashboard API:
+
+```http
+GET /api/skills/export
+```
+
+Import a package into a chat:
+
+```http
+POST /api/skills?action=import&chatId=<chatId>
+```
+
+If `chatId` is omitted, the import route infers it from an existing skill. If no
+skill exists yet, the request must provide `chatId`. Imported rows are written as
+`source: "imported"`; duplicates by `(chatId, name)` are skipped and returned in
+the summary instead of failing the whole import.
+
+Package shape (`version: 1`):
+
+```json
+{
+  "version": 1,
+  "exportedAt": "2026-06-08T00:00:00.000Z",
+  "count": 1,
+  "skills": [
+    {
+      "name": "meeting-followup-style",
+      "description": "How to write concise meeting follow-up messages.",
+      "body": "Include decisions, owners, deadlines, and open questions.",
+      "triggers": ["meeting", "followup", "recap"],
+      "tags": ["writing", "crm"],
+      "enabled": true
+    }
+  ]
+}
+```
+
+`linkedRoutineIds` are deliberately not exported in v1 because routine ObjectIds
+are local to a MongoDB database. A future package version can add portable
+routine-name links and resolve them during import.
+
 ## Routines Relationship
 
 Routines are executable workflows: they run as independent LLM tasks, accept parameters, can be scheduled, and write `RoutineLog` rows. Skills are context packages: they are searched/read and then applied to the current reasoning path or embedded into a routine prompt.
