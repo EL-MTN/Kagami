@@ -105,6 +105,7 @@ Each parameter has:
 | `routineId`   | `ObjectId`                             | Reference to the Routine document          |
 | `trigger`     | `"cron" \| "manual" \| "routine"`      | How the execution was initiated            |
 | `parentLogId` | `ObjectId?`                            | Parent log when invoked by another routine |
+| `traceId`     | `string?`                              | Kansoku trace ID for this execution        |
 | `parameters`  | `Record<string, unknown>?`             | Resolved parameters for this execution     |
 | `status`      | `"running" \| "completed" \| "failed"` | Current execution status                   |
 | `summary`     | `string?`                              | LLM response text or error reason          |
@@ -293,6 +294,12 @@ The routine scheduler (`apps/bot/src/scheduler/routines.ts`) handles automatic e
 - **Cron tick**: every 60 seconds via `setInterval`. Queries `getDueRoutines()` (enabled routines where `cronSchedule` is not null and `nextRunAt <= now`) and executes each with `trigger: "cron"`, `advanceSchedule: true`.
 - **Manual-run tick**: every 3 seconds. Calls `claimPendingManualRun()` — an atomic `findOneAndUpdate` that clears `manualRunRequestedAt` and returns the claimed routine — and executes it with `trigger: "manual"`, `advanceSchedule: false`, `silent: true`. The dashboard sets `manualRunRequestedAt` via `POST /api/routines/[id]/run`; the bot picks it up within ~3 s and writes the result to a `RoutineLog` that the dashboard polls. Silent mode suppresses the Telegram delivery so testing from the dashboard doesn't spam the chat.
 - Both intervals are `unref()`ed so they don't keep the process alive.
+
+Each top-level cron/manual execution opens its own root trace before the
+`RoutineLog` is created, so the log stores a `traceId` and the dashboard can
+deep-link directly to Kansoku's trace waterfall. Composed `trigger: "routine"`
+runs inherit the caller's active trace so parent and child routine calls remain
+correlated.
 
 ### Cron Parameter Defaults
 

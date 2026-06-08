@@ -14,6 +14,7 @@ interface RoutineLogLean {
   routineId: { toString(): string };
   trigger: "cron" | "manual" | "routine";
   parentLogId?: { toString(): string };
+  traceId?: string;
   parameters?: Record<string, unknown>;
   status: "running" | "completed" | "failed";
   summary?: string;
@@ -26,6 +27,7 @@ function serializeLog(l: RoutineLogLean, routineName?: string): RoutineLogItem {
     id: l._id.toString(),
     trigger: l.trigger,
     parentLogId: l.parentLogId?.toString(),
+    traceId: l.traceId,
     parameters: l.parameters,
     status: l.status,
     summary: l.summary,
