@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Skill, createSkill, isDuplicateKeyError } from "@kokoro/db";
 import { ensureDB } from "@/lib/db";
+import { resolveSkillPackageImportChatId } from "@/lib/skill-package";
 import { skillCreateSchema, skillPackageBundleSchema } from "@/lib/skill-schema";
 import { getSkillList } from "@/lib/queries/skills";
 
@@ -94,7 +95,11 @@ async function handleImport(request: Request) {
   const errors: string[] = [];
 
   for (const item of parsed.data.skills) {
-    const targetChatId = requestedChatId ?? item.chatId ?? fallbackChatId;
+    const targetChatId = resolveSkillPackageImportChatId({
+      requestedChatId,
+      itemChatId: item.chatId,
+      fallbackChatId,
+    });
 
     if (!targetChatId) {
       errors.push(`"${item.name}": missing chatId`);

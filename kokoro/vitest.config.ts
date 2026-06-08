@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
+const mongoGlobalSetup = [resolve(projectRoot, "packages/test-utils/src/global-setup.ts")];
 
 export default defineConfig({
   test: {
@@ -17,13 +18,13 @@ export default defineConfig({
     // ~8 s wall-clock is dominated by GridFS I/O in gridfs.test.ts and
     // heavy module imports per worker — both architectural rather than
     // tunable.
-    globalSetup: [resolve(projectRoot, "packages/test-utils/src/global-setup.ts")],
     projects: [
       {
         test: {
           name: "bot",
           root: resolve(projectRoot, "apps/bot"),
           include: ["tests/**/*.test.ts"],
+          globalSetup: mongoGlobalSetup,
           globals: true,
           environment: "node",
         },
@@ -33,6 +34,7 @@ export default defineConfig({
           name: "shared",
           root: resolve(projectRoot, "packages/shared"),
           include: ["tests/**/*.test.ts"],
+          globalSetup: mongoGlobalSetup,
           globals: true,
           environment: "node",
         },
@@ -41,6 +43,16 @@ export default defineConfig({
         test: {
           name: "db",
           root: resolve(projectRoot, "packages/db"),
+          include: ["tests/**/*.test.ts"],
+          globalSetup: mongoGlobalSetup,
+          globals: true,
+          environment: "node",
+        },
+      },
+      {
+        test: {
+          name: "dashboard",
+          root: resolve(projectRoot, "apps/dashboard"),
           include: ["tests/**/*.test.ts"],
           globals: true,
           environment: "node",
@@ -51,6 +63,7 @@ export default defineConfig({
           name: "memory",
           root: resolve(projectRoot, "packages/memory"),
           include: ["tests/**/*.test.ts"],
+          globalSetup: mongoGlobalSetup,
           globals: true,
           environment: "node",
         },
@@ -60,6 +73,7 @@ export default defineConfig({
           name: "kizuna",
           root: resolve(projectRoot, "packages/kizuna"),
           include: ["tests/**/*.test.ts"],
+          globalSetup: mongoGlobalSetup,
           globals: true,
           environment: "node",
         },

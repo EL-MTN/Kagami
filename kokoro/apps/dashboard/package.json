@@ -6,6 +6,8 @@
     "dev": "portless run next dev",
     "build": "next build",
     "start": "next start",
+    "test": "vitest run --project dashboard",
+    "test:watch": "vitest --project dashboard",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix"
