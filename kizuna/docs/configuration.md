@@ -26,7 +26,8 @@ KIZUNA_INGEST_INTERVAL_SEC=0                               # default 0 (schedule
 KIZUNA_HOST=127.0.0.1                                      # standalone bind host; Portless uses its proxy
 # PORT=3000                                                # standalone only; Portless injects this in dev
 LOG_LEVEL=info                                             # pino level (`silent` in tests)
-NODE_ENV=development                                       # enables pino-pretty in dev
+LOG_PRETTY=1                                               # optional; force pino-pretty (unset = TTY-detect)
+NODE_ENV=development
 ```
 
 Notes:

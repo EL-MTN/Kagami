@@ -21,7 +21,7 @@ Kizuna's test suite covers the API workspace. Pure helpers run with no infrastru
 - **HTTP:** `supertest` against a live `createApp({ db, config })`. No port binding — `supertest` invokes the request handler directly.
 - **Google APIs:** never actually called.
   - `OAuth2Client.prototype.getToken` is `vi.spyOn`'d in OAuth tests.
-  - Gmail / Calendar clients are interfaces: tests inject `FakeGmailClient` / `FakeCalendarClient` (`apps/api/tests/helpers/fake-{gmail,calendar}.ts`). The real clients (`makeGmailClient` / `makeCalendarClient`) are dynamically imported only by `runGmailSyncOnce` / `runCalendarSyncOnce`, which are bypassed in tests in favor of `runGmailSync({ client })` / `runCalendarSync({ client })`.
+  - Gmail / Calendar clients are interfaces: tests inject `FakeGmailClient` / `FakeCalendarClient` (`apps/api/tests/helpers/fake-gmail.ts` and `apps/api/tests/helpers/fake-calendar.ts`). The real clients (`makeGmailClient` / `makeCalendarClient`) are dynamically imported only by `runGmailSyncOnce` / `runCalendarSyncOnce`, which are bypassed in tests in favor of `runGmailSync({ client })` / `runCalendarSync({ client })`.
 - **Encryption:** real `aes-256-gcm` with a per-test key (`randomBytes(32).toString('base64')`).
 
 ## Layout

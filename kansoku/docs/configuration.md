@@ -45,7 +45,7 @@ There is no live token rotation primitive. To rotate:
 
 1. Generate a new token: `openssl rand -hex 32`
 2. Update `KANSOKU_INGEST_TOKEN` in Kansoku's `.env`
-3. Update `KANSOKU_INGEST_TOKEN` in every sibling's `.env`
+3. Update `KANSOKU_INGEST_TOKEN` in every producer `.env` that ships to Kansoku
 4. Restart all services (in any order — `dev-all.sh` boots them in parallel)
 
 During the gap between (2) and (4) the shippers may briefly fail-open

@@ -67,7 +67,7 @@ Kao also caches with a 30s safety buffer — both layers agree on "treat expirin
 
 `clearAccessTokenCache()` clears both `cache` and `inflight` together — clearing only `cache` would let a stale in-flight fetch overwrite `cache` with the old token a moment later.
 
-The Gmail and Calendar HTTP clients (`apps/api/src/ingest/{gmail,calendar}-client.ts`) wrap each Google call in a self-heal retry: on a 401 or 403 from Google, they ask `getAccessToken({ force: true })`, retry once, and only propagate a failure if Google rejects the _fresh_ token too. A persistent 401 after the retry still escapes as `GmailHttpError(401)` / `CalendarHttpError(401)`, which the worker maps to `OAuthError('invalid_grant')` and pauses the worker on.
+The Gmail and Calendar HTTP clients (`apps/api/src/ingest/gmail-client.ts` and `apps/api/src/ingest/calendar-client.ts`) wrap each Google call in a self-heal retry: on a 401 or 403 from Google, they ask `getAccessToken({ force: true })`, retry once, and only propagate a failure if Google rejects the _fresh_ token too. A persistent 401 after the retry still escapes as `GmailHttpError(401)` / `CalendarHttpError(401)`, which the worker maps to `OAuthError('invalid_grant')` and pauses the worker on.
 
 `OAuthError` codes returned by `getAccessToken`:
 

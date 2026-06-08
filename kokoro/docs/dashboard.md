@@ -1,6 +1,6 @@
 # Dashboard
 
-Web dashboard for managing and inspecting Kokoro's data, built with Next.js 15 + Tailwind CSS v4 + shadcn/ui (Radix primitives).
+Web dashboard for managing and inspecting Kokoro's data, built with Next.js 16 + Tailwind CSS v4 + shadcn/ui (Radix primitives).
 
 ## Design System
 

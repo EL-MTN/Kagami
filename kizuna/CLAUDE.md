@@ -2,7 +2,7 @@
 
 ## Project
 
-Kizuna — a personal CRM that tracks people, organizations, interactions, and follow-ups. Auto-ingests Gmail and Google Calendar to populate the relationship graph; everything else is concierge-driven via REST. Built with TypeScript, Express 5, Mongoose, and a Next.js 15 dashboard. Lives as a subtree inside the Kagami nested monorepo and consumes shared tooling via `@kagami/eslint-config` and `@kagami/tsconfig` from `shared/packages/`. Kokoro consumes the API for read-only CRM tools; Kizuna itself has no outbound runtime coupling to Kioku or Kokoro.
+Kizuna — a personal CRM that tracks people, organizations, interactions, and follow-ups. Auto-ingests Gmail and Google Calendar to populate the relationship graph; everything else is concierge-driven via REST. Built with TypeScript, Express 5, Mongoose, and a Next.js 16 dashboard. Lives as a subtree inside the Kagami nested monorepo and consumes shared tooling via `@kagami/eslint-config` and `@kagami/tsconfig` from `shared/packages/`. Kokoro consumes the API for read tools and confirmation-gated writes; Kizuna itself has no outbound runtime coupling to Kioku or Kokoro.
 
 This file is the project guide. Cross-service facts live in the workspace root: see [`../CLAUDE.md`](../CLAUDE.md) and [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
 
@@ -24,7 +24,7 @@ kizuna/
 │   │   ├── tests/          # vitest + supertest + mongodb-memory-server (real Mongo, no Docker)
 │   │   ├── scripts/        # import-vcards.ts (vCard → POST /people)
 │   │   └── tsconfig.build.json # prod build: tsc -p this → dist/ (extends @kagami/tsconfig/server.build.json)
-│   └── dashboard/          # Next.js 15 App Router (https://kizuna.localhost)
+│   └── dashboard/          # Next.js 16 App Router (https://kizuna.localhost)
 │       ├── app/
 │       │   └── (app)/      # all routes — Today, Followups, Interactions, People, Contexts, Sync, Errors, Tombstones (no login)
 │       ├── components/     # sidebar, nav-link, shell/, ui/ (shadcn-shaped)
@@ -74,7 +74,7 @@ npx tsx scripts/import-vcards.ts <path-to.vcf>   # bulk-create people from vCard
 @kagami/tsconfig       ← shared (lives in Kagami's shared/packages/)
        ↑
 @kizuna/api          ← Express, Mongoose, Gmail/Calendar ingest
-@kizuna/dashboard    ← Next.js 15 (talks to API over HTTP via KIZUNA_API_URL)
+@kizuna/dashboard    ← Next.js 16 (talks to API over HTTP via KIZUNA_API_URL)
 ```
 
 The two apps share **no in-process code**. The dashboard's contract with the API is the REST surface in `apps/api/src/routes/*` plus the OAuth handlers, hit through `fetch` to `KIZUNA_API_URL` (default `https://api.kizuna.localhost`). The dashboard mirrors the API's serialized shapes by hand in `apps/dashboard/src/lib/types.ts` — keep that file in sync with `apps/api/src/lib/serialize.ts` when shapes change.
