@@ -3,16 +3,20 @@ import { Skill } from "@kokoro/db";
 import { ensureDB } from "@/lib/db";
 import type { SkillPackageBundle } from "@/lib/skill-schema";
 
-export async function GET() {
+export async function GET(request: Request) {
   await ensureDB();
 
-  const skills = await Skill.find().sort({ createdAt: -1 }).lean();
+  const url = new URL(request.url);
+  const chatId = url.searchParams.get("chatId");
+  const filter = chatId ? { chatId } : {};
+  const skills = await Skill.find(filter).sort({ createdAt: -1 }).lean();
 
   const bundle: SkillPackageBundle = {
     version: 1,
     exportedAt: new Date().toISOString(),
     count: skills.length,
     skills: skills.map((skill) => ({
+      chatId: skill.chatId,
       name: skill.name,
       description: skill.description,
       body: skill.body,
