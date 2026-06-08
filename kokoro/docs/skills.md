@@ -65,16 +65,31 @@ Export all skills from the dashboard API:
 GET /api/skills/export
 ```
 
-Import a package into a chat:
+Export skills for one chat:
+
+```http
+GET /api/skills/export?chatId=<chatId>
+```
+
+Import a package into its recorded chat scopes:
+
+```http
+POST /api/skills?action=import
+```
+
+Import all package items into one chat:
 
 ```http
 POST /api/skills?action=import&chatId=<chatId>
 ```
 
-If `chatId` is omitted, the import route infers it from an existing skill. If no
-skill exists yet, the request must provide `chatId`. Imported rows are written as
-`source: "imported"`; duplicates by `(chatId, name)` are skipped and returned in
-the summary instead of failing the whole import.
+When `chatId` is present on the import URL, every package item is imported into
+that chat. Otherwise, each package item's own `chatId` is used. Legacy package
+items without `chatId` fall back to an existing skill's chat if one can be
+inferred; items that still have no target chat are reported in `errors`.
+Imported rows are written as `source: "imported"`; duplicates by `(chatId, name)`
+are skipped and returned in the summary instead of failing the whole import.
+Empty packages import successfully with a zero-count summary.
 
 Package shape (`version: 1`):
 
@@ -85,6 +100,7 @@ Package shape (`version: 1`):
   "count": 1,
   "skills": [
     {
+      "chatId": "chat_123",
       "name": "meeting-followup-style",
       "description": "How to write concise meeting follow-up messages.",
       "body": "Include decisions, owners, deadlines, and open questions.",
