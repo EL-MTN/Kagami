@@ -27,7 +27,7 @@ kokoro/                          # subtree of Kagami workspace (npm workspaces +
 │   ├── shared/                   # config, logger, markdown, types
 │   ├── db/                       # MongoDB connection, models, GridFS
 │   ├── memory/                   # Kioku HTTP client + transcript/fact glue + sweepers
-│   ├── kizuna/                   # Kizuna read-only CRM client + compact projections
+│   ├── kizuna/                   # Kizuna CRM client + compact projections
 │   └── test-utils/               # Vitest harness (withTestDb, fakeAdapter, MSW)
 ├── scripts/                      # auth
 ├── vitest.config.ts              # workspace-local vitest config (still here)
@@ -265,7 +265,7 @@ Daily cleanup and the Kioku sweepers used to live here, but have been extracted 
 | `@kokoro/shared`    | Config, logging, markdown, platform types            | `config`, `validateConfig`, `logger`, `parseMarkdown`, `haversineMeters`, `IncomingMessage`, `PlatformAdapter`, `computeNextRunAt`, `validateCronAndDefaults`                                                                                                                             |
 | `@kokoro/db`        | MongoDB connection, all models, GridFS               | `connectDB`, `disconnectDB`, `Conversation`, `PendingFact`, `Reminder`, `SchedulerState`, `TokenUsage`, `Routine`, `RoutineLog`, `Skill`, `Watcher`, `WatcherLog`, `LocationHistory`, `PendingConfirmation`, `readImage`/`writeImage`, `readAudio`/`writeAudio`, all model CRUD functions |
 | `@kokoro/memory`    | Kioku HTTP client + conversation/fact retry glue     | `recall`, `appendFact`, `appendFactWithRetryQueue`, `getFactById`, `getFactCount`, `hasFactsForSession`, `ingestSession`, `buildTranscript`, `ingestClosedSession`, `sweepPendingIngests`, `sweepPendingFacts`, `sweepStaleActiveSessions`, `KiokuClientError`                            |
-| `@kokoro/kizuna`    | Kizuna read-only CRM client + compact projections    | `findPeople`, `getPerson`, `getPersonContext`, `recentInteractions`, `listMyFollowups`, `KizunaClientError`, `PersonSummary`, `InteractionSummary`, `FollowupSummary`                                                                                                                     |
+| `@kokoro/kizuna`    | Kizuna CRM client + compact projections              | `findPeople`, `getPerson`, `getPersonContext`, `recentInteractions`, `listMyFollowups`, write-operation clients used only behind confirmations, `KizunaClientError`, `PersonSummary`, `InteractionSummary`, `FollowupSummary`                                                             |
 | `@kokoro/bot`       | Telegram + iMessage bot, AI layer, tools, schedulers | App entry point — not imported by other packages                                                                                                                                                                                                                                          |
 | `@kokoro/dashboard` | Next.js dashboard (read + write CRUD)                | Overview, conversations, reminders, routines, skills, watchers, confirmations, usage pages                                                                                                                                                                                                |
 

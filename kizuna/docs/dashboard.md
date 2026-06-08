@@ -1,6 +1,6 @@
 # Dashboard
 
-Read-only inspector for Kizuna's CRM data, plus the OAuth grant and ingest control surfaces. Built with Next.js 15 (App Router) + Tailwind CSS v4 + shadcn-shaped primitives. Lives at `apps/dashboard/`, served at `https://kizuna.localhost` via Portless. Every page is a server component that fetches the API at `KIZUNA_API_URL` (default `https://api.kizuna.localhost`) with no auth header — the API is open at single-user localhost.
+Read-only inspector for Kizuna's CRM data, plus the OAuth grant and ingest control surfaces. Built with Next.js 16 (App Router) + Tailwind CSS v4 + shadcn-shaped primitives. Lives at `apps/dashboard/`, served at `https://kizuna.localhost` via Portless. Every page is a server component that fetches the API at `KIZUNA_API_URL` (default `https://api.kizuna.localhost`) with no auth header — the API is open at single-user localhost.
 
 ## Page map
 

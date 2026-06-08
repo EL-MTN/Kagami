@@ -1,14 +1,17 @@
 # Kagami
 
-Kagami is a personal-AI workspace that brings four bounded TypeScript projects into one
-nested monorepo:
+Kagami is a personal-AI workspace that brings five bounded TypeScript domain projects, plus a
+thin operator cockpit, into one nested monorepo:
 
 - **Kioku**: long-term memory service with REST and MCP surfaces.
 - **Kokoro**: Telegram-first personal AI agent with tools, routines, watchers, and dashboards.
 - **Kizuna**: personal CRM for people, organizations, interactions, follow-ups, Gmail, and
   Calendar ingest.
 - **Kansoku**: observability service — structured logs, distributed traces, fingerprinted
-  errors, and derived metrics; fed by every sibling over HTTP.
+  errors, and derived metrics; fed by sibling APIs over HTTP.
+- **Kao**: identity service that owns per-consumer Google OAuth refresh tokens and vends
+  short-lived access tokens to Kokoro and Kizuna.
+- **Cockpit**: read-only workspace dashboard for service health and attention items.
 
 The root workspace owns dependency installation, shared tooling, and the Turborepo pipeline.
 Each project keeps its own apps, docs, and conventions under its subtree.
@@ -32,8 +35,8 @@ Each project keeps its own apps, docs, and conventions under its subtree.
 ## Architecture
 
 Kagami is one git repository, one npm workspace install, and one Turborepo task graph. The
-project subtrees were imported with `git subtree add`, so per-project history remains available
-through `git log`.
+Kioku, Kokoro, and Kizuna subtrees were imported with `git subtree add`, so per-project history
+remains available through `git log`; Kansoku, Kao, and Cockpit were added natively.
 
 ```text
 Kagami
@@ -41,6 +44,8 @@ Kagami
 |-- Kokoro   Telegram/iMessage AI agent + dashboard
 |-- Kizuna   CRM API + dashboard
 |-- Kansoku  observability — ingest + dashboard
+|-- Kao      Google identity/token-vend API + dashboard
+|-- Cockpit  read-only workspace operator dashboard
 `-- shared   workspace ESLint, TypeScript, and logger config packages
 ```
 
@@ -49,17 +54,21 @@ Runtime coupling is intentionally narrow:
 ```text
 Kokoro -> Kioku                       REST (`tracedFetch`) to KIOKU_URL for recall, writes, ingest
 Kokoro -> Kizuna                      REST (`tracedFetch`) to KIZUNA_URL for CRM lookups + gated writes
-Kizuna -> Kioku                       no outbound runtime dependency
-Kizuna -> Kokoro                      no outbound runtime dependency
+Kokoro -> Kao                         REST (`tracedFetch`) to KAO_URL for Google access tokens
+Kizuna -> Kao                         REST (`tracedFetch`) to KAO_URL for Google access tokens
+Kizuna -> Kioku/Kokoro                no outbound runtime dependency
 Kioku  -> any                         none; Kioku is pull-only by design
-{Kioku, Kokoro, Kizuna} -> Kansoku    HTTP push from @kagami/logger; fail-open shipper
+{Kioku, Kokoro, Kizuna, Kao} -> Kansoku
+                                      HTTP push from @kagami/logger; fail-open shipper
 Kansoku -> any                        none; push-only-in by design
+Kao -> any                            none, except Google token exchange/refresh/revoke
+Cockpit -> services                   read-only probes for health and attention items
 ```
 
 `dev-all.sh` starts the selected apps together under Turbo. There is no service startup ordering;
 Kokoro's Kioku and Kizuna clients are designed to fail open when a sibling API is still coming up or
-temporarily unavailable, and every sibling's Kansoku shipper is fail-open at the call site so an
-observability outage can't wedge a service.
+temporarily unavailable, and each configured Kansoku shipper is fail-open at the call site so an
+observability outage can't wedge a producer service.
 
 For the full cross-service map, endpoint surfaces, env var details, auth notes, and future-edge
 ideas, read [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -109,9 +118,23 @@ ideas, read [ARCHITECTURE.md](ARCHITECTURE.md).
 |   |-- docs/
 |   |-- CLAUDE.md
 |   `-- portless.json
+|-- kao/
+|   |-- apps/
+|   |   |-- api/
+|   |   `-- dashboard/
+|   |-- docs/
+|   |-- CLAUDE.md
+|   `-- portless.json
+|-- cockpit/
+|   |-- apps/
+|   |   `-- dashboard/
+|   |-- docs/
+|   |-- AGENTS.md
+|   `-- portless.json
 `-- shared/
     `-- packages/
         |-- eslint-config/
+        |-- llm/
         |-- logger/
         `-- tsconfig/
 ```
@@ -132,8 +155,7 @@ directories are the durable architecture references for internals.
 - Optional external service accounts, depending on what you run:
   - Telegram bot token for Kokoro.
   - LLM provider keys or a local OpenAI-compatible endpoint.
-  - Google OAuth credentials for Kokoro Gmail/Calendar tools.
-  - Google OAuth credentials for Kizuna Gmail/Calendar ingest.
+  - Google OAuth credentials for Kao, which then vends access tokens to Kokoro and Kizuna.
   - Brave Search, ElevenLabs, Browserbase, BlueBubbles, or Google Maps for optional Kokoro tools.
 
 Portless may ask once for administrator privileges on first run so it can trust a local CA and bind
@@ -157,6 +179,8 @@ cp kizuna/apps/api/.env.example kizuna/apps/api/.env
 cp kizuna/apps/dashboard/.env.example kizuna/apps/dashboard/.env
 cp kansoku/apps/api/.env.example kansoku/apps/api/.env
 cp kansoku/apps/dashboard/.env.example kansoku/apps/dashboard/.env
+cp kao/apps/api/.env.example kao/apps/api/.env
+cp kao/apps/dashboard/.env.example kao/apps/dashboard/.env
 ```
 
 Start the full workspace:
@@ -165,9 +189,9 @@ Start the full workspace:
 npm run dev
 ```
 
-`npm run dev` delegates to `./dev-all.sh`, which starts the selected Kioku, Kokoro, Kizuna, and
-Kansoku components together under Turbo's TUI. The default selection is every API, dashboard, and
-the Kokoro bot.
+`npm run dev` delegates to `./dev-all.sh`, which starts the selected Kioku, Kokoro, Kizuna,
+Kansoku, Kao, Cockpit, and Kokoro bot components together under Turbo's TUI. The default
+selection is every API, dashboard, and the Kokoro bot.
 
 Use `Ctrl-C` to stop all child processes.
 
@@ -178,11 +202,15 @@ npm run kioku:dev
 npm run kokoro:dev
 npm run kizuna:dev
 npm run kansoku:dev
+npm run kao:dev
+npm run cockpit:dev
 
 npm run kioku:dev:api
 npm run kokoro:dev:bot
 npm run kizuna:dev:dashboard
 npm run kansoku:dev:api
+npm run kao:dev:dashboard
+npm run cockpit:dev:dashboard
 ```
 
 ## Environment Files
@@ -195,10 +223,12 @@ Environment files are app-local and ignored by git. Keep secrets out of committe
 | Kioku dashboard   | `kioku/apps/dashboard/.env.example`   | `kioku/apps/dashboard/.env`        | `KIOKU_API_URL`                                                   |
 | Kokoro bot        | `kokoro/apps/bot/.env.example`        | `kokoro/apps/bot/.env`             | Telegram, Mongo, LLM, Kioku, Kizuna, optional tools               |
 | Kokoro dashboard  | none currently                        | `kokoro/apps/dashboard/.env.local` | Optional `MONGODB_URI`                                            |
-| Kizuna API        | `kizuna/apps/api/.env.example`        | `kizuna/apps/api/.env`             | Mongo, Google OAuth, ingest scheduler                             |
+| Kizuna API        | `kizuna/apps/api/.env.example`        | `kizuna/apps/api/.env`             | Mongo, Kao token vend, ingest scheduler                           |
 | Kizuna dashboard  | `kizuna/apps/dashboard/.env.example`  | `kizuna/apps/dashboard/.env`       | API URL, user emails                                              |
 | Kansoku API       | `kansoku/apps/api/.env.example`       | `kansoku/apps/api/.env`            | Mongo, shared ingest token, log retention, optional alert webhook |
 | Kansoku dashboard | `kansoku/apps/dashboard/.env.example` | `kansoku/apps/dashboard/.env`      | `KANSOKU_API_URL`                                                 |
+| Kao API           | `kao/apps/api/.env.example`           | `kao/apps/api/.env`                | Mongo, Google OAuth client, encryption key, bearer token          |
+| Kao dashboard     | `kao/apps/dashboard/.env.example`     | `kao/apps/dashboard/.env`          | `KAO_API_URL`, `KAO_TOKEN`                                        |
 
 ### Kioku
 
@@ -253,19 +283,15 @@ Kokoro reaches Kizuna through `KIZUNA_URL`, which defaults to
 `https://api.kizuna.localhost`. The CRM tools are always registered; if Kizuna is
 unreachable they fail open with sanitized degraded results.
 
-For Google tools, set:
+For Google tools, configure Kao and then set the token-vend pair:
 
 ```bash
-GOOGLE_OAUTH_CLIENT_ID=your_client_id_here
-GOOGLE_OAUTH_CLIENT_SECRET=your_client_secret_here
-GOOGLE_OAUTH_REFRESH_TOKEN=your_refresh_token_here
+KAO_URL=https://api.kao.localhost
+KAO_TOKEN=<same bearer Kao expects>
 ```
 
-To generate the refresh token from the root workspace:
-
-```bash
-npm run kokoro:auth:google
-```
+Consent is granted in Kao at `${KAO_URL}/oauth/kokoro/start`. Kokoro never stores a Google
+refresh token; it gets short-lived access tokens from `${KAO_URL}/grants/kokoro/token`.
 
 The Kokoro dashboard defaults to `mongodb://localhost:27017/kokoro`. Override
 `MONGODB_URI` in `kokoro/apps/dashboard/.env.local` when pointing it at another database.
@@ -277,23 +303,16 @@ Kizuna API config lives in `kizuna/apps/api/.env`.
 Common local fields:
 
 ```bash
-MONGO_URI=mongodb://127.0.0.1:27017/kizuna
+MONGODB_URI=mongodb://127.0.0.1:27017/kizuna
 USER_EMAILS=you@example.com
-GOOGLE_OAUTH_REDIRECT_URI=https://api.kizuna.localhost/oauth/google/callback
+KAO_URL=https://api.kao.localhost
+KAO_TOKEN=<same bearer Kao expects>
 KIZUNA_INGEST_INTERVAL_SEC=0
 ```
 
-Generate the OAuth token encryption key with:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
-
-Then set:
-
-```bash
-KIZUNA_OAUTH_ENCRYPTION_KEY=generated_base64_value
-```
+Kizuna's Google consent flow is hosted by Kao. The dashboard posts to Kizuna's
+`/oauth/google/start`, Kizuna redirects to `${KAO_URL}/oauth/kizuna/start`, and Kao stores the
+encrypted refresh token. Kizuna only caches short-lived access tokens in process.
 
 The dashboard config points at the API and reuses `USER_EMAILS` for local-user classification:
 
@@ -315,10 +334,11 @@ KANSOKU_INGEST_TOKEN=generate_with_openssl_rand_hex_32
 # KANSOKU_ALERT_WEBHOOK_URL=
 ```
 
-Generate the shared ingest token once and copy the same value into every sibling's `.env`
-(`KANSOKU_INGEST_TOKEN` in each of `kioku/apps/api/.env`, `kokoro/apps/bot/.env`, and
-`kizuna/apps/api/.env`). When unset on the Kansoku side, `POST /v1/logs` returns 503 — fail-closed
-by default. On the sibling side, either of the two Kansoku env vars (URL + token) being missing
+Generate the shared ingest token once and copy the same value into every producer `.env`
+(`KANSOKU_INGEST_TOKEN` in `kioku/apps/api/.env`, `kokoro/apps/bot/.env`,
+`kizuna/apps/api/.env`, and `kao/apps/api/.env` when you want those services to ship logs). When
+unset on the Kansoku side, `POST /v1/logs` returns 503 — fail-closed by default. On the producer
+side, either of the two Kansoku env vars (URL + token) being missing
 leaves the logger stdout-only.
 
 The dashboard reads `KANSOKU_API_URL`, defaulting to `https://api.kansoku.localhost`. The
@@ -327,6 +347,33 @@ reachable from both the Next.js server _and_ the user's browser.
 
 See [`kansoku/docs/configuration.md`](kansoku/docs/configuration.md) for the full env reference
 including retention behavior, alert webhook payload shape, and rotation steps.
+
+### Kao
+
+Kao API config lives in `kao/apps/api/.env`. Minimum useful local fields:
+
+```bash
+MONGODB_URI=mongodb://127.0.0.1:27017/kao
+GOOGLE_OAUTH_CLIENT_ID=your_google_web_client_id_here
+GOOGLE_OAUTH_CLIENT_SECRET=your_google_web_client_secret_here
+KAO_PUBLIC_URL=https://api.kao.localhost
+KAO_DASHBOARD_URL=https://kao.localhost
+KAO_ENCRYPTION_KEY=<base64 32-byte key>
+KAO_TOKEN=<shared bearer, at least 16 chars>
+```
+
+Generate the two Kao secrets with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Use the base64 value for `KAO_ENCRYPTION_KEY`, the hex value for `KAO_TOKEN`, and copy the same
+`KAO_TOKEN` into `kao/apps/dashboard/.env`, `kokoro/apps/bot/.env`, and `kizuna/apps/api/.env`
+when those consumers need Google access.
+
+Register exactly one Google redirect URI: `https://api.kao.localhost/oauth/callback`.
 
 ## Local URLs
 
@@ -342,6 +389,9 @@ HTTP apps run behind Portless. Prefer these URLs over numeric localhost ports.
 | Kizuna  | API       | `https://api.kizuna.localhost`         |
 | Kansoku | Dashboard | `https://kansoku.localhost`            |
 | Kansoku | API       | `https://api.kansoku.localhost`        |
+| Kao     | Dashboard | `https://kao.localhost`                |
+| Kao     | API       | `https://api.kao.localhost`            |
+| Cockpit | Dashboard | `https://kagami.localhost`             |
 
 Numeric fallback ports in app code are for standalone runs outside Portless. In normal local
 development, Portless injects `PORT` and proxies the named HTTPS URL to the app process.
@@ -372,6 +422,9 @@ package `package.json` files and keep the root scripts as orchestration aliases.
 npm run kioku:dev
 npm run kokoro:dev
 npm run kizuna:dev
+npm run kansoku:dev
+npm run kao:dev
+npm run cockpit:dev
 ```
 
 ### Component Development
@@ -383,6 +436,11 @@ npm run kokoro:dev:bot
 npm run kokoro:dev:dashboard
 npm run kizuna:dev:api
 npm run kizuna:dev:dashboard
+npm run kansoku:dev:api
+npm run kansoku:dev:dashboard
+npm run kao:dev:api
+npm run kao:dev:dashboard
+npm run cockpit:dev:dashboard
 ```
 
 ### Turborepo Filters
@@ -394,6 +452,7 @@ npx turbo run typecheck --filter="@kioku/*"
 npx turbo run lint --filter="@kokoro/*"
 npx turbo run lint --filter="@kizuna/*"
 npx turbo run lint --filter="@kansoku/*"
+npx turbo run lint --filter="@kao/*"
 npx turbo run build --filter="@kizuna/dashboard"
 ```
 
@@ -404,12 +463,6 @@ npx turbo run test --affected
 ```
 
 ### Project-Specific Commands
-
-Kokoro has a workspace root Google OAuth helper:
-
-```bash
-npm run kokoro:auth:google
-```
 
 Kokoro's Vitest config lives at `kokoro/vitest.config.ts`:
 
@@ -454,7 +507,7 @@ Important runtime notes:
 - Dashboard runs at `https://kioku.localhost`.
 - Dashboard calls the API through `KIOKU_API_URL`.
 - MongoDB should support Atlas Search and vector indexes for the full retrieval path.
-- Kioku has no runtime dependency on Kokoro or Kizuna.
+- Kioku has no outbound runtime dependency on sibling services.
 
 Key docs:
 
@@ -477,6 +530,7 @@ Primary responsibilities:
   media, confirmations, voice, and location.
 - Persist conversation state, routines, watchers, confirmations, token usage, reminders, and images.
 - Delegate long-term memory to Kioku.
+- Delegate CRM context to Kizuna and Google access to Kao.
 
 Layout:
 
@@ -499,10 +553,10 @@ Important runtime notes:
 - Dashboard runs at `https://kokoro.localhost`.
 - `KIOKU_URL` defaults to `https://api.kioku.localhost`.
 - Kioku failures are handled fail-open so chat can continue in degraded mode. Closed-session
-  transcript ingest is retried by the maintenance sweeper; one-off `rememberFact` and location
-  writes are not queued for retry today.
+  transcript ingest, one-off `rememberFact`, and location writes are queued and retried by the
+  maintenance sweeper.
 - `ALLOWED_USER_IDS` gates Telegram users for a single-user deployment.
-- Optional Google tools require all `GOOGLE_OAUTH_*` fields together.
+- Optional Google tools require `KAO_URL` and `KAO_TOKEN` together; the refresh token lives in Kao.
 
 Key docs:
 
@@ -522,13 +576,13 @@ Primary responsibilities:
 - Track people, organizations, interactions, and follow-ups.
 - Provide REST endpoints for concierge-style writes and dashboard reads.
 - Ingest Gmail and Google Calendar data into the relationship graph.
-- Encrypt Google OAuth refresh tokens at rest.
+- Fetch Google access tokens from Kao instead of owning a refresh token.
 - Provide a Next.js dashboard for people, contexts, sync status, tombstones, and errors.
 
 Layout:
 
 ```text
-kizuna/apps/api        Express API, Mongoose models, Gmail/Calendar ingest, OAuth
+kizuna/apps/api        Express API, Mongoose models, Gmail/Calendar ingest, Kao-backed OAuth redirect
 kizuna/apps/dashboard  Next.js App Router dashboard
 kizuna/docs            API, auth, configuration, data model, sync, dashboard, testing
 ```
@@ -540,9 +594,9 @@ Important runtime notes:
 - Kizuna resource routes are open at single-user localhost; there is no bearer token on local API calls.
 - The dashboard sends no API auth header and has no login layer.
 - `USER_EMAILS` identifies the local user's addresses for ingest and dashboard classification.
-- `KIZUNA_OAUTH_ENCRYPTION_KEY` must decode to exactly 32 bytes.
-- Kizuna has no outbound runtime dependency on Kioku or Kokoro; Kokoro can consume Kizuna's
-  read-only CRM API.
+- `KAO_URL` and `KAO_TOKEN` enable Gmail/Calendar sync by vending access tokens from Kao.
+- Kizuna has no outbound runtime dependency on Kioku or Kokoro; Kokoro consumes Kizuna's CRM API
+  for reads and confirmation-gated writes.
 
 Key docs:
 
@@ -556,7 +610,7 @@ Key docs:
 ### Kansoku
 
 Kansoku is the observability service: structured logs, distributed traces, fingerprinted errors,
-and derived metrics — fed by every sibling over HTTP.
+and derived metrics — fed by producer services over HTTP.
 
 Primary responsibilities:
 
@@ -597,15 +651,80 @@ Key docs:
 - [kansoku/docs/configuration.md](kansoku/docs/configuration.md)
 - [kansoku/docs/testing.md](kansoku/docs/testing.md)
 
+### Kao
+
+Kao is the workspace identity service for Google OAuth.
+
+Primary responsibilities:
+
+- Own the encrypted refresh tokens for named grants (`kokoro`, `kizuna`).
+- Host the browser consent flow with one Google redirect URI.
+- Vend short-lived access tokens from bearer-gated `/grants/*` endpoints.
+- Provide an operator dashboard for grant status, token probes, and revocation.
+
+Layout:
+
+```text
+kao/apps/api        Express API: consent flow, token vend, inline fallback operator page
+kao/apps/dashboard  Next.js operator dashboard at https://kao.localhost
+kao/docs            Architecture, API, auth, configuration, testing
+```
+
+Important runtime notes:
+
+- API runs at `https://api.kao.localhost`.
+- Dashboard runs at `https://kao.localhost`.
+- `/grants/*` is always bearer-gated with `KAO_TOKEN`; the browser `/oauth/*` flow is open at
+  localhost but protected by signed, grant-bound state.
+- Kokoro and Kizuna both fetch access tokens from Kao at runtime. Neither service stores its own
+  Google refresh token.
+
+Key docs:
+
+- [kao/docs/architecture.md](kao/docs/architecture.md)
+- [kao/docs/api.md](kao/docs/api.md)
+- [kao/docs/auth.md](kao/docs/auth.md)
+- [kao/docs/configuration.md](kao/docs/configuration.md)
+- [kao/docs/testing.md](kao/docs/testing.md)
+
+### Cockpit
+
+Cockpit is the read-only workspace operator dashboard.
+
+Primary responsibilities:
+
+- Probe Kioku, Kokoro, Kizuna, Kansoku, and Kao with short timeouts.
+- Show service health and workspace attention items.
+- Deep-link to the owning service dashboard for actual remediation.
+
+Layout:
+
+```text
+cockpit/apps/dashboard  Next.js dashboard at https://kagami.localhost
+cockpit/docs            Dashboard data sources, non-goals, configuration
+```
+
+Important runtime notes:
+
+- Cockpit owns no durable state and no service depends on it.
+- Each source fails independently; one unavailable service produces a down card and an attention
+  row rather than breaking the page.
+
+Key docs:
+
+- [cockpit/AGENTS.md](cockpit/AGENTS.md)
+- [cockpit/docs/dashboard.md](cockpit/docs/dashboard.md)
+
 ## Shared Tooling
 
 Shared workspace packages live under `shared/packages/`.
 
-| Package                 | Exports                                                                                               | Purpose                                                                                                                                  |
-| ----------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `@kagami/eslint-config` | `./base`, `./next`                                                                                    | Flat ESLint presets for TypeScript and Next.js                                                                                           |
-| `@kagami/tsconfig`      | `./base.json`, `./library.json`, `./server.json`, `./nextjs.json`                                     | Shared TypeScript bases                                                                                                                  |
-| `@kagami/logger`        | `./` (createLogger + redact list), `./kansoku-stream`, `./trace`, `./express-trace`, `./traced-fetch` | Pino factory with shared bindings + redact list, fail-open Kansoku shipper, W3C trace context (ALS + `tracedFetch` + Express middleware) |
+| Package                 | Exports                                                                                        | Purpose                                                                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@kagami/eslint-config` | `./base`, `./next`                                                                             | Flat ESLint presets for TypeScript and Next.js                                                                                               |
+| `@kagami/tsconfig`      | `./base.json`, `./library.json`, `./server.json`, `./nextjs.json`, plus `*.build.json` presets | Shared TypeScript bases and emit-on build configs                                                                                            |
+| `@kagami/llm`           | `./`                                                                                           | Provider construction, retry/fallback, timeout, reasoning repair, and usage/span emission for Kioku and Kokoro                               |
+| `@kagami/logger`        | `./`, `./kansoku-stream`, `./trace`, `./express-trace`, `./traced-fetch`                       | Pino factory with ECS/OTel fields, fail-open Kansoku shipper, W3C trace context (ALS + `tracedFetch` + Express middleware); no PII redaction |
 
 Conventions across projects:
 
@@ -618,8 +737,8 @@ Conventions across projects:
 - App and package scripts live in package manifests; root scripts delegate through Turbo.
 
 Kokoro has internal packages for shared config, persistence, memory, the Kizuna client, and tests.
-Kioku and Kizuna currently keep project-specific reusable logic inside their apps, with empty or
-reserved package slots for future libraries.
+Kioku, Kizuna, Kansoku, and Kao currently keep project-specific reusable logic inside their apps,
+with empty or reserved package slots for future libraries.
 
 ## Testing and Quality Gates
 
@@ -702,31 +821,41 @@ There is no Kizuna dashboard login or API key in local development.
 
 Confirm Kioku is running at `https://api.kioku.localhost`, or override `KIOKU_URL` in
 `kokoro/apps/bot/.env`. Kokoro is designed to fail open so a memory outage does not necessarily stop
-chat. Closed-session transcript ingest is retried later; ad hoc fact writes are not currently
-backfilled.
+chat. Closed-session transcript ingest, ad hoc facts, and location facts are retried later by the
+maintenance sweeper.
 
 ### Google OAuth fails
 
-For Kokoro, make sure all three `GOOGLE_OAUTH_*` fields are present together in
-`kokoro/apps/bot/.env`.
+Google OAuth is centralized in Kao. First confirm Kao is running and
+`https://api.kao.localhost/healthz` responds.
 
-For Kizuna, make sure the Google Cloud OAuth redirect URI exactly matches:
+Make sure the Google Cloud OAuth client has exactly this redirect URI:
 
 ```text
-https://api.kizuna.localhost/oauth/google/callback
+https://api.kao.localhost/oauth/callback
 ```
 
-Also confirm `KIZUNA_OAUTH_ENCRYPTION_KEY` is a base64-encoded 32-byte value.
+Then check `KAO_TOKEN` matches in `kao/apps/api/.env`, `kao/apps/dashboard/.env`,
+`kokoro/apps/bot/.env`, and `kizuna/apps/api/.env` for whichever consumers you are running.
+Kokoro consents at `https://api.kao.localhost/oauth/kokoro/start`; Kizuna starts from its dashboard
+and redirects to `https://api.kao.localhost/oauth/kizuna/start`.
 
 ## Further Reading
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): cross-service architecture and URL/env cheat sheet
+- [AGENTS.md](AGENTS.md): workspace-level Codex guide
 - [CLAUDE.md](CLAUDE.md): workspace-level developer and agent guide
 - [kioku/CLAUDE.md](kioku/CLAUDE.md): Kioku developer guide
 - [kokoro/CLAUDE.md](kokoro/CLAUDE.md): Kokoro developer guide
 - [kizuna/CLAUDE.md](kizuna/CLAUDE.md): Kizuna developer guide
 - [kansoku/CLAUDE.md](kansoku/CLAUDE.md): Kansoku developer guide
+- [kao/CLAUDE.md](kao/CLAUDE.md): Kao developer guide
+- [cockpit/AGENTS.md](cockpit/AGENTS.md): Cockpit developer guide
 - [kioku/docs](kioku/docs): Kioku internals
 - [kokoro/docs](kokoro/docs): Kokoro internals
+- [kizuna/docs](kizuna/docs): Kizuna internals
+- [kansoku/docs](kansoku/docs): Kansoku internals
+- [kao/docs](kao/docs): Kao internals
+- [cockpit/docs](cockpit/docs): Cockpit internals
 - [kizuna/docs](kizuna/docs): Kizuna internals
 - [kansoku/docs](kansoku/docs): Kansoku internals

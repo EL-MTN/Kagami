@@ -2,11 +2,11 @@
 
 ## Project
 
-Kagami ("mirror") is a personal-AI workspace. It contains five sibling TypeScript projects in one nested monorepo: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind), **Kansoku** (観測, observation), and **Kao** (顔, face/identity). They share tooling, a single `package.json` install, and a unified Turborepo pipeline, but each project is bounded — its apps, internal packages, docs, and `CLAUDE.md` live under its own subdirectory.
+Kagami ("mirror") is a personal-AI workspace. It contains five sibling TypeScript domain projects in one nested monorepo: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind), **Kansoku** (観測, observation), and **Kao** (顔, face/identity), plus **Cockpit**, a thin workspace-level operator dashboard. They share tooling, a single `package.json` install, and a unified Turborepo pipeline, but each project is bounded — its apps, internal packages, docs, and guide file live under its own subdirectory.
 
 > **Kao status:** **Identity consolidation complete.** Both Kokoro and Kizuna read short-lived Google access tokens from Kao at runtime — no service in the workspace holds its own Google refresh token anymore. Kioku has no Google OAuth and never did.
 
-This file is the workspace-level guide. Each project has its own deeper `CLAUDE.md` and `docs/` — start here for cross-cutting context, then descend.
+This file is the workspace-level Claude guide. Domain projects currently keep their deeper guide in `CLAUDE.md`; Cockpit uses `AGENTS.md`. Start here for cross-cutting context, then descend.
 
 ## Workspace Structure
 
@@ -16,7 +16,7 @@ Kagami/                       # one git repo, one workspace
 ├── CLAUDE.md                 # this file
 ├── package.json              # workspace root: workspace globs + shared devDeps
 ├── turbo.json                # unified pipeline (build, dev, typecheck, test, lint)
-├── dev-all.sh                # boot all five in parallel under Turbo's TUI (or streamed)
+├── dev-all.sh                # boot all domain services + Cockpit under Turbo's TUI (or streamed)
 │
 ├── kioku/                    # long-term memory store
 │   ├── apps/                 # api, dashboard
@@ -54,6 +54,12 @@ Kagami/                       # one git repo, one workspace
 │   ├── portless.json
 │   └── vitest.config.ts
 │
+├── cockpit/                  # workspace operator cockpit (read-only)
+│   ├── apps/                 # dashboard
+│   ├── docs/
+│   ├── AGENTS.md
+│   └── portless.json
+│
 └── shared/
     └── packages/
         ├── eslint-config/    # @kagami/eslint-config (./base, ./next)
@@ -62,7 +68,7 @@ Kagami/                       # one git repo, one workspace
         └── tsconfig/         # @kagami/tsconfig (./base.json, ./library.json, ./server.json, ./nextjs.json, ./server.build.json, ./library.build.json)
 ```
 
-The Kagami root is the single git repo. The Kioku, Kokoro, and Kizuna subtrees were imported via `git subtree add` so each project's prior history is preserved in `git log`; Kansoku (observability) and Kao (identity) were added natively. Each project still has its own `CLAUDE.md` and `docs/` next to its code.
+The Kagami root is the single git repo. The Kioku, Kokoro, and Kizuna subtrees were imported via `git subtree add` so each project's prior history is preserved in `git log`; Kansoku (observability), Kao (identity), and Cockpit were added natively. Each project still has its own guide file and `docs/` next to its code.
 
 ## How they relate
 
@@ -75,7 +81,7 @@ Kokoro ──HTTP──► Kizuna           Kokoro reads CRM context directly; w
                                   KIZUNA_URL defaults to https://api.kizuna.localhost.
 Kizuna ────X──── Kioku/Kokoro     No outbound code references to sibling services.
 Kioku  ────X──── anything         Pull-only by design; never initiates outbound to siblings.
-{Kioku,Kokoro,Kizuna} ──HTTP──► Kansoku
+{Kioku,Kokoro,Kizuna,Kao} ──HTTP──► Kansoku
                                   Observability push from @kagami/logger transport,
                                   fail-open. KANSOKU_URL defaults to
                                   https://api.kansoku.localhost. Live ingest, live
@@ -99,7 +105,7 @@ Kao    ────X──── anything         Vend-only-in. Outbound only to
                                   (token exchange/refresh/revoke).
 ```
 
-`dev-all.sh` boots all five in parallel — there is no startup ordering between them. Kokoro's Kioku client is fail-open (`KiokuClientError` is caught at the AI tool layer; chat continues degraded), and any pending writes are retried by Kokoro's 5-min sweeper. Kokoro's Kizuna CRM read tools are also fail-open at the tool layer; write tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) only fire from Kokoro's gated dispatcher after the user taps Approve. Every sibling's Kansoku shipper is fail-open at the call site — observability failure must never wedge a service.
+`dev-all.sh` boots all domain services plus Cockpit in parallel — there is no startup ordering between them. Kokoro's Kioku client is fail-open (`KiokuClientError` is caught at the AI tool layer; chat continues degraded), and any pending writes are retried by Kokoro's 5-min sweeper. Kokoro's Kizuna CRM read tools are also fail-open at the tool layer; write tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) only fire from Kokoro's gated dispatcher after the user taps Approve. Each configured Kansoku shipper is fail-open at the call site — observability failure must never wedge a producer service. Cockpit is read-only and fail-open per source: one unavailable service produces a down card, not a broken page.
 
 See `ARCHITECTURE.md` for the full edge table, endpoint surface, and per-project env-var cheat sheet.
 
@@ -108,7 +114,7 @@ See `ARCHITECTURE.md` for the full edge table, endpoint surface, and per-project
 All commands run from the Kagami root.
 
 ```bash
-./dev-all.sh                     # boot all five in parallel under Turbo's TUI
+./dev-all.sh                     # boot all domain services + Cockpit under Turbo's TUI
                                  # (per-task panes, single Ctrl-C stops all)
 ./dev-all.sh --no kokoro:bot     # selective: --only / --no take projects or
 ./dev-all.sh --only kioku        # components (e.g. kokoro:bot, kioku:dashboard,
@@ -128,6 +134,7 @@ npm run kokoro:dev
 npm run kizuna:dev
 npm run kansoku:dev
 npm run kao:dev
+npm run cockpit:dev
 
 # Per-component filters
 npm run kioku:dev:api
@@ -140,6 +147,7 @@ npm run kansoku:dev:api
 npm run kansoku:dev:dashboard
 npm run kao:dev:api
 npm run kao:dev:dashboard
+npm run cockpit:dev:dashboard
 
 # Project-specific scripts
 npm run kansoku:debug -- <subcommand>   # read-only Kansoku CLI for agents
@@ -208,8 +216,9 @@ When working inside a project, consult that project's `CLAUDE.md` first — it's
 | Kizuna  | Personal CRM                                | [`kizuna/CLAUDE.md`](kizuna/CLAUDE.md)   |
 | Kansoku | Observability (logs, traces, errors, etc.)  | [`kansoku/CLAUDE.md`](kansoku/CLAUDE.md) |
 | Kao     | Identity — per-consumer Google OAuth grants | [`kao/CLAUDE.md`](kao/CLAUDE.md)         |
+| Cockpit | Workspace operator dashboard                | [`cockpit/AGENTS.md`](cockpit/AGENTS.md) |
 
-For cross-service detail (Kokoro→Kioku coupling, observed gaps, the Kao identity service and its un-migrated consumers), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
+For cross-service detail (Kokoro→Kioku coupling, observed gaps, and the completed Kao identity consolidation), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Working in this workspace
 

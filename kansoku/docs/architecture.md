@@ -1,15 +1,15 @@
 # Kansoku — Architecture
 
-Kansoku (観測, "observation") is the Kagami workspace's centralized observability service: structured logs, distributed traces, error fingerprints, and metrics in one place, fed by every sibling service over HTTP.
+Kansoku (観測, "observation") is the Kagami workspace's centralized observability service: structured logs, distributed traces, error fingerprints, and metrics in one place, fed by producer services over HTTP.
 
 ## Why it exists
 
-Until Kansoku, every service in Kagami logged to stdout and that was it — no aggregation, no cross-service correlation, no error grouping, no historical search. Three services × ~339 log call sites across the workspace, all evaporating the moment a terminal scrolled.
+Until Kansoku, every service in Kagami logged to stdout and that was it — no aggregation, no cross-service correlation, no error grouping, no historical search. Hundreds of log call sites across the workspace evaporated the moment a terminal scrolled.
 
 Kansoku consolidates those streams:
 
-- **Logs** — every `logger.*` call from Kioku/Kokoro/Kizuna ships to Kansoku via a Pino transport added to `@kagami/logger`.
-- **Traces** — incoming HTTP requests get a W3C `traceparent`-compatible context; outgoing `fetch` calls in Kokoro propagate it to Kioku/Kizuna; logs auto-include `traceId`/`spanId` via `AsyncLocalStorage`.
+- **Logs** — every configured `logger.*` call from Kioku/Kokoro/Kizuna/Kao ships to Kansoku via a Pino transport added to `@kagami/logger`.
+- **Traces** — incoming HTTP requests get a W3C `traceparent`-compatible context; outgoing `fetch` calls in Kokoro and Kizuna propagate it to Kioku, Kizuna, and Kao as appropriate; logs auto-include `traceId`/`spanId` via `AsyncLocalStorage`.
 - **Errors** — `level >= error` events are fingerprinted (hash of `error.name + error.message + top stack frame`, plus a bounded `.cause` / `AggregateError` chain when present) and rolled up into a per-fingerprint document with `firstSeen`, `lastSeen`, `count`, and a bounded list of recent trace IDs.
 - **Metrics** — derived from logs in Phase 1 (counts, error rates, `durationMs` percentiles), with an explicit `metric(name, value, tags?)` API added in Phase 6 when log-derived isn't enough.
 

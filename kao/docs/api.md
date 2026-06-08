@@ -113,9 +113,8 @@ and calls Google with `accessToken` until `expiresAt`, re-fetching after. On
   bot's existing `getGoogleAuth()` so Gmail/Calendar service modules use
   the vended token transparently.
 - **Kizuna** (`kizuna/apps/api/src/lib/kao-client.ts`) — vends the `kizuna`
-  grant. Replaced its old `OAuthToken` model + `routes/oauth.ts` +
-  `lib/google-auth.ts` (encrypted-Mongo refresh-token storage + web flow)
-  with this contract; reshapes `${KAO_URL}/grants/kizuna` into the legacy
-  `OAuthStatus` envelope and self-heals on a Google 401 by re-vending with
-  `?force=1`. The Gmail/Calendar ingest workers consume the vended token
-  transparently.
+  grant. Replaced Kizuna's old encrypted-Mongo refresh-token storage and
+  Kizuna-hosted Google web flow with this contract; reshapes
+  `${KAO_URL}/grants/kizuna` into the legacy `OAuthStatus` envelope and
+  self-heals on a Google 401 by re-vending with `?force=1`. The
+  Gmail/Calendar ingest workers consume the vended token transparently.

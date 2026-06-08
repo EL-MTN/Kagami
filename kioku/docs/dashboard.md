@@ -1,18 +1,18 @@
 # Dashboard
 
-Read-only inspector for Kioku's data, built with Next.js 15 + Tailwind CSS v4. Lives at `apps/dashboard/`, served at `https://kioku.localhost` via Portless. Every page is a server component that fetches the API at `KIOKU_API_URL` (default `https://api.kioku.localhost`).
+Read-only inspector for Kioku's data, built with Next.js 16 + Tailwind CSS v4. Lives at `apps/dashboard/`, served at `https://kioku.localhost` via Portless. Every page is a server component that fetches the API at `KIOKU_API_URL` (default `https://api.kioku.localhost`).
 
 ## Page map
 
-| Route        | Purpose                                                                                                                              |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `/`          | Overview: total fact count, sessions, categories, 30-day ingest sparkline, monthly stratum, top categories, recent facts.            |
-| `/facts`     | Facts list. Filter by source_session, scope, date range; paginated.                                                                   |
-| `/facts/:id` | Per-fact detail with audit history (`/facts/:id/history`).                                                                            |
-| `/sessions`  | Group facts by `source_session`.                                                                                                      |
-| `/recall`    | Live recall playground — POST `/recall`, render ranked facts with score-fusion bar.                                                   |
-| `/query`     | Live query playground — POST `/query`, render answer.                                                                                 |
-| `/health`    | Hits `/health` and `/version`.                                                                                                        |
+| Route        | Purpose                                                                                                                   |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `/`          | Overview: total fact count, sessions, categories, 30-day ingest sparkline, monthly stratum, top categories, recent facts. |
+| `/facts`     | Facts list. Filter by source_session, scope, date range; paginated.                                                       |
+| `/facts/:id` | Per-fact detail with audit history (`/facts/:id/history`).                                                                |
+| `/sessions`  | Group facts by `source_session`.                                                                                          |
+| `/recall`    | Live recall playground — POST `/recall`, render ranked facts with score-fusion bar.                                       |
+| `/query`     | Live query playground — POST `/query`, render answer.                                                                     |
+| `/health`    | Hits `/health` and `/version`.                                                                                            |
 
 The sidebar (`apps/dashboard/src/components/sidebar.tsx`) is the canonical link list.
 
@@ -26,19 +26,19 @@ The sidebar (`apps/dashboard/src/components/sidebar.tsx`) is the canonical link 
 
 ## Components
 
-| Component                  | Purpose                                                                                                          |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `sidebar.tsx`              | Persistent left rail. Includes `憶` wordmark and live `getVersion()` call.                                       |
-| `nav-link.tsx`             | Sidebar link with lucide icon name → component map.                                                              |
-| `fact-card.tsx`            | Compact fact preview with category chip + event date.                                                            |
-| `query-playground.tsx`     | Client component for `/query` — input, Submit, render `{ answer, citations }`.                                   |
-| `recall-playground.tsx`    | Client component for `/recall` — input, K, filters, render `RankedFact[]` with `score-bar.tsx`.                  |
-| `score-bar.tsx`            | Three-channel stacked bar: cosine (indigo), BM25 (moss), entity boost (amber). Hues match the `--color-channel-*` tokens. |
-| `sparkline.tsx`            | Inline SVG sparkline for 30-day ingest cadence.                                                                  |
-| `stat-card.tsx`            | Headline stat with optional hint and tone (`positive`, `neutral`).                                               |
-| `stratum.tsx`              | Sediment-style stack of monthly fact counts; deeper layers = older.                                              |
-| `shell/`                   | `PageHeader`, `EmptyState`.                                                                                      |
-| `ui/`                      | shadcn-shaped primitives (only what the app uses — no boilerplate dump).                                         |
+| Component               | Purpose                                                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `sidebar.tsx`           | Persistent left rail. Includes `憶` wordmark and live `getVersion()` call.                                                |
+| `nav-link.tsx`          | Sidebar link with lucide icon name → component map.                                                                       |
+| `fact-card.tsx`         | Compact fact preview with category chip + event date.                                                                     |
+| `query-playground.tsx`  | Client component for `/query` — input, Submit, render `{ answer, citations }`.                                            |
+| `recall-playground.tsx` | Client component for `/recall` — input, K, filters, render `RankedFact[]` with `score-bar.tsx`.                           |
+| `score-bar.tsx`         | Three-channel stacked bar: cosine (indigo), BM25 (moss), entity boost (amber). Hues match the `--color-channel-*` tokens. |
+| `sparkline.tsx`         | Inline SVG sparkline for 30-day ingest cadence.                                                                           |
+| `stat-card.tsx`         | Headline stat with optional hint and tone (`positive`, `neutral`).                                                        |
+| `stratum.tsx`           | Sediment-style stack of monthly fact counts; deeper layers = older.                                                       |
+| `shell/`                | `PageHeader`, `EmptyState`.                                                                                               |
+| `ui/`                   | shadcn-shaped primitives (only what the app uses — no boilerplate dump).                                                  |
 
 ## Design system — "Kioku Daylight" (白)
 
@@ -67,21 +67,21 @@ All three are loaded via `next/font/google` with CSS variable injection in `layo
 
 Three retrieval signals share the score-fusion bar. Distinct hues but matched chroma so they read as a family:
 
-| Channel    | Hue    | Token                       |
-| ---------- | ------ | --------------------------- |
-| `semantic` | indigo | `--color-channel-semantic`  |
-| `bm25`     | moss   | `--color-channel-bm25`      |
-| `entity`   | amber  | `--color-channel-entity`    |
+| Channel    | Hue    | Token                      |
+| ---------- | ------ | -------------------------- |
+| `semantic` | indigo | `--color-channel-semantic` |
+| `bm25`     | moss   | `--color-channel-bm25`     |
+| `entity`   | amber  | `--color-channel-entity`   |
 
 ### Text-level contract
 
 Three text levels only — no opacity ladder. Components must use one of:
 
-| Token                    | Use                                                      |
-| ------------------------ | -------------------------------------------------------- |
-| `text-foreground`        | Primary content                                          |
-| `text-muted-foreground`  | Secondary content (descriptions, captions)               |
-| `text-faint`             | Tertiary metadata (timestamps, counts, "30 days" labels) |
+| Token                   | Use                                                      |
+| ----------------------- | -------------------------------------------------------- |
+| `text-foreground`       | Primary content                                          |
+| `text-muted-foreground` | Secondary content (descriptions, captions)               |
+| `text-faint`            | Tertiary metadata (timestamps, counts, "30 days" labels) |
 
 Avoid `text-muted-foreground/30..70` etc. The `/N` modifier antipattern was swept out in the Daylight switch and is regression-prone.
 
@@ -105,8 +105,8 @@ The dashboard does not write — there's no `POST /facts` or `POST /sessions` UI
 
 ## Configuration
 
-| Env var          | Default                            | Purpose                                |
-| ---------------- | ---------------------------------- | -------------------------------------- |
-| `KIOKU_API_URL`  | `https://api.kioku.localhost`      | Base URL for `apps/dashboard/src/lib/api.ts` |
+| Env var         | Default                       | Purpose                                      |
+| --------------- | ----------------------------- | -------------------------------------------- |
+| `KIOKU_API_URL` | `https://api.kioku.localhost` | Base URL for `apps/dashboard/src/lib/api.ts` |
 
 The dashboard binds to whatever port Portless injects (`PORT`) when run via `portless run next dev`. Standalone fallback is the Next default (`3000`).

@@ -2,11 +2,11 @@
 
 ## Project
 
-Kagami ("mirror") is a personal-AI workspace. It contains five sibling TypeScript domain projects in one nested monorepo: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind), **Kansoku** (観測, observation), and **Kao** (顔, face/identity), plus **Cockpit**, a thin workspace-level operator dashboard. They share tooling, a single `package.json` install, and a unified Turborepo pipeline, but each project is bounded — its apps, internal packages, docs, and `AGENTS.md` live under its own subdirectory.
+Kagami ("mirror") is a personal-AI workspace. It contains five sibling TypeScript domain projects in one nested monorepo: **Kioku** (記憶, memory), **Kizuna** (絆, bond/relationship), **Kokoro** (心, heart/mind), **Kansoku** (観測, observation), and **Kao** (顔, face/identity), plus **Cockpit**, a thin workspace-level operator dashboard. They share tooling, a single `package.json` install, and a unified Turborepo pipeline, but each project is bounded — its apps, internal packages, docs, and guide file live under its own subdirectory.
 
 > **Kao status:** **Identity consolidation complete.** Both Kokoro and Kizuna read short-lived Google access tokens from Kao at runtime — no service in the workspace holds its own Google refresh token anymore. Kioku has no Google OAuth and never did.
 
-This file is the workspace-level guide. Each project has its own deeper `AGENTS.md` and `docs/` — start here for cross-cutting context, then descend.
+This file is the workspace-level Codex guide. Domain projects currently keep their deeper guide in `CLAUDE.md`; Cockpit uses `AGENTS.md`. Start here for cross-cutting context, then descend.
 
 ## Workspace Structure
 
@@ -21,7 +21,7 @@ Kagami/                       # one git repo, one workspace
 ├── kioku/                    # long-term memory store
 │   ├── apps/                 # api, dashboard
 │   ├── docs/
-│   ├── AGENTS.md
+│   ├── CLAUDE.md
 │   ├── portless.json
 │   └── vitest.config.ts
 │
@@ -30,27 +30,27 @@ Kagami/                       # one git repo, one workspace
 │   ├── packages/             # shared, db, memory, kizuna, test-utils
 │   ├── scripts/              # auth scripts
 │   ├── docs/
-│   ├── AGENTS.md
+│   ├── CLAUDE.md
 │   └── vitest.config.ts
 │
 ├── kizuna/                   # personal CRM
 │   ├── apps/                 # api, dashboard
 │   ├── docs/
-│   ├── AGENTS.md
+│   ├── CLAUDE.md
 │   ├── portless.json
 │   └── vitest.config.ts
 │
 ├── kansoku/                  # observability service (logs, traces, errors, metrics)
 │   ├── apps/                 # api, dashboard
 │   ├── docs/
-│   ├── AGENTS.md
+│   ├── CLAUDE.md
 │   ├── portless.json
 │   └── vitest.config.ts
 │
 ├── kao/                      # identity service — per-consumer Google OAuth grants
 │   ├── apps/                 # api, dashboard (Next.js operator UI; bearer-injected server-side)
 │   ├── docs/
-│   ├── AGENTS.md
+│   ├── CLAUDE.md
 │   ├── portless.json
 │   └── vitest.config.ts
 │
@@ -68,7 +68,7 @@ Kagami/                       # one git repo, one workspace
         └── tsconfig/         # @kagami/tsconfig (./base.json, ./library.json, ./server.json, ./nextjs.json, ./server.build.json, ./library.build.json)
 ```
 
-The Kagami root is the single git repo. The Kioku, Kokoro, and Kizuna subtrees were imported via `git subtree add` so each project's prior history is preserved in `git log`; Kansoku (observability) and Kao (identity) were added natively. Each project still has its own `AGENTS.md` and `docs/` next to its code.
+The Kagami root is the single git repo. The Kioku, Kokoro, and Kizuna subtrees were imported via `git subtree add` so each project's prior history is preserved in `git log`; Kansoku (observability), Kao (identity), and Cockpit were added natively. Each project still has its own guide file and `docs/` next to its code.
 
 ## How they relate
 
@@ -81,7 +81,7 @@ Kokoro ──HTTP──► Kizuna           Kokoro reads CRM context directly; w
                                   KIZUNA_URL defaults to https://api.kizuna.localhost.
 Kizuna ────X──── Kioku/Kokoro     No outbound code references to sibling services.
 Kioku  ────X──── anything         Pull-only by design; never initiates outbound to siblings.
-{Kioku,Kokoro,Kizuna} ──HTTP──► Kansoku
+{Kioku,Kokoro,Kizuna,Kao} ──HTTP──► Kansoku
                                   Observability push from @kagami/logger transport,
                                   fail-open. KANSOKU_URL defaults to
                                   https://api.kansoku.localhost. Live ingest, live
@@ -105,7 +105,7 @@ Kao    ────X──── anything         Vend-only-in. Outbound only to
                                   (token exchange/refresh/revoke).
 ```
 
-`dev-all.sh` boots all domain services plus Cockpit in parallel — there is no startup ordering between them. Kokoro's Kioku client is fail-open (`KiokuClientError` is caught at the AI tool layer; chat continues degraded), and any pending writes are retried by Kokoro's 5-min sweeper. Kokoro's Kizuna CRM read tools are also fail-open at the tool layer; write tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) only fire from Kokoro's gated dispatcher after the user taps Approve. Every sibling's Kansoku shipper is fail-open at the call site — observability failure must never wedge a service. Cockpit is read-only and fail-open per source: one unavailable service produces a down card, not a broken page.
+`dev-all.sh` boots all domain services plus Cockpit in parallel — there is no startup ordering between them. Kokoro's Kioku client is fail-open (`KiokuClientError` is caught at the AI tool layer; chat continues degraded), and any pending writes are retried by Kokoro's 5-min sweeper. Kokoro's Kizuna CRM read tools are also fail-open at the tool layer; write tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) only fire from Kokoro's gated dispatcher after the user taps Approve. Each configured Kansoku shipper is fail-open at the call site — observability failure must never wedge a producer service. Cockpit is read-only and fail-open per source: one unavailable service produces a down card, not a broken page.
 
 See `ARCHITECTURE.md` for the full edge table, endpoint surface, and per-project env-var cheat sheet.
 
@@ -208,22 +208,22 @@ Lint-staged globs:
 
 ## Per-project entry points
 
-When working inside a project, consult that project's `AGENTS.md` first — it's authoritative for module structure, conventions, and the docs index.
+When working inside a project, consult that project's guide file first — it's authoritative for module structure, conventions, and the docs index.
 
 | Project | Role                                        | Start here                               |
 | ------- | ------------------------------------------- | ---------------------------------------- |
-| Kioku   | Long-term memory service                    | [`kioku/AGENTS.md`](kioku/AGENTS.md)     |
-| Kokoro  | Telegram + iMessage AI agent                | [`kokoro/AGENTS.md`](kokoro/AGENTS.md)   |
-| Kizuna  | Personal CRM                                | [`kizuna/AGENTS.md`](kizuna/AGENTS.md)   |
-| Kansoku | Observability (logs, traces, errors, etc.)  | [`kansoku/AGENTS.md`](kansoku/AGENTS.md) |
-| Kao     | Identity — per-consumer Google OAuth grants | [`kao/AGENTS.md`](kao/AGENTS.md)         |
+| Kioku   | Long-term memory service                    | [`kioku/CLAUDE.md`](kioku/CLAUDE.md)     |
+| Kokoro  | Telegram + iMessage AI agent                | [`kokoro/CLAUDE.md`](kokoro/CLAUDE.md)   |
+| Kizuna  | Personal CRM                                | [`kizuna/CLAUDE.md`](kizuna/CLAUDE.md)   |
+| Kansoku | Observability (logs, traces, errors, etc.)  | [`kansoku/CLAUDE.md`](kansoku/CLAUDE.md) |
+| Kao     | Identity — per-consumer Google OAuth grants | [`kao/CLAUDE.md`](kao/CLAUDE.md)         |
 | Cockpit | Workspace operator dashboard                | [`cockpit/AGENTS.md`](cockpit/AGENTS.md) |
 
-For cross-service detail (Kokoro→Kioku coupling, observed gaps, the Kao identity service and its un-migrated consumers), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
+For cross-service detail (Kokoro→Kioku coupling, observed gaps, and the completed Kao identity consolidation), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Working in this workspace
 
 - **One repo, one PR flow.** Cross-service edits (e.g. changing the Kokoro→Kioku contract) can be a single commit/PR now. Producers should still ship before consumers in the same commit, and tests should cover both sides.
 - **`ARCHITECTURE.md` is the source of truth for cross-service facts.** Update it when an edge is added, removed, or its shape changes (URLs, env vars, auth model, coupling direction).
 - **Per-project docs (`<project>/docs/`) are the source of truth for that project's internals.** Update them when modules, schemas, endpoints, or conventions change.
-- **Adding a new service**: create `<name>/` at the top level with its own `apps/`, `packages/`, `docs/`, `AGENTS.md`, `portless.json`, `vitest.config.ts`; add `<name>/{apps,packages}/*` to the root `package.json` workspaces; wire `<name>:dev` scripts and the `dev-all.sh` dispatch blocks. **Kao** (identity / OAuth) is the worked example of this — see `kao/AGENTS.md`.
+- **Adding a new service**: create `<name>/` at the top level with its own `apps/`, `packages/`, `docs/`, guide file, `portless.json`, `vitest.config.ts`; add `<name>/{apps,packages}/*` to the root `package.json` workspaces; wire `<name>:dev` scripts and the `dev-all.sh` dispatch blocks. **Kao** (identity / OAuth) is the worked example of this — see `kao/CLAUDE.md`.
