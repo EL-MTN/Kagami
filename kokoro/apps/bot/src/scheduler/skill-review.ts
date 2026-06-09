@@ -10,6 +10,8 @@ const REVIEW_INTERVAL_MS = 7 * 24 * 60 * 60_000; // weekly
 // passes don't race for the chat's single pending-proposal slot on a fresh
 // boot (whichever raises first would suppress the other's proposal anyway —
 // this just makes the ordering deterministic: routines get first claim).
+// `startPeriodicReview` anchors the recurring interval to this delay, so the
+// stagger persists across weekly ticks instead of evaporating after boot.
 const STARTUP_DELAY_MS = 15 * 60_000; // 15 minutes
 
 export function startSkillReviewScheduler(registry: AdapterRegistry): () => void {

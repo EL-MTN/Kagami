@@ -25,15 +25,24 @@ export function startPeriodicReview(opts: {
       });
     });
 
-  const interval = setInterval(fire("Self-review interval run failed"), intervalMs);
-  interval.unref();
-  const startupTimer = setTimeout(fire("Self-review startup run failed"), startupDelayMs);
+  // The recurring interval is registered only when the startup timer fires, so
+  // every tick inherits the pass's startup offset. Registered at boot it would
+  // anchor all passes' ticks to the same instant: the routine and skill
+  // schedulers start back-to-back, both weekly ticks would fire together,
+  // race the read-only one-pending guard before either creates its row, and
+  // stack two confirmations — the exact iMessage invariant the guard protects.
+  let interval: ReturnType<typeof setInterval> | undefined;
+  const startupTimer = setTimeout(() => {
+    interval = setInterval(fire("Self-review interval run failed"), intervalMs);
+    interval.unref();
+    fire("Self-review startup run failed")();
+  }, startupDelayMs);
   startupTimer.unref();
 
   logger.info({ review: label }, "Self-review scheduler started");
 
   return () => {
-    clearInterval(interval);
+    if (interval !== undefined) clearInterval(interval);
     clearTimeout(startupTimer);
     logger.info({ review: label }, "Self-review scheduler stopped");
   };

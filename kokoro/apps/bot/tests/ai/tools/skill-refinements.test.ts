@@ -271,7 +271,30 @@ describe("proposeSkillRefinement", () => {
     const raised = vi.mocked(raisePendingConfirmation).mock.calls[0][2];
     expect(raised.promptText).toContain(skill.body); // current
     expect(raised.promptText).toContain("Sharper body."); // proposed
-    expect(raised.promptText).toContain("triggers"); // metadata note
+    // Metadata changes render their VALUES, not just the field name.
+    expect(raised.promptText).toContain("Also updates:");
+    expect(raised.promptText).toContain(
+      "triggers: after a meeting → after a meeting, before a 1:1",
+    );
+  });
+
+  it("a metadata-only refinement shows current → proposed values in the bubble", async () => {
+    const skill = fakeSkill();
+    const result = await proposeSkillRefinement({
+      chatId: CHAT,
+      adapter,
+      skill,
+      patch: { description: "Sharper description", tags: [] },
+      rationale: "r",
+    });
+
+    expect(result.proposed).toBe(true);
+    const raised = vi.mocked(raisePendingConfirmation).mock.calls[0][2];
+    expect(raised.promptText).toContain(
+      `description: "${skill.description}" → "Sharper description"`,
+    );
+    expect(raised.promptText).toContain("tags: writing → (none)");
+    expect(raised.promptText).not.toContain("Proposed:"); // no body section
   });
 });
 
@@ -357,5 +380,45 @@ describe("proposeSkillMerge", () => {
     expect(raised.promptText).toContain(absorbee.name);
     expect(raised.promptText).toContain(patch.body);
     expect(raised.origin).toBe("routine");
+  });
+
+  it("shows merge metadata values in the bubble and prunes echoed-back unchanged fields", async () => {
+    const result = await proposeSkillMerge({
+      chatId: CHAT,
+      adapter,
+      survivor,
+      absorbed: [absorbee],
+      patch: {
+        body: "Merged body.",
+        description: "Combined followup guidance",
+        triggers: [...survivor.triggers], // echoed back unchanged
+        tags: ["writing", "followup"],
+      },
+      rationale: "r",
+    });
+
+    expect(result.proposed).toBe(true);
+    const raised = vi.mocked(raisePendingConfirmation).mock.calls[0][2];
+    // Real metadata changes are dispatched AND shown with their values…
+    expect(raised.action.args).toMatchObject({
+      newBody: "Merged body.",
+      newDescription: "Combined followup guidance",
+      newTags: ["writing", "followup"],
+    });
+    expect(raised.promptText).toContain(
+      `description: "${survivor.description}" → "Combined followup guidance"`,
+    );
+    expect(raised.promptText).toContain("tags: writing → writing, followup");
+    // …while the echoed-back unchanged triggers are pruned from both.
+    expect(raised.action.args).not.toHaveProperty("newTriggers");
+    expect(raised.promptText).not.toContain("triggers:");
+    // The signature matches the PRUNED patch.
+    expect(raised.action.args.signature).toBe(
+      computeSkillMergeSignature({ id: SKILL_ID, version: 1 }, [{ id: OTHER_ID, version: 2 }], {
+        body: "Merged body.",
+        description: "Combined followup guidance",
+        tags: ["writing", "followup"],
+      }),
+    );
   });
 });
