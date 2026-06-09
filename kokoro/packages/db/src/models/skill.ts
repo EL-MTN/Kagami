@@ -161,12 +161,18 @@ export async function recordSkillUsed(skillId: string, chatId?: string): Promise
 
 /**
  * Atomically apply a skill edit only if its version still equals
- * `expectedVersion`, bumping the version on success. The skill counterpart of
- * `updateRoutineIfVersion`: closes the read-then-write race in the gated
- * dispatcher, so a concurrent edit (dashboard / another bubble) landing while a
- * curation proposal sat unapproved is rejected (returns null), not clobbered.
- * Returns the updated doc, or null if the skill is gone OR its version moved on
- * — the caller distinguishes the two via an existence check.
+ * `expectedVersion` AND it is still enabled, bumping the version on success.
+ * The skill counterpart of `updateRoutineIfVersion`: closes the
+ * read-then-write race in the gated dispatcher, so a concurrent edit
+ * (dashboard / another bubble) landing while a curation proposal sat
+ * unapproved is rejected (returns null), not clobbered. The `enabled: true`
+ * clause exists because a dashboard enable-toggle does NOT bump `version`
+ * (unlike routines, whose dashboard PATCH always bumps) — without it a stale
+ * approval would land on a skill the user archived after the bubble was
+ * raised. Every curation proposal originates on an enabled skill, so requiring
+ * enabled here is never a false rejection. Returns the updated doc, or null if
+ * the skill is gone, its version moved on, OR it has been disabled — the
+ * caller distinguishes the three via an existence check.
  */
 export async function updateSkillIfVersion(
   skillId: string,
@@ -175,7 +181,7 @@ export async function updateSkillIfVersion(
   patch: Partial<Pick<ISkill, "description" | "body" | "triggers" | "tags" | "enabled">>,
 ): Promise<ISkill | null> {
   return Skill.findOneAndUpdate(
-    { _id: skillId, chatId, version: expectedVersion },
+    { _id: skillId, chatId, version: expectedVersion, enabled: true },
     { ...patch, version: expectedVersion + 1 },
     { returnDocument: "after" },
   );

@@ -26,7 +26,7 @@ import { runReviewForEachChat } from "./chat-review-runner";
 // still decides what (if anything) to do.
 const needsReview = routineNeedsAttention;
 
-// At most one routine-or-skill proposal can be pending per chat (the one-tap
+// At most one confirmation of ANY kind can be pending per chat (the one-tap
 // iMessage invariant), so a run raises at most one.
 const MAX_PROPOSALS_PER_RUN = 1;
 // Hard cap on paid LLM reviews per chat per run. `raised` does NOT climb when a

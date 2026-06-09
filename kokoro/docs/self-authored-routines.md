@@ -177,8 +177,10 @@ cron'd, run autonomously — so self-authored ones are constrained:
 Durable `RoutineProposalDecision` keyed by `(chatId, signature)` because the LLM
 cannot reliably see prior denials (40-message window + 1h session reset). The guard
 runs in code before any bubble, so even an over-eager model is suppressed.
-Combined with **one-pending-proposal suppression**, which also protects iMessage's
-"exactly one pending" YES/NO resolver from stacked bubbles.
+Combined with **one-pending suppression** — a proposal is held back while **any**
+confirmation is pending in the chat (a gated action like `sendEmail` just as much
+as another proposal), protecting iMessage's "exactly one pending" YES/NO resolver
+from stacked bubbles.
 
 ## Testing
 

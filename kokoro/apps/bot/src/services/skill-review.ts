@@ -35,7 +35,7 @@ import { runReviewForEachChat } from "./chat-review-runner";
  * vs the routine review's call-per-routine.
  */
 
-// At most one routine-or-skill proposal can be pending per chat (the one-tap
+// At most one confirmation of ANY kind can be pending per chat (the one-tap
 // iMessage invariant), so a run raises at most one; remaining actions wait for
 // the next cycle.
 const MAX_PROPOSALS_PER_RUN = 1;
@@ -47,23 +47,29 @@ const MAX_SKILLS_PER_REVIEW = 8;
 // few backups is wasted output.
 const MAX_ACTIONS = 3;
 
+// Min/max bounds mirror the dispatcher's `updateSkillArgs`/`mergeSkillsArgs`
+// (.min(1) on every string) so the JSON schema the model sees already forbids
+// the blank values the Approve would reject. Belt only — `applyAction` still
+// normalizes whitespace the schema can't catch.
 const skillActionSchema = z.object({
   action: z.enum(["refine", "archive", "merge"]),
   skillName: z.string().describe("Name of the skill to act on; for a merge, the surviving skill."),
   newDescription: z
     .string()
+    .min(1)
     .max(500)
     .optional()
     .describe("Refine/merge: replacement one-line description (max 500 chars)."),
   newBody: z
     .string()
+    .min(1)
     .max(6000)
     .optional()
     .describe(
       "The complete replacement body (max 6000 chars). Required for a merge; for a refine, provide it only when the body should change.",
     ),
-  newTriggers: z.array(z.string().max(140)).max(20).optional(),
-  newTags: z.array(z.string().max(140)).max(20).optional(),
+  newTriggers: z.array(z.string().min(1).max(140)).max(20).optional(),
+  newTags: z.array(z.string().min(1).max(140)).max(20).optional(),
   absorbNames: z
     .array(z.string())
     .max(5)
@@ -155,6 +161,23 @@ async function reviewSkills(
   return result.object;
 }
 
+/** Trim an optional one-line field; a blank value reads as "no change", never
+ * an intentional clear — the dispatcher's `.min(1)` (untrimmed) would accept
+ * the bubble but fail the Approve. */
+function normalizeLine(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/** Trim list items and drop blanks (which the dispatcher's per-item `.min(1)`
+ * would reject on Approve). A provided-but-all-blank list is noise → treated
+ * as omitted; an explicit `[]` passes through (a legitimate clear). */
+function normalizeList(items: string[] | undefined): string[] | undefined {
+  if (items === undefined) return undefined;
+  const cleaned = items.map((item) => item.trim()).filter((item) => item.length > 0);
+  return cleaned.length === 0 && items.length > 0 ? undefined : cleaned;
+}
+
 /**
  * Map one LLM action onto the matching proposal core. Returns null (after a
  * warn) for an action that fails validation — an unknown skill name, a refine
@@ -176,13 +199,23 @@ async function applyAction(
     return null;
   }
 
+  // Normalize the LLM's content fields before they reach a proposal core:
+  // despite the schema hints, a blank/padded field can still arrive, and the
+  // dispatcher schemas would raise a bubble whose Approve then fails
+  // (invalid_args). A blank field degrades to "no change" instead.
+  const newDescription = normalizeLine(action.newDescription);
+  const newTriggers = normalizeList(action.newTriggers);
+  const newTags = normalizeList(action.newTags);
+
   switch (action.action) {
     case "refine": {
       const patch: SkillContentPatch = {
-        ...(action.newDescription !== undefined ? { description: action.newDescription } : {}),
-        ...(action.newBody !== undefined ? { body: action.newBody } : {}),
-        ...(action.newTriggers !== undefined ? { triggers: action.newTriggers } : {}),
-        ...(action.newTags !== undefined ? { tags: action.newTags } : {}),
+        ...(newDescription !== undefined ? { description: newDescription } : {}),
+        // Whitespace-only body → omitted: the refine core treats a blanking
+        // body as an error, but "no body change" keeps the rest of the patch.
+        ...(action.newBody?.trim() ? { body: action.newBody } : {}),
+        ...(newTriggers !== undefined ? { triggers: newTriggers } : {}),
+        ...(newTags !== undefined ? { tags: newTags } : {}),
       };
       if (Object.keys(patch).length === 0) {
         logger.warn(
@@ -225,9 +258,9 @@ async function applyAction(
         absorbed,
         patch: {
           body: action.newBody,
-          ...(action.newDescription !== undefined ? { description: action.newDescription } : {}),
-          ...(action.newTriggers !== undefined ? { triggers: action.newTriggers } : {}),
-          ...(action.newTags !== undefined ? { tags: action.newTags } : {}),
+          ...(newDescription !== undefined ? { description: newDescription } : {}),
+          ...(newTriggers !== undefined ? { triggers: newTriggers } : {}),
+          ...(newTags !== undefined ? { tags: newTags } : {}),
         },
         rationale: action.rationale,
       });
@@ -239,10 +272,17 @@ async function applyAction(
  * Curate one chat's skill library: select due candidates with the facts-only
  * pre-filter, run ONE constrained LLM pass over them (full bodies, plus the
  * catalog for overlap context), then raise the LLM's ranked actions through the
- * gated proposal cores until one lands. Every candidate is stamped
- * `lastReviewedAt` afterwards — including on a no-action verdict — so the
- * cooldown starts and the next cycle reviews fresh skills instead. Returns the
- * number of proposals raised. Exported for testing.
+ * gated proposal cores until one lands.
+ *
+ * Stamping is disposition-aware: a candidate is stamped `lastReviewedAt` only
+ * when its outcome this run is TERMINAL — no action targeted it, its proposal
+ * was raised, the user durably declined it, or the action was malformed /
+ * rejected by a core's validation (those re-derive the same dead end every
+ * time). A candidate whose action was deferred by the one-proposal cap,
+ * transiently suppressed by another pending confirmation, or lost to a thrown
+ * error keeps its un-reviewed status, so the next cycle picks the work back up
+ * instead of burying it under the 30-day cooldown. Returns the number of
+ * proposals raised. Exported for testing.
  */
 export async function reviewChatSkills(chatId: string, adapter: PlatformAdapter): Promise<number> {
   const skills = await listEnabledSkillsForChat(chatId);
@@ -281,20 +321,47 @@ export async function reviewChatSkills(chatId: string, adapter: PlatformAdapter)
   }
 
   const byName = new Map(candidates.map((s) => [s.name, s]));
+
+  // Candidates whose pending curation work was NOT terminally handled this run
+  // (cap-deferred, transiently suppressed, or lost to a throw) are left
+  // un-stamped below so the next cycle re-derives the action instead of
+  // cooling it down for 30 days.
+  const unstampedIds = new Set<string>();
+  const skillIdsTouchedBy = (action: SkillReviewAction): string[] =>
+    [action.skillName, ...(action.absorbNames ?? [])]
+      .map((name) => byName.get(name)?.id)
+      .filter((id): id is string => id !== undefined);
+
   let raised = 0;
   for (const action of decision.actions) {
-    if (raised >= MAX_PROPOSALS_PER_RUN) break;
+    if (raised >= MAX_PROPOSALS_PER_RUN) {
+      // Deferred by the one-proposal cap — still-pending work, not an outcome.
+      for (const id of skillIdsTouchedBy(action)) unstampedIds.add(id);
+      continue;
+    }
     try {
       const result = await applyAction(chatId, adapter, byName, action);
       if (result?.proposed) {
         raised++;
+      } else if (result?.suppressedByPending) {
+        // Another confirmation already holds the chat's slot — transient, so
+        // the action must survive to the next cycle.
+        for (const id of skillIdsTouchedBy(action)) unstampedIds.add(id);
+        logger.debug(
+          { chatId, skillName: action.skillName, action: action.action, reason: result.reason },
+          "Skill review proposal suppressed by a pending confirmation — will retry next cycle",
+        );
       } else if (result) {
+        // Durable decline or core validation rejection — terminal: re-deriving
+        // it next cycle would reach the same dead end, so the stamp stands.
         logger.debug(
           { chatId, skillName: action.skillName, action: action.action, reason: result.reason },
           "Skill review proposal suppressed",
         );
       }
+      // result === null (malformed action) is likewise terminal — stamped.
     } catch (error) {
+      for (const id of skillIdsTouchedBy(action)) unstampedIds.add(id);
       logger.error(
         { error, chatId, skillName: action.skillName, action: action.action },
         "Failed to raise skill-review proposal",
@@ -304,10 +371,11 @@ export async function reviewChatSkills(chatId: string, adapter: PlatformAdapter)
 
   // Stamp AFTER the proposals so a crash mid-run re-reviews rather than
   // silently skipping; best-effort because a failed stamp only means an extra
-  // look next cycle.
+  // look next cycle. Only terminally-handled candidates are stamped (see the
+  // function doc).
   await markSkillsReviewed(
     chatId,
-    candidates.map((s) => s.id),
+    candidates.filter((s) => !unstampedIds.has(s.id)).map((s) => s.id),
     now,
   ).catch((error) => {
     logger.warn({ error, chatId }, "Failed to stamp skills as reviewed");

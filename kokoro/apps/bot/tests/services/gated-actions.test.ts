@@ -961,6 +961,21 @@ describe("dispatchGatedAction — updateSkill (dispatch-only)", () => {
     expect(result.detail.reason).toBe("not_found");
   });
 
+  it("reports state_conflict when the skill was archived after the proposal (version unchanged — toggles don't bump it)", async () => {
+    vi.mocked(updateSkillIfVersion).mockResolvedValue(null);
+    vi.mocked(getSkillById).mockResolvedValue({
+      name: "meeting-followup-style",
+      version: 1, // same version the bubble was raised against...
+      enabled: false, // ...but the user archived it from the dashboard
+    } as never);
+
+    const result = await dispatchGatedAction("updateSkill", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("state_conflict");
+    expect(result.summary).toContain("archived after this was proposed");
+  });
+
   it("fails cleanly when chat context is missing", async () => {
     const result = await dispatchGatedAction("updateSkill", draft);
     expect(result.success).toBe(false);
@@ -1013,6 +1028,21 @@ describe("dispatchGatedAction — disableSkill (dispatch-only)", () => {
 
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("not_found");
+  });
+
+  it("treats an already-archived skill (same version) as success — the approved end-state already holds", async () => {
+    vi.mocked(updateSkillIfVersion).mockResolvedValue(null);
+    vi.mocked(getSkillById).mockResolvedValue({
+      name: "stale-skill",
+      version: 1, // unchanged — the user archived it from the dashboard
+      enabled: false,
+    } as never);
+
+    const result = await dispatchGatedAction("disableSkill", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe('skill "stale-skill" was already archived');
+    expect(result.detail).toEqual({ skillId: SKILL_ID, alreadyArchived: true });
   });
 
   it("fails cleanly when chat context is missing", async () => {
@@ -1081,6 +1111,23 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
     expect(vi.mocked(updateSkillIfVersion)).toHaveBeenCalledTimes(1);
   });
 
+  it("cancels the merge with state_conflict when the survivor was archived after the proposal (same version)", async () => {
+    vi.mocked(updateSkillIfVersion).mockResolvedValue(null);
+    vi.mocked(getSkillById).mockResolvedValue({
+      name: "survivor",
+      version: 1, // unchanged — archived from the dashboard, which doesn't bump it
+      enabled: false,
+    } as never);
+
+    const result = await dispatchGatedAction("mergeSkills", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("state_conflict");
+    expect(result.summary).toContain("merge cancelled");
+    // Only the survivor attempt ran — no absorbee was touched.
+    expect(vi.mocked(updateSkillIfVersion)).toHaveBeenCalledTimes(1);
+  });
+
   it("reports a partial merge as a failure when an absorbee CAS fails", async () => {
     vi.mocked(updateSkillIfVersion)
       .mockResolvedValueOnce({ name: "survivor", version: 2 } as never) // survivor ok
@@ -1098,6 +1145,27 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
     });
     // One failed absorbee doesn't stop the others from archiving.
     expect(vi.mocked(updateSkillIfVersion)).toHaveBeenCalledTimes(3);
+  });
+
+  it("counts an absorbee already archived at its merged-from version as archived (goal state holds)", async () => {
+    vi.mocked(updateSkillIfVersion)
+      .mockResolvedValueOnce({ name: "survivor", version: 2 } as never) // survivor ok
+      .mockResolvedValueOnce(null) // absorb A: CAS refused — already disabled
+      .mockResolvedValueOnce({ name: "dupe-b", version: 2 } as never); // absorb B ok
+    vi.mocked(getSkillById).mockResolvedValue({
+      name: "dupe-a",
+      version: 2, // matches its baseVersion — content folded in is what was reviewed
+      enabled: false,
+    } as never);
+
+    const result = await dispatchGatedAction("mergeSkills", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(true);
+    expect(result.detail).toEqual({
+      skillId: SURVIVOR_ID,
+      version: 2,
+      archived: ["dupe-a", "dupe-b"],
+    });
   });
 
   it("rejects a self-absorbing merge before touching the db", async () => {

@@ -215,7 +215,7 @@ describe("proposeSkillRefinement", () => {
     expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
   });
 
-  it("suppresses when another proposal (of either type) is already pending", async () => {
+  it("suppresses when another proposal (of either type) is already pending, flagged as transient", async () => {
     vi.mocked(listPendingConfirmations).mockResolvedValue([
       { action: { tool: "createRoutine", args: {} } },
     ] as never);
@@ -228,6 +228,23 @@ describe("proposeSkillRefinement", () => {
     });
     expect(result.proposed).toBe(false);
     expect(result.declined).toBeUndefined();
+    expect(result.suppressedByPending).toBe(true);
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
+  });
+
+  it("suppresses when a NON-proposal confirmation (e.g. sendEmail) is pending — iMessage resolves YES/NO only with exactly one pending", async () => {
+    vi.mocked(listPendingConfirmations).mockResolvedValue([
+      { action: { tool: "sendEmail", args: {} } },
+    ] as never);
+    const result = await proposeSkillRefinement({
+      chatId: CHAT,
+      adapter,
+      skill: fakeSkill(),
+      patch: { body: "new body" },
+      rationale: "r",
+    });
+    expect(result.proposed).toBe(false);
+    expect(result.suppressedByPending).toBe(true);
     expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
   });
 
