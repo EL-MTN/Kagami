@@ -129,6 +129,7 @@ export interface RoutineLogItem {
   id: string;
   trigger: "cron" | "manual" | "routine";
   parentLogId?: string;
+  traceId?: string;
   parameters?: Record<string, unknown>;
   status: "running" | "completed" | "failed";
   summary?: string;

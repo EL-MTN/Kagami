@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -12,6 +12,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { RoutineLogItem } from "@/lib/routine-schema";
+
+const KANSOKU_TRACE_BASE = "https://kansoku.localhost/traces";
 
 interface ApiLogResponse {
   logs: RoutineLogItem[];
@@ -110,6 +112,9 @@ export function RoutineLogTable({ routineId, initialLogs, initialHasMore }: Rout
                 Status
               </TableHead>
               <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Trace
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 Summary
               </TableHead>
             </TableRow>
@@ -177,6 +182,18 @@ export function RoutineLogTable({ routineId, initialLogs, initialHasMore }: Rout
                       {log.status}
                     </span>
                   </TableCell>
+                  <TableCell>
+                    {log.traceId ? (
+                      <Button asChild variant="ghost" size="icon-xs" title={`Trace ${log.traceId}`}>
+                        <a href={`${KANSOKU_TRACE_BASE}/${log.traceId}`}>
+                          <ExternalLink className="h-3 w-3" />
+                          <span className="sr-only">Open trace</span>
+                        </a>
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-faint">&mdash;</span>
+                    )}
+                  </TableCell>
                   <TableCell className="max-w-md">
                     {log.summary ? (
                       <details>
@@ -197,7 +214,7 @@ export function RoutineLogTable({ routineId, initialLogs, initialHasMore }: Rout
             })}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={6} className="py-12 text-center text-sm text-muted-foreground">
                   No executions yet.
                 </TableCell>
               </TableRow>
