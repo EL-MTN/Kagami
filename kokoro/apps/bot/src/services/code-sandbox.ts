@@ -116,7 +116,11 @@ interface ExecFileFailure {
 }
 
 function buildOutput(stdout: string, stderr: string): string {
-  const combined = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
+  // No trimming and no separator: this string is relayed to the conversation
+  // as "what the code printed", and for text-generating programs leading or
+  // trailing whitespace IS part of the result. Plain concatenation (stdout
+  // then stderr) adds and removes nothing — only the cap may alter it.
+  const combined = stdout + stderr;
   if (combined.length <= OUTPUT_CAP) return combined;
   return `${combined.slice(0, OUTPUT_CAP)}…[truncated ${combined.length - OUTPUT_CAP}]`;
 }

@@ -79,6 +79,15 @@ describe("markdownToTelegramHtml", () => {
       expect(out).toBe("<pre>run `cmd` with ~~care~~</pre>");
     });
 
+    it("preserves leading indentation and trailing whitespace inside a fence", () => {
+      // Only the wrapper newline before the closing fence is stripped — an
+      // indented first line must display exactly as it would execute (a
+      // trimmed preview could show valid top-level code that actually runs
+      // with hidden indentation).
+      const out = markdownToTelegramHtml("```python\n    if x:\n        y()  \n```");
+      expect(out).toBe("<pre>    if x:\n        y()  </pre>");
+    });
+
     it("does not reinterpret markdown inside inline code", () => {
       expect(markdownToTelegramHtml("see `a * b * c` and `[x](y)` here")).toBe(
         "see <code>a * b * c</code> and <code>[x](y)</code> here",

@@ -1024,7 +1024,10 @@ export async function dispatchGatedAction(
         }
         return {
           success: true,
-          summary: `code ran: ${result.output.slice(0, 200)}`,
+          // trim() here is display-only (output now keeps its real whitespace,
+          // so it usually ends in "\n") — `detail.output` and `resultText`
+          // stay byte-exact.
+          summary: `code ran: ${result.output.trim().slice(0, 200)}`,
           detail: { exitCode: result.exitCode, language: args.language, output: result.output },
           resultText,
         };

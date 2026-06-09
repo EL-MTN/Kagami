@@ -1342,17 +1342,19 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
   });
 
   it("runs approved code and returns the capped output in detail", async () => {
-    vi.mocked(runCode).mockResolvedValue(sandboxResult());
+    // Sandbox output keeps its real whitespace (trailing "\n" here).
+    vi.mocked(runCode).mockResolvedValue(sandboxResult({ output: "42\n" }));
 
     const result = await dispatchGatedAction("executeCode", { language: "python", code: CODE });
 
     expect(result.success).toBe(true);
+    // The summary trims for display only…
     expect(result.summary).toBe("code ran: 42");
-    expect(result.detail).toEqual({ exitCode: 0, language: "python", output: "42" });
-    // resultText carries the full (already ≤4000-capped) output so the
-    // acknowledgment turn can relay what the code actually produced — the
-    // summary alone is a 200-char preview.
-    expect(result.resultText).toBe("42");
+    // …while detail.output and resultText stay byte-exact: resultText carries
+    // the full (already ≤4000-capped) output so the acknowledgment turn can
+    // relay what the code actually produced — the summary is just a preview.
+    expect(result.detail).toEqual({ exitCode: 0, language: "python", output: "42\n" });
+    expect(result.resultText).toBe("42\n");
     expect(vi.mocked(runCode)).toHaveBeenCalledWith({ language: "python", code: CODE });
   });
 

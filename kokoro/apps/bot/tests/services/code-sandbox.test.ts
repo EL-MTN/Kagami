@@ -190,6 +190,17 @@ describe("runCode — results", () => {
     expect(result.output).toBe(`${"a".repeat(4000)}…[truncated 1000]`);
   });
 
+  it("preserves the output's own whitespace — no trimming, no added separator", async () => {
+    // For text-generating programs, leading/trailing whitespace IS the
+    // result; what gets relayed must be exactly what the program printed
+    // (stdout then stderr, plain concatenation).
+    promisifiedMock.mockReturnValueOnce(resolvedRun("  line one\n\n", "warn: x\n").promise);
+
+    const result = await runCode({ language: "python", code: "print()" });
+
+    expect(result.output).toBe("  line one\n\nwarn: x\n");
+  });
+
   it("treats a non-zero exit as a result, not an error", async () => {
     promisifiedMock.mockReturnValueOnce(
       rejectedRun({ code: 1, stderr: "Traceback (most recent call last): boom" }).promise,
