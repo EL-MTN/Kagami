@@ -15,6 +15,7 @@ import { createRequestConfirmationTool, createCancelConfirmationTool } from "./c
 import { createProposeRoutineTool } from "./routine-proposals";
 import { createProposeRoutineRefinementTool } from "./routine-refinements";
 import { createDelegateTool } from "./delegate";
+import { createExecuteCodeTool } from "./execute-code";
 import { createSearchMemoryTool, createRememberFactTool } from "./memory";
 import { createCrmTools, createCrmWriteTools } from "./crm";
 import { getMcpTools } from "../../services/mcp";
@@ -102,6 +103,15 @@ export function allTools(ctx: ToolContext) {
   // Read-only, local: a fresh precise-time read (the user's local time is
   // ambient every turn; this covers long-task drift and other timezones).
   tools.getCurrentTime = createGetCurrentTimeTool();
+
+  // Sandboxed code execution (Docker, network-less, approval-gated — the
+  // bubble shows the full code). Opt-in via env; requires a local Docker
+  // daemon at runtime but fails open per call when it's down. Deliberately
+  // NOT in readOnlyToolSubset: execution is a mutation-class capability, so
+  // watcher ticks and delegate sub-tasks never see it.
+  if (config.EXECUTE_CODE_ENABLED) {
+    tools.executeCode = createExecuteCodeTool(ctx.chatId, ctx.adapter);
+  }
 
   // Approval-gated wrappers. Always registered now that browser automation and
   // CRM writes are unconditional (sendEmail/manageCalendar still require Kao for

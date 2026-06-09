@@ -63,6 +63,12 @@ vi.mock("../../../src/ai/tools/skills", () => ({
   createProposeSkillTool: vi.fn(() => ({ __proposeSkill: true })),
 }));
 
+// executeCode pulls in the confirmation rail; stub it to a sentinel so the
+// registry tests stay focused on which palette it lands in.
+vi.mock("../../../src/ai/tools/execute-code", () => ({
+  createExecuteCodeTool: vi.fn(() => ({ __executeCode: true })),
+}));
+
 import { allTools, watcherTools, routineToolsUnderWatcher } from "../../../src/ai/tools/index";
 import { getMcpTools } from "../../../src/services/mcp";
 
@@ -164,6 +170,26 @@ describe("allTools — feature flags", () => {
         "cancelConfirmation",
       ]),
     );
+  });
+});
+
+describe("allTools — sandboxed code execution", () => {
+  it("withholds executeCode when EXECUTE_CODE_ENABLED is unset", () => {
+    // Also covered by the exact-match baseline above — this pins the flag.
+    expect(Object.keys(allTools(baseCtx))).not.toContain("executeCode");
+  });
+
+  it("registers executeCode when EXECUTE_CODE_ENABLED is set", () => {
+    mockConfig.EXECUTE_CODE_ENABLED = "true";
+    expect(Object.keys(allTools(baseCtx))).toContain("executeCode");
+  });
+
+  it("is NEVER offered to watcher / under-watcher palettes, even when enabled", () => {
+    // Execution is a mutation-class capability: observation runs and delegate
+    // sub-tasks must not be able to raise a code-approval bubble.
+    mockConfig.EXECUTE_CODE_ENABLED = "true";
+    expect(Object.keys(watcherTools(baseCtx))).not.toContain("executeCode");
+    expect(Object.keys(routineToolsUnderWatcher(baseCtx))).not.toContain("executeCode");
   });
 });
 

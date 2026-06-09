@@ -123,6 +123,32 @@ const baseSchema = z.object({
     .default("true")
     .transform((s) => s === "true"),
 
+  // Sandboxed code execution (executeCode tool). Presence-flag like KAO_URL:
+  // unset/empty → tool not registered. Requires a local Docker daemon at
+  // runtime; the tool fails open per call when the daemon is down. Containers
+  // run with no network, empty env, read-only rootfs — see
+  // apps/bot/src/services/code-sandbox.ts for the full profile.
+  EXECUTE_CODE_ENABLED: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().optional(),
+  ),
+  EXECUTE_CODE_PYTHON_IMAGE: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().default("python:3.12-slim"),
+  ),
+  EXECUTE_CODE_NODE_IMAGE: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().default("node:22-slim"),
+  ),
+  EXECUTE_CODE_TIMEOUT_MS: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.coerce.number().int().positive().default(120_000),
+  ),
+  EXECUTE_CODE_MEMORY_MB: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.coerce.number().int().positive().default(512),
+  ),
+
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   LOCATION_MOVEMENT_THRESHOLD_M: z.coerce.number().default(100),
   LOCATION_PROACTIVE_DELAY_MS: z.coerce.number().default(1_200_000),

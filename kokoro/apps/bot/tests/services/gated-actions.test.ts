@@ -31,6 +31,19 @@ vi.mock("../../src/services/browser", () => ({
   resetBrowser: vi.fn(),
   withBrowserLock: vi.fn(<T>(fn: () => Promise<T>) => fn()),
 }));
+// The dispatcher's catch checks `error instanceof CodeSandboxError`, so the
+// factory must export a real class — a vi.fn() stub would fail the check.
+vi.mock("../../src/services/code-sandbox", () => {
+  class CodeSandboxError extends Error {
+    readonly kind: string;
+    constructor(kind: string, message: string) {
+      super(message);
+      this.name = "CodeSandboxError";
+      this.kind = kind;
+    }
+  }
+  return { runCode: vi.fn(), CodeSandboxError };
+});
 vi.mock("@kokoro/kizuna", () => ({
   logInteraction: vi.fn(),
   createFollowup: vi.fn(),
@@ -52,9 +65,11 @@ vi.mock("@kokoro/db", () => ({
   recordSkillProposalDecision: vi.fn(),
 }));
 
+import { logger } from "@kokoro/shared";
 import { sendEmail } from "../../src/services/gmail";
 import { updateEvent, deleteEvent } from "../../src/services/google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser } from "../../src/services/browser";
+import { runCode, CodeSandboxError } from "../../src/services/code-sandbox";
 import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
 import {
   createRoutine,
@@ -82,6 +97,7 @@ beforeEach(() => {
   vi.mocked(acquireBrowser).mockReset();
   vi.mocked(releaseBrowser).mockReset();
   vi.mocked(resetBrowser).mockReset();
+  vi.mocked(runCode).mockReset();
   vi.mocked(logInteraction).mockReset();
   vi.mocked(createFollowup).mockReset();
   vi.mocked(resolveFollowup).mockReset();
@@ -1255,6 +1271,138 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("no_chat_context");
     expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
+  });
+});
+
+describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
+  const CODE = "print(40 + 2)";
+
+  /** A clean sandbox result the individual tests override per scenario. */
+  function sandboxResult(overrides: Partial<Awaited<ReturnType<typeof runCode>>> = {}) {
+    return {
+      exitCode: 0,
+      stdout: "42\n",
+      stderr: "",
+      timedOut: false,
+      oomKilled: false,
+      output: "42",
+      ...overrides,
+    };
+  }
+
+  it("is dispatchable even though it is NOT in the requestConfirmation enum", () => {
+    // The model can only reach it through the dedicated executeCode tool, whose
+    // bubble shows the full code — never behind a ≤400-char summary.
+    expect(isGatedTool("executeCode")).toBe(false);
+    expect(GATED_TOOL_NAMES as readonly string[]).not.toContain("executeCode");
+  });
+
+  it("rejects an unknown language before touching the sandbox", async () => {
+    const result = await dispatchGatedAction("executeCode", { language: "ruby", code: "puts 1" });
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_args");
+    expect(vi.mocked(runCode)).not.toHaveBeenCalled();
+  });
+
+  it("re-enforces the 8000-char code cap at the dispatch boundary", async () => {
+    // The tool's inputSchema also caps this, but the dispatcher is the last
+    // stop before docker — it must not trust what's in the confirmation row.
+    const result = await dispatchGatedAction("executeCode", {
+      language: "python",
+      code: "x".repeat(8001),
+    });
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_args");
+    expect(vi.mocked(runCode)).not.toHaveBeenCalled();
+  });
+
+  it("runs approved code and returns the capped output in detail", async () => {
+    vi.mocked(runCode).mockResolvedValue(sandboxResult());
+
+    const result = await dispatchGatedAction("executeCode", { language: "python", code: CODE });
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe("code ran: 42");
+    expect(result.detail).toEqual({ exitCode: 0, language: "python", output: "42" });
+    expect(vi.mocked(runCode)).toHaveBeenCalledWith({ language: "python", code: CODE });
+  });
+
+  it("logs only the code's shape — the body must never reach the log stream", async () => {
+    vi.mocked(runCode).mockResolvedValue(sandboxResult());
+
+    await dispatchGatedAction("executeCode", { language: "python", code: CODE });
+
+    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+      { language: "python", codeLength: CODE.length },
+      "Dispatching approved executeCode",
+    );
+    // No log call on any level may carry the code body (keys/personal data
+    // pasted into a script must not land in Kansoku).
+    for (const level of [logger.info, logger.warn, logger.error, logger.debug] as const) {
+      for (const call of vi.mocked(level).mock.calls) {
+        expect(JSON.stringify(call)).not.toContain(CODE);
+      }
+    }
+  });
+
+  it("reports a non-zero exit as a failure with the output attached", async () => {
+    vi.mocked(runCode).mockResolvedValue(
+      sandboxResult({ exitCode: 1, stdout: "", stderr: "Traceback…", output: "Traceback…" }),
+    );
+
+    const result = await dispatchGatedAction("executeCode", { language: "python", code: CODE });
+
+    expect(result.success).toBe(false);
+    expect(result.summary).toBe("code exited with code 1");
+    expect(result.detail).toEqual({
+      reason: "nonzero_exit",
+      exitCode: 1,
+      language: "python",
+      output: "Traceback…",
+    });
+  });
+
+  it("reports a timeout with the configured wall-clock cap in the summary", async () => {
+    vi.mocked(runCode).mockResolvedValue(
+      sandboxResult({ exitCode: 137, timedOut: true, output: "partial" }),
+    );
+
+    const result = await dispatchGatedAction("executeCode", { language: "node", code: CODE });
+
+    expect(result.success).toBe(false);
+    // 120s = the EXECUTE_CODE_TIMEOUT_MS default (no env override in tests).
+    expect(result.summary).toBe("code execution timed out after 120s");
+    expect(result.detail).toEqual({ reason: "timeout", language: "node", output: "partial" });
+  });
+
+  it("reports an OOM kill with the configured memory cap in the summary", async () => {
+    vi.mocked(runCode).mockResolvedValue(
+      sandboxResult({ exitCode: 137, oomKilled: true, output: "" }),
+    );
+
+    const result = await dispatchGatedAction("executeCode", { language: "python", code: CODE });
+
+    expect(result.success).toBe(false);
+    // 512 MB = the EXECUTE_CODE_MEMORY_MB default (no env override in tests).
+    expect(result.summary).toBe("code was killed (out of memory, 512 MB cap)");
+    expect(result.detail).toEqual({ reason: "oom", language: "python", output: "" });
+  });
+
+  it("surfaces a CodeSandboxError's friendly message instead of the generic wrapper", async () => {
+    vi.mocked(runCode).mockRejectedValue(
+      new CodeSandboxError(
+        "daemon_unavailable",
+        "Docker daemon is not running — code execution is unavailable until it's started.",
+      ),
+    );
+
+    const result = await dispatchGatedAction("executeCode", { language: "python", code: CODE });
+
+    expect(result.success).toBe(false);
+    expect(result.summary).toBe(
+      "Docker daemon is not running — code execution is unavailable until it's started.",
+    );
+    expect(result.detail).toEqual({ reason: "daemon_unavailable" });
   });
 });
 
