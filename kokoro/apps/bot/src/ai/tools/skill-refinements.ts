@@ -93,10 +93,29 @@ function prunePatch(skill: ISkill, patch: SkillContentPatch, changed: string[]):
   return pruned;
 }
 
+/** Render the non-body fields of a patch as `field: current → proposed` lines —
+ * the bubble must show the actual values being approved, not just which fields
+ * move (a metadata-only refinement would otherwise give nothing to review). */
+function buildMetaChangeLines(current: ISkill, patch: SkillContentPatch): string[] {
+  const fmtList = (items: string[]) => (items.length === 0 ? "(none)" : items.join(", "));
+  const lines: string[] = [];
+  if (patch.description !== undefined) {
+    lines.push(`description: "${current.description}" → "${patch.description}"`);
+  }
+  if (patch.triggers !== undefined) {
+    lines.push(`triggers: ${fmtList(current.triggers)} → ${fmtList(patch.triggers)}`);
+  }
+  if (patch.tags !== undefined) {
+    lines.push(`tags: ${fmtList(current.tags)} → ${fmtList(patch.tags)}`);
+  }
+  return lines;
+}
+
 /**
  * Render the approval bubble for a skill refinement: why, then the body
- * before/after when the body changes (the field the user actually reviews),
- * plus a one-line note for metadata-only changes.
+ * before/after when the body changes (the field the user reviews closest),
+ * then `current → proposed` values for every metadata field that moves.
+ * Expects the PRUNED patch, so a present field is a real change.
  */
 function buildSkillRefinementPrompt(input: {
   skill: ISkill;
@@ -113,9 +132,9 @@ function buildSkillRefinementPrompt(input: {
   if (patch.body !== undefined && changed.includes("body")) {
     lines.push(``, `Current:`, skill.body, ``, `Proposed:`, patch.body);
   }
-  const meta = changed.filter((f) => f !== "body");
-  if (meta.length > 0) {
-    lines.push(``, `(its ${meta.join(", ")} would also be updated)`);
+  const metaLines = buildMetaChangeLines(skill, patch);
+  if (metaLines.length > 0) {
+    lines.push(``, `Also updates:`, ...metaLines);
   }
   return lines.join("\n");
 }
@@ -128,13 +147,15 @@ function buildSkillArchivePrompt(input: { name: string; rationale: string }): st
   ].join("\n");
 }
 
+/** Expects the PRUNED patch — every metadata field present is a real change
+ * the approved action will apply, so the bubble shows each one's values. */
 function buildSkillMergePrompt(input: {
   survivor: ISkill;
   absorbed: ISkill[];
-  newBody: string;
+  patch: SkillContentPatch & { body: string };
   rationale: string;
 }): string {
-  return [
+  const lines = [
     `Merge ${input.absorbed.length + 1} overlapping skills into "${input.survivor.name}"? ${input.absorbed
       .map((s) => `"${s.name}"`)
       .join(", ")} would be archived (disabled, not deleted).`,
@@ -142,8 +163,13 @@ function buildSkillMergePrompt(input: {
     `Why: ${input.rationale}`,
     ``,
     `Merged body:`,
-    input.newBody,
-  ].join("\n");
+    input.patch.body,
+  ];
+  const metaLines = buildMetaChangeLines(input.survivor, input.patch);
+  if (metaLines.length > 0) {
+    lines.push(``, `Also updates:`, ...metaLines);
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -263,10 +289,24 @@ export async function proposeSkillMerge(opts: {
     return { proposed: false, reason: "the merged body is empty" };
   }
 
+  // Prune echoed-back unchanged metadata (vs the survivor) so the bubble, the
+  // signature, and the dispatched args all carry only real changes — same
+  // decline-store rationale as `prunePatch` on the refine path, and it keeps
+  // the bubble's "Also updates" list honest about what the tap applies.
+  const metaChanged = listChanged(survivor, {
+    description: patch.description,
+    triggers: patch.triggers,
+    tags: patch.tags,
+  });
+  const pruned: SkillContentPatch & { body: string } = {
+    body: patch.body,
+    ...prunePatch(survivor, patch, metaChanged),
+  };
+
   const signature = computeSkillMergeSignature(
     { id: survivor.id, version: survivor.version },
     absorbed.map((s) => ({ id: s.id, version: s.version })),
-    patch,
+    pruned,
   );
   return raiseGuardedProposal({
     chatId,
@@ -275,7 +315,7 @@ export async function proposeSkillMerge(opts: {
     isDeclined: isSkillRecentlyDeclined,
     declinedReason: "Goshujin-sama declined this skill merge recently",
     summary: `Merge ${absorbed.length + 1} skills into "${survivor.name}"`,
-    promptText: buildSkillMergePrompt({ survivor, absorbed, newBody: patch.body, rationale }),
+    promptText: buildSkillMergePrompt({ survivor, absorbed, patch: pruned, rationale }),
     origin: "routine",
     action: {
       tool: "mergeSkills",
@@ -284,10 +324,10 @@ export async function proposeSkillMerge(opts: {
         skillId: survivor.id,
         baseVersion: survivor.version,
         absorbed: absorbed.map((s) => ({ skillId: s.id, baseVersion: s.version })),
-        newBody: patch.body,
-        ...(patch.description !== undefined ? { newDescription: patch.description } : {}),
-        ...(patch.triggers !== undefined ? { newTriggers: patch.triggers } : {}),
-        ...(patch.tags !== undefined ? { newTags: patch.tags } : {}),
+        newBody: pruned.body,
+        ...(pruned.description !== undefined ? { newDescription: pruned.description } : {}),
+        ...(pruned.triggers !== undefined ? { newTriggers: pruned.triggers } : {}),
+        ...(pruned.tags !== undefined ? { newTags: pruned.tags } : {}),
       },
     },
   });
