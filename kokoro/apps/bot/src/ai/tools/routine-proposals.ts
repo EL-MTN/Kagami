@@ -1,19 +1,11 @@
 import { createHash } from "node:crypto";
 import { tool } from "ai";
 import { z } from "zod";
-import { isRecentlyDeclined, listPendingConfirmations } from "@kokoro/db";
+import { isRecentlyDeclined } from "@kokoro/db";
 import { logger } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { parameterSchema } from "./routine-schema";
-import { raisePendingConfirmation } from "./confirmations";
-import { hasPendingRoutineProposal } from "./routine-proposal-tools";
-import { hasPendingSkillProposal } from "./skill-proposal-tools";
-
-// Proposals expire faster than action confirmations (24h): an ignored "want me
-// to save this?" bubble shouldn't linger for a day. Two hours is long enough
-// for the user to tap, short enough that a stale offer clears on its own.
-// Exported so the self-review proposals (routine-refinements) share one TTL.
-export const PROPOSAL_TTL_MS = 2 * 60 * 60 * 1000;
+import { raiseGuardedProposal } from "./proposal-guard";
 
 /**
  * Stable signature for a proposed routine: normalized name + a short hash of
@@ -95,38 +87,31 @@ export function createProposeRoutineTool(chatId: string, adapter: PlatformAdapte
         const params = parameters ?? [];
         const signature = computeProposalSignature(name, prompt);
 
-        // Both guards are independent reads — run them concurrently.
-        // GUARD 1 — durable decline memory: honors a prior "no" past the
-        //   40-message window / 1h session reset the LLM can't see.
-        // GUARD 2 — one proposal at a time, across routine save/refine/retire
-        //   and skill saves: also protects iMessage's "exactly one pending"
-        //   YES/NO resolver from stacked bubbles.
-        const [declined, pending] = await Promise.all([
-          isRecentlyDeclined(chatId, signature),
-          listPendingConfirmations(chatId),
-        ]);
-        if (declined) {
-          return { proposed: false, reason: "Goshujin-sama declined a similar routine recently" };
-        }
-        if (hasPendingRoutineProposal(pending) || hasPendingSkillProposal(pending)) {
-          return { proposed: false, reason: "another proposal is already awaiting approval" };
-        }
-
-        const confirmationId = await raisePendingConfirmation(chatId, adapter, {
+        const result = await raiseGuardedProposal({
+          chatId,
+          adapter,
+          signature,
+          isDeclined: isRecentlyDeclined,
+          declinedReason: "Goshujin-sama declined a similar routine recently",
           summary: `Save routine "${name}"`,
           promptText: buildProposalPrompt({ name, description, prompt, parameters: params }),
-          ttlMs: PROPOSAL_TTL_MS,
           origin: "routine",
           action: {
             tool: "createRoutine",
             args: { signature, name, description, prompt, parameters: params },
           },
         });
+        if (!result.proposed) {
+          return { proposed: false, reason: result.reason };
+        }
 
-        logger.debug({ chatId, name, confirmationId }, "Tool: proposeRoutine");
+        logger.debug(
+          { chatId, name, confirmationId: result.confirmationId },
+          "Tool: proposeRoutine",
+        );
         return {
           proposed: true,
-          confirmationId,
+          confirmationId: result.confirmationId,
           message:
             "Routine-save prompt sent. Stop here — don't call this again this turn. Goshujin-sama will tap Approve or Deny.",
         };

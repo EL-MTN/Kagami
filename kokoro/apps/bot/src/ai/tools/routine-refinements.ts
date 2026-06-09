@@ -1,30 +1,14 @@
 import { createHash } from "node:crypto";
 import { tool } from "ai";
 import { z } from "zod";
-import { getRoutineById, isRecentlyDeclined, listPendingConfirmations } from "@kokoro/db";
+import { getRoutineById, isRecentlyDeclined } from "@kokoro/db";
 import { logger } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
 import type { IRoutine, IRoutineParameter } from "@kokoro/db";
 import { parameterSchema } from "./routine-schema";
-import { raisePendingConfirmation } from "./confirmations";
-import { hasPendingRoutineProposal } from "./routine-proposal-tools";
-import { hasPendingSkillProposal } from "./skill-proposal-tools";
-// Self-review proposals (refine/retire) expire on the same short window as a
-// creation proposal — share the constant so the two can't drift apart.
-import { PROPOSAL_TTL_MS } from "./routine-proposals";
+import { raiseGuardedProposal, type ProposalResult } from "./proposal-guard";
 
 type RoutineParameter = z.infer<typeof parameterSchema>;
-
-interface ProposalResult {
-  proposed: boolean;
-  confirmationId?: string;
-  reason?: string;
-  /** True when suppressed specifically by the DURABLE anti-nag decline store
-   * (the user said "no" recently) — distinct from a transient one-pending
-   * suppression. The self-review pass uses this to stop re-offering a declined
-   * revert rather than re-grading it every cycle. */
-  declined?: boolean;
-}
 
 /** Recursively sort object keys so two structurally-equal values (incl. an
  * object/array `default`) serialize identically regardless of property order. */
@@ -88,10 +72,8 @@ export function computeRetirementSignature(routineId: string, baseVersion: numbe
 }
 
 /**
- * Shared guard + raise for self-review proposals (refine and retire): the
- * durable anti-nag decline check and the one-proposal-per-chat check, then the
- * tap-to-approve bubble. Both run concurrently — independent reads. Lets
- * `raisePendingConfirmation` errors propagate; callers wrap in try/catch.
+ * Guard + raise for routine self-review proposals (refine and retire): the
+ * shared `raiseGuardedProposal` core keyed to the routine decline store.
  */
 async function raiseRoutineProposal(opts: {
   chatId: string;
@@ -102,26 +84,11 @@ async function raiseRoutineProposal(opts: {
   promptText: string;
   action: { tool: string; args: Record<string, unknown> };
 }): Promise<ProposalResult> {
-  const { chatId, adapter, signature, declinedReason, summary, promptText, action } = opts;
-  const [declined, pending] = await Promise.all([
-    isRecentlyDeclined(chatId, signature),
-    listPendingConfirmations(chatId),
-  ]);
-  if (declined) return { proposed: false, declined: true, reason: declinedReason };
-  // One proposal per chat at a time — across routine and skill proposal types —
-  // so we never stack two bubbles and break iMessage's exactly-one-pending
-  // YES/NO reply path.
-  if (hasPendingRoutineProposal(pending) || hasPendingSkillProposal(pending)) {
-    return { proposed: false, reason: "another proposal is already awaiting approval" };
-  }
-  const confirmationId = await raisePendingConfirmation(chatId, adapter, {
-    summary,
-    promptText,
-    ttlMs: PROPOSAL_TTL_MS,
+  return raiseGuardedProposal({
+    ...opts,
+    isDeclined: isRecentlyDeclined,
     origin: "routine",
-    action,
   });
-  return { proposed: true, confirmationId };
 }
 
 /**

@@ -100,15 +100,15 @@ describe("proposeRoutine — guard", () => {
     expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
   });
 
-  it("does NOT suppress when the only pending confirmation is a non-proposal action", async () => {
+  it("suppresses when a NON-proposal confirmation is pending (iMessage resolves YES/NO only with exactly one pending)", async () => {
     vi.mocked(listPendingConfirmations).mockResolvedValue([
       { action: { tool: "sendEmail", args: {} } },
     ] as never);
 
     const result = await runTool(draft);
 
-    expect(result.proposed).toBe(true);
-    expect(vi.mocked(raisePendingConfirmation)).toHaveBeenCalledTimes(1);
+    expect(result.proposed).toBe(false);
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
   });
 });
 
