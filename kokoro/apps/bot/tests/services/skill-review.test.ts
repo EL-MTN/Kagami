@@ -91,6 +91,9 @@ function skill(over: Record<string, unknown> = {}) {
   } as never;
 }
 
+/** Expected `markSkillsReviewed` payload — every fixture above is version 1. */
+const stamped = (ids: string[]) => ids.map((id) => ({ id, version: 1 }));
+
 function llmActions(actions: Record<string, unknown>[]) {
   vi.mocked(generateObject).mockResolvedValue({
     object: { actions },
@@ -171,7 +174,7 @@ describe("reviewChatSkills — candidate selection", () => {
     // Only the candidate gets stamped — the fresh skill stays on its cooldown clock.
     expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
       CHAT,
-      ["id-stale-one"],
+      stamped(["id-stale-one"]),
       expect.any(Date),
     );
   });
@@ -203,7 +206,7 @@ describe("reviewChatSkills — candidate selection", () => {
     // Only the reviewed 8 are stamped — the deferred tail stays due next cycle.
     expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
       CHAT,
-      reviewed.map((n) => `id-${n}`),
+      stamped(reviewed.map((n) => `id-${n}`)),
       expect.any(Date),
     );
   });
@@ -279,6 +282,30 @@ describe("reviewChatSkills — action dispatch", () => {
     expect(arg?.rationale).toBe("duplicates");
   });
 
+  it("dedupes a repeated absorbName before resolving — the core never sees duplicates", async () => {
+    vi.mocked(listEnabledSkillsForChat).mockResolvedValue([
+      skill({ name: "survivor" }),
+      skill({ name: "dupe-a" }),
+      skill({ name: "dupe-b" }),
+    ] as never);
+    llmActions([
+      {
+        action: "merge",
+        skillName: "survivor",
+        absorbNames: ["dupe-a", "dupe-a", "dupe-b"],
+        newBody: "The merged body.",
+        rationale: "duplicates",
+      },
+    ]);
+
+    const raised = await reviewChatSkills(CHAT, adapter);
+
+    expect(raised).toBe(1);
+    expect(vi.mocked(proposeSkillMerge)).toHaveBeenCalledTimes(1);
+    const arg = vi.mocked(proposeSkillMerge).mock.calls[0]?.[0];
+    expect(arg?.absorbed.map((s) => s.id)).toEqual(["id-dupe-a", "id-dupe-b"]);
+  });
+
   it("stops after the first raised proposal (one pending per chat)", async () => {
     vi.mocked(listEnabledSkillsForChat).mockResolvedValue([
       skill({ name: "a" }),
@@ -295,7 +322,11 @@ describe("reviewChatSkills — action dispatch", () => {
     expect(vi.mocked(proposeSkillArchive)).toHaveBeenCalledTimes(1);
     // The cap-deferred action's skill is NOT stamped — the next cycle
     // re-derives it instead of burying it under the 30-day cooldown.
-    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(CHAT, ["id-a"], expect.any(Date));
+    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
+      CHAT,
+      stamped(["id-a"]),
+      expect.any(Date),
+    );
   });
 
   it("falls through to the next-ranked action when a proposal is suppressed (anti-nag)", async () => {
@@ -321,7 +352,7 @@ describe("reviewChatSkills — action dispatch", () => {
     // A durable decline is a terminal outcome — both skills are stamped.
     expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
       CHAT,
-      ["id-a", "id-b"],
+      stamped(["id-a", "id-b"]),
       expect.any(Date),
     );
   });
@@ -345,7 +376,11 @@ describe("reviewChatSkills — action dispatch", () => {
     expect(vi.mocked(proposeSkillArchive)).toHaveBeenCalledTimes(2);
     // The thrown attempt leaves "a" un-stamped (its action never reached a
     // terminal outcome — retried next cycle); the landed proposal stamps "b".
-    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(CHAT, ["id-b"], expect.any(Date));
+    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
+      CHAT,
+      stamped(["id-b"]),
+      expect.any(Date),
+    );
   });
 });
 
@@ -379,7 +414,7 @@ describe("reviewChatSkills — malformed LLM actions", () => {
     // Re-deriving a malformed action next cycle reaches the same dead end.
     expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
       CHAT,
-      ["id-inbox-style"],
+      stamped(["id-inbox-style"]),
       expect.any(Date),
     );
   });
@@ -453,7 +488,11 @@ describe("reviewChatSkills — disposition-aware stamping", () => {
     expect(raised).toBe(0);
     // a and b retry next cycle once the pending slot frees; c (no action
     // targeted it) is terminally reviewed and starts its cooldown.
-    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(CHAT, ["id-c"], expect.any(Date));
+    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
+      CHAT,
+      stamped(["id-c"]),
+      expect.any(Date),
+    );
   });
 
   it("leaves EVERY merge participant un-stamped when the merge is deferred by the proposal cap", async () => {
@@ -478,7 +517,11 @@ describe("reviewChatSkills — disposition-aware stamping", () => {
     expect(raised).toBe(1);
     expect(vi.mocked(proposeSkillMerge)).not.toHaveBeenCalled();
     // Survivor AND absorbee stay un-stamped — the whole merge re-derives.
-    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(CHAT, ["id-a"], expect.any(Date));
+    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
+      CHAT,
+      stamped(["id-a"]),
+      expect.any(Date),
+    );
   });
 });
 
@@ -574,7 +617,7 @@ describe("reviewChatSkills — blank-metadata normalization", () => {
     // Terminal disposition — the candidate is still stamped.
     expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
       CHAT,
-      ["id-inbox-style"],
+      stamped(["id-inbox-style"]),
       expect.any(Date),
     );
   });
@@ -629,7 +672,7 @@ describe("reviewChatSkills — bookkeeping", () => {
     // The cooldown must start anyway, or the same skills get re-billed weekly.
     expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
       CHAT,
-      ["id-a", "id-b"],
+      stamped(["id-a", "id-b"]),
       expect.any(Date),
     );
   });

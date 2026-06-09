@@ -1215,6 +1215,24 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
     expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
   });
 
+  it("rejects duplicate absorbees before touching the db (second copy would CAS-fail after the survivor write)", async () => {
+    const result = await dispatchGatedAction(
+      "mergeSkills",
+      {
+        ...draft,
+        absorbed: [
+          { skillId: ABSORBED_A, baseVersion: 2 },
+          { skillId: ABSORBED_A, baseVersion: 2 },
+        ],
+      },
+      { chatId: "chat-1" },
+    );
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_args");
+    expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
+    expect(vi.mocked(getSkillById)).not.toHaveBeenCalled();
+  });
+
   it("rejects a merge with no absorbed skills or no newBody", async () => {
     const noAbsorbed = await dispatchGatedAction(
       "mergeSkills",

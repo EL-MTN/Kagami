@@ -282,6 +282,12 @@ export async function proposeSkillMerge(opts: {
   if (absorbed.some((s) => s.id === survivor.id)) {
     return { proposed: false, reason: "a skill cannot absorb itself" };
   }
+  // A duplicate would pass dispatch preflight twice but fail its second CAS
+  // after the survivor write — the dispatcher schema also rejects it, so a
+  // bubble carrying one would be unapprovable. Refuse to raise it at all.
+  if (new Set(absorbed.map((s) => s.id)).size !== absorbed.length) {
+    return { proposed: false, reason: "absorbed skills must be distinct" };
+  }
   if (absorbed.some((s) => !s.enabled)) {
     return { proposed: false, reason: "every absorbed skill must currently be enabled" };
   }
