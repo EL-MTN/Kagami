@@ -114,6 +114,10 @@ describe("runCode — docker invocation", () => {
     expect(args).toEqual([
       "run",
       "--rm",
+      // Pulls happen only at startup (pullImages) — a mid-run pull would be
+      // unkillable by the timeout's `docker rm -f` (no container exists yet).
+      "--pull",
+      "never",
       "--name",
       name,
       "--network",
@@ -182,6 +186,7 @@ describe("runCode — results", () => {
     expect(result.exitCode).toBe(0);
     expect(result.timedOut).toBe(false);
     expect(result.oomKilled).toBe(false);
+    expect(result.outputOverflow).toBe(false);
     expect(result.output).toBe(`${"a".repeat(4000)}…[truncated 1000]`);
   });
 
@@ -207,7 +212,7 @@ describe("runCode — results", () => {
     expect(result.timedOut).toBe(false);
   });
 
-  it("on maxBuffer overflow, kills the still-running container and returns the partial output", async () => {
+  it("on maxBuffer overflow, kills the still-running container and flags outputOverflow", async () => {
     promisifiedMock.mockReturnValueOnce(
       rejectedRun({ code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", stdout: "b".repeat(5000) }).promise,
     );
@@ -216,6 +221,9 @@ describe("runCode — results", () => {
 
     expect(result.output).toBe(`${"b".repeat(4000)}…[truncated 1000]`);
     expect(result.timedOut).toBe(false);
+    // The program was stopped before its real exit status was known — this is
+    // a failed run, not a success with noisy output.
+    expect(result.outputOverflow).toBe(true);
     // The docker client died first — the container must be reaped explicitly.
     const rmCall = execFileMock.mock.calls.find((c) => Array.isArray(c[1]) && c[1][0] === "rm") as
       | [string, string[]]
@@ -271,7 +279,20 @@ describe("runCode — infrastructure errors", () => {
     });
   });
 
-  it("maps exit 125 + 'Unable to find image' to image_missing", async () => {
+  it("maps exit 125 + 'No such image' (--pull=never refusal) to image_missing", async () => {
+    promisifiedMock.mockReturnValueOnce(
+      rejectedRun({
+        code: 125,
+        stderr: "docker: Error response from daemon: No such image: python:3.12-slim",
+      }).promise,
+    );
+
+    await expect(runCode({ language: "python", code: "x" })).rejects.toMatchObject({
+      kind: "image_missing",
+    });
+  });
+
+  it("still maps the auto-pull failure string ('Unable to find image') to image_missing", async () => {
     promisifiedMock.mockReturnValueOnce(
       rejectedRun({
         code: 125,

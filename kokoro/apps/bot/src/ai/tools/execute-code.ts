@@ -6,25 +6,24 @@ import { raisePendingConfirmation } from "./confirmations";
 import type { SandboxLanguage } from "../../services/code-sandbox";
 
 /**
- * Cap on the code shown in the approval bubble. The full code (≤8000 chars by
- * schema) always executes from the PendingConfirmation row — only the on-screen
- * preview is truncated, with an explicit marker so the user knows there's more.
+ * Schema cap on the code body, chosen so the FULL program always fits in the
+ * approval bubble (Telegram caps a message at 4096 chars, and the prompt adds
+ * wrapper text + the ≤200-char description). What the user reviews is exactly
+ * what executes — never a truncated preview a model could hide a suffix
+ * behind. Mirrored by `executeCodeArgs` in gated-actions.ts, which re-enforces
+ * it at the dispatch boundary.
  */
-const CODE_PREVIEW_CAP = 3000;
+export const MAX_CODE_LENGTH = 3000;
 
 function buildCodePrompt(language: SandboxLanguage, code: string, description: string): string {
   const fenceTag = language === "python" ? "python" : "js";
-  const preview =
-    code.length > CODE_PREVIEW_CAP
-      ? `${code.slice(0, CODE_PREVIEW_CAP)}\n… (${code.length - CODE_PREVIEW_CAP} more chars)`
-      : code;
   return [
     `Run this ${language} code in the sandbox?`,
     ``,
     description,
     ``,
     `\`\`\`${fenceTag}`,
-    preview,
+    code,
     `\`\`\``,
   ].join("\n");
 }
@@ -49,9 +48,9 @@ export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) 
       code: z
         .string()
         .min(1)
-        .max(8000)
+        .max(MAX_CODE_LENGTH)
         .describe(
-          "The complete script, read from stdin by the interpreter. Print results to stdout — that's the only channel back.",
+          "The complete script (max 3000 chars), read from stdin by the interpreter. Print results to stdout — that's the only channel back.",
         ),
       description: z
         .string()

@@ -20,10 +20,14 @@ const execFileAsync = promisify(execFile);
  *                             `nobody` user entry)
  *   --pids-limit / --memory / --memory-swap / --cpus   fork-bomb + OOM + CPU caps
  *   --rm + unique name        ephemeral; the name lets the host kill it on timeout
+ *   --pull never              images come from the startup pre-pull only — a
+ *                             registry download mid-`run` would be unkillable
+ *                             by the timeout's `docker rm -f` (no container
+ *                             exists yet) and could overrun the deadline
  *
- * Non-zero exit, timeout, and OOM are *results* (the LLM reacts to them);
- * `CodeSandboxError` is reserved for infrastructure faults (daemon down,
- * image missing, unexpected client failure).
+ * Non-zero exit, timeout, OOM, and output overflow are *results* (the LLM
+ * reacts to them); `CodeSandboxError` is reserved for infrastructure faults
+ * (daemon down, image missing, unexpected client failure).
  */
 
 export type SandboxLanguage = "python" | "node";
@@ -43,6 +47,12 @@ export interface RunCodeResult {
   stderr: string;
   timedOut: boolean;
   oomKilled: boolean;
+  /**
+   * True when stdout+stderr blew past the 1 MB client buffer and the run was
+   * stopped early. The exit code is unknowable then (the client died first) —
+   * this flag, not exitCode, is the authoritative failure signal.
+   */
+  outputOverflow: boolean;
   /** Combined stdout+stderr, capped at OUTPUT_CAP — ready for the LLM. */
   output: string;
 }
@@ -122,6 +132,8 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
   const args = [
     "run",
     "--rm",
+    "--pull",
+    "never",
     "--name",
     name,
     "--network",
@@ -180,6 +192,7 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
       stderr,
       timedOut: false,
       oomKilled: false,
+      outputOverflow: false,
       output: buildOutput(stdout, stderr),
     };
   } catch (error) {
@@ -196,9 +209,10 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     }
 
     // Output exceeded maxBuffer: Node killed the docker client, but the
-    // container is still running — kill it, then return the partial output.
-    // The exit code is unknowable (client died first); report 0 because the
-    // interesting fact is the flood of output, which the cap surfaces.
+    // container is still running — kill it, then return the partial output
+    // with `outputOverflow` set. The program was stopped before its real exit
+    // status was known, so this is a *failed* run (the dispatcher reports it
+    // as such); exitCode 0 here is a placeholder, not a success claim.
     if (e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
       execFile("docker", ["rm", "-f", name], () => {});
       return {
@@ -207,6 +221,7 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
         stderr,
         timedOut: false,
         oomKilled: false,
+        outputOverflow: true,
         output: buildOutput(stdout, stderr),
       };
     }
@@ -218,6 +233,7 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
         stderr,
         timedOut: true,
         oomKilled: false,
+        outputOverflow: false,
         output: buildOutput(stdout, stderr),
       };
     }
@@ -234,12 +250,17 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
       );
     }
 
-    // Exit 125 = the docker client itself failed; with this stderr it means
-    // the image is absent locally and auto-pull failed (no registry access).
-    if (e.code === 125 && stderr.includes("Unable to find image")) {
+    // Exit 125 = the docker client itself failed. "No such image" is the
+    // --pull=never refusal (image absent locally); "Unable to find image" is
+    // the auto-pull failure string — matched too in case the pull policy ever
+    // regresses.
+    if (
+      e.code === 125 &&
+      (stderr.includes("No such image") || stderr.includes("Unable to find image"))
+    ) {
       throw new CodeSandboxError(
         "image_missing",
-        `Sandbox image "${image}" is not available locally and could not be pulled.`,
+        `Sandbox image "${image}" is not available locally — pull it (or restart the bot with registry access) to enable code execution.`,
       );
     }
 
@@ -254,6 +275,7 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
         stderr,
         timedOut: false,
         oomKilled,
+        outputOverflow: false,
         output: buildOutput(stdout, stderr),
       };
     }
@@ -301,10 +323,11 @@ export async function sweepOrphanContainers(): Promise<void> {
 }
 
 /**
- * Pre-pull both sandbox images so the first approved run doesn't burn its
- * execution timeout on a registry download. Fail-open: a failed pull is a
- * warning — `docker run` will auto-pull as a fallback, or surface
- * `image_missing` if it can't.
+ * Pre-pull both sandbox images. `docker run` is pinned to `--pull never` (a
+ * mid-run pull would be unkillable by the timeout reaper), so this is the
+ * ONLY pull path. Fail-open: a failed pull is a warning — runs surface
+ * `image_missing` until the image lands (manual `docker pull` or restart
+ * with registry access).
  */
 export async function pullImages(): Promise<void> {
   const images = [...new Set([config.EXECUTE_CODE_PYTHON_IMAGE, config.EXECUTE_CODE_NODE_IMAGE])];

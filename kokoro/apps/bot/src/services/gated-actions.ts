@@ -237,9 +237,13 @@ const mergeSkillsArgs = z
 // `description` (bubble-only text — execution doesn't need it). The length cap
 // is re-enforced here because the dispatcher is the last stop before the
 // sandbox: a confirmation row predating a cap change must still be bounded.
+// 3000 mirrors MAX_CODE_LENGTH in execute-code.ts (not imported — that module
+// reaches back here via confirmations.ts, so importing would be a cycle); the
+// cap guarantees the approval bubble showed the COMPLETE program, never a
+// truncated preview with an unreviewed executable suffix.
 const executeCodeArgs = z.object({
   language: z.enum(["python", "node"]),
-  code: z.string().min(1).max(8000),
+  code: z.string().min(1).max(3000),
 });
 
 // CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the
@@ -940,6 +944,17 @@ export async function dispatchGatedAction(
 
       case "executeCode": {
         const args = parsed.data as z.infer<typeof executeCodeArgs>;
+        // Re-check the flag at dispatch time: pending confirmations live up
+        // to 24h, so turning EXECUTE_CODE_ENABLED off must also stop
+        // already-raised approvals from executing — gating registration and
+        // prompt guidance alone would leave a 24h tail.
+        if (!config.EXECUTE_CODE_ENABLED) {
+          return {
+            success: false,
+            summary: "code execution is disabled (EXECUTE_CODE_ENABLED is off)",
+            detail: { reason: "disabled" },
+          };
+        }
         // The code body is deliberately never logged — only its shape — so
         // nothing the user pastes into a script (keys, personal data) reaches
         // Kansoku. The full code lives only in the PendingConfirmation row
@@ -967,6 +982,15 @@ export async function dispatchGatedAction(
             success: false,
             summary: `code was killed (out of memory, ${config.EXECUTE_CODE_MEMORY_MB} MB cap)`,
             detail: { reason: "oom", language: args.language, output: result.output },
+          };
+        }
+        if (result.outputOverflow) {
+          // The client buffer blew before the program's real exit status was
+          // known — a stdout flood is a failed run, not "code ran".
+          return {
+            success: false,
+            summary: "code produced too much output (1 MB cap) and was stopped",
+            detail: { reason: "output_overflow", language: args.language, output: result.output },
           };
         }
         if (result.exitCode !== 0) {

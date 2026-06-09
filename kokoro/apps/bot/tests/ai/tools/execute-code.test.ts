@@ -50,9 +50,14 @@ describe("executeCode — input schema", () => {
     expect(schema.safeParse({ language: "python", code: "", description: "d" }).success).toBe(
       false,
     );
+    // 3000 = MAX_CODE_LENGTH: the cap that guarantees the approval bubble
+    // shows the complete program (nothing executable can hide past a preview).
     expect(
-      schema.safeParse({ language: "python", code: "x".repeat(8001), description: "d" }).success,
+      schema.safeParse({ language: "python", code: "x".repeat(3001), description: "d" }).success,
     ).toBe(false);
+    expect(
+      schema.safeParse({ language: "python", code: "x".repeat(3000), description: "d" }).success,
+    ).toBe(true);
     expect(schema.safeParse({ language: "ruby", code: "puts 1", description: "d" }).success).toBe(
       false,
     );
@@ -107,14 +112,14 @@ describe("executeCode — raises the confirmation, never executes directly", () 
     expect(input.promptText).toContain("```js\nconsole.log(1)\n```");
   });
 
-  it("truncates the bubble preview past 3000 chars with an explicit marker (full code still in action.args)", async () => {
-    const code = "x".repeat(4000);
+  it("shows a max-length program in full — the bubble is never a truncated preview", async () => {
+    // The schema cap (3000) exists precisely so promptText always carries the
+    // ENTIRE program: an approval must never run code the user couldn't see.
+    const code = "x".repeat(3000);
     await runTool({ language: "python", code, description: "long script" });
 
     const input = vi.mocked(raisePendingConfirmation).mock.calls[0][2];
-    expect(input.promptText).toContain(`${"x".repeat(3000)}\n… (1000 more chars)`);
-    expect(input.promptText).not.toContain("x".repeat(3001));
-    // The action args carry the FULL code — only the preview is truncated.
+    expect(input.promptText).toContain(`\`\`\`python\n${code}\n\`\`\``);
     expect((input.action.args as { code: string }).code).toBe(code);
   });
 

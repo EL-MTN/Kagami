@@ -1,19 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Silence the Pino logger so dispatcher info/error logs don't leak into test
-// output. We only override `logger`; everything else from @kokoro/shared
-// (config, types, etc.) flows through unchanged.
-vi.mock("@kokoro/shared", async (orig) => ({
-  ...(await orig()),
-  logger: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-    fatal: vi.fn(),
-    trace: vi.fn(),
-  },
-}));
+// output, and hand out a mutable config copy with EXECUTE_CODE_ENABLED on
+// (the executeCode dispatch re-checks the flag at run time; the test env has
+// it unset). Everything else from @kokoro/shared flows through unchanged.
+vi.mock("@kokoro/shared", async (orig) => {
+  const real = await orig<typeof import("@kokoro/shared")>();
+  return {
+    ...real,
+    config: { ...real.config, EXECUTE_CODE_ENABLED: "true" },
+    logger: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      fatal: vi.fn(),
+      trace: vi.fn(),
+    },
+  };
+});
 
 // Mock all underlying services BEFORE importing the module under test.
 // Using factories that return vi.fn() lets each test reach in via vi.mocked()
@@ -65,7 +70,7 @@ vi.mock("@kokoro/db", () => ({
   recordSkillProposalDecision: vi.fn(),
 }));
 
-import { logger } from "@kokoro/shared";
+import { config, logger } from "@kokoro/shared";
 import { sendEmail } from "../../src/services/gmail";
 import { updateEvent, deleteEvent } from "../../src/services/google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser } from "../../src/services/browser";
@@ -1285,6 +1290,7 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
       stderr: "",
       timedOut: false,
       oomKilled: false,
+      outputOverflow: false,
       output: "42",
       ...overrides,
     };
@@ -1304,16 +1310,35 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
     expect(vi.mocked(runCode)).not.toHaveBeenCalled();
   });
 
-  it("re-enforces the 8000-char code cap at the dispatch boundary", async () => {
+  it("re-enforces the 3000-char code cap at the dispatch boundary", async () => {
     // The tool's inputSchema also caps this, but the dispatcher is the last
     // stop before docker — it must not trust what's in the confirmation row.
+    // 3000 = the bubble-fits-the-whole-program guarantee: anything larger
+    // could only have been approved off a truncated preview.
     const result = await dispatchGatedAction("executeCode", {
       language: "python",
-      code: "x".repeat(8001),
+      code: "x".repeat(3001),
     });
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("invalid_args");
     expect(vi.mocked(runCode)).not.toHaveBeenCalled();
+  });
+
+  it("refuses to run when EXECUTE_CODE_ENABLED is off (pending rows outlive a flag flip)", async () => {
+    const prev = config.EXECUTE_CODE_ENABLED;
+    (config as { EXECUTE_CODE_ENABLED?: string }).EXECUTE_CODE_ENABLED = undefined;
+    try {
+      const result = await dispatchGatedAction("executeCode", {
+        language: "python",
+        code: CODE,
+      });
+      expect(result.success).toBe(false);
+      expect(result.summary).toBe("code execution is disabled (EXECUTE_CODE_ENABLED is off)");
+      expect(result.detail).toEqual({ reason: "disabled" });
+      expect(vi.mocked(runCode)).not.toHaveBeenCalled();
+    } finally {
+      (config as { EXECUTE_CODE_ENABLED?: string }).EXECUTE_CODE_ENABLED = prev;
+    }
   });
 
   it("runs approved code and returns the capped output in detail", async () => {
@@ -1386,6 +1411,24 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
     // 512 MB = the EXECUTE_CODE_MEMORY_MB default (no env override in tests).
     expect(result.summary).toBe("code was killed (out of memory, 512 MB cap)");
     expect(result.detail).toEqual({ reason: "oom", language: "python", output: "" });
+  });
+
+  it("reports an output-buffer overflow as a failed run, not success", async () => {
+    // The docker client died at the 1 MB buffer cap — the program's real exit
+    // status is unknown, so "code ran" would be a lie.
+    vi.mocked(runCode).mockResolvedValue(
+      sandboxResult({ outputOverflow: true, output: "flood…[truncated 996000]" }),
+    );
+
+    const result = await dispatchGatedAction("executeCode", { language: "python", code: CODE });
+
+    expect(result.success).toBe(false);
+    expect(result.summary).toBe("code produced too much output (1 MB cap) and was stopped");
+    expect(result.detail).toEqual({
+      reason: "output_overflow",
+      language: "python",
+      output: "flood…[truncated 996000]",
+    });
   });
 
   it("surfaces a CodeSandboxError's friendly message instead of the generic wrapper", async () => {
