@@ -12,6 +12,7 @@ import { startProactiveScheduler } from "./scheduler/proactive";
 import { startReminderScheduler } from "./scheduler/reminders";
 import { startRoutineScheduler } from "./scheduler/routines";
 import { startRoutineReviewScheduler } from "./scheduler/routine-review";
+import { startSkillReviewScheduler } from "./scheduler/skill-review";
 import { startWatcherScheduler } from "./scheduler/watchers";
 import { startMaintenanceScheduler } from "./scheduler/maintenance";
 import { shutdownBrowser } from "./services/browser";
@@ -32,6 +33,7 @@ let stopProactiveScheduler: (() => void) | null = null;
 let stopReminderScheduler: (() => void) | null = null;
 let stopRoutineScheduler: (() => void) | null = null;
 let stopRoutineReviewScheduler: (() => void) | null = null;
+let stopSkillReviewScheduler: (() => void) | null = null;
 let stopWatcherScheduler: (() => void) | null = null;
 let stopMaintenanceScheduler: (() => void) | null = null;
 let stopBlueBubblesWebhook: (() => void) | null = null;
@@ -78,6 +80,7 @@ async function main() {
   stopReminderScheduler = startReminderScheduler(registry);
   stopRoutineScheduler = startRoutineScheduler(registry);
   stopRoutineReviewScheduler = startRoutineReviewScheduler(registry);
+  stopSkillReviewScheduler = startSkillReviewScheduler(registry);
   stopWatcherScheduler = startWatcherScheduler(registry);
   stopMaintenanceScheduler = startMaintenanceScheduler();
 }
@@ -88,6 +91,7 @@ function shutdown(signal: string) {
   stopReminderScheduler?.();
   stopRoutineScheduler?.();
   stopRoutineReviewScheduler?.();
+  stopSkillReviewScheduler?.();
   stopWatcherScheduler?.();
   stopMaintenanceScheduler?.();
   stopBlueBubblesWebhook?.();

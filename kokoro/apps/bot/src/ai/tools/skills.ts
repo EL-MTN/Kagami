@@ -5,16 +5,12 @@ import {
   getSkillByName,
   isSkillRecentlyDeclined,
   listEnabledSkillsForChat,
-  listPendingConfirmations,
   recordSkillUsed,
   type ISkill,
 } from "@kokoro/db";
 import { logger } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
-import { raisePendingConfirmation } from "./confirmations";
-import { PROPOSAL_TTL_MS } from "./routine-proposals";
-import { hasPendingSkillProposal } from "./skill-proposal-tools";
-import { hasPendingRoutineProposal } from "./routine-proposal-tools";
+import { raiseGuardedProposal } from "./proposal-guard";
 
 const skillNameSchema = z
   .string()
@@ -194,18 +190,12 @@ export function createProposeSkillTool(chatId: string, adapter: PlatformAdapter)
         const normalizedTags = tags ?? [];
         const signature = computeSkillProposalSignature(name, body);
 
-        const [declined, pending] = await Promise.all([
-          isSkillRecentlyDeclined(chatId, signature),
-          listPendingConfirmations(chatId),
-        ]);
-        if (declined) {
-          return { proposed: false, reason: "Goshujin-sama declined a similar skill recently" };
-        }
-        if (hasPendingSkillProposal(pending) || hasPendingRoutineProposal(pending)) {
-          return { proposed: false, reason: "another proposal is already awaiting approval" };
-        }
-
-        const confirmationId = await raisePendingConfirmation(chatId, adapter, {
+        const result = await raiseGuardedProposal({
+          chatId,
+          adapter,
+          signature,
+          isDeclined: isSkillRecentlyDeclined,
+          declinedReason: "Goshujin-sama declined a similar skill recently",
           summary: `Save skill "${name}"`,
           promptText: buildSkillProposalPrompt({
             name,
@@ -214,7 +204,6 @@ export function createProposeSkillTool(chatId: string, adapter: PlatformAdapter)
             triggers: normalizedTriggers,
             tags: normalizedTags,
           }),
-          ttlMs: PROPOSAL_TTL_MS,
           origin: "conversation",
           action: {
             tool: "createSkill",
@@ -228,11 +217,14 @@ export function createProposeSkillTool(chatId: string, adapter: PlatformAdapter)
             },
           },
         });
+        if (!result.proposed) {
+          return { proposed: false, reason: result.reason };
+        }
 
-        logger.debug({ chatId, name, confirmationId }, "Tool: proposeSkill");
+        logger.debug({ chatId, name, confirmationId: result.confirmationId }, "Tool: proposeSkill");
         return {
           proposed: true,
-          confirmationId,
+          confirmationId: result.confirmationId,
           message:
             "Skill-save prompt sent. Stop here — don't call this again this turn. Goshujin-sama will tap Approve or Deny.",
         };

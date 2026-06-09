@@ -14,6 +14,7 @@ Stored in MongoDB as `Skill` (`packages/db/src/models/skill.ts`):
 - `linkedRoutineIds`: optional routine references
 - `version`
 - `lastUsedAt`, `usageCount`
+- `lastReviewedAt` (stamped by the weekly curation pass; never bumps `updatedAt`/`version`)
 
 Skill names are unique per chat. Dashboard and proposal paths enforce lowercase dash names so the model has a stable handle (`meeting-followup-style`).
 
@@ -39,6 +40,17 @@ Skill creation uses the same confirmation primitive as routine proposals:
 6. On deny/cancel, `recordProposalDeclineFromConfirmation()` records a declined skill proposal.
 
 `createSkill` is deliberately absent from `GATED_TOOL_NAMES`, so the model cannot bypass `proposeSkill` by calling `requestConfirmation` directly.
+
+## Automated Curation (weekly)
+
+A weekly curator pass reviews each chat's skill library and proposes **refine** / **archive** / **merge** actions through the same approval rail — nothing changes without a tap on Approve. Skills are prompt context, so a stale or duplicated skill quietly degrades every future conversation; the curator is how the library stays accurate without the user doing the gardening.
+
+- **Selection** is facts-only (`skillNeedsReview` in `packages/db/src/models/skill.ts`): a skill is due when never reviewed, or stale (no use in 30 days) and past a 30-day review cooldown. Candidates are capped at 8 per run, never-reviewed first.
+- **One LLM call per chat** (`apps/bot/src/services/skill-review.ts`) sees the candidates side-by-side (plus the full catalog as context) so it can spot overlap; it returns up to 3 ranked actions, and an empty list is the expected answer for a healthy library.
+- **Proposals** go through the shared guard (durable anti-nag via `SkillProposalDecision`, one-pending-per-chat) with version-scoped signatures, and the approved actions are dispatch-only (`updateSkill`, `disableSkill`, `mergeSkills`) with compare-and-set-on-version writes — content fields only, so a curation can never rename, re-enable, or change `source`. A merge applies the survivor's merged body first and archives the absorbees after; archive disables, never deletes.
+- **Stamping**: every reviewed candidate gets `lastReviewedAt` set afterwards — even on a no-action verdict — so the cooldown starts and the next cycle reviews fresh skills.
+
+Scheduler in `apps/bot/src/scheduler/skill-review.ts` (weekly; first run ~15 min after boot, staggered after the routine self-review so routines get the one pending-proposal slot first). Full mechanics in [ai-layer.md](ai-layer.md#automated-skill-curation-pass-always-on).
 
 ## Dashboard
 
