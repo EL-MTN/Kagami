@@ -23,6 +23,7 @@ export interface ISkill extends Document {
   version: number;
   lastUsedAt: Date | null;
   usageCount: number;
+  lastReviewedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -50,6 +51,7 @@ const skillSchema = new Schema<ISkill>(
     version: { type: Number, default: 1 },
     lastUsedAt: { type: Date, default: null },
     usageCount: { type: Number, default: 0 },
+    lastReviewedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
@@ -155,4 +157,85 @@ export async function recordSkillUsed(skillId: string, chatId?: string): Promise
     $inc: { usageCount: 1 },
     $set: { lastUsedAt: new Date() },
   });
+}
+
+/**
+ * Atomically apply a skill edit only if its version still equals
+ * `expectedVersion`, bumping the version on success. The skill counterpart of
+ * `updateRoutineIfVersion`: closes the read-then-write race in the gated
+ * dispatcher, so a concurrent edit (dashboard / another bubble) landing while a
+ * curation proposal sat unapproved is rejected (returns null), not clobbered.
+ * Returns the updated doc, or null if the skill is gone OR its version moved on
+ * — the caller distinguishes the two via an existence check.
+ */
+export async function updateSkillIfVersion(
+  skillId: string,
+  chatId: string,
+  expectedVersion: number,
+  patch: Partial<Pick<ISkill, "description" | "body" | "triggers" | "tags" | "enabled">>,
+): Promise<ISkill | null> {
+  return Skill.findOneAndUpdate(
+    { _id: skillId, chatId, version: expectedVersion },
+    { ...patch, version: expectedVersion + 1 },
+    { returnDocument: "after" },
+  );
+}
+
+// --- Skill-review (curation) pre-filter tuning. Facts only — the predicate
+// selects which skills are WORTH a paid LLM look; the LLM still decides what
+// (if anything) to do. ---
+// A skill is stale once it has gone this long without being read (or, if never
+// read, since creation).
+const STALE_AFTER_DAYS = 30;
+// A stale skill the curator already looked at (and kept) isn't re-reviewed
+// until this much time has passed — staleness alone shouldn't burn an LLM call
+// every weekly cycle.
+const REVIEW_COOLDOWN_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether a skill deserves a curation look: it has never been reviewed (new
+ * skills get an overlap/quality check on the next cycle), or it has gone stale
+ * since the last review. The skill counterpart of `routineNeedsAttention` —
+ * skills have no run log, so recency-of-use is the only mechanical signal.
+ */
+export function skillNeedsReview(
+  skill: Pick<ISkill, "enabled" | "createdAt" | "lastUsedAt" | "lastReviewedAt">,
+  now: Date = new Date(),
+): boolean {
+  if (!skill.enabled) return false;
+  if (!skill.lastReviewedAt) return true;
+  const lastActivity = skill.lastUsedAt ?? skill.createdAt;
+  const stale = now.getTime() - lastActivity.getTime() >= STALE_AFTER_DAYS * DAY_MS;
+  const cooledDown =
+    now.getTime() - skill.lastReviewedAt.getTime() >= REVIEW_COOLDOWN_DAYS * DAY_MS;
+  return stale && cooledDown;
+}
+
+/**
+ * Stamp `lastReviewedAt` on the skills a curation pass actually examined.
+ * `timestamps: false` so `updatedAt` is untouched — a review is metadata about
+ * a skill, not an edit to it (the same reasoning as `recordRoutineGrade` not
+ * bumping `version`). Best-effort; callers treat a write failure as non-fatal.
+ */
+export async function markSkillsReviewed(
+  chatId: string,
+  skillIds: string[],
+  at: Date = new Date(),
+): Promise<void> {
+  if (skillIds.length === 0) return;
+  await Skill.updateMany(
+    { _id: { $in: skillIds.map((id) => new Types.ObjectId(id)) }, chatId },
+    { $set: { lastReviewedAt: at } },
+    { timestamps: false },
+  );
+}
+
+/**
+ * Distinct chatIds that currently own at least one enabled skill. The skill
+ * curation scheduler uses this to enumerate which chats to audit, exactly as
+ * `listChatIdsWithRoutines` does for the routine self-review.
+ */
+export async function listChatIdsWithSkills(): Promise<string[]> {
+  return Skill.distinct("chatId", { enabled: true });
 }
