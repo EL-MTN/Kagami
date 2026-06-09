@@ -14,10 +14,11 @@ import {
 } from "@kokoro/db";
 import { logger, runWithSpan } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
-import { AdapterRegistry, platformForChatId } from "../platform/registry";
+import type { AdapterRegistry } from "../platform/registry";
 import { getModel, getModelName, ModelTier } from "../ai/provider";
 import { trackUsage } from "../ai/token-tracker";
 import { proposeRefinement, proposeRetirement } from "../ai/tools/routine-refinements";
+import { runReviewForEachChat } from "./chat-review-runner";
 
 // Mechanical pre-filter: the shared `routineNeedsAttention` predicate (one
 // source of truth with the chat ⚠ annotation) — only routines whose recent
@@ -25,7 +26,7 @@ import { proposeRefinement, proposeRetirement } from "../ai/tools/routine-refine
 // still decides what (if anything) to do.
 const needsReview = routineNeedsAttention;
 
-// At most one routine-or-skill proposal can be pending per chat (the one-tap
+// At most one confirmation of ANY kind can be pending per chat (the one-tap
 // iMessage invariant), so a run raises at most one.
 const MAX_PROPOSALS_PER_RUN = 1;
 // Hard cap on paid LLM reviews per chat per run. `raised` does NOT climb when a
@@ -330,26 +331,14 @@ export async function reviewChatRoutines(
 }
 
 /**
- * Audit every chat that owns enabled routines. Resolves each chat's platform
- * adapter from the registry so it can raise approval bubbles unprompted.
+ * Audit every chat that owns enabled routines, via the shared per-chat review
+ * runner (adapter resolution + per-chat failure isolation).
  */
 export async function runRoutineSelfReview(registry: AdapterRegistry): Promise<void> {
-  const chatIds = await listChatIdsWithRoutines();
-  if (chatIds.length === 0) return;
-
-  for (const chatId of chatIds) {
-    const adapter = registry.get(platformForChatId(chatId));
-    if (!adapter) {
-      logger.warn({ chatId }, "Routine self-review: no adapter registered for chat — skipping");
-      continue;
-    }
-    try {
-      const raised = await reviewChatRoutines(chatId, adapter);
-      if (raised > 0) {
-        logger.info({ chatId, raised }, "Routine self-review raised proposals");
-      }
-    } catch (error) {
-      logger.error({ error, chatId }, "Routine self-review failed for chat");
-    }
-  }
+  await runReviewForEachChat({
+    label: "routine-self-review",
+    registry,
+    listChatIds: listChatIdsWithRoutines,
+    review: reviewChatRoutines,
+  });
 }

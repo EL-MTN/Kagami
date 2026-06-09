@@ -7,7 +7,9 @@ import {
   createRoutine,
   createSkill,
   getRoutineById,
+  getSkillById,
   updateRoutineIfVersion,
+  updateSkillIfVersion,
   applyRoutineRefinement,
   isDuplicateKeyError,
   recordProposalDecision,
@@ -54,13 +56,19 @@ type GatedToolName = (typeof GATED_TOOL_NAMES)[number];
  * bubble, which runs the durable anti-nag guard first; exposing either on
  * `requestConfirmation` would let the model self-author or self-edit a routine
  * while bypassing that guard. `disableRoutine` (routine retirement) is reachable
- * only via the self-review pass's `proposeRetirement`.
+ * only via the self-review pass's `proposeRetirement`. The skill curation
+ * actions — `updateSkill`, `disableSkill`, `mergeSkills` — are likewise
+ * reachable only via the skill-review pass's proposal cores
+ * (`skill-refinements.ts`).
  */
 const DISPATCH_ONLY_TOOL_NAMES = [
   "createRoutine",
   "createSkill",
   "updateRoutinePrompt",
   "disableRoutine",
+  "updateSkill",
+  "disableSkill",
+  "mergeSkills",
 ] as const;
 type DispatchOnlyToolName = (typeof DISPATCH_ONLY_TOOL_NAMES)[number];
 
@@ -154,6 +162,72 @@ const disableRoutineArgs = z.object({
   baseVersion: z.number().int().nonnegative(),
 });
 
+// Curated rewrite of an existing skill's content. Mirrors updateRoutinePrompt:
+// `baseVersion` is CAS'd so a stale 2h-old bubble can't clobber a newer edit,
+// and the schema deliberately omits `enabled`, `name`, and `source` — curation
+// rewrites WHAT a skill says, never renames its stable handle or re-enables it.
+const updateSkillArgs = z
+  .object({
+    signature: z.string().min(1),
+    skillId: z.string().min(1),
+    baseVersion: z.number().int().nonnegative(),
+    newDescription: z.string().min(1).max(500).optional(),
+    newBody: z.string().min(1).max(6000).optional(),
+    newTriggers: z.array(z.string().min(1).max(140)).max(20).optional(),
+    newTags: z.array(z.string().min(1).max(140)).max(20).optional(),
+  })
+  .refine(
+    (a) =>
+      a.newDescription !== undefined ||
+      a.newBody !== undefined ||
+      a.newTriggers !== undefined ||
+      a.newTags !== undefined,
+    { message: "at least one content field must be provided" },
+  );
+
+// Skill archive (disable, never delete — Hermes-style: archived skills stay
+// re-enableable from the dashboard). Same `baseVersion` staleness guard as
+// disableRoutine.
+const disableSkillArgs = z.object({
+  signature: z.string().min(1),
+  skillId: z.string().min(1),
+  baseVersion: z.number().int().nonnegative(),
+});
+
+// Skill merge: the survivor (`skillId`) takes the merged content, and the
+// absorbed skills are archived in the same approved action — one bubble, one
+// tap, one decision. Every participant carries the version its content was
+// merged from, so any raced edit is rejected rather than silently folded over.
+const mergeSkillsArgs = z
+  .object({
+    signature: z.string().min(1),
+    skillId: z.string().min(1),
+    baseVersion: z.number().int().nonnegative(),
+    absorbed: z
+      .array(
+        z.object({
+          skillId: z.string().min(1),
+          baseVersion: z.number().int().nonnegative(),
+        }),
+      )
+      .min(1)
+      .max(5),
+    newBody: z.string().min(1).max(6000),
+    newDescription: z.string().min(1).max(500).optional(),
+    newTriggers: z.array(z.string().min(1).max(140)).max(20).optional(),
+    newTags: z.array(z.string().min(1).max(140)).max(20).optional(),
+  })
+  .refine((a) => !a.absorbed.some((s) => s.skillId === a.skillId), {
+    message: "a skill cannot absorb itself",
+  })
+  // A duplicated absorbee would archive on the first copy and then fail the
+  // second copy's CAS (the version bumped) — a guaranteed partial_merge after
+  // the survivor was already rewritten. Malformed args must fail before any
+  // write.
+  .refine((a) => new Set(a.absorbed.map((s) => s.skillId)).size === a.absorbed.length, {
+    message: "absorbed skills must be distinct",
+  });
+
 // CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the
 // dispatcher's re-validator and the tool's `inputSchema` are guaranteed to
 // stay in sync (Kizuna's API does not enforce the LLM-facing caps, so the
@@ -170,6 +244,9 @@ const GATED_ARG_SCHEMAS: Record<DispatchableToolName, z.ZodTypeAny> = {
   createSkill: createSkillArgs,
   updateRoutinePrompt: updateRoutinePromptArgs,
   disableRoutine: disableRoutineArgs,
+  updateSkill: updateSkillArgs,
+  disableSkill: disableSkillArgs,
+  mergeSkills: mergeSkillsArgs,
 };
 
 interface DispatchResult {
@@ -575,6 +652,275 @@ export async function dispatchGatedAction(
               summary: "routine not found",
               detail: { reason: "not_found", routineId: args.routineId },
             };
+      }
+
+      case "updateSkill": {
+        const args = parsed.data as z.infer<typeof updateSkillArgs>;
+        if (!ctx.chatId) {
+          return {
+            success: false,
+            summary: "cannot update skill — missing chat context",
+            detail: { reason: "no_chat_context" },
+          };
+        }
+
+        logger.info(
+          { chatId: ctx.chatId, skillId: args.skillId, baseVersion: args.baseVersion },
+          "Dispatching approved updateSkill",
+        );
+
+        // Atomic compare-and-set on version, same shape as updateRoutinePrompt:
+        // the write lands only if the skill is still at the version the proposal
+        // was raised against. No `accepted` decision is recorded — the signature
+        // is version-scoped, and the version just bumped, so it could never
+        // match a future proposal anyway.
+        const updated = await updateSkillIfVersion(args.skillId, ctx.chatId, args.baseVersion, {
+          ...(args.newDescription !== undefined ? { description: args.newDescription } : {}),
+          ...(args.newBody !== undefined ? { body: args.newBody } : {}),
+          ...(args.newTriggers !== undefined ? { triggers: args.newTriggers } : {}),
+          ...(args.newTags !== undefined ? { tags: args.newTags } : {}),
+        });
+        if (updated) {
+          return {
+            success: true,
+            summary: `skill "${updated.name}" updated (v${updated.version})`,
+            detail: { skillId: args.skillId, version: updated.version },
+          };
+        }
+        // Didn't update — disambiguate gone vs raced vs archived. The CAS also
+        // requires `enabled` (a dashboard archive doesn't bump version), so a
+        // version match here means the user archived the skill while the
+        // bubble sat — don't rewrite a skill they just put away.
+        const current = await getSkillById(args.skillId, ctx.chatId);
+        if (!current) {
+          return {
+            success: false,
+            summary: "skill not found",
+            detail: { reason: "not_found", skillId: args.skillId },
+          };
+        }
+        if (current.version !== args.baseVersion) {
+          return {
+            success: false,
+            summary: `skill "${current.name}" changed since this was proposed — re-evaluate`,
+            detail: {
+              reason: "version_conflict",
+              expected: args.baseVersion,
+              actual: current.version,
+            },
+          };
+        }
+        return {
+          success: false,
+          summary: `skill "${current.name}" was archived after this was proposed — leaving it untouched`,
+          detail: { reason: "state_conflict", skillId: args.skillId },
+        };
+      }
+
+      case "disableSkill": {
+        const args = parsed.data as z.infer<typeof disableSkillArgs>;
+        if (!ctx.chatId) {
+          return {
+            success: false,
+            summary: "cannot archive skill — missing chat context",
+            detail: { reason: "no_chat_context" },
+          };
+        }
+
+        logger.info(
+          { chatId: ctx.chatId, skillId: args.skillId, baseVersion: args.baseVersion },
+          "Dispatching approved disableSkill",
+        );
+
+        // Archive = version-guarded disable (re-enableable from the dashboard),
+        // never delete. Same no-accept reasoning as disableRoutine: on re-enable
+        // we WANT the skill reviewable again — a durable accept would suppress
+        // re-proposing the archive long after the user un-archived it.
+        const disabled = await updateSkillIfVersion(args.skillId, ctx.chatId, args.baseVersion, {
+          enabled: false,
+        });
+        if (disabled) {
+          return {
+            success: true,
+            summary: `skill "${disabled.name}" archived`,
+            detail: { skillId: args.skillId },
+          };
+        }
+        const current = await getSkillById(args.skillId, ctx.chatId);
+        if (!current) {
+          return {
+            success: false,
+            summary: "skill not found",
+            detail: { reason: "not_found", skillId: args.skillId },
+          };
+        }
+        if (current.version !== args.baseVersion) {
+          return {
+            success: false,
+            summary: `skill "${current.name}" changed since this was proposed — re-evaluate`,
+            detail: {
+              reason: "version_conflict",
+              expected: args.baseVersion,
+              actual: current.version,
+            },
+          };
+        }
+        // Version matches but the CAS refused → the skill is already disabled
+        // (dashboard archive while the bubble sat — toggles don't bump
+        // version). The approved end-state already holds; report it as done.
+        return {
+          success: true,
+          summary: `skill "${current.name}" was already archived`,
+          detail: { skillId: args.skillId, alreadyArchived: true },
+        };
+      }
+
+      case "mergeSkills": {
+        const args = parsed.data as z.infer<typeof mergeSkillsArgs>;
+        if (!ctx.chatId) {
+          return {
+            success: false,
+            summary: "cannot merge skills — missing chat context",
+            detail: { reason: "no_chat_context" },
+          };
+        }
+
+        logger.info(
+          {
+            chatId: ctx.chatId,
+            skillId: args.skillId,
+            baseVersion: args.baseVersion,
+            absorbedCount: args.absorbed.length,
+          },
+          "Dispatching approved mergeSkills",
+        );
+
+        // Preflight every absorbee BEFORE touching the survivor: the survivor
+        // write is the point of no return (its body is overwritten with the
+        // merged content), so a stale absorbee must cancel the whole merge
+        // while nothing has changed yet. Acceptable states: still at
+        // baseVersion and enabled (will be CAS-archived below), or already
+        // disabled at baseVersion (dashboard archive — the goal state holds
+        // and its content at that version is exactly what was folded in).
+        const staleAbsorbed: { skillId: string; reason: string }[] = [];
+        for (const a of args.absorbed) {
+          const current = await getSkillById(a.skillId, ctx.chatId);
+          if (!current) {
+            staleAbsorbed.push({ skillId: a.skillId, reason: "not_found" });
+          } else if (current.version !== a.baseVersion) {
+            staleAbsorbed.push({ skillId: a.skillId, reason: "version_conflict" });
+          }
+        }
+        if (staleAbsorbed.length > 0) {
+          logger.warn(
+            { chatId: ctx.chatId, skillId: args.skillId, failed: staleAbsorbed },
+            "mergeSkills preflight found stale absorbed skills — merge cancelled",
+          );
+          return {
+            success: false,
+            summary: `${staleAbsorbed.length} of ${args.absorbed.length} absorbed skill(s) changed (or are gone) since this was proposed — merge cancelled, nothing changed`,
+            detail: {
+              reason: "version_conflict",
+              skillId: args.skillId,
+              failed: staleAbsorbed,
+            },
+          };
+        }
+
+        // Survivor-first ordering: the merged content must land before anything
+        // is archived. If the survivor CAS fails (raced edit / gone), abort with
+        // NOTHING changed — never archive skills whose content didn't actually
+        // get folded into the survivor.
+        const survivor = await updateSkillIfVersion(args.skillId, ctx.chatId, args.baseVersion, {
+          body: args.newBody,
+          ...(args.newDescription !== undefined ? { description: args.newDescription } : {}),
+          ...(args.newTriggers !== undefined ? { triggers: args.newTriggers } : {}),
+          ...(args.newTags !== undefined ? { tags: args.newTags } : {}),
+        });
+        if (!survivor) {
+          const current = await getSkillById(args.skillId, ctx.chatId);
+          if (!current) {
+            return {
+              success: false,
+              summary: "skill not found",
+              detail: { reason: "not_found", skillId: args.skillId },
+            };
+          }
+          if (current.version !== args.baseVersion) {
+            return {
+              success: false,
+              summary: `skill "${current.name}" changed since this was proposed — re-evaluate`,
+              detail: {
+                reason: "version_conflict",
+                expected: args.baseVersion,
+                actual: current.version,
+              },
+            };
+          }
+          // Version matches but the CAS refused → the survivor was archived
+          // from the dashboard while the bubble sat (toggles don't bump
+          // version). Merging into a skill the user just put away is wrong —
+          // abort with nothing changed.
+          return {
+            success: false,
+            summary: `skill "${current.name}" was archived after this was proposed — merge cancelled`,
+            detail: { reason: "state_conflict", skillId: args.skillId },
+          };
+        }
+
+        // Each absorbed archive is its own CAS — the preflight above makes a
+        // conflict here a ms-wide race (an edit landing between preflight and
+        // archive), but read-then-write can't close that window without
+        // transactions (standalone Mongo), so the CAS stays as the backstop.
+        // One raced absorbee must not block the others; a partial outcome is
+        // surfaced as a failure so the user (and the next review pass) knows
+        // duplicates may remain.
+        const archived: string[] = [];
+        const failed: { skillId: string; reason: string }[] = [];
+        for (const a of args.absorbed) {
+          const disabled = await updateSkillIfVersion(a.skillId, ctx.chatId, a.baseVersion, {
+            enabled: false,
+          });
+          if (disabled) {
+            archived.push(disabled.name);
+            continue;
+          }
+          const current = await getSkillById(a.skillId, ctx.chatId);
+          // Already archived at the merged-from version (dashboard toggle — no
+          // version bump): the goal state for an absorbee already holds, and
+          // its content at that version is exactly what was folded into the
+          // survivor. Count it archived rather than failing the merge.
+          if (current && !current.enabled && current.version === a.baseVersion) {
+            archived.push(current.name);
+            continue;
+          }
+          failed.push({ skillId: a.skillId, reason: current ? "version_conflict" : "not_found" });
+        }
+
+        if (failed.length > 0) {
+          logger.warn(
+            { chatId: ctx.chatId, skillId: args.skillId, failed },
+            "mergeSkills archived only part of the absorbed set",
+          );
+          return {
+            success: false,
+            summary: `merged into "${survivor.name}", but ${failed.length} of ${args.absorbed.length} absorbed skill(s) changed (or are gone) since this was proposed and were not archived — re-evaluate`,
+            detail: {
+              reason: "partial_merge",
+              skillId: args.skillId,
+              version: survivor.version,
+              archived,
+              failed,
+            },
+          };
+        }
+        return {
+          success: true,
+          summary: `skills merged into "${survivor.name}" (v${survivor.version}) — archived ${archived
+            .map((n) => `"${n}"`)
+            .join(", ")}`,
+          detail: { skillId: args.skillId, version: survivor.version, archived },
+        };
       }
     }
   } catch (error) {

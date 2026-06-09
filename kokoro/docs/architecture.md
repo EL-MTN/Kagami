@@ -17,8 +17,8 @@ kokoro/                          # subtree of Kagami workspace (npm workspaces +
 │   │   │   │   └── tools/        # tool files grouped by domain (memory, CRM, media, email, calendar, browse, web-search, routines, skills, watchers, confirmations)
 │   │   │   ├── context/          # image generation (generator.ts, types.ts)
 │   │   │   ├── platform/         # registry.ts + telegram/ + imessage/ (multi-adapter)
-│   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, web-search, routine-executor, watcher-executor, location, geocoding, gated-actions, confirmation-events
-│   │   │   ├── scheduler/        # proactive, reminders, routines, watchers, maintenance (cleanup + Kioku sweepers)
+│   │   │   ├── services/         # google-auth, gmail, google-calendar, browser, web-search, routine-executor, watcher-executor, routine-review, skill-review, chat-review-runner, location, geocoding, gated-actions, confirmation-events
+│   │   │   ├── scheduler/        # proactive, reminders, routines, routine-review, skill-review, review-scheduler (shared factory), watchers, maintenance (cleanup + Kioku sweepers)
 │   │   │   ├── stt/              # speech-to-text (cloud Whisper / local whisper.cpp)
 │   │   │   └── tts/              # text-to-speech generation
 │   │   └── context/              # soul.md (personality), instructions/*.md (operational), reference images, settings, image-prefix (data)
@@ -271,18 +271,18 @@ Daily cleanup and the Kioku sweepers used to live here, but have been extracted 
 
 ### Bot-Internal Modules
 
-| Directory                         | Purpose                                                                                                                                                           |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/bot/src/ai/`                | LLM integration, prompt assembly, tool orchestration                                                                                                              |
-| `apps/bot/src/ai/tools/`          | Tool implementations available to the LLM                                                                                                                         |
-| `apps/bot/src/platform/`          | `registry.ts` (AdapterRegistry + platformForChatId helper)                                                                                                        |
-| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup (Grammy long-polling)                                                                                                                |
-| `apps/bot/src/platform/imessage/` | BlueBubbles adapter + REST client + webhook server (opt-in, see docs/imessage.md)                                                                                 |
-| `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Web search (Brave), Routine executor, Watcher executor, Geocoding, Location, Gated-action dispatcher, Confirmation events |
-| `apps/bot/src/scheduler/`         | Proactive, reminder, routine, watcher, maintenance (cleanup + Kioku sweepers)                                                                                     |
-| `apps/bot/src/context/`           | Image reference loading + generation                                                                                                                              |
-| `apps/bot/src/stt/`               | Speech-to-text (Whisper-compatible API, cloud or local whisper.cpp); see docs/voice.md                                                                            |
-| `apps/bot/src/tts/`               | Text-to-speech generation for outbound voice notes                                                                                                                |
+| Directory                         | Purpose                                                                                                                                                                                                                          |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/bot/src/ai/`                | LLM integration, prompt assembly, tool orchestration                                                                                                                                                                             |
+| `apps/bot/src/ai/tools/`          | Tool implementations available to the LLM                                                                                                                                                                                        |
+| `apps/bot/src/platform/`          | `registry.ts` (AdapterRegistry + platformForChatId helper)                                                                                                                                                                       |
+| `apps/bot/src/platform/telegram/` | Telegram adapter + bot setup (Grammy long-polling)                                                                                                                                                                               |
+| `apps/bot/src/platform/imessage/` | BlueBubbles adapter + REST client + webhook server (opt-in, see docs/imessage.md)                                                                                                                                                |
+| `apps/bot/src/services/`          | Google OAuth, Gmail, Calendar, Browser, Web search (Brave), Routine executor, Watcher executor, Routine self-review + skill curation (shared per-chat runner), Geocoding, Location, Gated-action dispatcher, Confirmation events |
+| `apps/bot/src/scheduler/`         | Proactive, reminder, routine, routine self-review + skill curation (weekly, shared periodic factory), watcher, maintenance (cleanup + Kioku sweepers)                                                                            |
+| `apps/bot/src/context/`           | Image reference loading + generation                                                                                                                                                                                             |
+| `apps/bot/src/stt/`               | Speech-to-text (Whisper-compatible API, cloud or local whisper.cpp); see docs/voice.md                                                                                                                                           |
+| `apps/bot/src/tts/`               | Text-to-speech generation for outbound voice notes                                                                                                                                                                               |
 
 ## Boot Sequence
 
@@ -295,10 +295,12 @@ Daily cleanup and the Kioku sweepers used to live here, but have been extracted 
 7. Start proactive scheduler (restore persisted timers from DB)
 8. Start reminder scheduler (polls every 60s, fires pending reminders)
 9. Start routine scheduler (reset stale locks, polls every 60s, executes due routines)
-10. Start watcher scheduler (reset stale locks, archive expired, polls every 60s, runs due detection ticks)
-11. Start maintenance scheduler (startup + daily cleanup; startup + 5-min Kioku ingest/fact sweeps)
+10. Start routine self-review scheduler (weekly; first run ~5 min after boot)
+11. Start skill review scheduler (weekly; first run ~15 min after boot, staggered after the routine review)
+12. Start watcher scheduler (reset stale locks, archive expired, polls every 60s, runs due detection ticks)
+13. Start maintenance scheduler (startup + daily cleanup; startup + 5-min Kioku ingest/fact sweeps)
 
-Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, stop routine scheduler, stop watcher scheduler, stop maintenance scheduler, stop BlueBubbles webhook (if running), shutdown browser, disconnect DB.
+Graceful shutdown on SIGINT/SIGTERM/uncaughtException/unhandledRejection: stop proactive scheduler, stop reminder scheduler, stop routine scheduler, stop routine self-review scheduler, stop skill review scheduler, stop watcher scheduler, stop maintenance scheduler, stop BlueBubbles webhook (if running), shutdown browser, disconnect DB.
 
 ## Key Design Decisions
 

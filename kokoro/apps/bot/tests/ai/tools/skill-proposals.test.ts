@@ -100,15 +100,15 @@ describe("proposeSkill — guard", () => {
     expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
   });
 
-  it("does not suppress for a non-proposal pending confirmation", async () => {
+  it("suppresses for a non-proposal pending confirmation (iMessage resolves YES/NO only with exactly one pending)", async () => {
     vi.mocked(listPendingConfirmations).mockResolvedValue([
       { action: { tool: "sendEmail", args: {} } },
     ] as never);
 
     const result = await runTool(draft);
 
-    expect(result.proposed).toBe(true);
-    expect(vi.mocked(raisePendingConfirmation)).toHaveBeenCalledTimes(1);
+    expect(result.proposed).toBe(false);
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
   });
 });
 
