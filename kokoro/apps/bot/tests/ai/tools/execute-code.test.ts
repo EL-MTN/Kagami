@@ -123,6 +123,25 @@ describe("executeCode — raises the confirmation, never executes directly", () 
     expect((input.action.args as { code: string }).code).toBe(code);
   });
 
+  it("lengthens the fence when the code itself contains triple backticks", async () => {
+    // An embedded ``` must not close the bubble's fence early — the user
+    // would review a broken fragment while the full code still executes.
+    const code = 'print("```markdown fence```")';
+    await runTool({ language: "python", code, description: "emit markdown" });
+
+    const input = vi.mocked(raisePendingConfirmation).mock.calls[0][2];
+    expect(input.promptText).toContain(`\`\`\`\`python\n${code}\n\`\`\`\``);
+    expect((input.action.args as { code: string }).code).toBe(code);
+  });
+
+  it("outruns even longer backtick runs in the code", async () => {
+    const code = "s = '`````'"; // five-backtick run → six-backtick fence
+    await runTool({ language: "python", code, description: "string of backticks" });
+
+    const input = vi.mocked(raisePendingConfirmation).mock.calls[0][2];
+    expect(input.promptText).toContain(`\`\`\`\`\`\`python\n${code}\n\`\`\`\`\`\``);
+  });
+
   it("returns a non-pending error result when raising the confirmation fails", async () => {
     vi.mocked(raisePendingConfirmation).mockRejectedValue(new Error("mongo down"));
 

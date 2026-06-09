@@ -17,14 +17,22 @@ export const MAX_CODE_LENGTH = 3000;
 
 function buildCodePrompt(language: SandboxLanguage, code: string, description: string): string {
   const fenceTag = language === "python" ? "python" : "js";
+  // The fence must be LONGER than any backtick run inside the code — an
+  // embedded ``` would otherwise close the block early and the bubble would
+  // show a broken fragment while the pending action still executes the full
+  // original code. The Telegram formatter parses fences of 3+ backticks with
+  // a matching-length closer, so a longer fence keeps the block byte-exact.
+  const longestBacktickRun =
+    code.match(/`+/g)?.reduce((max, run) => Math.max(max, run.length), 0) ?? 0;
+  const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
   return [
     `Run this ${language} code in the sandbox?`,
     ``,
     description,
     ``,
-    `\`\`\`${fenceTag}`,
+    `${fence}${fenceTag}`,
     code,
-    `\`\`\``,
+    fence,
   ].join("\n");
 }
 

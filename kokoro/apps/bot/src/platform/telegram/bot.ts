@@ -174,7 +174,9 @@ export function createBot(token: string): Bot {
         const dispatch = await dispatchGatedAction(row.action.tool, row.action.args, {
           chatId: row.chatId,
         });
-        await attachResultText(confirmationId, dispatch.summary);
+        // Store the fuller body on the row too (dashboard/history reads it) —
+        // same preference as the resolution event below.
+        await attachResultText(confirmationId, dispatch.resultText ?? dispatch.summary);
 
         const verdictMark = dispatch.success ? "✓ Approved" : "⚠ Approved · failed";
         await adapter.editConfirmationPrompt(

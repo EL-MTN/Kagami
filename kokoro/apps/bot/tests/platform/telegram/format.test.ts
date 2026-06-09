@@ -79,6 +79,14 @@ describe("markdownToTelegramHtml", () => {
       expect(out).toBe("<pre>run `cmd` with ~~care~~</pre>");
     });
 
+    it("supports longer fences so code containing ``` renders verbatim", () => {
+      // The executeCode prompt lengthens its fence past any backtick run in
+      // the code; the formatter must honor the matching-length closer instead
+      // of ending the block at the embedded ```.
+      const out = markdownToTelegramHtml('````python\nprint("```done```")\n````');
+      expect(out).toBe('<pre>print("```done```")</pre>');
+    });
+
     it("preserves leading indentation and trailing whitespace inside a fence", () => {
       // Only the wrapper newline before the closing fence is stripped — an
       // indented first line must display exactly as it would execute (a

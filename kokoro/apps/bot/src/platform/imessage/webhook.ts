@@ -117,7 +117,9 @@ async function tryResolveConfirmationReply(
     logger.info({ confirmationId, chatId }, "iMessage confirmation denied via reply");
   } else {
     const dispatch = await dispatchGatedAction(row.action.tool, row.action.args, { chatId });
-    await attachResultText(confirmationId, dispatch.summary);
+    // Store the fuller body on the row too (dashboard/history reads it) —
+    // same preference as the resolution event below.
+    await attachResultText(confirmationId, dispatch.resultText ?? dispatch.summary);
     const verdictMark = dispatch.success ? "✓ Approved" : "⚠ Approved · failed";
     await adapter.editConfirmationPrompt(
       chatId,

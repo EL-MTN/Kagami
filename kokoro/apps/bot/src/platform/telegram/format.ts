@@ -22,13 +22,18 @@ export function markdownToTelegramHtml(text: string): string {
   const parked: string[] = [];
   const park = (html: string): string => `\u0000${parked.push(html) - 1}\u0000`;
 
-  // 2. Code blocks (``` ... ```) → <pre>. Strip ONLY the wrapper newline
-  //    before the closing fence — never trim the body: leading indentation
-  //    and trailing whitespace are part of the program (an indented first
-  //    line trimmed for display would show code that differs from what an
+  // 2. Code blocks (``` ... ```) → <pre>. Fences are 3+ backticks with a
+  //    matching-length closer (backreference) — the executeCode prompt uses
+  //    a fence longer than any backtick run in the code, so an embedded ```
+  //    can't close the block early. Strip ONLY the wrapper newline before
+  //    the closing fence — never trim the body: leading indentation and
+  //    trailing whitespace are part of the program (an indented first line
+  //    trimmed for display would show code that differs from what an
   //    executeCode approval actually runs).
-  result = result.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code: string) =>
-    park(`<pre>${code.replace(/\n$/, "")}</pre>`),
+  result = result.replace(
+    /(`{3,})(\w*)\n?([\s\S]*?)\1/g,
+    (_, _fence: string, _lang: string, code: string) =>
+      park(`<pre>${code.replace(/\n$/, "")}</pre>`),
   );
 
   // 3. Inline code (` ... `) → <code>
