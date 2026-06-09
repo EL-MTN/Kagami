@@ -293,6 +293,9 @@ describe("reviewChatSkills — action dispatch", () => {
 
     expect(raised).toBe(1); // MAX_PROPOSALS_PER_RUN
     expect(vi.mocked(proposeSkillArchive)).toHaveBeenCalledTimes(1);
+    // The cap-deferred action's skill is NOT stamped — the next cycle
+    // re-derives it instead of burying it under the 30-day cooldown.
+    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(CHAT, ["id-a"], expect.any(Date));
   });
 
   it("falls through to the next-ranked action when a proposal is suppressed (anti-nag)", async () => {
@@ -315,6 +318,12 @@ describe("reviewChatSkills — action dispatch", () => {
     expect(raised).toBe(1);
     expect(vi.mocked(proposeSkillRefinement)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(proposeSkillArchive)).toHaveBeenCalledTimes(1);
+    // A durable decline is a terminal outcome — both skills are stamped.
+    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
+      CHAT,
+      ["id-a", "id-b"],
+      expect.any(Date),
+    );
   });
 
   it("falls through when a proposal core throws, without aborting the run", async () => {
@@ -334,8 +343,9 @@ describe("reviewChatSkills — action dispatch", () => {
 
     expect(raised).toBe(1);
     expect(vi.mocked(proposeSkillArchive)).toHaveBeenCalledTimes(2);
-    // The failed first attempt must not block the stamp.
-    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalled();
+    // The thrown attempt leaves "a" un-stamped (its action never reached a
+    // terminal outcome — retried next cycle); the landed proposal stamps "b".
+    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(CHAT, ["id-b"], expect.any(Date));
   });
 });
 
@@ -359,13 +369,19 @@ describe("reviewChatSkills — malformed LLM actions", () => {
     expect(vi.mocked(proposeSkillArchive).mock.calls[0]?.[0]?.skill.name).toBe("under-review");
   });
 
-  it("skips a refine with no content fields", async () => {
+  it("skips a refine with no content fields — terminal, so the candidate is still stamped", async () => {
     llmActions([{ action: "refine", skillName: "inbox-style", rationale: "nothing to change" }]);
 
     const raised = await reviewChatSkills(CHAT, adapter);
 
     expect(raised).toBe(0);
     expect(vi.mocked(proposeSkillRefinement)).not.toHaveBeenCalled();
+    // Re-deriving a malformed action next cycle reaches the same dead end.
+    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
+      CHAT,
+      ["id-inbox-style"],
+      expect.any(Date),
+    );
   });
 
   it("skips a merge missing absorbNames or a merged body", async () => {
@@ -410,6 +426,181 @@ describe("reviewChatSkills — malformed LLM actions", () => {
 
     expect(raised).toBe(0);
     expect(vi.mocked(proposeSkillMerge)).not.toHaveBeenCalled();
+  });
+});
+
+describe("reviewChatSkills — disposition-aware stamping", () => {
+  it("leaves skills un-stamped when their action was transiently suppressed by a pending confirmation", async () => {
+    vi.mocked(listEnabledSkillsForChat).mockResolvedValue([
+      skill({ name: "a" }),
+      skill({ name: "b" }),
+      skill({ name: "c" }),
+    ] as never);
+    llmActions([
+      { action: "refine", skillName: "a", newBody: "x", rationale: "r1" },
+      { action: "archive", skillName: "b", rationale: "r2" },
+    ]);
+    const suppressed = {
+      proposed: false,
+      suppressedByPending: true,
+      reason: "another confirmation is already awaiting approval",
+    };
+    vi.mocked(proposeSkillRefinement).mockResolvedValue(suppressed);
+    vi.mocked(proposeSkillArchive).mockResolvedValue(suppressed);
+
+    const raised = await reviewChatSkills(CHAT, adapter);
+
+    expect(raised).toBe(0);
+    // a and b retry next cycle once the pending slot frees; c (no action
+    // targeted it) is terminally reviewed and starts its cooldown.
+    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(CHAT, ["id-c"], expect.any(Date));
+  });
+
+  it("leaves EVERY merge participant un-stamped when the merge is deferred by the proposal cap", async () => {
+    vi.mocked(listEnabledSkillsForChat).mockResolvedValue([
+      skill({ name: "a" }),
+      skill({ name: "survivor" }),
+      skill({ name: "dupe" }),
+    ] as never);
+    llmActions([
+      { action: "archive", skillName: "a", rationale: "first" },
+      {
+        action: "merge",
+        skillName: "survivor",
+        absorbNames: ["dupe"],
+        newBody: "m",
+        rationale: "deferred",
+      },
+    ]);
+
+    const raised = await reviewChatSkills(CHAT, adapter);
+
+    expect(raised).toBe(1);
+    expect(vi.mocked(proposeSkillMerge)).not.toHaveBeenCalled();
+    // Survivor AND absorbee stay un-stamped — the whole merge re-derives.
+    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(CHAT, ["id-a"], expect.any(Date));
+  });
+});
+
+describe("reviewChatSkills — blank-metadata normalization", () => {
+  it("drops a blank description and trims/drops blank list items before the patch reaches the core", async () => {
+    llmActions([
+      {
+        action: "refine",
+        skillName: "inbox-style",
+        newBody: "Tight body.",
+        newDescription: "   ",
+        newTriggers: ["  after a meeting  ", "   "],
+        rationale: "r",
+      },
+    ]);
+
+    const raised = await reviewChatSkills(CHAT, adapter);
+
+    expect(raised).toBe(1);
+    const arg = vi.mocked(proposeSkillRefinement).mock.calls[0]?.[0];
+    // Blank description omitted (the dispatcher's .min(1) would reject it on
+    // Approve); items trimmed, blanks dropped.
+    expect(arg?.patch).toEqual({ body: "Tight body.", triggers: ["after a meeting"] });
+  });
+
+  it("treats a provided-but-all-blank list as omitted (no accidental clear)", async () => {
+    llmActions([
+      {
+        action: "refine",
+        skillName: "inbox-style",
+        newBody: "Tight body.",
+        newTriggers: ["   ", ""],
+        rationale: "r",
+      },
+    ]);
+
+    await reviewChatSkills(CHAT, adapter);
+
+    const arg = vi.mocked(proposeSkillRefinement).mock.calls[0]?.[0];
+    expect(arg?.patch).toEqual({ body: "Tight body." });
+  });
+
+  it("passes an explicit empty list through as a legitimate clear", async () => {
+    llmActions([
+      {
+        action: "refine",
+        skillName: "inbox-style",
+        newBody: "Tight body.",
+        newTags: [],
+        rationale: "r",
+      },
+    ]);
+
+    await reviewChatSkills(CHAT, adapter);
+
+    const arg = vi.mocked(proposeSkillRefinement).mock.calls[0]?.[0];
+    expect(arg?.patch).toEqual({ body: "Tight body.", tags: [] });
+  });
+
+  it("omits a whitespace-only newBody (a refine never blanks a skill) and trims the description", async () => {
+    llmActions([
+      {
+        action: "refine",
+        skillName: "inbox-style",
+        newBody: "   ",
+        newDescription: "  Sharper.  ",
+        rationale: "r",
+      },
+    ]);
+
+    const raised = await reviewChatSkills(CHAT, adapter);
+
+    expect(raised).toBe(1);
+    const arg = vi.mocked(proposeSkillRefinement).mock.calls[0]?.[0];
+    expect(arg?.patch).toEqual({ description: "Sharper." });
+  });
+
+  it("skips a refine whose every field normalizes away, instead of raising an unapprovable bubble", async () => {
+    llmActions([
+      {
+        action: "refine",
+        skillName: "inbox-style",
+        newDescription: " ",
+        newTriggers: [" "],
+        rationale: "r",
+      },
+    ]);
+
+    const raised = await reviewChatSkills(CHAT, adapter);
+
+    expect(raised).toBe(0);
+    expect(vi.mocked(proposeSkillRefinement)).not.toHaveBeenCalled();
+    // Terminal disposition — the candidate is still stamped.
+    expect(vi.mocked(markSkillsReviewed)).toHaveBeenCalledWith(
+      CHAT,
+      ["id-inbox-style"],
+      expect.any(Date),
+    );
+  });
+
+  it("normalizes merge metadata the same way", async () => {
+    vi.mocked(listEnabledSkillsForChat).mockResolvedValue([
+      skill({ name: "survivor" }),
+      skill({ name: "dupe" }),
+    ] as never);
+    llmActions([
+      {
+        action: "merge",
+        skillName: "survivor",
+        absorbNames: ["dupe"],
+        newBody: "Merged.",
+        newDescription: "  ",
+        newTags: [" keep ", " "],
+        rationale: "r",
+      },
+    ]);
+
+    const raised = await reviewChatSkills(CHAT, adapter);
+
+    expect(raised).toBe(1);
+    const arg = vi.mocked(proposeSkillMerge).mock.calls[0]?.[0];
+    expect(arg?.patch).toEqual({ body: "Merged.", tags: ["keep"] });
   });
 });
 

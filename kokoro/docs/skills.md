@@ -34,7 +34,7 @@ Skill creation uses the same confirmation primitive as routine proposals:
 
 1. `proposeSkill` computes a stable signature from normalized name + body hash.
 2. It checks `SkillProposalDecision` (`packages/db/src/models/skill-proposal.ts`) so declined proposals stay quiet past the chat window.
-3. It checks the shared one-pending proposal guard so skill and routine proposal bubbles cannot stack.
+3. It checks the shared one-pending guard — **any** pending confirmation in the chat (a gated action like `sendEmail` just as much as another proposal) suppresses, because iMessage resolves a bare YES/NO only when exactly one confirmation is pending.
 4. It raises a pending confirmation with the dispatch-only action `createSkill`.
 5. On approve, `dispatchGatedAction("createSkill", ...)` creates an enabled `source: "distilled"` skill.
 6. On deny/cancel, `recordProposalDeclineFromConfirmation()` records a declined skill proposal.
@@ -47,8 +47,8 @@ A weekly curator pass reviews each chat's skill library and proposes **refine** 
 
 - **Selection** is facts-only (`skillNeedsReview` in `packages/db/src/models/skill.ts`): a skill is due when never reviewed, or stale (no use in 30 days) and past a 30-day review cooldown. Candidates are capped at 8 per run, never-reviewed first.
 - **One LLM call per chat** (`apps/bot/src/services/skill-review.ts`) sees the candidates side-by-side (plus the full catalog as context) so it can spot overlap; it returns up to 3 ranked actions, and an empty list is the expected answer for a healthy library.
-- **Proposals** go through the shared guard (durable anti-nag via `SkillProposalDecision`, one-pending-per-chat) with version-scoped signatures, and the approved actions are dispatch-only (`updateSkill`, `disableSkill`, `mergeSkills`) with compare-and-set-on-version writes — content fields only, so a curation can never rename, re-enable, or change `source`. A merge applies the survivor's merged body first and archives the absorbees after; archive disables, never deletes.
-- **Stamping**: every reviewed candidate gets `lastReviewedAt` set afterwards — even on a no-action verdict — so the cooldown starts and the next cycle reviews fresh skills.
+- **Proposals** go through the shared guard (durable anti-nag via `SkillProposalDecision`; one-pending-per-chat across all confirmation kinds) with version-scoped signatures, and the approved actions are dispatch-only (`updateSkill`, `disableSkill`, `mergeSkills`) with compare-and-set writes that require the matching `version` **and** `enabled: true` — content fields only, so a curation can never rename, re-enable, or change `source`, and a skill archived from the dashboard (which flips `enabled` without a version bump) can't be rewritten at its stale version (`state_conflict`; archiving an already-archived skill is a success no-op). A merge applies the survivor's merged body first and archives the absorbees after; archive disables, never deletes.
+- **Stamping**: a reviewed candidate gets `lastReviewedAt` set afterwards only when its review reached a terminal outcome (no action, proposal raised, durably declined, or invalid action) — a candidate whose proposal was deferred by the per-run cap or suppressed by a pending confirmation stays unstamped and re-enters next cycle. A no-action verdict stamps, so the cooldown starts and the next cycle reviews fresh skills.
 
 Scheduler in `apps/bot/src/scheduler/skill-review.ts` (weekly; first run ~15 min after boot, staggered after the routine self-review so routines get the one pending-proposal slot first). Full mechanics in [ai-layer.md](ai-layer.md#automated-skill-curation-pass-always-on).
 

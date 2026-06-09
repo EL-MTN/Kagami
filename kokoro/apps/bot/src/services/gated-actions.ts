@@ -680,23 +680,34 @@ export async function dispatchGatedAction(
             detail: { skillId: args.skillId, version: updated.version },
           };
         }
-        // Didn't update — disambiguate gone-vs-raced.
+        // Didn't update — disambiguate gone vs raced vs archived. The CAS also
+        // requires `enabled` (a dashboard archive doesn't bump version), so a
+        // version match here means the user archived the skill while the
+        // bubble sat — don't rewrite a skill they just put away.
         const current = await getSkillById(args.skillId, ctx.chatId);
-        return current
-          ? {
-              success: false,
-              summary: `skill "${current.name}" changed since this was proposed — re-evaluate`,
-              detail: {
-                reason: "version_conflict",
-                expected: args.baseVersion,
-                actual: current.version,
-              },
-            }
-          : {
-              success: false,
-              summary: "skill not found",
-              detail: { reason: "not_found", skillId: args.skillId },
-            };
+        if (!current) {
+          return {
+            success: false,
+            summary: "skill not found",
+            detail: { reason: "not_found", skillId: args.skillId },
+          };
+        }
+        if (current.version !== args.baseVersion) {
+          return {
+            success: false,
+            summary: `skill "${current.name}" changed since this was proposed — re-evaluate`,
+            detail: {
+              reason: "version_conflict",
+              expected: args.baseVersion,
+              actual: current.version,
+            },
+          };
+        }
+        return {
+          success: false,
+          summary: `skill "${current.name}" was archived after this was proposed — leaving it untouched`,
+          detail: { reason: "state_conflict", skillId: args.skillId },
+        };
       }
 
       case "disableSkill": {
@@ -729,21 +740,32 @@ export async function dispatchGatedAction(
           };
         }
         const current = await getSkillById(args.skillId, ctx.chatId);
-        return current
-          ? {
-              success: false,
-              summary: `skill "${current.name}" changed since this was proposed — re-evaluate`,
-              detail: {
-                reason: "version_conflict",
-                expected: args.baseVersion,
-                actual: current.version,
-              },
-            }
-          : {
-              success: false,
-              summary: "skill not found",
-              detail: { reason: "not_found", skillId: args.skillId },
-            };
+        if (!current) {
+          return {
+            success: false,
+            summary: "skill not found",
+            detail: { reason: "not_found", skillId: args.skillId },
+          };
+        }
+        if (current.version !== args.baseVersion) {
+          return {
+            success: false,
+            summary: `skill "${current.name}" changed since this was proposed — re-evaluate`,
+            detail: {
+              reason: "version_conflict",
+              expected: args.baseVersion,
+              actual: current.version,
+            },
+          };
+        }
+        // Version matches but the CAS refused → the skill is already disabled
+        // (dashboard archive while the bubble sat — toggles don't bump
+        // version). The approved end-state already holds; report it as done.
+        return {
+          success: true,
+          summary: `skill "${current.name}" was already archived`,
+          detail: { skillId: args.skillId, alreadyArchived: true },
+        };
       }
 
       case "mergeSkills": {
@@ -778,21 +800,33 @@ export async function dispatchGatedAction(
         });
         if (!survivor) {
           const current = await getSkillById(args.skillId, ctx.chatId);
-          return current
-            ? {
-                success: false,
-                summary: `skill "${current.name}" changed since this was proposed — re-evaluate`,
-                detail: {
-                  reason: "version_conflict",
-                  expected: args.baseVersion,
-                  actual: current.version,
-                },
-              }
-            : {
-                success: false,
-                summary: "skill not found",
-                detail: { reason: "not_found", skillId: args.skillId },
-              };
+          if (!current) {
+            return {
+              success: false,
+              summary: "skill not found",
+              detail: { reason: "not_found", skillId: args.skillId },
+            };
+          }
+          if (current.version !== args.baseVersion) {
+            return {
+              success: false,
+              summary: `skill "${current.name}" changed since this was proposed — re-evaluate`,
+              detail: {
+                reason: "version_conflict",
+                expected: args.baseVersion,
+                actual: current.version,
+              },
+            };
+          }
+          // Version matches but the CAS refused → the survivor was archived
+          // from the dashboard while the bubble sat (toggles don't bump
+          // version). Merging into a skill the user just put away is wrong —
+          // abort with nothing changed.
+          return {
+            success: false,
+            summary: `skill "${current.name}" was archived after this was proposed — merge cancelled`,
+            detail: { reason: "state_conflict", skillId: args.skillId },
+          };
         }
 
         // Each absorbed archive is its own CAS — one raced absorbee must not
@@ -806,10 +840,18 @@ export async function dispatchGatedAction(
           });
           if (disabled) {
             archived.push(disabled.name);
-          } else {
-            const current = await getSkillById(a.skillId, ctx.chatId);
-            failed.push({ skillId: a.skillId, reason: current ? "version_conflict" : "not_found" });
+            continue;
           }
+          const current = await getSkillById(a.skillId, ctx.chatId);
+          // Already archived at the merged-from version (dashboard toggle — no
+          // version bump): the goal state for an absorbee already holds, and
+          // its content at that version is exactly what was folded into the
+          // survivor. Count it archived rather than failing the merge.
+          if (current && !current.enabled && current.version === a.baseVersion) {
+            archived.push(current.name);
+            continue;
+          }
+          failed.push({ skillId: a.skillId, reason: current ? "version_conflict" : "not_found" });
         }
 
         if (failed.length > 0) {
@@ -819,7 +861,7 @@ export async function dispatchGatedAction(
           );
           return {
             success: false,
-            summary: `merged into "${survivor.name}", but ${failed.length} of ${args.absorbed.length} absorbed skill(s) changed since this was proposed and stay enabled — re-evaluate`,
+            summary: `merged into "${survivor.name}", but ${failed.length} of ${args.absorbed.length} absorbed skill(s) changed (or are gone) since this was proposed and were not archived — re-evaluate`,
             detail: {
               reason: "partial_merge",
               skillId: args.skillId,

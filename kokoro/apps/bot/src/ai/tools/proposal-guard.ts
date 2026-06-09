@@ -2,8 +2,6 @@ import { listPendingConfirmations } from "@kokoro/db";
 import type { PendingConfirmationOrigin } from "@kokoro/db";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { raisePendingConfirmation } from "./confirmations";
-import { hasPendingRoutineProposal } from "./routine-proposal-tools";
-import { hasPendingSkillProposal } from "./skill-proposal-tools";
 
 // Proposals expire faster than action confirmations (24h): an ignored "want me
 // to save this?" bubble shouldn't linger for a day. Two hours is long enough
@@ -21,6 +19,11 @@ export interface ProposalResult {
    * suppression. The self-review passes use this to stop re-offering a declined
    * proposal rather than re-grading it every cycle. */
   declined?: boolean;
+  /** True when suppressed by the TRANSIENT one-pending guard — some other
+   * confirmation (of any kind) is already awaiting approval. The review passes
+   * use this to treat the action as still-pending work for the next cycle,
+   * not a settled outcome. */
+  suppressedByPending?: boolean;
 }
 
 /**
@@ -30,9 +33,12 @@ export interface ProposalResult {
  *  - GUARD 1 — durable decline memory (`isDeclined`, the caller's proposal-type
  *    decline store): honors a prior "no" past the 40-message window / 1h
  *    session reset the LLM can't see.
- *  - GUARD 2 — one proposal at a time, across ALL proposal types (routine
- *    save/refine/retire and skill save/refine/archive/merge): also protects
- *    iMessage's "exactly one pending" YES/NO resolver from stacked bubbles.
+ *  - GUARD 2 — one pending confirmation at a time, of ANY kind (a gated action
+ *    like sendEmail just as much as another proposal): iMessage resolves a bare
+ *    YES/NO reply only when EXACTLY ONE confirmation is pending in the chat, so
+ *    raising a proposal next to any live bubble would knock out that fast path
+ *    for both. Suppression here is transient (`suppressedByPending`) — the
+ *    caller retries on a later cycle once the chat's slot is free.
  *
  * Both guards are independent reads — run concurrently. Lets
  * `raisePendingConfirmation` errors propagate; callers wrap in try/catch.
@@ -57,8 +63,12 @@ export async function raiseGuardedProposal(opts: {
     listPendingConfirmations(chatId),
   ]);
   if (declined) return { proposed: false, declined: true, reason: declinedReason };
-  if (hasPendingRoutineProposal(pending) || hasPendingSkillProposal(pending)) {
-    return { proposed: false, reason: "another proposal is already awaiting approval" };
+  if (pending.length > 0) {
+    return {
+      proposed: false,
+      suppressedByPending: true,
+      reason: "another confirmation is already awaiting approval",
+    };
   }
   const confirmationId = await raisePendingConfirmation(chatId, adapter, {
     summary,

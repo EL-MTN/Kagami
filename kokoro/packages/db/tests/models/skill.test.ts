@@ -111,6 +111,20 @@ describe("updateSkillIfVersion", () => {
     const skill = await createSkill("chat-1", baseInput);
     expect(await updateSkillIfVersion(skill.id, "chat-2", 1, { enabled: false })).toBeNull();
   });
+
+  it("rejects a disabled skill even at the matching version (enable toggles don't bump version)", async () => {
+    const skill = await createSkill("chat-1", baseInput);
+    // Dashboard-style archive: enabled flips with NO version bump.
+    await updateSkill(skill.id, { enabled: false }, "chat-1");
+
+    const result = await updateSkillIfVersion(skill.id, "chat-1", 1, { body: "clobber" });
+
+    expect(result).toBeNull();
+    const current = await getSkillByName("chat-1", baseInput.name);
+    expect(current?.body).toBe(baseInput.body);
+    expect(current?.enabled).toBe(false);
+    expect(current?.version).toBe(1);
+  });
 });
 
 describe("skillNeedsReview", () => {
