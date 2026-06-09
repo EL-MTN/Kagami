@@ -87,6 +87,11 @@ async function assemblePromptShell(
   const browser = await readInstruction("browser");
   if (browser) parts.push(browser);
 
+  if (config.EXECUTE_CODE_ENABLED) {
+    const executeCode = await readInstruction("execute-code");
+    if (executeCode) parts.push(executeCode);
+  }
+
   const routines = await readInstruction("routines");
   if (routines) parts.push(routines);
 

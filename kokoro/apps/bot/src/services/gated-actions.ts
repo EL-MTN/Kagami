@@ -2,6 +2,7 @@ import { z } from "zod";
 import { sendEmail } from "./gmail";
 import { updateEvent, deleteEvent } from "./google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser, withBrowserLock } from "./browser";
+import { runCode, CodeSandboxError } from "./code-sandbox";
 import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
 import {
   createRoutine,
@@ -59,7 +60,10 @@ type GatedToolName = (typeof GATED_TOOL_NAMES)[number];
  * only via the self-review pass's `proposeRetirement`. The skill curation
  * actions — `updateSkill`, `disableSkill`, `mergeSkills` — are likewise
  * reachable only via the skill-review pass's proposal cores
- * (`skill-refinements.ts`).
+ * (`skill-refinements.ts`). `executeCode` is reachable only via the dedicated
+ * `executeCode` tool, whose bubble shows the FULL code as `promptText`;
+ * exposing it on `requestConfirmation` would let the model run code behind a
+ * ≤400-char summary the user never sees the body of.
  */
 const DISPATCH_ONLY_TOOL_NAMES = [
   "createRoutine",
@@ -69,6 +73,7 @@ const DISPATCH_ONLY_TOOL_NAMES = [
   "updateSkill",
   "disableSkill",
   "mergeSkills",
+  "executeCode",
 ] as const;
 type DispatchOnlyToolName = (typeof DISPATCH_ONLY_TOOL_NAMES)[number];
 
@@ -228,6 +233,15 @@ const mergeSkillsArgs = z
     message: "absorbed skills must be distinct",
   });
 
+// Sandboxed code execution. Mirrors the `executeCode` tool's inputSchema minus
+// `description` (bubble-only text — execution doesn't need it). The length cap
+// is re-enforced here because the dispatcher is the last stop before the
+// sandbox: a confirmation row predating a cap change must still be bounded.
+const executeCodeArgs = z.object({
+  language: z.enum(["python", "node"]),
+  code: z.string().min(1).max(8000),
+});
+
 // CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the
 // dispatcher's re-validator and the tool's `inputSchema` are guaranteed to
 // stay in sync (Kizuna's API does not enforce the LLM-facing caps, so the
@@ -247,6 +261,7 @@ const GATED_ARG_SCHEMAS: Record<DispatchableToolName, z.ZodTypeAny> = {
   updateSkill: updateSkillArgs,
   disableSkill: disableSkillArgs,
   mergeSkills: mergeSkillsArgs,
+  executeCode: executeCodeArgs,
 };
 
 interface DispatchResult {
@@ -922,8 +937,68 @@ export async function dispatchGatedAction(
           detail: { skillId: args.skillId, version: survivor.version, archived },
         };
       }
+
+      case "executeCode": {
+        const args = parsed.data as z.infer<typeof executeCodeArgs>;
+        // The code body is deliberately never logged — only its shape — so
+        // nothing the user pastes into a script (keys, personal data) reaches
+        // Kansoku. The full code lives only in the PendingConfirmation row
+        // (24h TTL), same as every other gated action's args.
+        logger.info(
+          { language: args.language, codeLength: args.code.length },
+          "Dispatching approved executeCode",
+        );
+
+        const result = await runWithSpan("code.execute", () =>
+          runCode({ language: args.language, code: args.code }),
+        );
+
+        if (result.timedOut) {
+          return {
+            success: false,
+            summary: `code execution timed out after ${Math.round(
+              config.EXECUTE_CODE_TIMEOUT_MS / 1000,
+            )}s`,
+            detail: { reason: "timeout", language: args.language, output: result.output },
+          };
+        }
+        if (result.oomKilled) {
+          return {
+            success: false,
+            summary: `code was killed (out of memory, ${config.EXECUTE_CODE_MEMORY_MB} MB cap)`,
+            detail: { reason: "oom", language: args.language, output: result.output },
+          };
+        }
+        if (result.exitCode !== 0) {
+          return {
+            success: false,
+            summary: `code exited with code ${result.exitCode}`,
+            detail: {
+              reason: "nonzero_exit",
+              exitCode: result.exitCode,
+              language: args.language,
+              output: result.output,
+            },
+          };
+        }
+        return {
+          success: true,
+          summary: `code ran: ${result.output.slice(0, 200)}`,
+          detail: { exitCode: result.exitCode, language: args.language, output: result.output },
+        };
+      }
     }
   } catch (error) {
+    // Sandbox infrastructure faults (daemon down, image missing) carry a
+    // user-presentable message — surface it instead of the generic wrapper.
+    if (error instanceof CodeSandboxError) {
+      logger.error({ error, tool, kind: error.kind }, "Code sandbox unavailable");
+      return {
+        success: false,
+        summary: error.message,
+        detail: { reason: error.kind },
+      };
+    }
     const reason = error instanceof Error ? error.message : "unknown error";
     logger.error({ error: error, tool }, "Gated action dispatch failed");
     return {

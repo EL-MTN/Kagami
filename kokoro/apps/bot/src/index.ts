@@ -17,6 +17,7 @@ import { startWatcherScheduler } from "./scheduler/watchers";
 import { startMaintenanceScheduler } from "./scheduler/maintenance";
 import { shutdownBrowser } from "./services/browser";
 import { initMcp, shutdownMcp } from "./services/mcp";
+import { sweepOrphanContainers, pullImages } from "./services/code-sandbox";
 
 // Bot-specific validation: TELEGRAM_BOT_TOKEN is required
 function requireToken(): string {
@@ -48,6 +49,15 @@ async function main() {
   // Connect to configured MCP servers and cache their tools before any tick
   // (proactive/routine) can fire. Fail-open per server — see services/mcp.ts.
   await initMcp();
+
+  // Sandboxed code execution: clear containers orphaned by a previous process
+  // death, and pre-pull the sandbox images so the first approved run doesn't
+  // spend its execution timeout on a registry download. Fire-and-forget —
+  // the bot must start regardless of Docker's state (both are fail-open).
+  if (config.EXECUTE_CODE_ENABLED) {
+    void sweepOrphanContainers().catch(() => {});
+    void pullImages().catch(() => {});
+  }
 
   const registry = new AdapterRegistry();
 

@@ -10,25 +10,26 @@ provider/key construction, retry, same-tier fallback, and span/usage emission;
 `provider.ts` stays the caller-side **tier policy** (the `ModelTier` → model-id
 map). Image / TTS / STT still use the Vercel AI SDK directly.
 
-| Env Variable                 | Description                                                                                                                                                        |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `LLM_KIND`                   | `"native"` (only supported value for Kokoro chat; default)                                                                                                         |
-| `LLM_PROVIDER`               | `"anthropic"` (default), `"openai"`, or `"xai"`                                                                                                                    |
-| `LLM_MODEL`                  | Default-tier model id (default: `"claude-sonnet-4-6"`; recommended xAI model: `grok-4-1-fast-non-reasoning`)                                                       |
-| `LLM_MODEL_FAST`             | Optional override for the `Fast` tier (unset → per-provider default below)                                                                                         |
-| `LLM_MODEL_SMART`            | Optional override for the `Smart` tier (unset → per-provider default below)                                                                                        |
-| `ANTHROPIC_API_KEY`          | Required if provider is `anthropic` (validated at startup)                                                                                                         |
-| `OPENAI_API_KEY`             | Required if provider is `openai` (validated at startup)                                                                                                            |
-| `XAI_API_KEY`                | Required if provider is `xai` (validated at startup)                                                                                                               |
-| `IMAGE_GENERATION_MODEL`     | Image model in `provider/model` format (e.g., `xai/grok-imagine-image`, `google/gemini-2.5-flash-image`, `openai/gpt-image-1`). Enables `sendPhoto` tool when set. |
-| `TTS_PROVIDER`               | TTS model in `provider/model` format (e.g., `elevenlabs/eleven_flash_v2_5`). Enables `sendVoice` tool when set.                                                    |
-| `TTS_VOICE_ID`               | ElevenLabs voice identifier                                                                                                                                        |
-| `ELEVENLABS_API_KEY`         | Required when `TTS_PROVIDER` is set                                                                                                                                |
-| `GOOGLE_API_KEY`             | Required for embedding generation (Google Gemini `gemini-embedding-001`)                                                                                           |
-| `EMBEDDING_MODEL`            | Embedding model name (default: `"gemini-embedding-001"`)                                                                                                           |
-| `KIZUNA_URL`                 | Kizuna API base URL for CRM tools — reads call directly, writes are confirmation-gated (default: `https://api.kizuna.localhost`)                                   |
-| `GOOGLE_MAPS_API_KEY`        | Google Maps Geocoding API key (optional; geocoding degrades to raw coordinates without it)                                                                         |
-| `LOCATION_CONTEXT_MAX_AGE_H` | Max age in hours for location data to appear in LLM context (default: `12`)                                                                                        |
+| Env Variable                 | Description                                                                                                                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LLM_KIND`                   | `"native"` (only supported value for Kokoro chat; default)                                                                                                                                                    |
+| `LLM_PROVIDER`               | `"anthropic"` (default), `"openai"`, or `"xai"`                                                                                                                                                               |
+| `LLM_MODEL`                  | Default-tier model id (default: `"claude-sonnet-4-6"`; recommended xAI model: `grok-4-1-fast-non-reasoning`)                                                                                                  |
+| `LLM_MODEL_FAST`             | Optional override for the `Fast` tier (unset → per-provider default below)                                                                                                                                    |
+| `LLM_MODEL_SMART`            | Optional override for the `Smart` tier (unset → per-provider default below)                                                                                                                                   |
+| `ANTHROPIC_API_KEY`          | Required if provider is `anthropic` (validated at startup)                                                                                                                                                    |
+| `OPENAI_API_KEY`             | Required if provider is `openai` (validated at startup)                                                                                                                                                       |
+| `XAI_API_KEY`                | Required if provider is `xai` (validated at startup)                                                                                                                                                          |
+| `IMAGE_GENERATION_MODEL`     | Image model in `provider/model` format (e.g., `xai/grok-imagine-image`, `google/gemini-2.5-flash-image`, `openai/gpt-image-1`). Enables `sendPhoto` tool when set.                                            |
+| `TTS_PROVIDER`               | TTS model in `provider/model` format (e.g., `elevenlabs/eleven_flash_v2_5`). Enables `sendVoice` tool when set.                                                                                               |
+| `TTS_VOICE_ID`               | ElevenLabs voice identifier                                                                                                                                                                                   |
+| `ELEVENLABS_API_KEY`         | Required when `TTS_PROVIDER` is set                                                                                                                                                                           |
+| `GOOGLE_API_KEY`             | Required for embedding generation (Google Gemini `gemini-embedding-001`)                                                                                                                                      |
+| `EMBEDDING_MODEL`            | Embedding model name (default: `"gemini-embedding-001"`)                                                                                                                                                      |
+| `KIZUNA_URL`                 | Kizuna API base URL for CRM tools — reads call directly, writes are confirmation-gated (default: `https://api.kizuna.localhost`)                                                                              |
+| `EXECUTE_CODE_ENABLED`       | Enables the `executeCode` tool (Docker-sandboxed Python/Node, tap-to-approve with full code in the bubble). Tunables: `EXECUTE_CODE_{PYTHON,NODE}_IMAGE`, `EXECUTE_CODE_TIMEOUT_MS`, `EXECUTE_CODE_MEMORY_MB` |
+| `GOOGLE_MAPS_API_KEY`        | Google Maps Geocoding API key (optional; geocoding degrades to raw coordinates without it)                                                                                                                    |
+| `LOCATION_CONTEXT_MAX_AGE_H` | Max age in hours for location data to appear in LLM context (default: `12`)                                                                                                                                   |
 
 `getModel(tier?)` returns a `LanguageModel` from the `@kagami/llm` gateway
 (retry, same-tier fallback, span/usage applied); `getModelName(tier?)` resolves
@@ -58,20 +59,21 @@ assembleSystemPrompt(chatId)
     ├─ 5. Maid service               ← apps/bot/context/instructions/maid-service.md (conditional on KAO_URL — Google access via Kao)
     ├─ 6. Web search                 ← apps/bot/context/instructions/web-search.md (conditional on BRAVE_SEARCH_API_KEY)
     ├─ 7. Browser                    ← apps/bot/context/instructions/browser.md (always)
-    ├─ 8. Routine behavior           ← apps/bot/context/instructions/routines.md (always)
-    ├─ 9. Skill behavior             ← apps/bot/context/instructions/skills.md (always)
-    ├─ 10. Proposal behavior         ← routine-proposals.md + routine-refinement.md + skill-proposals.md (conversational only)
-    ├─ 11. Routine context           ← listRoutinesForChat → enabled routine names (Mongo)
-    ├─ 12. Skill context             ← listSkillsForChat → enabled skill catalog (Mongo)
-    ├─ 13. Pending approvals         ← listPendingConfirmations (Mongo)
-    ├─ 14. Location context          ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (Mongo, always)
-    └─ 15. Response format           ← apps/bot/context/instructions/response-format.md
+    ├─ 8. Code execution             ← apps/bot/context/instructions/execute-code.md (conditional on EXECUTE_CODE_ENABLED)
+    ├─ 9. Routine behavior           ← apps/bot/context/instructions/routines.md (always)
+    ├─ 10. Skill behavior            ← apps/bot/context/instructions/skills.md (always)
+    ├─ 11. Proposal behavior         ← routine-proposals.md + routine-refinement.md + skill-proposals.md (conversational only)
+    ├─ 12. Routine context           ← listRoutinesForChat → enabled routine names (Mongo)
+    ├─ 13. Skill context             ← listSkillsForChat → enabled skill catalog (Mongo)
+    ├─ 14. Pending approvals         ← listPendingConfirmations (Mongo)
+    ├─ 15. Location context          ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (Mongo, always)
+    └─ 16. Response format           ← apps/bot/context/instructions/response-format.md
 
     All parts joined with "\n\n---\n\n"
 
 assembleProactiveSystemPrompt(chatId)
     │
-    ├─ shell (1–9 above; proposal behavior omitted)
+    ├─ shell (1–10 above; proposal behavior omitted)
     ├─ Active reminders              ← pending + recently fired (Mongo)
     ├─ Pending approvals             ← (Mongo)
     ├─ Location context              ← (Mongo, conditional)
@@ -109,7 +111,7 @@ The time-of-day buckets (`timeOfDayFor`, driving `moodForTimeOfDay`):
 
 ## Tool Definitions
 
-Defined in `apps/bot/src/ai/tools/`. Tool files are consolidated by domain: `media.ts` (sendPhoto, sendVoice), `email.ts` (checkEmail, sendEmail), `calendar.ts` (manageCalendar, manageReminders), `confirmations.ts` (requestConfirmation, cancelConfirmation), `memory.ts` (searchMemory, rememberFact), `crm.ts` (read: findPeople, getPersonContext, recentInteractions, listMyFollowups; write: logInteraction, createFollowup, resolveFollowup, updatePerson — writes must be wrapped in `requestConfirmation`), `routines.ts` (manageRoutines, searchRoutines, useRoutine), `skills.ts` (searchSkills, readSkill, proposeSkill), `delegate.ts` (delegate — parallel read-only fan-out), `watchers.ts` (manageWatchers, reportWatcherResult), `browse.ts`, `web-search.ts`, and `time.ts` (getCurrentTime — local, no MCP). The barrel `index.ts` exports `allTools(ctx)` / `watcherTools(ctx)` / `routineToolsUnderWatcher(ctx)`. All tools are passed to `generateText()` and the LLM can invoke them across up to 5 steps.
+Defined in `apps/bot/src/ai/tools/`. Tool files are consolidated by domain: `media.ts` (sendPhoto, sendVoice), `email.ts` (checkEmail, sendEmail), `calendar.ts` (manageCalendar, manageReminders), `confirmations.ts` (requestConfirmation, cancelConfirmation), `memory.ts` (searchMemory, rememberFact), `crm.ts` (read: findPeople, getPersonContext, recentInteractions, listMyFollowups; write: logInteraction, createFollowup, resolveFollowup, updatePerson — writes must be wrapped in `requestConfirmation`), `routines.ts` (manageRoutines, searchRoutines, useRoutine), `skills.ts` (searchSkills, readSkill, proposeSkill), `delegate.ts` (delegate — parallel read-only fan-out), `watchers.ts` (manageWatchers, reportWatcherResult), `browse.ts`, `web-search.ts`, `execute-code.ts` (executeCode — sandboxed code execution, conditional on `EXECUTE_CODE_ENABLED`), and `time.ts` (getCurrentTime — local, no MCP). The barrel `index.ts` exports `allTools(ctx)` / `watcherTools(ctx)` / `routineToolsUnderWatcher(ctx)`. All tools are passed to `generateText()` and the LLM can invoke them across up to 5 steps.
 
 ### Tool Context
 
@@ -124,7 +126,7 @@ interface ToolContext {
   callingContext?: "main" | "watcher"; // gates routine purity; defaults to "main"
 }
 
-allTools(ctx) → { rememberFact, searchMemory, searchSkills, readSkill, getCurrentTime, findPeople?, getPersonContext?, recentInteractions?, listMyFollowups?, logInteraction?, createFollowup?, resolveFollowup?, updatePerson?, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, webSearch?, browse?, requestConfirmation?, cancelConfirmation?, manageRoutines, searchRoutines, useRoutine?, delegate?, manageWatchers, proposeSkill? }
+allTools(ctx) → { rememberFact, searchMemory, searchSkills, readSkill, getCurrentTime, executeCode?, findPeople?, getPersonContext?, recentInteractions?, listMyFollowups?, logInteraction?, createFollowup?, resolveFollowup?, updatePerson?, sendPhoto?, sendVoice?, checkEmail?, sendEmail?, manageCalendar?, manageReminders?, webSearch?, browse?, requestConfirmation?, cancelConfirmation?, manageRoutines, searchRoutines, useRoutine?, delegate?, manageWatchers, proposeSkill? }
 
 watcherTools(ctx) → { searchMemory, searchSkills, readSkill, findPeople?, getPersonContext?, recentInteractions?, listMyFollowups?, reportWatcherResult, checkEmail?, listCalendarEvents?, webSearch?, browse? (read-only), useRoutine? }
 ```
@@ -250,6 +252,15 @@ Autonomous multi-step browsing (`stagehand.agent().execute()`, up to 25 steps) i
 **Architecture**: Two independent LLM streams — Kokoro's main loop (Sonnet) decides _what_ to browse, Stagehand's internal calls (Haiku/Fast tier) decide _how_ to navigate. Configured via `BROWSER_ENV` (`local`/`cloud`), `BROWSER_DATA_DIR`, `BROWSER_HEADLESS`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID` env vars. Browser service in `apps/bot/src/services/browser.ts`, tool in `apps/bot/src/ai/tools/browse.ts`.
 
 **Observability (Kansoku)**: Each action runs inside `runWithSpan(\`browse.<action>\`)`and browser init inside`runWithSpan("browser.init")`, so a browse turn renders as a real waterfall (per-action durations, nested under the conversation trace) in Kansoku. Stagehand's own steps are bridged into the `@kokoro/shared`logger via its`logger(line)` hook (`stagehandLogger`in`browser.ts`): each `LogLine`ships as a`browser: …`log line tagged with its`category` (`init`/`extraction`/`act`/`aisdk`/…) and auto-correlated to the active trace/span. Stagehand `verbose`is gated on log level —`1`(step-level) normally,`2`(full prompts/responses/DOM, the`aisdk`lines) when`LOG_LEVEL=debug`— and`auxiliary`values are truncated (~4 KB) so a DOM dump can't bloat ingest. Net: to deep-debug a browse turn, **start** the bot with `LOG_LEVEL=debug` and open its trace in Kansoku. (`STAGEHAND_VERBOSE`is fixed at the first browser init from the process-level`LOG_LEVEL`, so this is start-time, not hot-toggleable.) The confirmation-gated `browseAgent` path (`services/gated-actions.ts`) is spanned the same way (`browse.agent`). **Caution:** at `verbose: 2`the`aisdk`lines carry the full LLM prompt/response and page content, and`@kokoro/logger`does no secret/PII redaction (local-trust only) — so a`login`/`agent`flow run under`LOG_LEVEL=debug`can ship typed credentials or page secrets to Kansoku. Use debug verbosity deliberately, and treat it as a pre-VPS redaction blocker (see`ARCHITECTURE.md`).
+
+### executeCode (conditional — requires EXECUTE_CODE_ENABLED)
+
+- **Purpose**: Run LLM-written Python or Node scripts for exact computation, data transforms, and programmatic generation — things conversation and browsing can't do reliably.
+- **Parameters**: `{ language: "python" | "node", code: string (≤8000 chars), description: string (one sentence for the approval bubble) }`
+- **Returns**: `{ pending: true, confirmationId, message }` — the tool **never executes code itself**.
+- **Behavior**: Proposal pattern (like `proposeRoutine`, not like `requestConfirmation`): the tool calls `raisePendingConfirmation` directly with the full code as a fenced block in `promptText` (preview capped at 3000 chars), so the user reviews the **program body** before approving. The action name `executeCode` lives in `DISPATCH_ONLY_TOOL_NAMES` — deliberately absent from `requestConfirmation`'s enum, so the model cannot route code execution behind a ≤400-char summary. On approve, `dispatchGatedAction` re-validates the args, then runs the code in an **ephemeral Docker container** via `apps/bot/src/services/code-sandbox.ts`: `--network none`, empty env, `--cap-drop ALL`, `no-new-privileges`, read-only rootfs + 64 MB `/tmp` tmpfs, numeric nobody user, pid/memory/CPU caps, code delivered via stdin (never argv), at most 2 concurrent runs. Non-zero exit, timeout (`EXECUTE_CODE_TIMEOUT_MS`, default 120 s — enforced by a host-side `docker rm -f`, not Node's client-only timeout), and OOM (exit 137 heuristic against the `EXECUTE_CODE_MEMORY_MB` cap) are reported as results the LLM can react to; daemon-down / image-missing surface as friendly `CodeSandboxError` summaries (fail-open — chat continues). Output is stdout+stderr combined, capped at 4000 chars. Startup (`apps/bot/src/index.ts`) sweeps orphaned `kokoro-exec-*` containers and pre-pulls both images (`EXECUTE_CODE_{PYTHON,NODE}_IMAGE`), fire-and-forget.
+- **Logging**: the code body is **never logged** — only `{ language, codeLength }` — so secrets pasted into a script can't reach Kansoku. The full code persists only in the `PendingConfirmation` row (24 h TTL). The run is spanned as `code.execute`.
+- **Palette**: registered in `allTools` only when `EXECUTE_CODE_ENABLED` is set; deliberately **absent** from `readOnlyToolSubset` / `watcherTools` / `routineToolsUnderWatcher` — execution is a mutation-class capability, so observation runs and delegate sub-tasks never see it. System-prompt rule in `apps/bot/context/instructions/execute-code.md` (loaded only when enabled). See [confirmations.md](confirmations.md#dispatch-only-actions-not-llm-raisable).
 
 ### searchSkills / readSkill
 
