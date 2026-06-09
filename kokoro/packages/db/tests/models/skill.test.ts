@@ -125,6 +125,39 @@ describe("updateSkillIfVersion", () => {
     expect(current?.enabled).toBe(false);
     expect(current?.version).toBe(1);
   });
+
+  it("clears lastReviewedAt — the new version was never reviewed", async () => {
+    const skill = await createSkill("chat-1", baseInput);
+    await markSkillsReviewed("chat-1", [skill.id]);
+
+    const updated = await updateSkillIfVersion(skill.id, "chat-1", 1, { body: "Rewritten." });
+
+    expect(updated?.version).toBe(2);
+    expect(updated?.lastReviewedAt).toBeNull();
+  });
+});
+
+describe("review stamp invalidation on version bumps", () => {
+  it("updateSkill clears lastReviewedAt when the patch bumps version (dashboard content edit)", async () => {
+    const skill = await createSkill("chat-1", baseInput);
+    await markSkillsReviewed("chat-1", [skill.id]);
+
+    const updated = await updateSkill(skill.id, { body: "Edited body.", version: 2 }, "chat-1");
+
+    expect(updated?.version).toBe(2);
+    expect(updated?.lastReviewedAt).toBeNull();
+  });
+
+  it("updateSkill preserves lastReviewedAt on an enabled-only toggle (no version bump)", async () => {
+    const skill = await createSkill("chat-1", baseInput);
+    const at = new Date("2026-06-01T00:00:00Z");
+    await markSkillsReviewed("chat-1", [skill.id], at);
+
+    const updated = await updateSkill(skill.id, { enabled: false }, "chat-1");
+
+    expect(updated?.version).toBe(1);
+    expect(updated?.lastReviewedAt?.toISOString()).toBe(at.toISOString());
+  });
 });
 
 describe("skillNeedsReview", () => {

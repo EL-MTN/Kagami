@@ -140,6 +140,14 @@ export async function updateSkill(
   if (patch.linkedRoutineIds) {
     update.linkedRoutineIds = patch.linkedRoutineIds.map((id) => new Types.ObjectId(id));
   }
+  // A version bump means the stored content changed, so any prior curation
+  // verdict no longer describes what's stored — invalidate the review stamp
+  // here at the model (callers that bump version: dashboard content edits)
+  // rather than trusting every caller to remember. Enabled-only toggles don't
+  // bump version and keep the stamp.
+  if (patch.version !== undefined) {
+    update.lastReviewedAt = null;
+  }
   return Skill.findOneAndUpdate(filter, update, { returnDocument: "after" });
 }
 
@@ -172,7 +180,10 @@ export async function recordSkillUsed(skillId: string, chatId?: string): Promise
  * raised. Every curation proposal originates on an enabled skill, so requiring
  * enabled here is never a false rejection. Returns the updated doc, or null if
  * the skill is gone, its version moved on, OR it has been disabled — the
- * caller distinguishes the three via an existence check.
+ * caller distinguishes the three via an existence check. Always clears
+ * `lastReviewedAt`: the write produces a new version the curator has never
+ * seen, so the previous verdict's cooldown must not shield it from the next
+ * cycle.
  */
 export async function updateSkillIfVersion(
   skillId: string,
@@ -182,7 +193,7 @@ export async function updateSkillIfVersion(
 ): Promise<ISkill | null> {
   return Skill.findOneAndUpdate(
     { _id: skillId, chatId, version: expectedVersion, enabled: true },
-    { ...patch, version: expectedVersion + 1 },
+    { ...patch, version: expectedVersion + 1, lastReviewedAt: null },
     { returnDocument: "after" },
   );
 }
