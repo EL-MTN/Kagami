@@ -335,11 +335,12 @@ describe("proposeSkillMerge", () => {
   const absorbee = fakeSkill({ id: OTHER_ID, name: "followup-notes", version: 2 });
   const patch = { body: "Merged: everything still valuable from both." };
 
-  it("rejects a disabled survivor, an empty absorb list, self-absorption, and disabled absorbees", async () => {
+  it("rejects a disabled survivor, an empty absorb list, self-absorption, duplicate absorbees, and disabled absorbees", async () => {
     const cases = [
       { survivor: fakeSkill({ enabled: false }), absorbed: [absorbee], patch },
       { survivor, absorbed: [], patch },
       { survivor, absorbed: [fakeSkill()], patch }, // same id as survivor
+      { survivor, absorbed: [absorbee, absorbee], patch }, // duplicate — second copy could never dispatch
       { survivor, absorbed: [fakeSkill({ id: OTHER_ID, enabled: false })], patch },
       { survivor, absorbed: [absorbee], patch: { body: "  " } },
     ];

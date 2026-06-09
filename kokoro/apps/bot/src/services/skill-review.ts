@@ -231,7 +231,10 @@ async function applyAction(
       return proposeSkillArchive({ chatId, adapter, skill, rationale: action.rationale });
 
     case "merge": {
-      const absorbNames = action.absorbNames ?? [];
+      // Dedupe rather than reject a repeated absorbName — the intent (fold
+      // that skill in once) is unambiguous, and downstream the proposal core
+      // and the dispatcher both hard-reject duplicate absorbees.
+      const absorbNames = [...new Set(action.absorbNames ?? [])];
       if (absorbNames.length === 0 || !action.newBody?.trim()) {
         logger.warn(
           { chatId, skillName: skill.name, absorbCount: absorbNames.length },
@@ -372,10 +375,14 @@ export async function reviewChatSkills(chatId: string, adapter: PlatformAdapter)
   // Stamp AFTER the proposals so a crash mid-run re-reviews rather than
   // silently skipping; best-effort because a failed stamp only means an extra
   // look next cycle. Only terminally-handled candidates are stamped (see the
-  // function doc).
+  // function doc), and each stamp carries the version this pass actually read —
+  // a skill edited while the pass ran stays unstamped (the edit cleared its
+  // stamp; rewriting it would describe content this review never saw).
   await markSkillsReviewed(
     chatId,
-    candidates.filter((s) => !unstampedIds.has(s.id)).map((s) => s.id),
+    candidates
+      .filter((s) => !unstampedIds.has(s.id))
+      .map((s) => ({ id: s.id, version: s.version })),
     now,
   ).catch((error) => {
     logger.warn({ error, chatId }, "Failed to stamp skills as reviewed");

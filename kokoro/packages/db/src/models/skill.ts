@@ -231,20 +231,29 @@ export function skillNeedsReview(
 
 /**
  * Stamp `lastReviewedAt` on the skills a curation pass actually examined.
- * `timestamps: false` so `updatedAt` is untouched — a review is metadata about
- * a skill, not an edit to it (the same reasoning as `recordRoutineGrade` not
- * bumping `version`). Best-effort; callers treat a write failure as non-fatal.
+ * Each stamp is conditional on the version the pass actually reviewed: a skill
+ * edited mid-pass (version bumped, stamp cleared) is skipped rather than
+ * re-stamped, so the unreviewed edit isn't hidden behind the cooldown by a
+ * stamp describing the old content. `timestamps: false` so `updatedAt` is
+ * untouched — a review is metadata about a skill, not an edit to it (the same
+ * reasoning as `recordRoutineGrade` not bumping `version`). Best-effort;
+ * callers treat a write failure as non-fatal.
  */
 export async function markSkillsReviewed(
   chatId: string,
-  skillIds: string[],
+  skills: { id: string; version: number }[],
   at: Date = new Date(),
 ): Promise<void> {
-  if (skillIds.length === 0) return;
-  await Skill.updateMany(
-    { _id: { $in: skillIds.map((id) => new Types.ObjectId(id)) }, chatId },
-    { $set: { lastReviewedAt: at } },
-    { timestamps: false },
+  if (skills.length === 0) return;
+  await Skill.bulkWrite(
+    skills.map(({ id, version }) => ({
+      updateOne: {
+        filter: { _id: new Types.ObjectId(id), chatId, version },
+        update: { $set: { lastReviewedAt: at } },
+        timestamps: false,
+      },
+    })),
+    { ordered: false },
   );
 }
 

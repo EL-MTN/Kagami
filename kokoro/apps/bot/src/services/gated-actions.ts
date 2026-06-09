@@ -219,6 +219,13 @@ const mergeSkillsArgs = z
   })
   .refine((a) => !a.absorbed.some((s) => s.skillId === a.skillId), {
     message: "a skill cannot absorb itself",
+  })
+  // A duplicated absorbee would archive on the first copy and then fail the
+  // second copy's CAS (the version bumped) — a guaranteed partial_merge after
+  // the survivor was already rewritten. Malformed args must fail before any
+  // write.
+  .refine((a) => new Set(a.absorbed.map((s) => s.skillId)).size === a.absorbed.length, {
+    message: "absorbed skills must be distinct",
   });
 
 // CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the
