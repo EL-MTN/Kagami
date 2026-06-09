@@ -128,7 +128,10 @@ async function tryResolveConfirmationReply(
       summary: row.summary,
       verdict: "approved",
       success: dispatch.success,
-      resultText: dispatch.summary,
+      // Prefer the fuller body (e.g. executeCode's program output) so the
+      // acknowledgment turn can relay the actual result, not a 200-char
+      // teaser. The edited prompt above stays summary-short.
+      resultText: dispatch.resultText ?? dispatch.summary,
     });
     logger.info(
       { confirmationId, chatId, success: dispatch.success },

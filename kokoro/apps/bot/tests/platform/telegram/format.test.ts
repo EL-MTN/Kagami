@@ -60,6 +60,38 @@ describe("markdownToTelegramHtml", () => {
     });
   });
 
+  describe("code renders verbatim (parked from inline passes)", () => {
+    // The executeCode approval bubble shows a fenced program — what the user
+    // reviews must be byte-for-byte what executes, so markdown-looking text
+    // inside code must never be rewritten by the inline passes.
+    it("does not bold/italicize markdown-looking code inside a fence", () => {
+      const out = markdownToTelegramHtml("```python\nprint('**bold**', 2 * 3 * 4)\n```");
+      expect(out).toBe("<pre>print('**bold**', 2 * 3 * 4)</pre>");
+    });
+
+    it("does not linkify subscript-call patterns like x[0](y) inside a fence", () => {
+      const out = markdownToTelegramHtml("```js\nconst v = fns[0](arg);\n```");
+      expect(out).toBe("<pre>const v = fns[0](arg);</pre>");
+    });
+
+    it("preserves backticks and strikethrough-looking text inside a fence", () => {
+      const out = markdownToTelegramHtml("```\nrun `cmd` with ~~care~~\n```");
+      expect(out).toBe("<pre>run `cmd` with ~~care~~</pre>");
+    });
+
+    it("does not reinterpret markdown inside inline code", () => {
+      expect(markdownToTelegramHtml("see `a * b * c` and `[x](y)` here")).toBe(
+        "see <code>a * b * c</code> and <code>[x](y)</code> here",
+      );
+    });
+
+    it("strips NUL bytes from input so they cannot forge placeholders", () => {
+      expect(markdownToTelegramHtml("a\u00000\u0000b and `code`")).toBe(
+        "a0b and <code>code</code>",
+      );
+    });
+  });
+
   describe("composition", () => {
     it("handles multiple constructs in one string", () => {
       const input = "I **bolded** a *word* and added `code` plus a [link](https://x.com).";

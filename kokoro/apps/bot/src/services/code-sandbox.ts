@@ -213,8 +213,13 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     // with `outputOverflow` set. The program was stopped before its real exit
     // status was known, so this is a *failed* run (the dispatcher reports it
     // as such); exitCode 0 here is a placeholder, not a success claim.
+    // The reap is AWAITED: returning releases the semaphore slot (finally),
+    // and a fire-and-forget rm would let overflow-heavy runs stack live
+    // containers beyond MAX_CONCURRENT until docker catches up. (The timeout
+    // path needs no such await — there `docker run` itself only exits once
+    // the rm lands, so settling is the synchronization.)
     if (e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
-      execFile("docker", ["rm", "-f", name], () => {});
+      await execFileAsync("docker", ["rm", "-f", name]).catch(() => {});
       return {
         exitCode: 0,
         stdout,

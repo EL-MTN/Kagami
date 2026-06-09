@@ -8,7 +8,7 @@ vi.mock("@kokoro/shared", async (orig) => {
   const real = await orig<typeof import("@kokoro/shared")>();
   return {
     ...real,
-    config: { ...real.config, EXECUTE_CODE_ENABLED: "true" },
+    config: { ...real.config, EXECUTE_CODE_ENABLED: true },
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -1326,7 +1326,7 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
 
   it("refuses to run when EXECUTE_CODE_ENABLED is off (pending rows outlive a flag flip)", async () => {
     const prev = config.EXECUTE_CODE_ENABLED;
-    (config as { EXECUTE_CODE_ENABLED?: string }).EXECUTE_CODE_ENABLED = undefined;
+    (config as { EXECUTE_CODE_ENABLED: boolean }).EXECUTE_CODE_ENABLED = false;
     try {
       const result = await dispatchGatedAction("executeCode", {
         language: "python",
@@ -1337,7 +1337,7 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
       expect(result.detail).toEqual({ reason: "disabled" });
       expect(vi.mocked(runCode)).not.toHaveBeenCalled();
     } finally {
-      (config as { EXECUTE_CODE_ENABLED?: string }).EXECUTE_CODE_ENABLED = prev;
+      (config as { EXECUTE_CODE_ENABLED: boolean }).EXECUTE_CODE_ENABLED = prev;
     }
   });
 
@@ -1349,6 +1349,10 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
     expect(result.success).toBe(true);
     expect(result.summary).toBe("code ran: 42");
     expect(result.detail).toEqual({ exitCode: 0, language: "python", output: "42" });
+    // resultText carries the full (already ≤4000-capped) output so the
+    // acknowledgment turn can relay what the code actually produced — the
+    // summary alone is a 200-char preview.
+    expect(result.resultText).toBe("42");
     expect(vi.mocked(runCode)).toHaveBeenCalledWith({ language: "python", code: CODE });
   });
 
@@ -1385,6 +1389,8 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
       language: "python",
       output: "Traceback…",
     });
+    // Failures relay their output too — the model needs the traceback to react.
+    expect(result.resultText).toBe("Traceback…");
   });
 
   it("reports a timeout with the configured wall-clock cap in the summary", async () => {
@@ -1411,6 +1417,8 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
     // 512 MB = the EXECUTE_CODE_MEMORY_MB default (no env override in tests).
     expect(result.summary).toBe("code was killed (out of memory, 512 MB cap)");
     expect(result.detail).toEqual({ reason: "oom", language: "python", output: "" });
+    // Empty output → no resultText; handlers fall back to the summary.
+    expect(result.resultText).toBeUndefined();
   });
 
   it("reports an output-buffer overflow as a failed run, not success", async () => {

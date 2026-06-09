@@ -212,10 +212,16 @@ describe("runCode — results", () => {
     expect(result.timedOut).toBe(false);
   });
 
-  it("on maxBuffer overflow, kills the still-running container and flags outputOverflow", async () => {
-    promisifiedMock.mockReturnValueOnce(
-      rejectedRun({ code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", stdout: "b".repeat(5000) }).promise,
-    );
+  it("on maxBuffer overflow, awaits the container reap and flags outputOverflow", async () => {
+    promisifiedMock
+      .mockReturnValueOnce(
+        rejectedRun({ code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", stdout: "b".repeat(5000) })
+          .promise,
+      )
+      // The follow-up `docker rm -f` goes through the promisified path so it
+      // can be AWAITED — the semaphore slot must not free while the container
+      // is still running.
+      .mockResolvedValue({ stdout: "", stderr: "" });
 
     const result = await runCode({ language: "python", code: "flood" });
 
@@ -224,10 +230,12 @@ describe("runCode — results", () => {
     // The program was stopped before its real exit status was known — this is
     // a failed run, not a success with noisy output.
     expect(result.outputOverflow).toBe(true);
-    // The docker client died first — the container must be reaped explicitly.
-    const rmCall = execFileMock.mock.calls.find((c) => Array.isArray(c[1]) && c[1][0] === "rm") as
-      | [string, string[]]
-      | undefined;
+    // The docker client died first — the container must be reaped explicitly,
+    // before runCode returns (the await guarantees ordering: rm is already
+    // recorded by the time the result lands).
+    const rmCall = promisifiedMock.mock.calls.find(
+      (c) => Array.isArray(c[1]) && (c[1] as string[])[0] === "rm",
+    ) as [string, string[]] | undefined;
     expect(rmCall).toBeDefined();
     expect(rmCall![1]).toEqual(["rm", "-f", expect.stringMatching(/^kokoro-exec-/)]);
   });

@@ -274,6 +274,13 @@ interface DispatchResult {
   summary: string;
   /** Full structured result for logging / conversation injection. */
   detail: Record<string, unknown>;
+  /**
+   * Fuller result body for the conversation resolution event (and thus the
+   * acknowledgment turn) when `summary` alone would lose the payload — e.g.
+   * executeCode's program output. Handlers fall back to `summary` when
+   * absent. Producers own the cap (sandbox output is ≤4000 chars).
+   */
+  resultText?: string;
 }
 
 interface DispatchContext {
@@ -968,6 +975,12 @@ export async function dispatchGatedAction(
           runCode({ language: args.language, code: args.code }),
         );
 
+        // The summary stays bubble-short; `resultText` carries the full
+        // (≤4000-char) program output into the conversation resolution event
+        // so the acknowledgment turn can actually relay the result (or the
+        // traceback) — `detail` alone never reaches the user.
+        const resultText = result.output || undefined;
+
         if (result.timedOut) {
           return {
             success: false,
@@ -975,6 +988,7 @@ export async function dispatchGatedAction(
               config.EXECUTE_CODE_TIMEOUT_MS / 1000,
             )}s`,
             detail: { reason: "timeout", language: args.language, output: result.output },
+            resultText,
           };
         }
         if (result.oomKilled) {
@@ -982,6 +996,7 @@ export async function dispatchGatedAction(
             success: false,
             summary: `code was killed (out of memory, ${config.EXECUTE_CODE_MEMORY_MB} MB cap)`,
             detail: { reason: "oom", language: args.language, output: result.output },
+            resultText,
           };
         }
         if (result.outputOverflow) {
@@ -991,6 +1006,7 @@ export async function dispatchGatedAction(
             success: false,
             summary: "code produced too much output (1 MB cap) and was stopped",
             detail: { reason: "output_overflow", language: args.language, output: result.output },
+            resultText,
           };
         }
         if (result.exitCode !== 0) {
@@ -1003,12 +1019,14 @@ export async function dispatchGatedAction(
               language: args.language,
               output: result.output,
             },
+            resultText,
           };
         }
         return {
           success: true,
           summary: `code ran: ${result.output.slice(0, 200)}`,
           detail: { exitCode: result.exitCode, language: args.language, output: result.output },
+          resultText,
         };
       }
     }
