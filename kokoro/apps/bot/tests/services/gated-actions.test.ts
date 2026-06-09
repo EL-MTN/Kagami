@@ -1073,7 +1073,15 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
     expect(GATED_TOOL_NAMES as readonly string[]).not.toContain("mergeSkills");
   });
 
+  /** Preflight reads: both absorbees still at their proposed baseVersions. */
+  function mockAbsorbeePreflightOk() {
+    vi.mocked(getSkillById)
+      .mockResolvedValueOnce({ name: "dupe-a", version: 2, enabled: true } as never)
+      .mockResolvedValueOnce({ name: "dupe-b", version: 1, enabled: true } as never);
+  }
+
   it("updates the survivor first, then archives every absorbed skill (one approved action)", async () => {
+    mockAbsorbeePreflightOk();
     vi.mocked(updateSkillIfVersion)
       .mockResolvedValueOnce({ name: "survivor", version: 2 } as never) // survivor content
       .mockResolvedValueOnce({ name: "dupe-a", version: 3 } as never) // absorb A
@@ -1096,12 +1104,59 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
     // Each absorbee is disabled against ITS OWN baseVersion.
     expect(calls[1]).toEqual([ABSORBED_A, "chat-1", 2, { enabled: false }]);
     expect(calls[2]).toEqual([ABSORBED_B, "chat-1", 1, { enabled: false }]);
+    // The absorbee preflight runs BEFORE the survivor write — a stale absorbee
+    // must be caught while nothing has been mutated.
+    const preflightOrder = vi.mocked(getSkillById).mock.invocationCallOrder;
+    const survivorWriteOrder = vi.mocked(updateSkillIfVersion).mock.invocationCallOrder[0];
+    expect(Math.max(...preflightOrder)).toBeLessThan(survivorWriteOrder ?? 0);
     expect(vi.mocked(recordSkillProposalDecision)).not.toHaveBeenCalled();
   });
 
+  it("cancels the merge in preflight — nothing written — when an absorbee changed or is gone", async () => {
+    vi.mocked(getSkillById)
+      .mockResolvedValueOnce(null) // absorb A: deleted from the dashboard
+      .mockResolvedValueOnce({ name: "dupe-b", version: 7, enabled: true } as never); // absorb B: edited
+
+    const result = await dispatchGatedAction("mergeSkills", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(false);
+    expect(result.summary).toContain("merge cancelled, nothing changed");
+    expect(result.detail).toEqual({
+      reason: "version_conflict",
+      skillId: SURVIVOR_ID,
+      failed: [
+        { skillId: ABSORBED_A, reason: "not_found" },
+        { skillId: ABSORBED_B, reason: "version_conflict" },
+      ],
+    });
+    // The survivor was never touched — the merged body did not land.
+    expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
+  });
+
+  it("lets an absorbee already archived at its baseVersion pass preflight", async () => {
+    vi.mocked(getSkillById)
+      .mockResolvedValueOnce({ name: "dupe-a", version: 2, enabled: false } as never) // archived, same version
+      .mockResolvedValueOnce({ name: "dupe-b", version: 1, enabled: true } as never)
+      .mockResolvedValueOnce({ name: "dupe-a", version: 2, enabled: false } as never); // absorb-loop re-read
+    vi.mocked(updateSkillIfVersion)
+      .mockResolvedValueOnce({ name: "survivor", version: 2 } as never) // survivor ok
+      .mockResolvedValueOnce(null) // absorb A: CAS refused — already disabled
+      .mockResolvedValueOnce({ name: "dupe-b", version: 2 } as never); // absorb B ok
+
+    const result = await dispatchGatedAction("mergeSkills", draft, { chatId: "chat-1" });
+
+    expect(result.success).toBe(true);
+    expect(result.detail).toEqual({
+      skillId: SURVIVOR_ID,
+      version: 2,
+      archived: ["dupe-a", "dupe-b"],
+    });
+  });
+
   it("aborts with NOTHING archived when the survivor CAS fails", async () => {
+    mockAbsorbeePreflightOk();
     vi.mocked(updateSkillIfVersion).mockResolvedValue(null);
-    vi.mocked(getSkillById).mockResolvedValue({ name: "survivor", version: 4 } as never);
+    vi.mocked(getSkillById).mockResolvedValueOnce({ name: "survivor", version: 4 } as never);
 
     const result = await dispatchGatedAction("mergeSkills", draft, { chatId: "chat-1" });
 
@@ -1112,8 +1167,9 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
   });
 
   it("cancels the merge with state_conflict when the survivor was archived after the proposal (same version)", async () => {
+    mockAbsorbeePreflightOk();
     vi.mocked(updateSkillIfVersion).mockResolvedValue(null);
-    vi.mocked(getSkillById).mockResolvedValue({
+    vi.mocked(getSkillById).mockResolvedValueOnce({
       name: "survivor",
       version: 1, // unchanged — archived from the dashboard, which doesn't bump it
       enabled: false,
@@ -1128,12 +1184,13 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
     expect(vi.mocked(updateSkillIfVersion)).toHaveBeenCalledTimes(1);
   });
 
-  it("reports a partial merge as a failure when an absorbee CAS fails", async () => {
+  it("reports a partial merge as a failure when an absorbee CAS fails after preflight (residual race)", async () => {
+    mockAbsorbeePreflightOk();
     vi.mocked(updateSkillIfVersion)
       .mockResolvedValueOnce({ name: "survivor", version: 2 } as never) // survivor ok
-      .mockResolvedValueOnce(null) // absorb A raced
+      .mockResolvedValueOnce(null) // absorb A raced between preflight and archive
       .mockResolvedValueOnce({ name: "dupe-b", version: 2 } as never); // absorb B ok
-    vi.mocked(getSkillById).mockResolvedValue({ name: "dupe-a", version: 9 } as never);
+    vi.mocked(getSkillById).mockResolvedValueOnce({ name: "dupe-a", version: 9 } as never);
 
     const result = await dispatchGatedAction("mergeSkills", draft, { chatId: "chat-1" });
 
@@ -1145,27 +1202,6 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
     });
     // One failed absorbee doesn't stop the others from archiving.
     expect(vi.mocked(updateSkillIfVersion)).toHaveBeenCalledTimes(3);
-  });
-
-  it("counts an absorbee already archived at its merged-from version as archived (goal state holds)", async () => {
-    vi.mocked(updateSkillIfVersion)
-      .mockResolvedValueOnce({ name: "survivor", version: 2 } as never) // survivor ok
-      .mockResolvedValueOnce(null) // absorb A: CAS refused — already disabled
-      .mockResolvedValueOnce({ name: "dupe-b", version: 2 } as never); // absorb B ok
-    vi.mocked(getSkillById).mockResolvedValue({
-      name: "dupe-a",
-      version: 2, // matches its baseVersion — content folded in is what was reviewed
-      enabled: false,
-    } as never);
-
-    const result = await dispatchGatedAction("mergeSkills", draft, { chatId: "chat-1" });
-
-    expect(result.success).toBe(true);
-    expect(result.detail).toEqual({
-      skillId: SURVIVOR_ID,
-      version: 2,
-      archived: ["dupe-a", "dupe-b"],
-    });
   });
 
   it("rejects a self-absorbing merge before touching the db", async () => {

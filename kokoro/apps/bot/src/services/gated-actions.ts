@@ -788,6 +788,38 @@ export async function dispatchGatedAction(
           "Dispatching approved mergeSkills",
         );
 
+        // Preflight every absorbee BEFORE touching the survivor: the survivor
+        // write is the point of no return (its body is overwritten with the
+        // merged content), so a stale absorbee must cancel the whole merge
+        // while nothing has changed yet. Acceptable states: still at
+        // baseVersion and enabled (will be CAS-archived below), or already
+        // disabled at baseVersion (dashboard archive — the goal state holds
+        // and its content at that version is exactly what was folded in).
+        const staleAbsorbed: { skillId: string; reason: string }[] = [];
+        for (const a of args.absorbed) {
+          const current = await getSkillById(a.skillId, ctx.chatId);
+          if (!current) {
+            staleAbsorbed.push({ skillId: a.skillId, reason: "not_found" });
+          } else if (current.version !== a.baseVersion) {
+            staleAbsorbed.push({ skillId: a.skillId, reason: "version_conflict" });
+          }
+        }
+        if (staleAbsorbed.length > 0) {
+          logger.warn(
+            { chatId: ctx.chatId, skillId: args.skillId, failed: staleAbsorbed },
+            "mergeSkills preflight found stale absorbed skills — merge cancelled",
+          );
+          return {
+            success: false,
+            summary: `${staleAbsorbed.length} of ${args.absorbed.length} absorbed skill(s) changed (or are gone) since this was proposed — merge cancelled, nothing changed`,
+            detail: {
+              reason: "version_conflict",
+              skillId: args.skillId,
+              failed: staleAbsorbed,
+            },
+          };
+        }
+
         // Survivor-first ordering: the merged content must land before anything
         // is archived. If the survivor CAS fails (raced edit / gone), abort with
         // NOTHING changed — never archive skills whose content didn't actually
@@ -829,9 +861,13 @@ export async function dispatchGatedAction(
           };
         }
 
-        // Each absorbed archive is its own CAS — one raced absorbee must not
-        // block the others, but a partial outcome is surfaced as a failure so
-        // the user (and the next review pass) knows duplicates may remain.
+        // Each absorbed archive is its own CAS — the preflight above makes a
+        // conflict here a ms-wide race (an edit landing between preflight and
+        // archive), but read-then-write can't close that window without
+        // transactions (standalone Mongo), so the CAS stays as the backstop.
+        // One raced absorbee must not block the others; a partial outcome is
+        // surfaced as a failure so the user (and the next review pass) knows
+        // duplicates may remain.
         const archived: string[] = [];
         const failed: { skillId: string; reason: string }[] = [];
         for (const a of args.absorbed) {
