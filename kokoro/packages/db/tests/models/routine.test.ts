@@ -249,6 +249,13 @@ describe("routine logs", () => {
     expect(childLog.parameters).toEqual({ x: 1 });
   });
 
+  it("createRoutineLog records the trace id when provided", async () => {
+    const s = await createRoutine("chat-1", baseInput);
+    const traceId = "1234567890abcdef1234567890abcdef";
+    const log = await createRoutineLog(s.id, "cron", { traceId });
+    expect(log.traceId).toBe(traceId);
+  });
+
   it("failRoutineLog records the failure reason", async () => {
     const s = await createRoutine("chat-1", baseInput);
     const log = await createRoutineLog(s.id, "manual");

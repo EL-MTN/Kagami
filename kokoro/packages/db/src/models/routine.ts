@@ -129,6 +129,7 @@ export interface IRoutineLog extends Document {
   routineId: Types.ObjectId;
   trigger: "cron" | "manual" | "routine";
   parentLogId?: Types.ObjectId;
+  traceId?: string;
   parameters?: Record<string, unknown>;
   status: "running" | "completed" | "failed";
   summary?: string;
@@ -140,6 +141,7 @@ const routineLogSchema = new Schema<IRoutineLog>({
   routineId: { type: Schema.Types.ObjectId, ref: "Routine", required: true },
   trigger: { type: String, enum: ["cron", "manual", "routine"], required: true },
   parentLogId: { type: Schema.Types.ObjectId, ref: "RoutineLog" },
+  traceId: { type: String },
   parameters: { type: Schema.Types.Mixed },
   status: { type: String, enum: ["running", "completed", "failed"], required: true },
   summary: { type: String },
@@ -452,12 +454,13 @@ export async function isRoutineRunning(routineId: string): Promise<boolean> {
 export async function createRoutineLog(
   routineId: string,
   trigger: "cron" | "manual" | "routine",
-  options?: { parentLogId?: string; parameters?: Record<string, unknown> },
+  options?: { parentLogId?: string; traceId?: string; parameters?: Record<string, unknown> },
 ): Promise<IRoutineLog> {
   return RoutineLog.create({
     routineId: new Types.ObjectId(routineId),
     trigger,
     parentLogId: options?.parentLogId ? new Types.ObjectId(options.parentLogId) : undefined,
+    traceId: options?.traceId,
     parameters: options?.parameters,
     status: "running",
     startedAt: new Date(),

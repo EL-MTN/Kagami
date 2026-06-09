@@ -9,7 +9,13 @@ import {
   MAX_ROUTINE_DEPTH,
   type IRoutine,
 } from "@kokoro/db";
-import { logger, computeNextRunAt } from "@kokoro/shared";
+import {
+  logger,
+  computeNextRunAt,
+  getTraceContext,
+  newTraceContext,
+  runWithTrace,
+} from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { sendSegmented } from "../ai/response";
 import { trackUsage } from "../ai/token-tracker";
@@ -98,6 +104,17 @@ export async function executeRoutine(
   adapter: PlatformAdapter,
   options: ExecuteRoutineOptions,
 ): Promise<string> {
+  if (options.trigger !== "routine" || !getTraceContext()) {
+    return runWithTrace(newTraceContext(), () => executeRoutineInTrace(routine, adapter, options));
+  }
+  return executeRoutineInTrace(routine, adapter, options);
+}
+
+async function executeRoutineInTrace(
+  routine: IRoutine,
+  adapter: PlatformAdapter,
+  options: ExecuteRoutineOptions,
+): Promise<string> {
   const {
     advanceSchedule = false,
     trigger,
@@ -117,7 +134,8 @@ export async function executeRoutine(
     return "";
   }
 
-  const log = await createRoutineLog(routineId, trigger, { parentLogId, parameters });
+  const traceId = getTraceContext()?.traceId;
+  const log = await createRoutineLog(routineId, trigger, { parentLogId, traceId, parameters });
   const logId = log._id.toString();
 
   logger.info({ routineId, name: routine.name, trigger, depth }, "Executing routine");
