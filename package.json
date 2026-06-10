@@ -44,6 +44,8 @@
     "cockpit:dev:dashboard": "turbo run dev --filter=@cockpit/dashboard",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "env:gen": "turbo run build --filter=@kagami/env --output-logs=errors-only && tsx scripts/env/generate.ts",
+    "env:check": "turbo run build --filter=@kagami/env --output-logs=errors-only && tsx scripts/env/generate.ts --check",
     "lint": "turbo run lint",
     "lint:fix": "turbo run lint:fix",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
