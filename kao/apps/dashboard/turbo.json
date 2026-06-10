@@ -1,0 +1,13 @@
+{
+  // Hand-maintained (this dashboard is not on @kagami/env yet): declares the
+  // env this app reads server-side so Turbo's strict env mode passes shell/CI-
+  // set values into `next build`. Local dev needs nothing — `dev` inherits
+  // passThroughEnv: ["*"] from the root, and `.env` self-load bypasses Turbo.
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "env": ["KAO_API_URL", "KAO_TOKEN"]
+    }
+  }
+}

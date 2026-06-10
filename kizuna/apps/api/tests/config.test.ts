@@ -63,7 +63,7 @@ describe("loadConfig", () => {
   it("rejects a short KAO_TOKEN", () => {
     expect(() =>
       loadConfig({ ...validEnv, KAO_URL: "https://api.kao.localhost", KAO_TOKEN: "too-short" }),
-    ).toThrow(/at least 16 characters/);
+    ).toThrow(/at least 16 chars/);
   });
 
   it("rejects a KAO_URL with a path component", () => {
@@ -100,13 +100,13 @@ describe("loadConfig", () => {
 
   it("rejects half-configured Kao (URL without token)", () => {
     expect(() => loadConfig({ ...validEnv, KAO_URL: "https://api.kao.localhost" })).toThrow(
-      /KAO_URL and KAO_TOKEN must be set together/,
+      /KAO_TOKEN is required when any Kao variable is set/,
     );
   });
 
   it("rejects half-configured Kao (token without URL)", () => {
     expect(() => loadConfig({ ...validEnv, KAO_TOKEN: "bearer-value-16chars" })).toThrow(
-      /KAO_URL and KAO_TOKEN must be set together/,
+      /KAO_URL is required when any Kao variable is set/,
     );
   });
 });

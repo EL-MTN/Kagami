@@ -15,7 +15,8 @@ kizuna/
 │   │   ├── src/
 │   │   │   ├── main.ts         # boot: loadConfig → connectDb → createApp → ingestScheduler
 │   │   │   ├── server.ts       # Express app builder + middleware mount order
-│   │   │   ├── config.ts       # zod env schema; thrown errors on misconfig
+│   │   │   ├── config.ts       # loadConfig DI wrapper over the env spec; throws on misconfig
+│   │   │   ├── env.ts          # @kagami/env spec — single source of truth for env vars
 │   │   │   ├── db/             # Mongoose connect + models + recordInteraction writer
 │   │   │   ├── ingest/         # Gmail + Calendar workers, parsers, scheduler
 │   │   │   ├── routes/         # per-resource Express routers
@@ -103,19 +104,19 @@ The two apps share **no in-process code**. The dashboard's contract with the API
 
 Common tasks → files. When a task touches multiple files, all are listed.
 
-| Task                                                   | File(s)                                                                                                                                |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Add a Mongoose model                                   | `apps/api/src/db/models/<model>.ts`                                                                                                    |
-| Add a REST endpoint                                    | New router in `apps/api/src/routes/<name>.ts` + mount in `apps/api/src/server.ts`                                                      |
-| Add a sync source (Gmail, Calendar, etc.)              | `apps/api/src/ingest/<source>/` + register in `apps/api/src/ingest/scheduler.ts`                                                       |
-| Add an env var                                         | `apps/api/src/config.ts` (Zod schema) + `apps/api/.env.example`                                                                        |
-| Kao identity client (calls `/grants/kizuna/token`)     | `apps/api/src/lib/kao-client.ts`                                                                                                       |
-| Interaction writer (the canonical `recordInteraction`) | `apps/api/src/db/recordInteraction.ts`                                                                                                 |
-| Dashboard page                                         | `apps/dashboard/src/app/<route>/page.tsx`; API client at `apps/dashboard/src/lib/api.ts`                                               |
-| Logger init                                            | `apps/api/src/lib/logger.ts`                                                                                                           |
-| API server entrypoint                                  | `apps/api/src/main.ts` (boot: `loadConfig → connectDb → createApp → ingestScheduler`); Express app builder in `apps/api/src/server.ts` |
-| Shared Zod schemas (pagination, IdParam, ISO date)     | `apps/api/src/schemas/`                                                                                                                |
-| Tests                                                  | `apps/api/tests/*.test.ts`                                                                                                             |
+| Task                                                   | File(s)                                                                                                                                                             |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Add a Mongoose model                                   | `apps/api/src/db/models/<model>.ts`                                                                                                                                 |
+| Add a REST endpoint                                    | New router in `apps/api/src/routes/<name>.ts` + mount in `apps/api/src/server.ts`                                                                                   |
+| Add a sync source (Gmail, Calendar, etc.)              | `apps/api/src/ingest/<source>/` + register in `apps/api/src/ingest/scheduler.ts`                                                                                    |
+| Add an env var                                         | `apps/api/src/env.ts` (`@kagami/env` spec: schema + doc metadata), then `npm run env:gen` — `.env.example`, the docs table, and `apps/api/turbo.json` are generated |
+| Kao identity client (calls `/grants/kizuna/token`)     | `apps/api/src/lib/kao-client.ts`                                                                                                                                    |
+| Interaction writer (the canonical `recordInteraction`) | `apps/api/src/db/recordInteraction.ts`                                                                                                                              |
+| Dashboard page                                         | `apps/dashboard/src/app/<route>/page.tsx`; API client at `apps/dashboard/src/lib/api.ts`                                                                            |
+| Logger init                                            | `apps/api/src/lib/logger.ts`                                                                                                                                        |
+| API server entrypoint                                  | `apps/api/src/main.ts` (boot: `loadConfig → connectDb → createApp → ingestScheduler`); Express app builder in `apps/api/src/server.ts`                              |
+| Shared Zod schemas (pagination, IdParam, ISO date)     | `apps/api/src/schemas/`                                                                                                                                             |
+| Tests                                                  | `apps/api/tests/*.test.ts`                                                                                                                                          |
 
 ## Doc Maintenance
 

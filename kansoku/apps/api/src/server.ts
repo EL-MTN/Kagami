@@ -4,6 +4,7 @@ import express, { type ErrorRequestHandler } from "express";
 import { pinoHttp } from "pino-http";
 import { ZodError } from "zod";
 import { traceMiddleware } from "@kagami/logger/express-trace";
+import { loadEnv } from "./config.js";
 import { logger } from "./logger.js";
 import { corsForDashboard } from "./lib/cors.js";
 import { metaRouter } from "./routes/meta.js";
@@ -17,8 +18,8 @@ import { closeMongo } from "./storage/mongo.js";
 
 // `PORT` is injected by `portless run`; 7779 is the standalone fallback
 // (Kioku owns 7777, Kansoku takes 7779).
-const PORT = Number.parseInt(process.env.PORT ?? "7779", 10);
-const HOST = process.env.KANSOKU_HOST ?? "127.0.0.1";
+const PORT = loadEnv().PORT;
+const HOST = loadEnv().KANSOKU_HOST;
 
 export function createApp(opts: { ingestToken: string | undefined }): express.Express {
   const app = express();
@@ -78,7 +79,7 @@ export function createApp(opts: { ingestToken: string | undefined }): express.Ex
 }
 
 async function main(): Promise<void> {
-  const ingestToken = process.env.KANSOKU_INGEST_TOKEN;
+  const ingestToken = loadEnv().KANSOKU_INGEST_TOKEN;
   if (!ingestToken) {
     logger.warn(
       "KANSOKU_INGEST_TOKEN is unset — POST /v1/logs will return 503 until it is configured",

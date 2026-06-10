@@ -12,12 +12,13 @@ import { queryRouter } from "./routes/query.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { mcpRouter } from "./mcp.js";
 import { getBm25ParamConfig } from "./retrieval/scoring.js";
+import { loadEnv } from "./config.js";
 import { ensureIndexes } from "./storage/indexes.js";
 import { closeMongo } from "./storage/mongo.js";
 
 // `PORT` is injected by `portless run`; 7777 is the standalone fallback.
-const PORT = Number.parseInt(process.env.PORT ?? "7777", 10);
-const HOST = process.env.KIOKU_HOST ?? "127.0.0.1";
+const PORT = loadEnv().PORT;
+const HOST = loadEnv().KIOKU_HOST;
 
 const app = express();
 
