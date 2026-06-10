@@ -180,14 +180,14 @@ describe("allTools — sandboxed code execution", () => {
   });
 
   it("registers executeCode when EXECUTE_CODE_ENABLED is set", () => {
-    mockConfig.EXECUTE_CODE_ENABLED = "true";
+    mockConfig.EXECUTE_CODE_ENABLED = true;
     expect(Object.keys(allTools(baseCtx))).toContain("executeCode");
   });
 
   it("is NEVER offered to watcher / under-watcher palettes, even when enabled", () => {
     // Execution is a mutation-class capability: observation runs and delegate
     // sub-tasks must not be able to raise a code-approval bubble.
-    mockConfig.EXECUTE_CODE_ENABLED = "true";
+    mockConfig.EXECUTE_CODE_ENABLED = true;
     expect(Object.keys(watcherTools(baseCtx))).not.toContain("executeCode");
     expect(Object.keys(routineToolsUnderWatcher(baseCtx))).not.toContain("executeCode");
   });

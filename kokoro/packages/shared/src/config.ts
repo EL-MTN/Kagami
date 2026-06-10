@@ -123,14 +123,19 @@ const baseSchema = z.object({
     .default("true")
     .transform((s) => s === "true"),
 
-  // Sandboxed code execution (executeCode tool). Presence-flag like KAO_URL:
-  // unset/empty → tool not registered. Requires a local Docker daemon at
-  // runtime; the tool fails open per call when the daemon is down. Containers
-  // run with no network, empty env, read-only rootfs — see
+  // Sandboxed code execution (executeCode tool). Real boolean (the
+  // BROWSER_HEADLESS pattern): only the literal "true" enables — "false",
+  // unset, and empty all stay off, so the emergency off switch works without
+  // having to delete the var. Requires a local Docker daemon at runtime; the
+  // tool fails open per call when the daemon is down. Containers run with no
+  // network, empty env, read-only rootfs — see
   // apps/bot/src/services/code-sandbox.ts for the full profile.
   EXECUTE_CODE_ENABLED: z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
-    z.string().optional(),
+    z
+      .string()
+      .default("false")
+      .transform((s) => s === "true"),
   ),
   EXECUTE_CODE_PYTHON_IMAGE: z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),

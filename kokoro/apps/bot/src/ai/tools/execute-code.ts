@@ -6,26 +6,54 @@ import { raisePendingConfirmation } from "./confirmations";
 import type { SandboxLanguage } from "../../services/code-sandbox";
 
 /**
- * Cap on the code shown in the approval bubble. The full code (≤8000 chars by
- * schema) always executes from the PendingConfirmation row — only the on-screen
- * preview is truncated, with an explicit marker so the user knows there's more.
+ * Schema cap on the code body, chosen so the FULL program always fits in the
+ * approval bubble (Telegram caps a message at 4096 chars, and the prompt adds
+ * wrapper text + the ≤200-char description). What the user reviews is exactly
+ * what executes — never a truncated preview a model could hide a suffix
+ * behind. Mirrored by `executeCodeArgs` in gated-actions.ts, which re-enforces
+ * it at the dispatch boundary.
  */
-const CODE_PREVIEW_CAP = 3000;
+export const MAX_CODE_LENGTH = 3000;
+
+/**
+ * Telegram caps a message at 4096 chars, and the prompt's fence grows with
+ * the longest backtick run in the code (see buildCodePrompt) — so a
+ * backtick-heavy script can outgrow the bubble even under MAX_CODE_LENGTH.
+ * Checked pre-raise: refusing here costs one tool-error turn; raising and
+ * failing the send would orphan a pending row the user never saw.
+ */
+const MAX_PROMPT_LENGTH = 4096;
+
+/**
+ * The model-supplied description sits ABOVE the code fence in the same
+ * bubble. A backtick run inside it could pair with the code block's fence in
+ * the Telegram formatter, breaking the program out of its <pre> block and
+ * re-exposing it to the inline markdown passes — the user would review a
+ * mangled rendering while the original code still executes. Descriptions are
+ * prose; they never need backticks, so replace them outright.
+ */
+function sanitizeDescription(description: string): string {
+  return description.replace(/`/g, "'");
+}
 
 function buildCodePrompt(language: SandboxLanguage, code: string, description: string): string {
   const fenceTag = language === "python" ? "python" : "js";
-  const preview =
-    code.length > CODE_PREVIEW_CAP
-      ? `${code.slice(0, CODE_PREVIEW_CAP)}\n… (${code.length - CODE_PREVIEW_CAP} more chars)`
-      : code;
+  // The fence must be LONGER than any backtick run inside the code — an
+  // embedded ``` would otherwise close the block early and the bubble would
+  // show a broken fragment while the pending action still executes the full
+  // original code. The Telegram formatter parses fences of 3+ backticks with
+  // a matching-length closer, so a longer fence keeps the block byte-exact.
+  const longestBacktickRun =
+    code.match(/`+/g)?.reduce((max, run) => Math.max(max, run.length), 0) ?? 0;
+  const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
   return [
     `Run this ${language} code in the sandbox?`,
     ``,
     description,
     ``,
-    `\`\`\`${fenceTag}`,
-    preview,
-    `\`\`\``,
+    `${fence}${fenceTag}`,
+    code,
+    fence,
   ].join("\n");
 }
 
@@ -49,9 +77,21 @@ export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) 
       code: z
         .string()
         .min(1)
-        .max(8000)
+        .max(MAX_CODE_LENGTH)
+        // The Telegram formatter strips NUL bytes before rendering (they
+        // could forge its internal park/restore placeholders), so code
+        // containing a NUL would DISPLAY without it while EXECUTING with it.
+        // Unicode bidi controls (RLO/LRO, the isolates, PDF…) are worse:
+        // Telegram renders them, visually REORDERING the program inside the
+        // <pre> bubble while the sandbox receives the original byte order —
+        // Trojan-Source style. Both are the displayed≠executed gap this tool
+        // must never allow. Mirrored at the dispatch boundary
+        // (executeCodeArgs in gated-actions.ts).
+        .refine((value) => !value.includes("\u0000") && !/\p{Bidi_Control}/u.test(value), {
+          message: "code must not contain NUL or bidirectional-control characters",
+        })
         .describe(
-          "The complete script, read from stdin by the interpreter. Print results to stdout — that's the only channel back.",
+          "The complete script (max 3000 chars), read from stdin by the interpreter. Print results to stdout — that's the only channel back.",
         ),
       description: z
         .string()
@@ -62,12 +102,23 @@ export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) 
         ),
     }),
     execute: async ({ language, code, description }) => {
+      const safeDescription = sanitizeDescription(description);
+      const promptText = buildCodePrompt(language, code, safeDescription);
+      if (promptText.length > MAX_PROMPT_LENGTH) {
+        return {
+          pending: false,
+          success: false,
+          reason:
+            "the code's long backtick runs make the approval prompt exceed the message size cap — build long backtick strings programmatically (e.g. '`' * n) instead of writing them literally",
+        };
+      }
+
       try {
         const id = await raisePendingConfirmation(chatId, adapter, {
-          summary: `run ${language} code: ${description}`,
+          summary: `run ${language} code: ${safeDescription}`,
           action: { tool: "executeCode", args: { language, code } },
           origin: "conversation",
-          promptText: buildCodePrompt(language, code, description),
+          promptText,
         });
 
         // Never log the code body — only its shape (see gated-actions.ts).

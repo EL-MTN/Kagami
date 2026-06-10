@@ -53,7 +53,9 @@ async function main() {
   // Sandboxed code execution: clear containers orphaned by a previous process
   // death, and pre-pull the sandbox images so the first approved run doesn't
   // spend its execution timeout on a registry download. Fire-and-forget —
-  // the bot must start regardless of Docker's state (both are fail-open).
+  // the bot must start regardless of Docker's state (both are fail-open),
+  // and container names are boot-scoped so a sweep still in flight can never
+  // reap a run approved right after restart (it only removes other boots').
   if (config.EXECUTE_CODE_ENABLED) {
     void sweepOrphanContainers().catch(() => {});
     void pullImages().catch(() => {});

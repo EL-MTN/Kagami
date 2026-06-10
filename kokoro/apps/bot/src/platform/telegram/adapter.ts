@@ -4,6 +4,24 @@ import type { Context } from "grammy";
 import { logger } from "@kokoro/shared";
 import { markdownToTelegramHtml } from "./format";
 
+/**
+ * grammY errors carry the full API request `payload` — for a confirmation
+ * prompt that payload's `text` is the entire promptText, which for
+ * executeCode is the program body itself. Logging or rethrowing the raw
+ * error would ship that text to stdout/Kansoku, violating the never-log-code
+ * policy (see gated-actions.ts). Redact in place — stack, error_code and
+ * description all survive — BEFORE the error reaches any logger, here or in
+ * a caller's catch.
+ */
+export function redactPromptPayload(error: unknown): void {
+  if (error && typeof error === "object" && "payload" in error) {
+    const payload = (error as { payload?: { text?: unknown } }).payload;
+    if (payload && typeof payload.text === "string") {
+      payload.text = `[redacted promptText, ${payload.text.length} chars]`;
+    }
+  }
+}
+
 export class TelegramAdapter implements PlatformAdapter {
   readonly platform = "telegram";
 
@@ -277,11 +295,19 @@ export class TelegramAdapter implements PlatformAdapter {
       });
       return String(sent.message_id);
     } catch (error) {
+      redactPromptPayload(error);
       logger.warn({ error: error }, "Confirmation prompt HTML send failed; retrying as plain text");
-      const sent = await this.bot.api.sendMessage(Number(chatId), text, {
-        reply_markup: keyboard,
-      });
-      return String(sent.message_id);
+      try {
+        const sent = await this.bot.api.sendMessage(Number(chatId), text, {
+          reply_markup: keyboard,
+        });
+        return String(sent.message_id);
+      } catch (retryError) {
+        // This error propagates to raisePendingConfirmation's caller, whose
+        // catch logs it — it must leave here with the promptText scrubbed.
+        redactPromptPayload(retryError);
+        throw retryError;
+      }
     }
   }
 

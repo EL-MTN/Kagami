@@ -12,7 +12,11 @@ const execFileAsync = promisify(execFile);
  *
  * Sandbox profile (every flag is load-bearing — tests pin the exact array):
  *   --network none            no network, full stop (no exfil, no installs)
- *   (no --env flags)          container env is empty — host secrets never enter
+ *   --env <proxy vars>=       Docker injects the client's ~/.docker/config.json
+ *                             proxy settings (which can carry credentials) into
+ *                             every container; pinned EMPTY overrides keep the
+ *                             env secret-free. No other --env flags exist —
+ *                             host secrets never enter.
  *   --cap-drop ALL            no Linux capabilities
  *   --security-opt no-new-privileges   no setuid escalation
  *   --read-only + --tmpfs /tmp         immutable rootfs, 64 MB scratch only
@@ -20,10 +24,14 @@ const execFileAsync = promisify(execFile);
  *                             `nobody` user entry)
  *   --pids-limit / --memory / --memory-swap / --cpus   fork-bomb + OOM + CPU caps
  *   --rm + unique name        ephemeral; the name lets the host kill it on timeout
+ *   --pull never              images come from the startup pre-pull only — a
+ *                             registry download mid-`run` would be unkillable
+ *                             by the timeout's `docker rm -f` (no container
+ *                             exists yet) and could overrun the deadline
  *
- * Non-zero exit, timeout, and OOM are *results* (the LLM reacts to them);
- * `CodeSandboxError` is reserved for infrastructure faults (daemon down,
- * image missing, unexpected client failure).
+ * Non-zero exit, timeout, OOM, and output overflow are *results* (the LLM
+ * reacts to them); `CodeSandboxError` is reserved for infrastructure faults
+ * (daemon down, image missing, unexpected client failure).
  */
 
 export type SandboxLanguage = "python" | "node";
@@ -43,6 +51,12 @@ export interface RunCodeResult {
   stderr: string;
   timedOut: boolean;
   oomKilled: boolean;
+  /**
+   * True when stdout+stderr blew past the 1 MB client buffer and the run was
+   * stopped early. The exit code is unknowable then (the client died first) —
+   * this flag, not exitCode, is the authoritative failure signal.
+   */
+  outputOverflow: boolean;
   /** Combined stdout+stderr, capped at OUTPUT_CAP — ready for the LLM. */
   output: string;
 }
@@ -69,6 +83,81 @@ const MAX_BUFFER_BYTES = 1024 * 1024;
 const PULL_TIMEOUT_MS = 5 * 60 * 1000;
 
 const CONTAINER_NAME_PREFIX = "kokoro-exec-";
+
+/**
+ * Container names are boot-scoped (`kokoro-exec-<bootId>-<uuid>`) so the
+ * startup orphan sweep can never reap a live run: the sweep removes only
+ * names from OTHER boots. That keeps it safe to fire-and-forget while
+ * approvals are already being dispatched — a slow `docker ps` pass would
+ * otherwise race a run approved right after restart and kill it as an
+ * "orphan". Exported for tests.
+ */
+export const BOOT_NAME_PREFIX = `${CONTAINER_NAME_PREFIX}${randomUUID().slice(0, 8)}-`;
+
+/**
+ * Timeout-reap retry policy. A single missed `docker rm -f` (the daemon
+ * hasn't registered the name yet, or a transient client failure) would leave
+ * the container running past the deadline with the attached `docker run`
+ * holding a semaphore slot indefinitely — so the reaper retries until the rm
+ * lands, the run settles on its own, or the attempts are exhausted (then the
+ * docker client is killed as a backstop: the slot frees, and any surviving
+ * container is left for the next boot's sweep).
+ */
+const REAP_ATTEMPTS = 5;
+const REAP_RETRY_DELAY_MS = 250;
+
+/**
+ * Per-attempt bound on a reap's `docker rm -f`. A wedged daemon can accept
+ * the connection and then never respond — an unbounded await would pin the
+ * retry loop on a single never-settling attempt, so its give-up paths (the
+ * client-kill backstop, the overflow error log) would never run. Killing the
+ * rm CLIENT is always safe; the loop just tries again.
+ */
+const REAP_ATTEMPT_TIMEOUT_MS = 5_000;
+
+/**
+ * Docker injects HTTP_PROXY/HTTPS_PROXY/FTP_PROXY/ALL_PROXY/NO_PROXY (both
+ * cases) into every container when the invoking client's
+ * ~/.docker/config.json carries proxy settings — and proxy URLs routinely
+ * embed credentials. `--network none` blocks their USE, not their READ:
+ * approved code could simply print them. Explicit empty `--env VAR=` flags
+ * beat the config.json injection, so the container env stays secret-free on
+ * proxy-configured hosts too.
+ */
+const PROXY_ENV_OVERRIDES = ["HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "ALL_PROXY", "NO_PROXY"]
+  .flatMap((name) => [name, name.toLowerCase()])
+  .flatMap((name) => ["--env", `${name}=`]);
+
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Force-remove a container, retrying per REAP_ATTEMPTS — `rm -f` removes what
+ * exists NOW (it does not schedule a future kill), so one attempt that misses
+ * or fails would leave the container running. Each attempt is bounded by
+ * REAP_ATTEMPT_TIMEOUT_MS. `shouldStop` short-circuits between attempts (the
+ * timeout path passes "has the run already exited?" — then `--rm` has already
+ * cleaned up and further attempts are pointless). Returns false only when
+ * every attempt failed and the container may still be alive.
+ */
+async function removeContainerWithRetry(
+  name: string,
+  shouldStop?: () => boolean,
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= REAP_ATTEMPTS; attempt++) {
+    try {
+      await execFileAsync("docker", ["rm", "-f", name], {
+        timeout: REAP_ATTEMPT_TIMEOUT_MS,
+        killSignal: "SIGKILL",
+      });
+      return true;
+    } catch {
+      if (shouldStop?.()) return true;
+      if (attempt < REAP_ATTEMPTS) await delay(REAP_RETRY_DELAY_MS);
+      if (shouldStop?.()) return true;
+    }
+  }
+  return false;
+}
 
 // ─── concurrency ─────────────────────────────────────────────────────────────
 
@@ -106,7 +195,11 @@ interface ExecFileFailure {
 }
 
 function buildOutput(stdout: string, stderr: string): string {
-  const combined = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
+  // No trimming and no separator: this string is relayed to the conversation
+  // as "what the code printed", and for text-generating programs leading or
+  // trailing whitespace IS part of the result. Plain concatenation (stdout
+  // then stderr) adds and removes nothing — only the cap may alter it.
+  const combined = stdout + stderr;
   if (combined.length <= OUTPUT_CAP) return combined;
   return `${combined.slice(0, OUTPUT_CAP)}…[truncated ${combined.length - OUTPUT_CAP}]`;
 }
@@ -116,12 +209,14 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
   const memoryMb = opts.memoryMb ?? config.EXECUTE_CODE_MEMORY_MB;
   const image =
     opts.language === "python" ? config.EXECUTE_CODE_PYTHON_IMAGE : config.EXECUTE_CODE_NODE_IMAGE;
-  const name = `${CONTAINER_NAME_PREFIX}${randomUUID()}`;
+  const name = `${BOOT_NAME_PREFIX}${randomUUID()}`;
 
   // Args array, never a shell — the code body only ever travels via stdin.
   const args = [
     "run",
     "--rm",
+    "--pull",
+    "never",
     "--name",
     name,
     "--network",
@@ -143,6 +238,7 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     "/tmp:size=64m",
     "--user",
     "65534:65534",
+    ...PROXY_ENV_OVERRIDES,
     "-i",
     image,
     ...(opts.language === "python" ? ["python3", "-"] : ["node", "-"]),
@@ -157,12 +253,36 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     const promise = execFileAsync("docker", args, { maxBuffer: MAX_BUFFER_BYTES });
     const child = promise.child;
 
+    // Settlement flag for the reaper: once `docker run` has exited (any
+    // outcome), further rm retries are pointless — `--rm` already cleaned up.
+    let settled = false;
+    void promise.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
     // Node's `timeout` option only kills the docker *client*; the container
     // would keep running. Own timer → `docker rm -f` kills the container,
-    // which makes the attached `docker run` exit.
+    // which makes the attached `docker run` exit. Retried per REAP_ATTEMPTS —
+    // `rm -f` removes what exists NOW, it does not schedule a future kill, so
+    // one attempt that misses (or fails) would let the run outlive the cap.
+    const reapUntilGone = async (): Promise<void> => {
+      if (await removeContainerWithRetry(name, () => settled)) return;
+      // A container shouldn't survive repeated forced removals — assume the
+      // daemon is wedged. Kill the client so the awaited run settles and the
+      // semaphore slot frees; any surviving container becomes an orphan for
+      // the next boot's sweep.
+      logger.error({ name }, "Code-exec timeout reap failed; killing docker client");
+      child.kill("SIGKILL");
+    };
+
     timer = setTimeout(() => {
       timedOut = true;
-      execFile("docker", ["rm", "-f", name], () => {});
+      void reapUntilGone();
     }, timeoutMs);
 
     if (child.stdin) {
@@ -178,8 +298,13 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
       exitCode: 0,
       stdout,
       stderr,
-      timedOut: false,
+      // NOT hardcoded false: a run can exit cleanly in the window between
+      // the timer firing and the reaper's rm landing. It still overran the
+      // wall-clock cap — reporting it as a clean success would make deadline
+      // enforcement depend on how fast the daemon answers the reap.
+      timedOut,
       oomKilled: false,
+      outputOverflow: false,
       output: buildOutput(stdout, stderr),
     };
   } catch (error) {
@@ -196,17 +321,34 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     }
 
     // Output exceeded maxBuffer: Node killed the docker client, but the
-    // container is still running — kill it, then return the partial output.
-    // The exit code is unknowable (client died first); report 0 because the
-    // interesting fact is the flood of output, which the cap surfaces.
+    // container is still running — kill it, then return the partial output
+    // with `outputOverflow` set. The program was stopped before its real exit
+    // status was known, so this is a *failed* run (the dispatcher reports it
+    // as such); exitCode 0 here is a placeholder, not a success claim.
+    // The reap is AWAITED and RETRIED: returning releases the semaphore slot
+    // (finally), so a single rm that failed transiently would free the slot
+    // with the container still burning CPU/memory — an output-flooding script
+    // could escape the concurrency cap. (The timeout path needs no such await
+    // — there `docker run` itself only exits once the rm lands, so settling
+    // is the synchronization.) On total failure the leak is logged and the
+    // container is left for the next boot's sweep.
     if (e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
-      execFile("docker", ["rm", "-f", name], () => {});
+      if (!(await removeContainerWithRetry(name))) {
+        logger.error(
+          { name },
+          "Code-exec overflow reap failed; container left for next boot's sweep",
+        );
+      }
       return {
         exitCode: 0,
         stdout,
         stderr,
-        timedOut: false,
+        // Same as the success path: the overflow can land after the timer
+        // fired. The flag stays truthful — the dispatcher checks timedOut
+        // first, and a deadline overrun is the primary fact of the run.
+        timedOut,
         oomKilled: false,
+        outputOverflow: true,
         output: buildOutput(stdout, stderr),
       };
     }
@@ -218,6 +360,7 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
         stderr,
         timedOut: true,
         oomKilled: false,
+        outputOverflow: false,
         output: buildOutput(stdout, stderr),
       };
     }
@@ -234,12 +377,17 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
       );
     }
 
-    // Exit 125 = the docker client itself failed; with this stderr it means
-    // the image is absent locally and auto-pull failed (no registry access).
-    if (e.code === 125 && stderr.includes("Unable to find image")) {
+    // Exit 125 = the docker client itself failed. "No such image" is the
+    // --pull=never refusal (image absent locally); "Unable to find image" is
+    // the auto-pull failure string — matched too in case the pull policy ever
+    // regresses.
+    if (
+      e.code === 125 &&
+      (stderr.includes("No such image") || stderr.includes("Unable to find image"))
+    ) {
       throw new CodeSandboxError(
         "image_missing",
-        `Sandbox image "${image}" is not available locally and could not be pulled.`,
+        `Sandbox image "${image}" is not available locally — pull it (or restart the bot with registry access) to enable code execution.`,
       );
     }
 
@@ -254,6 +402,7 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
         stderr,
         timedOut: false,
         oomKilled,
+        outputOverflow: false,
         output: buildOutput(stdout, stderr),
       };
     }
@@ -287,10 +436,13 @@ export async function sweepOrphanContainers(): Promise<void> {
     ]);
     // `--filter name=` is substring matching — keep only true prefix matches
     // so an unrelated container that merely contains the string is untouched.
+    // Names from the CURRENT boot are skipped: those are (or are about to be)
+    // live runs, not orphans — this is what lets the sweep run concurrently
+    // with dispatch instead of blocking startup.
     const names = stdout
       .split("\n")
       .map((n) => n.trim())
-      .filter((n) => n.startsWith(CONTAINER_NAME_PREFIX));
+      .filter((n) => n.startsWith(CONTAINER_NAME_PREFIX) && !n.startsWith(BOOT_NAME_PREFIX));
     if (names.length === 0) return;
 
     logger.warn({ count: names.length }, "Sweeping orphan code-exec containers");
@@ -301,10 +453,11 @@ export async function sweepOrphanContainers(): Promise<void> {
 }
 
 /**
- * Pre-pull both sandbox images so the first approved run doesn't burn its
- * execution timeout on a registry download. Fail-open: a failed pull is a
- * warning — `docker run` will auto-pull as a fallback, or surface
- * `image_missing` if it can't.
+ * Pre-pull both sandbox images. `docker run` is pinned to `--pull never` (a
+ * mid-run pull would be unkillable by the timeout reaper), so this is the
+ * ONLY pull path. Fail-open: a failed pull is a warning — runs surface
+ * `image_missing` until the image lands (manual `docker pull` or restart
+ * with registry access).
  */
 export async function pullImages(): Promise<void> {
   const images = [...new Set([config.EXECUTE_CODE_PYTHON_IMAGE, config.EXECUTE_CODE_NODE_IMAGE])];
