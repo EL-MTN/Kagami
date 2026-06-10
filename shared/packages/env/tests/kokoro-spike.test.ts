@@ -5,9 +5,11 @@
  * defineEnv, and asserts behavioral fidelity.
  *
  * This file is deliberately decoupled from @kokoro/shared (importing it would
- * point the dependency arrow backwards). It is a faithful PORT, not an import;
- * when Kokoro migrates (last, per the migration order), its own tests take over
- * and this spike shrinks to the patterns not exercised elsewhere.
+ * point the dependency arrow backwards). It is a faithful PORT, not an import.
+ * Kokoro HAS migrated (kokoro/packages/shared/src/env.ts is the live spec and
+ * kokoro's own config.test.ts covers the runtime contract); this spike stays
+ * as the package-side regression lock for kokoro-shaped usage — the workspace's
+ * hardest consumer surface (56 keys, transforms, preprocess, 8 cross groups).
  *
  * Two intentional behavior deltas vs. today's config.ts, both from the uniform
  * record-level emptyStringAsUndefined (which replaces the per-var preprocess

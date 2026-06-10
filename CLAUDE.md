@@ -62,6 +62,7 @@ Kagami/                       # one git repo, one workspace
 │
 └── shared/
     └── packages/
+        ├── env/              # @kagami/env (defineEnv: Zod .meta() env specs + shared blocks + .env.example/docs/turbo.json generators)
         ├── eslint-config/    # @kagami/eslint-config (./base, ./next)
         ├── llm/              # @kagami/llm (createInference: provider/key mgmt, retry, same-tier fallback, reasoning-repair, span+usage seam)
         ├── logger/           # @kagami/logger (createLogger factory, ECS field names, trace/span helpers, Kansoku shipper)
@@ -149,6 +150,10 @@ npm run kao:dev:api
 npm run kao:dev:dashboard
 npm run cockpit:dev:dashboard
 
+# Env artifacts (generated from each app's src/env.ts spec)
+npm run env:gen                  # regenerate .env.example / docs tables / per-app turbo.json
+npm run env:check                # fail on drift (CI gate)
+
 # Project-specific scripts
 npm run kansoku:debug -- <subcommand>   # read-only Kansoku CLI for agents
                                         # (trace | logs | errors | services)
@@ -179,6 +184,7 @@ Each project keeps its own `portless.json` next to its code. Numeric `PORT` defa
 
 All five projects share tooling via `shared/packages/`:
 
+- **`@kagami/env`** — env-spec registry and generator. Each app declares every env var once in a `src/env.ts` leaf module (`defineEnv()`: Zod schemas with `.meta({ doc, example, secret, … })`, blank-as-unset + trim at the record level, per-key `onInvalid: throw|exit|warn-default` policies, cross-field checks with `cross: "skip"` for partial consumers, legacy aliases like Kioku's `MODEL → LLM_MODEL`). Shared blocks (`kansokuShipper`, `kaoConsumer`, `mongo`, `logging`) define cross-service var groups once. `.env.example`, each project's `docs/configuration.md` table, and per-app `turbo.json` env declarations are **generated** from the specs: `npm run env:gen` writes them, `npm run env:check` fails CI on drift (driver: `scripts/env/generate.ts`, registry: `scripts/env/manifest.ts`). All six apps are migrated (Kao, Cockpit, Kizuna, Kansoku, Kioku APIs + the Kokoro bot via `@kokoro/shared`). Like `@kagami/logger`/`@kagami/llm`, it is a **built** package.
 - **`@kagami/eslint-config`** — flat ESLint config; `./base` for general TS, `./next` for Next.js apps.
 - **`@kagami/tsconfig`** — `./base.json`, `./library.json`, `./server.json`, `./nextjs.json`, plus emit-on build presets `./server.build.json` and `./library.build.json` (consumed by each compiled package's `tsconfig.build.json`). Per-app `tsconfig.json` files extend one of these and add overrides (e.g. `verbatimModuleSyntax`, `esModuleInterop`, `noImplicitOverride`, `allowImportingTsExtensions`, `allowJs`) where projects diverge.
 - **`@kagami/llm`** — inference gateway exposing `createInference({ service, logger, chat, embedding?, fallback?, models? })`. Owns provider construction (native `@ai-sdk/{anthropic,openai,xai,google}` + `@ai-sdk/openai-compatible`), key management, full-jitter retry, same-tier fallback, per-attempt timeout, the LM-Studio `reasoning_content` repair (default-on for `openai-compatible`), and span+usage emission via an internal observability seam. Returns AI SDK model objects — callers keep `generateText`/`generateObject`/`embed`; the gateway owns construction, not invocation. Tier _policy_ stays caller-side. Consumed by Kioku (`apps/api/src/llm.ts`) and Kokoro (`apps/bot/src/ai/provider.ts`). Like `@kagami/logger`, it is a **built** package — it emits `dist/` JS + `.d.ts` and its `exports` map to `dist`, so compiled services consume it without a TypeScript runtime; Turbo's `dev`/`typecheck`/`test` depend on `^build` so it is compiled before consumers resolve it.
@@ -190,6 +196,7 @@ Other workspace-wide conventions:
 - **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs are `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, `kansoku/{apps,packages}/*`, `kao/{apps,packages}/*`, and `shared/packages/*`.
 - **Apps split**: `apps/api` (or `apps/bot` for Kokoro) + `apps/dashboard` (Kao's dashboard injects its `KAO_TOKEN` bearer server-side; the API also still serves an inline-HTML operator page at `GET /` as a no-dashboard fallback)
 - **Local dev hosting**: Portless via stable HTTPS named `*.localhost` URLs
+- **Env & Turbo env mode**: every app self-loads its `.env` from disk (`dotenv` in the APIs/bot, Next.js auto-load in the dashboards) — that path bypasses Turbo entirely. `turbo.json` pins `envMode: "strict"` (the Turbo 2 default) for cached tasks, and gives `dev` `"passThroughEnv": ["*"]` so shell-set vars (`LOG_PRETTY=1 ./dev-all.sh`, `KANSOKU_URL=… npm run kokoro:dev`) reach dev processes — dotenv never overrides a pre-set var, so a shell override beats `.env` as intended. `build` and `test` list `.env*` in `inputs` because `next build` and several test suites read `.env` at run time; editing a `.env` invalidates those caches.
 - **Database**: MongoDB (Mongoose in Kizuna and Kokoro; raw driver in Kioku and Kao)
 - **Logging**: Pino (structured) via `@kagami/logger` — ECS / OTel field names, stable service bindings, trace/span correlation; no redaction (local-trust only)
 - **Validation**: Zod schemas at boundaries

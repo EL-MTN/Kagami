@@ -41,6 +41,12 @@ export interface VarMeta {
   example?: string;
   /** Render blank in `.env.example`, mask in tooling output, seed the future redaction list. */
   secret?: boolean;
+  /**
+   * Render uncommented in `.env.example` even when optional — for knobs the
+   * template should ship turned on (e.g. provider endpoints that are optional
+   * at boot but required for the service to be useful).
+   */
+  recommended?: boolean;
   /** Eligible for workspace-level `.env.shared` injection (default false). */
   sharedAllowed?: boolean;
   /** Include this var in the ARCHITECTURE.md cross-service cheat sheet. */

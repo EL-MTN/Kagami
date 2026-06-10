@@ -16,6 +16,7 @@
     "lint:fix": "eslint src/ tests/ scripts/ --fix"
   },
   "dependencies": {
+    "@kagami/env": "*",
     "@kagami/logger": "*",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

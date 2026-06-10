@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { generateText } from "ai";
+import { loadEnv } from "../config.js";
 import { model } from "../llm.js";
 import { paths } from "../paths.js";
 import {
@@ -28,7 +29,7 @@ interface QueryDeps {
   filters?: MemoryFilters;
 }
 
-const DEFAULT_TOP_K = Number.parseInt(process.env.KIOKU_TOP_K ?? "50", 10);
+const DEFAULT_TOP_K = loadEnv().KIOKU_TOP_K;
 
 let cachedAnswerPromptTemplate: string | null = null;
 async function getAnswerPromptTemplate(): Promise<string> {

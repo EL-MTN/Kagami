@@ -26,4 +26,39 @@ export const targets: AppTarget[] = [
     configDoc: { path: "kao/docs/configuration.md", markerId: "kao/api" },
     turboTasks: ["dev", "test"],
   },
+  {
+    appDir: "cockpit/apps/dashboard",
+    load: async () => (await import("../../cockpit/apps/dashboard/src/env.js")).envSpec,
+    configDoc: { path: "cockpit/docs/configuration.md", markerId: "cockpit/dashboard" },
+    // No test task (Cockpit has no test suite); `build` is declared because
+    // `next build` executes the app, unlike the compiled Express APIs.
+    turboTasks: ["dev", "build"],
+  },
+  {
+    appDir: "kizuna/apps/api",
+    load: async () => (await import("../../kizuna/apps/api/src/env.js")).envSpec,
+    configDoc: { path: "kizuna/docs/configuration.md", markerId: "kizuna/api" },
+    turboTasks: ["dev", "test"],
+  },
+  {
+    appDir: "kansoku/apps/api",
+    load: async () => (await import("../../kansoku/apps/api/src/env.js")).envSpec,
+    configDoc: { path: "kansoku/docs/configuration.md", markerId: "kansoku/api" },
+    turboTasks: ["dev", "test"],
+  },
+  {
+    appDir: "kioku/apps/api",
+    load: async () => (await import("../../kioku/apps/api/src/env.js")).envSpec,
+    configDoc: { path: "kioku/docs/configuration.md", markerId: "kioku/api" },
+    turboTasks: ["dev", "test"],
+  },
+  {
+    // The spec lives in @kokoro/shared (the bot and dashboard both consume it
+    // through the package barrel), but the artifacts belong to the bot app —
+    // apps/bot/.env is the one .env Kokoro reads.
+    appDir: "kokoro/apps/bot",
+    load: async () => (await import("../../kokoro/packages/shared/src/env.js")).envSpec,
+    configDoc: { path: "kokoro/docs/configuration.md", markerId: "kokoro/bot" },
+    turboTasks: ["dev", "test"],
+  },
 ];
