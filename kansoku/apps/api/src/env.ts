@@ -10,12 +10,15 @@ import { defineEnv, logging, type EnvOutput } from "@kagami/env";
  * This module must stay a leaf (zod + @kagami/env only) so the workspace
  * generator can import it without booting the app.
  *
- * Every key is defaulted or optional and the validated ones carry
+ * Every key is defaulted or optional, and the tuning knobs carry
  * `onInvalid: "warn-default"`: Kansoku is deliberately fail-open — an
  * operator typo is never silently absorbed (it warns through the service
  * logger via config.ts), but it must never crash the observability service
- * either. Parsing happens in config.ts (`loadEnv()`), which memoizes on the
- * raw env values so hot-path callers skip the re-parse and the re-warn.
+ * either. The one hard-on-invalid key is MONGODB_URI: a data pointer must
+ * never silently redirect to the localhost default database, so a malformed
+ * value fails boot (matching the pre-migration MongoClient failure). Parsing
+ * happens in config.ts (`loadEnv()`), which memoizes on the raw env values
+ * so hot-path callers skip the re-parse and the re-warn.
  */
 
 /**
@@ -57,9 +60,8 @@ export const envSpec = defineEnv({
       .regex(/^mongodb(\+srv)?:\/\//, "MONGODB_URI must be a mongodb:// URI")
       .default("mongodb://127.0.0.1:27017/kansoku?directConnection=true")
       .meta({
-        doc: 'Connection URI for the storage layer. Include the DB name in the path —\nmongo.ts reads it from there (and falls back to "kansoku" if the URI\'s\ndefault DB is "test"). Defaults to a local atlas-local replica set on\n127.0.0.1:27017. Boot it with:\n  atlas local start mongodb\n(or `docker run -p 27017:27017 mongodb/mongodb-atlas-local`).\nTime-series collections require MongoDB 5.0+.',
+        doc: 'Connection URI for the storage layer. Include the DB name in the path —\nmongo.ts reads it from there (and falls back to "kansoku" if the URI\'s\ndefault DB is "test"). Defaults to a local atlas-local replica set on\n127.0.0.1:27017. Boot it with:\n  atlas local start mongodb\n(or `docker run -p 27017:27017 mongodb/mongodb-atlas-local`).\nTime-series collections require MongoDB 5.0+.\nA malformed URI fails boot — only an UNSET value uses the local default\n(a data pointer must never silently redirect to a different database).',
         crossService: true,
-        onInvalid: "warn-default",
         group: "MongoDB",
       }),
 

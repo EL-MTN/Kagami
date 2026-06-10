@@ -70,9 +70,8 @@ export const envSpec = defineEnv({
       .regex(/^mongodb(\+srv)?:\/\//, "MONGODB_URI must be a mongodb:// URI")
       .default("mongodb://127.0.0.1:27017/kioku?directConnection=true")
       .meta({
-        doc: 'Connection URI for the storage layer. Include the DB name in the path —\nmongo.ts reads it from there (and falls back to "kioku" if the URI\'s\ndefault DB is "test"). Defaults to a local atlas-local replica set on\n127.0.0.1:27017 ($vectorSearch/$search need atlas-local, not vanilla\nMongo). Boot it with:\n  atlas local start mongodb\n(or `docker run -p 27017:27017 mongodb/mongodb-atlas-local`).\nThe vector index dim is probed from the embedding provider at startup.',
+        doc: 'Connection URI for the storage layer. Include the DB name in the path —\nmongo.ts reads it from there (and falls back to "kioku" if the URI\'s\ndefault DB is "test"). Defaults to a local atlas-local replica set on\n127.0.0.1:27017 ($vectorSearch/$search need atlas-local, not vanilla\nMongo). Boot it with:\n  atlas local start mongodb\n(or `docker run -p 27017:27017 mongodb/mongodb-atlas-local`).\nThe vector index dim is probed from the embedding provider at startup.\nA malformed URI fails boot — only an UNSET value uses the local default\n(a data pointer must never silently redirect to a different database).',
         crossService: true,
-        onInvalid: "warn-default",
         group: "MongoDB",
       }),
 
