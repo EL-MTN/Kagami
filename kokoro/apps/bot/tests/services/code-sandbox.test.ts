@@ -144,13 +144,39 @@ describe("runCode — docker invocation", () => {
       "/tmp:size=64m",
       "--user",
       "65534:65534",
+      // Docker injects the client's ~/.docker/config.json proxy settings
+      // (which can carry credentials) into every container; these pinned
+      // EMPTY overrides beat that injection so approved code can't print
+      // host proxy secrets even under --network none.
+      "--env",
+      "HTTP_PROXY=",
+      "--env",
+      "http_proxy=",
+      "--env",
+      "HTTPS_PROXY=",
+      "--env",
+      "https_proxy=",
+      "--env",
+      "FTP_PROXY=",
+      "--env",
+      "ftp_proxy=",
+      "--env",
+      "ALL_PROXY=",
+      "--env",
+      "all_proxy=",
+      "--env",
+      "NO_PROXY=",
+      "--env",
+      "no_proxy=",
       "-i",
       "python:3.12-slim",
       "python3",
       "-",
     ]);
-    // No --env / -e anywhere: the container env stays empty.
-    expect(args).not.toContain("--env");
+    // Every --env is an EMPTY proxy override — nothing from the host env
+    // ever travels in (a non-empty value here would be a sandbox change).
+    const envValues = args.filter((_, i) => args[i - 1] === "--env");
+    expect(envValues.every((v) => v.endsWith("="))).toBe(true);
     expect(args).not.toContain("-e");
     expect(opts.maxBuffer).toBe(1024 * 1024);
   });
@@ -256,6 +282,39 @@ describe("runCode — results", () => {
     expect(rmCall![1]).toEqual(["rm", "-f", expect.stringMatching(/^kokoro-exec-/)]);
   });
 
+  it("retries the overflow reap when an rm attempt fails (the cap must hold)", async () => {
+    // The docker client is already dead (maxBuffer kill) but the container
+    // is not — a single rm that fails transiently would release the
+    // semaphore slot with the container still burning CPU/memory, letting an
+    // output-flooding script escape MAX_CONCURRENT.
+    promisifiedMock
+      .mockReturnValueOnce(
+        rejectedRun({ code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", stdout: "flood" }).promise,
+      )
+      .mockRejectedValueOnce(Object.assign(new Error("daemon hiccup"), { code: 1 }))
+      .mockResolvedValueOnce({ stdout: "", stderr: "" });
+
+    const result = await runCode({ language: "python", code: "flood" });
+
+    expect(result.outputOverflow).toBe(true);
+    const rmCalls = promisifiedMock.mock.calls.filter((c) => (c[1] as string[])[0] === "rm");
+    expect(rmCalls).toHaveLength(2);
+  });
+
+  it("still returns the overflow result when every reap attempt fails (leak goes to the next boot's sweep)", async () => {
+    promisifiedMock
+      .mockReturnValueOnce(
+        rejectedRun({ code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", stdout: "flood" }).promise,
+      )
+      .mockRejectedValue(Object.assign(new Error("daemon wedged"), { code: 1 }));
+
+    const result = await runCode({ language: "python", code: "flood" });
+
+    expect(result.outputOverflow).toBe(true);
+    const rmCalls = promisifiedMock.mock.calls.filter((c) => (c[1] as string[])[0] === "rm");
+    expect(rmCalls).toHaveLength(5);
+  });
+
   it("kills the container via `docker rm -f` when the timeout fires and reports timedOut", async () => {
     const run = pendingRun();
     promisifiedMock.mockReturnValueOnce(run.promise);
@@ -272,11 +331,15 @@ describe("runCode — results", () => {
     expect(result.timedOut).toBe(true);
     expect(result.oomKilled).toBe(false);
     expect(result.output).toBe("partial");
-    expect(promisifiedMock).toHaveBeenCalledWith("docker", [
-      "rm",
-      "-f",
-      expect.stringMatching(/^kokoro-exec-/),
-    ]);
+    // Each rm attempt is itself BOUNDED (timeout + SIGKILL on the rm client):
+    // a wedged daemon that accepts the connection but never responds must not
+    // pin the reaper on one never-settling await — the retry loop and its
+    // client-kill backstop have to stay reachable.
+    expect(promisifiedMock).toHaveBeenCalledWith(
+      "docker",
+      ["rm", "-f", expect.stringMatching(/^kokoro-exec-/)],
+      { timeout: 5_000, killSignal: "SIGKILL" },
+    );
   });
 
   it("retries the reap when an rm attempt misses (rm removes what exists NOW — it cannot pre-kill)", async () => {

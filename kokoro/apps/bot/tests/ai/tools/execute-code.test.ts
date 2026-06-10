@@ -83,6 +83,22 @@ describe("executeCode — input schema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("rejects code containing Unicode bidi-control characters (Trojan-Source reordering)", () => {
+    // Telegram RENDERS bidi controls: the <pre> bubble shows a visually
+    // reordered program while the sandbox executes the original byte order —
+    // the user would approve code that reads differently than it runs.
+    const schema = makeTool().inputSchema;
+    for (const ch of ["\u202E", "\u202A", "\u2066", "\u200F", "\u061C"]) {
+      expect(
+        schema.safeParse({
+          language: "python",
+          code: `x = "${ch}evil"`,
+          description: "d",
+        }).success,
+      ).toBe(false);
+    }
+  });
 });
 
 describe("executeCode — raises the confirmation, never executes directly", () => {

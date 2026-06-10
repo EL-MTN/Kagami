@@ -1337,6 +1337,19 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
     expect(vi.mocked(runCode)).not.toHaveBeenCalled();
   });
 
+  it("rejects bidi-control-bearing code at the dispatch boundary (Trojan-Source guard)", async () => {
+    // Mirrors the tool schema: bidi controls render visually reordered in
+    // the approval bubble, so the executed byte order is not the program the
+    // user reviewed.
+    const result = await dispatchGatedAction("executeCode", {
+      language: "python",
+      code: 'x = "\u202Eevil"',
+    });
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_args");
+    expect(vi.mocked(runCode)).not.toHaveBeenCalled();
+  });
+
   it("refuses to run when EXECUTE_CODE_ENABLED is off (pending rows outlive a flag flip)", async () => {
     const prev = config.EXECUTE_CODE_ENABLED;
     (config as { EXECUTE_CODE_ENABLED: boolean }).EXECUTE_CODE_ENABLED = false;

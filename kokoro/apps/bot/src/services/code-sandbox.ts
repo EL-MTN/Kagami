@@ -12,7 +12,11 @@ const execFileAsync = promisify(execFile);
  *
  * Sandbox profile (every flag is load-bearing — tests pin the exact array):
  *   --network none            no network, full stop (no exfil, no installs)
- *   (no --env flags)          container env is empty — host secrets never enter
+ *   --env <proxy vars>=       Docker injects the client's ~/.docker/config.json
+ *                             proxy settings (which can carry credentials) into
+ *                             every container; pinned EMPTY overrides keep the
+ *                             env secret-free. No other --env flags exist —
+ *                             host secrets never enter.
  *   --cap-drop ALL            no Linux capabilities
  *   --security-opt no-new-privileges   no setuid escalation
  *   --read-only + --tmpfs /tmp         immutable rootfs, 64 MB scratch only
@@ -102,7 +106,58 @@ export const BOOT_NAME_PREFIX = `${CONTAINER_NAME_PREFIX}${randomUUID().slice(0,
 const REAP_ATTEMPTS = 5;
 const REAP_RETRY_DELAY_MS = 250;
 
+/**
+ * Per-attempt bound on a reap's `docker rm -f`. A wedged daemon can accept
+ * the connection and then never respond — an unbounded await would pin the
+ * retry loop on a single never-settling attempt, so its give-up paths (the
+ * client-kill backstop, the overflow error log) would never run. Killing the
+ * rm CLIENT is always safe; the loop just tries again.
+ */
+const REAP_ATTEMPT_TIMEOUT_MS = 5_000;
+
+/**
+ * Docker injects HTTP_PROXY/HTTPS_PROXY/FTP_PROXY/ALL_PROXY/NO_PROXY (both
+ * cases) into every container when the invoking client's
+ * ~/.docker/config.json carries proxy settings — and proxy URLs routinely
+ * embed credentials. `--network none` blocks their USE, not their READ:
+ * approved code could simply print them. Explicit empty `--env VAR=` flags
+ * beat the config.json injection, so the container env stays secret-free on
+ * proxy-configured hosts too.
+ */
+const PROXY_ENV_OVERRIDES = ["HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "ALL_PROXY", "NO_PROXY"]
+  .flatMap((name) => [name, name.toLowerCase()])
+  .flatMap((name) => ["--env", `${name}=`]);
+
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Force-remove a container, retrying per REAP_ATTEMPTS — `rm -f` removes what
+ * exists NOW (it does not schedule a future kill), so one attempt that misses
+ * or fails would leave the container running. Each attempt is bounded by
+ * REAP_ATTEMPT_TIMEOUT_MS. `shouldStop` short-circuits between attempts (the
+ * timeout path passes "has the run already exited?" — then `--rm` has already
+ * cleaned up and further attempts are pointless). Returns false only when
+ * every attempt failed and the container may still be alive.
+ */
+async function removeContainerWithRetry(
+  name: string,
+  shouldStop?: () => boolean,
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= REAP_ATTEMPTS; attempt++) {
+    try {
+      await execFileAsync("docker", ["rm", "-f", name], {
+        timeout: REAP_ATTEMPT_TIMEOUT_MS,
+        killSignal: "SIGKILL",
+      });
+      return true;
+    } catch {
+      if (shouldStop?.()) return true;
+      if (attempt < REAP_ATTEMPTS) await delay(REAP_RETRY_DELAY_MS);
+      if (shouldStop?.()) return true;
+    }
+  }
+  return false;
+}
 
 // ─── concurrency ─────────────────────────────────────────────────────────────
 
@@ -183,6 +238,7 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     "/tmp:size=64m",
     "--user",
     "65534:65534",
+    ...PROXY_ENV_OVERRIDES,
     "-i",
     image,
     ...(opts.language === "python" ? ["python3", "-"] : ["node", "-"]),
@@ -215,16 +271,7 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     // `rm -f` removes what exists NOW, it does not schedule a future kill, so
     // one attempt that misses (or fails) would let the run outlive the cap.
     const reapUntilGone = async (): Promise<void> => {
-      for (let attempt = 1; attempt <= REAP_ATTEMPTS; attempt++) {
-        try {
-          await execFileAsync("docker", ["rm", "-f", name]);
-          return; // container gone — the attached `docker run` exits now
-        } catch {
-          if (settled) return; // run already exited on its own
-          if (attempt < REAP_ATTEMPTS) await delay(REAP_RETRY_DELAY_MS);
-          if (settled) return;
-        }
-      }
+      if (await removeContainerWithRetry(name, () => settled)) return;
       // A container shouldn't survive repeated forced removals — assume the
       // daemon is wedged. Kill the client so the awaited run settles and the
       // semaphore slot frees; any surviving container becomes an orphan for
@@ -274,13 +321,20 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     // with `outputOverflow` set. The program was stopped before its real exit
     // status was known, so this is a *failed* run (the dispatcher reports it
     // as such); exitCode 0 here is a placeholder, not a success claim.
-    // The reap is AWAITED: returning releases the semaphore slot (finally),
-    // and a fire-and-forget rm would let overflow-heavy runs stack live
-    // containers beyond MAX_CONCURRENT until docker catches up. (The timeout
-    // path needs no such await — there `docker run` itself only exits once
-    // the rm lands, so settling is the synchronization.)
+    // The reap is AWAITED and RETRIED: returning releases the semaphore slot
+    // (finally), so a single rm that failed transiently would free the slot
+    // with the container still burning CPU/memory — an output-flooding script
+    // could escape the concurrency cap. (The timeout path needs no such await
+    // — there `docker run` itself only exits once the rm lands, so settling
+    // is the synchronization.) On total failure the leak is logged and the
+    // container is left for the next boot's sweep.
     if (e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
-      await execFileAsync("docker", ["rm", "-f", name]).catch(() => {});
+      if (!(await removeContainerWithRetry(name))) {
+        logger.error(
+          { name },
+          "Code-exec overflow reap failed; container left for next boot's sweep",
+        );
+      }
       return {
         exitCode: 0,
         stdout,

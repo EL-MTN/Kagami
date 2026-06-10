@@ -80,10 +80,15 @@ export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) 
         .max(MAX_CODE_LENGTH)
         // The Telegram formatter strips NUL bytes before rendering (they
         // could forge its internal park/restore placeholders), so code
-        // containing a NUL would DISPLAY without it while EXECUTING with it
-        // — exactly the displayed≠executed gap this tool must never allow.
-        .refine((value) => !value.includes("\u0000"), {
-          message: "code must not contain NUL (\\u0000) characters",
+        // containing a NUL would DISPLAY without it while EXECUTING with it.
+        // Unicode bidi controls (RLO/LRO, the isolates, PDF…) are worse:
+        // Telegram renders them, visually REORDERING the program inside the
+        // <pre> bubble while the sandbox receives the original byte order —
+        // Trojan-Source style. Both are the displayed≠executed gap this tool
+        // must never allow. Mirrored at the dispatch boundary
+        // (executeCodeArgs in gated-actions.ts).
+        .refine((value) => !value.includes("\u0000") && !/\p{Bidi_Control}/u.test(value), {
+          message: "code must not contain NUL or bidirectional-control characters",
         })
         .describe(
           "The complete script (max 3000 chars), read from stdin by the interpreter. Print results to stdout — that's the only channel back.",
