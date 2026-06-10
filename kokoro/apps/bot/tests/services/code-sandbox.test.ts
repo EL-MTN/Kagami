@@ -342,6 +342,27 @@ describe("runCode — results", () => {
     );
   });
 
+  it("still reports timedOut when the run exits cleanly after the deadline (before the reap lands)", async () => {
+    // The timer has fired but the container finishes on its own before
+    // `docker rm -f` reaches it — the promise resolves through the SUCCESS
+    // path. The run still overran the wall-clock cap; reporting it as a
+    // clean success would make deadline enforcement depend on reaper speed.
+    const run = pendingRun();
+    promisifiedMock.mockReturnValueOnce(run.promise);
+    promisifiedMock.mockImplementationOnce(() => {
+      // Reap in flight; the program exits normally first.
+      run.resolve({ stdout: "late but complete", stderr: "" });
+      return Promise.resolve({ stdout: "", stderr: "" });
+    });
+
+    const result = await runCode({ language: "python", code: "slow()", timeoutMs: 30 });
+
+    expect(result.timedOut).toBe(true);
+    expect(result.exitCode).toBe(0);
+    // The output survives — the dispatcher's timeout report still carries it.
+    expect(result.output).toBe("late but complete");
+  });
+
   it("retries the reap when an rm attempt misses (rm removes what exists NOW — it cannot pre-kill)", async () => {
     const run = pendingRun();
     promisifiedMock.mockReturnValueOnce(run.promise);

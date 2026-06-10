@@ -298,7 +298,11 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
       exitCode: 0,
       stdout,
       stderr,
-      timedOut: false,
+      // NOT hardcoded false: a run can exit cleanly in the window between
+      // the timer firing and the reaper's rm landing. It still overran the
+      // wall-clock cap — reporting it as a clean success would make deadline
+      // enforcement depend on how fast the daemon answers the reap.
+      timedOut,
       oomKilled: false,
       outputOverflow: false,
       output: buildOutput(stdout, stderr),
@@ -339,7 +343,10 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
         exitCode: 0,
         stdout,
         stderr,
-        timedOut: false,
+        // Same as the success path: the overflow can land after the timer
+        // fired. The flag stays truthful — the dispatcher checks timedOut
+        // first, and a deadline overrun is the primary fact of the run.
+        timedOut,
         oomKilled: false,
         outputOverflow: true,
         output: buildOutput(stdout, stderr),
