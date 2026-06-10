@@ -55,11 +55,9 @@ export async function raisePendingConfirmation(
   const id = String(row._id);
 
   const promptText = input.promptText ?? `Approve action?\n\n${input.summary}`;
+  let messageId: string | undefined;
   try {
-    const messageId = await adapter.sendConfirmationPrompt(chatId, promptText, id);
-    if (messageId) {
-      await setPromptMessageId(id, messageId);
-    }
+    messageId = await adapter.sendConfirmationPrompt(chatId, promptText, id);
   } catch (error) {
     // The bubble never reached the user — an unseen pending row must not
     // linger (it would sit in the model's pending-confirmations context and
@@ -67,6 +65,20 @@ export async function raisePendingConfirmation(
     // before rethrowing; best-effort — the TTL is the backstop.
     await resolvePendingConfirmation(id, "cancelled", "prompt delivery failed").catch(() => {});
     throw error;
+  }
+  if (messageId) {
+    try {
+      await setPromptMessageId(id, messageId);
+    } catch (error) {
+      // The bubble IS on screen — failing to store its message id must not
+      // cancel a confirmation the user can see and tap (Telegram's callback
+      // handler falls back to the callback's own message id for the in-place
+      // edit). Degrade to a warning: worst case the bubble isn't editable.
+      logger.warn(
+        { error, confirmationId: id, chatId },
+        "Confirmation prompt delivered but message id not stored",
+      );
+    }
   }
   return id;
 }

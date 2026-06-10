@@ -24,6 +24,18 @@ export const MAX_CODE_LENGTH = 3000;
  */
 const MAX_PROMPT_LENGTH = 4096;
 
+/**
+ * The model-supplied description sits ABOVE the code fence in the same
+ * bubble. A backtick run inside it could pair with the code block's fence in
+ * the Telegram formatter, breaking the program out of its <pre> block and
+ * re-exposing it to the inline markdown passes — the user would review a
+ * mangled rendering while the original code still executes. Descriptions are
+ * prose; they never need backticks, so replace them outright.
+ */
+function sanitizeDescription(description: string): string {
+  return description.replace(/`/g, "'");
+}
+
 function buildCodePrompt(language: SandboxLanguage, code: string, description: string): string {
   const fenceTag = language === "python" ? "python" : "js";
   // The fence must be LONGER than any backtick run inside the code — an
@@ -78,7 +90,8 @@ export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) 
         ),
     }),
     execute: async ({ language, code, description }) => {
-      const promptText = buildCodePrompt(language, code, description);
+      const safeDescription = sanitizeDescription(description);
+      const promptText = buildCodePrompt(language, code, safeDescription);
       if (promptText.length > MAX_PROMPT_LENGTH) {
         return {
           pending: false,
@@ -90,7 +103,7 @@ export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) 
 
       try {
         const id = await raisePendingConfirmation(chatId, adapter, {
-          summary: `run ${language} code: ${description}`,
+          summary: `run ${language} code: ${safeDescription}`,
           action: { tool: "executeCode", args: { language, code } },
           origin: "conversation",
           promptText,

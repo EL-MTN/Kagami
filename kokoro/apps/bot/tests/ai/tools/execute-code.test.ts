@@ -142,6 +142,23 @@ describe("executeCode — raises the confirmation, never executes directly", () 
     expect(input.promptText).toContain(`\`\`\`\`\`\`python\n${code}\n\`\`\`\`\`\``);
   });
 
+  it("strips backticks from the description so it cannot forge a fence above the code block", async () => {
+    // The description sits above the fence in the same bubble: a backtick run
+    // in it could pair with the code block's opening fence and break the
+    // program out of its verbatim <pre> rendering. The code fence must stay
+    // intact and the description must arrive backtick-free.
+    await runTool({
+      language: "python",
+      code: "print(1)",
+      description: "renders ``` fences",
+    });
+
+    const input = vi.mocked(raisePendingConfirmation).mock.calls[0][2];
+    expect(input.promptText).toContain("renders ''' fences");
+    expect(input.promptText).toContain("```python\nprint(1)\n```");
+    expect(input.summary).toBe("run python code: renders ''' fences");
+  });
+
   it("refuses code whose fence growth would overflow the approval bubble — before any row exists", async () => {
     // 2500 backticks (under the 3000 code cap) → two ~2501-char fences →
     // promptText far past Telegram's 4096 limit. Raising would insert a
