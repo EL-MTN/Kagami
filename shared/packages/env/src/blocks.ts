@@ -14,17 +14,20 @@ import { z } from "zod";
 /**
  * Kansoku observability shipper pair. Deliberately NO hard cross-check: a
  * half-set pair leaves the logger stdout-only (fail-open by design across the
- * workspace) — observability config must never make boot fail. The doctor
- * surfaces half-set pairs as a warning instead.
+ * workspace) — observability config must never make boot fail. For the same
+ * reason KANSOKU_URL is warn-default, not a hard `.url()` error: a typo'd URL
+ * warns and drops the key to undefined (shipper disabled) instead of wedging
+ * the producer's boot. The doctor surfaces half-set pairs as a warning.
  */
 export function kansokuShipper() {
   return {
     vars: {
       KANSOKU_URL: z.string().url().optional().meta({
-        doc: "Ship every log line to the workspace's Kansoku service alongside stdout.\nBoth Kansoku vars must be set together — either missing leaves the logger\nstdout-only (fail-open; observability failure never wedges this service).",
+        doc: "Ship every log line to the workspace's Kansoku service alongside stdout.\nBoth Kansoku vars must be set together — either missing leaves the logger\nstdout-only (fail-open; observability failure never wedges this service).\nAn invalid URL likewise warns and disables the shipper instead of failing\nboot.",
         example: "https://api.kansoku.localhost",
         sharedAllowed: true,
         crossService: true,
+        onInvalid: "warn-default",
         group: "Kansoku (observability)",
       }),
       KANSOKU_INGEST_TOKEN: z.string().optional().meta({
