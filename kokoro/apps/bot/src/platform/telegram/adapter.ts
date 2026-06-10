@@ -1,5 +1,5 @@
 import { Bot, InputFile, InlineKeyboard } from "grammy";
-import type { IncomingMessage, PlatformAdapter } from "@kokoro/shared";
+import type { ActivityKind, IncomingMessage, PlatformAdapter } from "@kokoro/shared";
 import type { Context } from "grammy";
 import { logger } from "@kokoro/shared";
 import { markdownToTelegramHtml } from "./format";
@@ -26,6 +26,13 @@ export class TelegramAdapter implements PlatformAdapter {
   readonly platform = "telegram";
 
   constructor(private bot: Bot) {}
+
+  // ActivityKind is the honest subset of grammY's wider chat-action union
+  // (no video/sticker/location verbs — Kokoro never sends those). Errors
+  // propagate; the heartbeat in services/activity.ts is the fail-open layer.
+  async sendActivity(chatId: string, kind: ActivityKind): Promise<void> {
+    await this.bot.api.sendChatAction(chatId, kind);
+  }
 
   normalize(ctx: Context): IncomingMessage | null {
     const msg = ctx.message;
