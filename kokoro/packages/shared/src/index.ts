@@ -5,7 +5,7 @@ export { haversineMeters } from "./geo";
 export { mapLimit } from "./concurrency";
 export { parseMarkdown } from "./markdown";
 export type { ParsedMarkdown } from "./markdown";
-export type { IncomingMessage, PlatformAdapter } from "./types";
+export type { ActivityKind, IncomingMessage, PlatformAdapter } from "./types";
 export { computeNextRunAt, validateCronAndDefaults } from "./routine-validation";
 export type { CronValidationError } from "./routine-validation";
 // Re-export tracedFetch + trace primitives so the Kioku / Kizuna HTTP clients

@@ -24,12 +24,31 @@ import { trackUsage } from "./token-tracker";
 import { getModelName } from "./provider";
 import { currentTimeContext } from "./prompts";
 import { ingestClosedSession } from "@kokoro/memory";
+import { startActivity, type ActivityHandle } from "../services/activity";
 
 const LLM_TIMEOUT_MS = 120_000; // 2 minutes
 
 export async function handleMessage(
   incoming: IncomingMessage,
   adapter: PlatformAdapter,
+): Promise<void> {
+  // One heartbeat spans the whole turn — session setup, STT transcription,
+  // every agentic step, and the outbound sends — so the chat indicator never
+  // goes dark while work is in flight (a single chat action only paints ~5s;
+  // turns routinely run 30s+). Long media tools switch the verb via the
+  // ToolContext handle; everything else reads as "typing…".
+  const activity = startActivity(adapter, incoming.chatId);
+  try {
+    await runTurn(incoming, adapter, activity);
+  } finally {
+    activity.stop();
+  }
+}
+
+async function runTurn(
+  incoming: IncomingMessage,
+  adapter: PlatformAdapter,
+  activity: ActivityHandle,
 ): Promise<void> {
   // 1. Get/create session
   const { conversation: convo, previouslyClosed } = await getOrCreateSession(
@@ -147,6 +166,7 @@ export async function handleMessage(
     sessionId,
     userId: incoming.userId,
     conversational: true,
+    activity,
   };
 
   // 5. Generate response with tools

@@ -236,7 +236,8 @@ export function createBot(token: string): Bot {
     logger.info({ userId: incoming.userId, hasCaption: !!ctx.message?.caption }, "Incoming photo");
 
     try {
-      await ctx.replyWithChatAction("typing");
+      // No one-shot chat action here — handleMessage owns the activity
+      // heartbeat for the whole turn (services/activity.ts).
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
     } catch (error) {
@@ -273,7 +274,8 @@ export function createBot(token: string): Bot {
     );
 
     try {
-      await ctx.replyWithChatAction("typing");
+      // No one-shot chat action here — handleMessage owns the activity
+      // heartbeat for the whole turn (services/activity.ts).
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
     } catch (error) {
@@ -305,7 +307,8 @@ export function createBot(token: string): Bot {
     );
 
     try {
-      await ctx.replyWithChatAction("typing");
+      // No one-shot chat action here — handleMessage owns the activity
+      // heartbeat for the whole turn (services/activity.ts).
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
     } catch (error) {
@@ -331,7 +334,8 @@ export function createBot(token: string): Bot {
     logger.info({ userId: incoming.userId, text: incoming.text.slice(0, 50) }, "Incoming message");
 
     try {
-      await ctx.replyWithChatAction("typing");
+      // No one-shot chat action here — handleMessage owns the activity
+      // heartbeat for the whole turn (services/activity.ts).
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
     } catch (error) {
@@ -375,7 +379,8 @@ export function createBot(token: string): Bot {
       );
 
       // Run full AI pipeline so Mashiro can react
-      await ctx.replyWithChatAction("typing");
+      // No one-shot chat action here — handleMessage owns the activity
+      // heartbeat for the whole turn (services/activity.ts).
       await handleMessage(incoming, adapter);
       resetTimer(incoming.chatId);
 
