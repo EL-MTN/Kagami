@@ -237,9 +237,21 @@ const mergeSkillsArgs = z
 // `description` (bubble-only text — execution doesn't need it). The length cap
 // is re-enforced here because the dispatcher is the last stop before the
 // sandbox: a confirmation row predating a cap change must still be bounded.
+// 3000 mirrors MAX_CODE_LENGTH in execute-code.ts (not imported — that module
+// reaches back here via confirmations.ts, so importing would be a cycle); the
+// cap guarantees the approval bubble showed the COMPLETE program, never a
+// truncated preview with an unreviewed executable suffix.
 const executeCodeArgs = z.object({
   language: z.enum(["python", "node"]),
-  code: z.string().min(1).max(8000),
+  // The NUL + bidi-control refusal mirrors the tool's inputSchema (see
+  // execute-code.ts): the Telegram formatter strips NULs for display, and
+  // bidi controls render visually reordered (Trojan-Source) — either way the
+  // code would execute differently than the program the user approved.
+  code: z
+    .string()
+    .min(1)
+    .max(3000)
+    .refine((value) => !value.includes("\u0000") && !/\p{Bidi_Control}/u.test(value)),
 });
 
 // CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the
@@ -270,6 +282,13 @@ interface DispatchResult {
   summary: string;
   /** Full structured result for logging / conversation injection. */
   detail: Record<string, unknown>;
+  /**
+   * Fuller result body for the conversation resolution event (and thus the
+   * acknowledgment turn) when `summary` alone would lose the payload — e.g.
+   * executeCode's program output. Handlers fall back to `summary` when
+   * absent. Producers own the cap (sandbox output is ≤4000 chars).
+   */
+  resultText?: string;
 }
 
 interface DispatchContext {
@@ -940,6 +959,17 @@ export async function dispatchGatedAction(
 
       case "executeCode": {
         const args = parsed.data as z.infer<typeof executeCodeArgs>;
+        // Re-check the flag at dispatch time: pending confirmations live up
+        // to 24h, so turning EXECUTE_CODE_ENABLED off must also stop
+        // already-raised approvals from executing — gating registration and
+        // prompt guidance alone would leave a 24h tail.
+        if (!config.EXECUTE_CODE_ENABLED) {
+          return {
+            success: false,
+            summary: "code execution is disabled (EXECUTE_CODE_ENABLED is off)",
+            detail: { reason: "disabled" },
+          };
+        }
         // The code body is deliberately never logged — only its shape — so
         // nothing the user pastes into a script (keys, personal data) reaches
         // Kansoku. The full code lives only in the PendingConfirmation row
@@ -953,6 +983,12 @@ export async function dispatchGatedAction(
           runCode({ language: args.language, code: args.code }),
         );
 
+        // The summary stays bubble-short; `resultText` carries the full
+        // (≤4000-char) program output into the conversation resolution event
+        // so the acknowledgment turn can actually relay the result (or the
+        // traceback) — `detail` alone never reaches the user.
+        const resultText = result.output || undefined;
+
         if (result.timedOut) {
           return {
             success: false,
@@ -960,6 +996,7 @@ export async function dispatchGatedAction(
               config.EXECUTE_CODE_TIMEOUT_MS / 1000,
             )}s`,
             detail: { reason: "timeout", language: args.language, output: result.output },
+            resultText,
           };
         }
         if (result.oomKilled) {
@@ -967,6 +1004,17 @@ export async function dispatchGatedAction(
             success: false,
             summary: `code was killed (out of memory, ${config.EXECUTE_CODE_MEMORY_MB} MB cap)`,
             detail: { reason: "oom", language: args.language, output: result.output },
+            resultText,
+          };
+        }
+        if (result.outputOverflow) {
+          // The client buffer blew before the program's real exit status was
+          // known — a stdout flood is a failed run, not "code ran".
+          return {
+            success: false,
+            summary: "code produced too much output (1 MB cap) and was stopped",
+            detail: { reason: "output_overflow", language: args.language, output: result.output },
+            resultText,
           };
         }
         if (result.exitCode !== 0) {
@@ -979,12 +1027,17 @@ export async function dispatchGatedAction(
               language: args.language,
               output: result.output,
             },
+            resultText,
           };
         }
         return {
           success: true,
-          summary: `code ran: ${result.output.slice(0, 200)}`,
+          // trim() here is display-only (output now keeps its real whitespace,
+          // so it usually ends in "\n") — `detail.output` and `resultText`
+          // stay byte-exact.
+          summary: `code ran: ${result.output.trim().slice(0, 200)}`,
           detail: { exitCode: result.exitCode, language: args.language, output: result.output },
+          resultText,
         };
       }
     }

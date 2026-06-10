@@ -117,7 +117,9 @@ async function tryResolveConfirmationReply(
     logger.info({ confirmationId, chatId }, "iMessage confirmation denied via reply");
   } else {
     const dispatch = await dispatchGatedAction(row.action.tool, row.action.args, { chatId });
-    await attachResultText(confirmationId, dispatch.summary);
+    // Store the fuller body on the row too (dashboard/history reads it) —
+    // same preference as the resolution event below.
+    await attachResultText(confirmationId, dispatch.resultText ?? dispatch.summary);
     const verdictMark = dispatch.success ? "✓ Approved" : "⚠ Approved · failed";
     await adapter.editConfirmationPrompt(
       chatId,
@@ -128,7 +130,10 @@ async function tryResolveConfirmationReply(
       summary: row.summary,
       verdict: "approved",
       success: dispatch.success,
-      resultText: dispatch.summary,
+      // Prefer the fuller body (e.g. executeCode's program output) so the
+      // acknowledgment turn can relay the actual result, not a 200-char
+      // teaser. The edited prompt above stays summary-short.
+      resultText: dispatch.resultText ?? dispatch.summary,
     });
     logger.info(
       { confirmationId, chatId, success: dispatch.success },

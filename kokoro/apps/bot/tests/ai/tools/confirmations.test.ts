@@ -18,6 +18,15 @@ vi.mock("../../../src/services/confirmation-events", () => ({
   appendConfirmationResolution: mockAppendResolution,
 }));
 
+// Partial mock so individual tests can make the message-id write fail; the
+// default implementation delegates to the real @kokoro/db function.
+const { setPromptMessageIdSpy } = vi.hoisted(() => ({ setPromptMessageIdSpy: vi.fn() }));
+vi.mock("@kokoro/db", async () => {
+  const actual = await vi.importActual<typeof import("@kokoro/db")>("@kokoro/db");
+  setPromptMessageIdSpy.mockImplementation(actual.setPromptMessageId);
+  return { ...actual, setPromptMessageId: setPromptMessageIdSpy };
+});
+
 import { PendingConfirmation, createPendingConfirmation, setPromptMessageId } from "@kokoro/db";
 import {
   createRequestConfirmationTool,
@@ -87,6 +96,48 @@ describe("requestConfirmation tool", () => {
     const persisted = await PendingConfirmation.findById(result.confirmationId);
     expect(persisted?.origin).toBe("routine");
     expect(persisted?.originRef).toBe("routine-log-7");
+  });
+
+  it("cancels the freshly-created row when the prompt send fails (no invisible pending approval)", async () => {
+    // If the bubble never reaches the user, the row must not linger as
+    // pending: it would sit in the model's pending-confirmations context and
+    // block one-pending-per-chat guards while being unapprovable.
+    adapter.sendConfirmationPrompt = vi.fn().mockRejectedValue(new Error("message is too long"));
+    const tool = createRequestConfirmationTool("chat-1", adapter) as unknown as ExecutableTool;
+
+    const result = await tool.execute({
+      summary: "send email to alice",
+      action: { tool: "sendEmail", args: { to: "alice@x.com", subject: "hi", body: "hi" } },
+    });
+
+    // The tool surfaces the failure as a non-pending error result…
+    expect(result.pending).toBe(false);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe("message is too long");
+
+    // …and the orphaned row was cancelled, not left pending.
+    const rows = await PendingConfirmation.find({ chatId: "chat-1" });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("cancelled");
+    expect(rows[0]?.resultText).toBe("prompt delivery failed");
+  });
+
+  it("keeps the row pending (still approvable) when only the message-id write fails after delivery", async () => {
+    // The bubble IS on screen — a failed setPromptMessageId must degrade to
+    // a missing in-place edit (the Telegram callback handler falls back to
+    // the callback's own message id), never cancel a live approval.
+    setPromptMessageIdSpy.mockRejectedValueOnce(new Error("mongo blip"));
+    const tool = createRequestConfirmationTool("chat-1", adapter) as unknown as ExecutableTool;
+
+    const result = await tool.execute({
+      summary: "send email to alice",
+      action: { tool: "sendEmail", args: { to: "alice@x.com", subject: "hi", body: "hi" } },
+    });
+
+    expect(result.pending).toBe(true);
+    const persisted = await PendingConfirmation.findById(result.confirmationId);
+    expect(persisted?.status).toBe("pending");
+    expect(persisted?.promptMessageId).toBeUndefined();
   });
 
   it("rejects an action.tool that is not in GATED_TOOL_NAMES (defense-in-depth check)", async () => {
