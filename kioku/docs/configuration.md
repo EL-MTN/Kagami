@@ -18,8 +18,10 @@ endpoints are independent — set each separately.
 
 All env vars are declared in `apps/api/src/env.ts` (the `@kagami/env` spec —
 schema + docs in one place). Tuning knobs are warn-default (a typo degrades
-with a logged warning, never a crashed boot); a mis-set `*_KIND` or
-BM25/rate-limit override still fails loudly at module load. The table below,
+with a logged warning, never a crashed boot); a mis-set `*_KIND`,
+BM25/rate-limit override, or malformed `MONGODB_URI` (a data pointer must
+never silently fall back to a different database) still fails loudly at
+module load. The table below,
 `apps/api/.env.example`, and `apps/api/turbo.json` are **generated** from the
 spec — edit `src/env.ts` and run `npm run env:gen`; `npm run env:check` fails
 on drift. (`MODEL` is honored as a legacy alias for `LLM_MODEL` — it's the

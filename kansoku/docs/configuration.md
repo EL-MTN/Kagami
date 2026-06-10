@@ -7,10 +7,12 @@ and [`apps/dashboard/.env.example`](../apps/dashboard/.env.example).
 
 All env vars are declared in `apps/api/src/env.ts` (the `@kagami/env` spec —
 schema + docs in one place) and read through `loadEnv()`
-(`apps/api/src/config.ts`). Kansoku is deliberately fail-open: every key is
-defaulted or optional and carries a warn-default policy, so a bad value warns
-(an operator typo is never silently absorbed) and falls back to the default —
-misconfiguration never crashes the observability service. The table below,
+(`apps/api/src/config.ts`). Kansoku is deliberately fail-open for its tuning
+knobs: a bad value warns (an operator typo is never silently absorbed) and
+falls back to the default, so knob misconfiguration never crashes the
+observability service. The one exception is a malformed `MONGODB_URI`, which
+fails boot — a data pointer must never silently redirect the service to the
+localhost default database. The table below,
 `apps/api/.env.example`, and `apps/api/turbo.json` are **generated** from the
 spec — edit `src/env.ts` and run `npm run env:gen`; `npm run env:check` fails
 on drift.
