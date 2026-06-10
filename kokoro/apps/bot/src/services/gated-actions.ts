@@ -243,7 +243,14 @@ const mergeSkillsArgs = z
 // truncated preview with an unreviewed executable suffix.
 const executeCodeArgs = z.object({
   language: z.enum(["python", "node"]),
-  code: z.string().min(1).max(3000),
+  // The NUL refusal mirrors the tool's inputSchema (see execute-code.ts): the
+  // Telegram formatter strips NULs for display, so NUL-bearing code would
+  // execute differently than the program the user approved.
+  code: z
+    .string()
+    .min(1)
+    .max(3000)
+    .refine((value) => !value.includes("\u0000")),
 });
 
 // CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the

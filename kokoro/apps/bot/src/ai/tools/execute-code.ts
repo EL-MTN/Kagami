@@ -78,6 +78,13 @@ export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) 
         .string()
         .min(1)
         .max(MAX_CODE_LENGTH)
+        // The Telegram formatter strips NUL bytes before rendering (they
+        // could forge its internal park/restore placeholders), so code
+        // containing a NUL would DISPLAY without it while EXECUTING with it
+        // — exactly the displayed≠executed gap this tool must never allow.
+        .refine((value) => !value.includes("\u0000"), {
+          message: "code must not contain NUL (\\u0000) characters",
+        })
         .describe(
           "The complete script (max 3000 chars), read from stdin by the interpreter. Print results to stdout — that's the only channel back.",
         ),

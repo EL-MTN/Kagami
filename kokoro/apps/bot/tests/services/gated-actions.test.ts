@@ -1324,6 +1324,19 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
     expect(vi.mocked(runCode)).not.toHaveBeenCalled();
   });
 
+  it("rejects NUL-bearing code at the dispatch boundary (displayed-vs-executed guard)", async () => {
+    // Mirrors the tool schema: the formatter strips NULs from the approval
+    // bubble, so a NUL-bearing program would execute differently than the
+    // rendering the user approved.
+    const result = await dispatchGatedAction("executeCode", {
+      language: "python",
+      code: 'print("a\u0000b")',
+    });
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_args");
+    expect(vi.mocked(runCode)).not.toHaveBeenCalled();
+  });
+
   it("refuses to run when EXECUTE_CODE_ENABLED is off (pending rows outlive a flag flip)", async () => {
     const prev = config.EXECUTE_CODE_ENABLED;
     (config as { EXECUTE_CODE_ENABLED: boolean }).EXECUTE_CODE_ENABLED = false;

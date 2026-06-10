@@ -80,6 +80,30 @@ const PULL_TIMEOUT_MS = 5 * 60 * 1000;
 
 const CONTAINER_NAME_PREFIX = "kokoro-exec-";
 
+/**
+ * Container names are boot-scoped (`kokoro-exec-<bootId>-<uuid>`) so the
+ * startup orphan sweep can never reap a live run: the sweep removes only
+ * names from OTHER boots. That keeps it safe to fire-and-forget while
+ * approvals are already being dispatched — a slow `docker ps` pass would
+ * otherwise race a run approved right after restart and kill it as an
+ * "orphan". Exported for tests.
+ */
+export const BOOT_NAME_PREFIX = `${CONTAINER_NAME_PREFIX}${randomUUID().slice(0, 8)}-`;
+
+/**
+ * Timeout-reap retry policy. A single missed `docker rm -f` (the daemon
+ * hasn't registered the name yet, or a transient client failure) would leave
+ * the container running past the deadline with the attached `docker run`
+ * holding a semaphore slot indefinitely — so the reaper retries until the rm
+ * lands, the run settles on its own, or the attempts are exhausted (then the
+ * docker client is killed as a backstop: the slot frees, and any surviving
+ * container is left for the next boot's sweep).
+ */
+const REAP_ATTEMPTS = 5;
+const REAP_RETRY_DELAY_MS = 250;
+
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 // ─── concurrency ─────────────────────────────────────────────────────────────
 
 // Counting semaphore: at most two sandboxes at once. Code execution is
@@ -130,7 +154,7 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
   const memoryMb = opts.memoryMb ?? config.EXECUTE_CODE_MEMORY_MB;
   const image =
     opts.language === "python" ? config.EXECUTE_CODE_PYTHON_IMAGE : config.EXECUTE_CODE_NODE_IMAGE;
-  const name = `${CONTAINER_NAME_PREFIX}${randomUUID()}`;
+  const name = `${BOOT_NAME_PREFIX}${randomUUID()}`;
 
   // Args array, never a shell — the code body only ever travels via stdin.
   const args = [
@@ -173,12 +197,45 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     const promise = execFileAsync("docker", args, { maxBuffer: MAX_BUFFER_BYTES });
     const child = promise.child;
 
+    // Settlement flag for the reaper: once `docker run` has exited (any
+    // outcome), further rm retries are pointless — `--rm` already cleaned up.
+    let settled = false;
+    void promise.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
     // Node's `timeout` option only kills the docker *client*; the container
     // would keep running. Own timer → `docker rm -f` kills the container,
-    // which makes the attached `docker run` exit.
+    // which makes the attached `docker run` exit. Retried per REAP_ATTEMPTS —
+    // `rm -f` removes what exists NOW, it does not schedule a future kill, so
+    // one attempt that misses (or fails) would let the run outlive the cap.
+    const reapUntilGone = async (): Promise<void> => {
+      for (let attempt = 1; attempt <= REAP_ATTEMPTS; attempt++) {
+        try {
+          await execFileAsync("docker", ["rm", "-f", name]);
+          return; // container gone — the attached `docker run` exits now
+        } catch {
+          if (settled) return; // run already exited on its own
+          if (attempt < REAP_ATTEMPTS) await delay(REAP_RETRY_DELAY_MS);
+          if (settled) return;
+        }
+      }
+      // A container shouldn't survive repeated forced removals — assume the
+      // daemon is wedged. Kill the client so the awaited run settles and the
+      // semaphore slot frees; any surviving container becomes an orphan for
+      // the next boot's sweep.
+      logger.error({ name }, "Code-exec timeout reap failed; killing docker client");
+      child.kill("SIGKILL");
+    };
+
     timer = setTimeout(() => {
       timedOut = true;
-      execFile("docker", ["rm", "-f", name], () => {});
+      void reapUntilGone();
     }, timeoutMs);
 
     if (child.stdin) {
@@ -318,10 +375,13 @@ export async function sweepOrphanContainers(): Promise<void> {
     ]);
     // `--filter name=` is substring matching — keep only true prefix matches
     // so an unrelated container that merely contains the string is untouched.
+    // Names from the CURRENT boot are skipped: those are (or are about to be)
+    // live runs, not orphans — this is what lets the sweep run concurrently
+    // with dispatch instead of blocking startup.
     const names = stdout
       .split("\n")
       .map((n) => n.trim())
-      .filter((n) => n.startsWith(CONTAINER_NAME_PREFIX));
+      .filter((n) => n.startsWith(CONTAINER_NAME_PREFIX) && !n.startsWith(BOOT_NAME_PREFIX));
     if (names.length === 0) return;
 
     logger.warn({ count: names.length }, "Sweeping orphan code-exec containers");

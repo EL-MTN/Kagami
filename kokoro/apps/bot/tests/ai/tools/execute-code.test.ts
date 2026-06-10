@@ -69,6 +69,20 @@ describe("executeCode — input schema", () => {
         .success,
     ).toBe(true);
   });
+
+  it("rejects code containing NUL bytes (the formatter strips them from the displayed bubble)", () => {
+    // A NUL survives into action.args and the sandbox but is stripped from
+    // the rendered approval prompt — the user would approve a program that
+    // displays differently than it executes.
+    const schema = makeTool().inputSchema;
+    expect(
+      schema.safeParse({
+        language: "node",
+        code: 'console.log("a\u0000b")',
+        description: "d",
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("executeCode — raises the confirmation, never executes directly", () => {
