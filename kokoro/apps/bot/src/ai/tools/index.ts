@@ -22,7 +22,12 @@ import { getMcpTools } from "../../services/mcp";
 import { MAX_ROUTINE_DEPTH } from "../../services/routine-executor";
 import { config } from "@kokoro/shared";
 import type { ToolSet } from "ai";
-import type { PlatformAdapter } from "@kokoro/shared";
+import type { ActivityKind, PlatformAdapter } from "@kokoro/shared";
+import {
+  wrapExecuteWithStage,
+  type ActivityHandle,
+  type StageAfter,
+} from "../../services/activity";
 
 export interface ToolContext {
   chatId: string;
@@ -67,6 +72,15 @@ export interface ToolContext {
    * Defaults to "main" when omitted.
    */
   callingContext?: "main" | "watcher";
+  /**
+   * Live chat-activity heartbeat for this turn (see services/activity.ts).
+   * Set on paths where a user is watching the chat (conversational turns);
+   * absent on routine/watcher/proactive paths — nobody is staring at the
+   * chat header waiting, and an unprompted "typing…" before a scheduled
+   * message would read as uncanny. Long media tools switch the indicator
+   * verb through it (the stage map at the bottom of allTools).
+   */
+  activity?: ActivityHandle;
 }
 
 export function allTools(ctx: ToolContext) {
@@ -178,6 +192,46 @@ export function allTools(ctx: ToolContext) {
   // `in` guard keeps a built-in winning on any (prefix-impossible) collision.
   for (const [key, tool] of Object.entries(getMcpTools())) {
     if (!(key in tools)) tools[key] = tool;
+  }
+
+  // Stage-aware chat indicator: while a long media tool runs, the platform
+  // indicator switches from `typing` to the verb matching what the user is
+  // about to receive (Telegram renders "sending a photo…" / "recording a
+  // voice message…"). Only tools with 10s+ runtimes and an honest verb are
+  // mapped — switching for sub-3s tools is invisible flicker. Applied last so
+  // the wrap survives however the palette was assembled above.
+  //
+  // The `after` hooks mirror wasPhotoSent() in response.ts: when sendPhoto —
+  // or browse delivering a screenshot — succeeds, the image may have been the
+  // final user-visible act (the final text bubble is suppressed when it was
+  // the only tool), so the heartbeat PAUSES instead of repainting "typing…"
+  // for a message that may never arrive. If other tools also ran, the final
+  // text IS sent and arrives into a briefly-dark indicator — under-promising
+  // beats lying. A voice note never suppresses the text, so sendVoice resets
+  // to typing as usual.
+  const photoDelivered = (result: unknown): StageAfter =>
+    (result as { sent?: boolean } | null | undefined)?.sent ? "pause" : "reset";
+  const stages: Array<{
+    name: string;
+    kind: ActivityKind;
+    after?: (result: unknown) => StageAfter;
+  }> = [
+    { name: "sendPhoto", kind: "upload_photo", after: photoDelivered },
+    { name: "sendVoice", kind: "record_voice" },
+    // Verb stays `typing` (browsing usually delivers nothing visual); the
+    // entry exists for the screenshot-delivered pause rule.
+    { name: "browse", kind: "typing", after: photoDelivered },
+  ];
+  for (const { name, kind, after } of stages) {
+    const toolDef = tools[name];
+    if (toolDef?.execute) {
+      toolDef.execute = wrapExecuteWithStage(
+        toolDef.execute,
+        kind,
+        () => ctx.activity,
+        after,
+      ) as typeof toolDef.execute;
+    }
   }
 
   return tools;
