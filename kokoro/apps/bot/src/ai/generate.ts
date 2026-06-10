@@ -237,7 +237,15 @@ async function runTurn(
     timestamp: new Date(),
   });
 
-  // 9. Send response — skip if sendPhoto already delivered the text as a caption
+  // 9. Send response — skip if sendPhoto already delivered the text as a caption.
+  // The indicator dies with the last user-visible act, not with the function:
+  // stop() BEFORE the send so no beat can repaint "typing…" after the final
+  // bubble lands (Telegram clears the action on message arrival; a beat right
+  // after it would promise a message that never comes). On the photo-caption
+  // path the photo — sent mid-loop by the tool — was already the last visible
+  // act, so stop immediately. handleMessage's finally remains the backstop;
+  // stop() is idempotent.
+  activity.stop();
   if (!wasPhotoSent(result.steps)) {
     await sendSegmented(adapter, incoming.chatId, responseText);
   } else {

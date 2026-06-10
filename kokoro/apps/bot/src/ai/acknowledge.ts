@@ -85,6 +85,9 @@ export async function generateAcknowledgment(
       timestamp: new Date(),
     });
 
+    // Stop before the send so no beat can repaint "typing…" after the final
+    // bubble lands; the finally below is the error-path backstop.
+    activity.stop();
     await sendSegmented(adapter, chatId, responseText);
   } finally {
     activity.stop();
