@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { defineEnv, kaoConsumer } from "../src/index.js";
+import { defineEnv, kansokuShipper, kaoConsumer } from "../src/index.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -214,6 +214,30 @@ describe("defineEnv", () => {
     // Transform defaults render the parsed output — callers needing the raw
     // env representation set meta.example instead.
     expect(byKey.TRANSFORMED).toMatchObject({ defaultValue: "true" });
+  });
+});
+
+describe("kansokuShipper block", () => {
+  it("drops an invalid KANSOKU_URL to undefined with a warn — never a boot failure", () => {
+    const kansoku = kansokuShipper();
+    const spec = defineEnv({
+      service: "test",
+      component: "api",
+      vars: { ...kansoku.vars },
+    });
+    const warnings: string[] = [];
+    const config = spec.parse(
+      { KANSOKU_URL: "not-a-url", KANSOKU_INGEST_TOKEN: "tok" },
+      { onWarn: (w) => warnings.push(w.key) },
+    );
+    expect(config.KANSOKU_URL).toBeUndefined();
+    expect(warnings).toEqual(["KANSOKU_URL"]);
+    // A valid pair passes through untouched.
+    const ok = spec.parse({
+      KANSOKU_URL: "https://api.kansoku.localhost",
+      KANSOKU_INGEST_TOKEN: "tok",
+    });
+    expect(ok.KANSOKU_URL).toBe("https://api.kansoku.localhost");
   });
 });
 
