@@ -164,8 +164,12 @@ per user-facing turn instead of one-shot actions:
 - **Stage-aware verbs**: long media tools switch the verb while they run,
   via a wrapper applied at the bottom of `allTools` (`ai/tools/index.ts`):
   `sendPhoto` → `upload_photo` ("sending a photo…"), `sendVoice` →
-  `record_voice` ("recording a voice message…"). The wrapper resets to
-  `typing` in a `finally`, so the next LLM step reads truthfully. Fast tools
+  `record_voice` ("recording a voice message…"). Afterwards the wrapper
+  resets to `typing` for the next LLM step — except when the tool's output
+  was itself (likely) the final user-visible act: a successful `sendPhoto`
+  (or `browse` delivering a screenshot) may suppress the final text bubble
+  (`wasPhotoSent` in `ai/response.ts`), so the heartbeat **pauses** instead
+  of promising a message that may never come; the next `set()` revives it. Fast tools
   (sub-3s reads) are deliberately unmapped — switching for them is invisible
   flicker. Parallel tool calls are last-write-wins; Telegram renders a
   single verb.

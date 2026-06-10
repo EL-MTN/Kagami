@@ -23,7 +23,11 @@ import { MAX_ROUTINE_DEPTH } from "../../services/routine-executor";
 import { config } from "@kokoro/shared";
 import type { ToolSet } from "ai";
 import type { ActivityKind, PlatformAdapter } from "@kokoro/shared";
-import { wrapExecuteWithStage, type ActivityHandle } from "../../services/activity";
+import {
+  wrapExecuteWithStage,
+  type ActivityHandle,
+  type StageAfter,
+} from "../../services/activity";
 
 export interface ToolContext {
   chatId: string;
@@ -196,17 +200,36 @@ export function allTools(ctx: ToolContext) {
   // voice message…"). Only tools with 10s+ runtimes and an honest verb are
   // mapped — switching for sub-3s tools is invisible flicker. Applied last so
   // the wrap survives however the palette was assembled above.
-  const stageKinds: Partial<Record<string, ActivityKind>> = {
-    sendPhoto: "upload_photo",
-    sendVoice: "record_voice",
-  };
-  for (const [name, kind] of Object.entries(stageKinds)) {
+  //
+  // The `after` hooks mirror wasPhotoSent() in response.ts: when sendPhoto —
+  // or browse delivering a screenshot — succeeds, the image may have been the
+  // final user-visible act (the final text bubble is suppressed when it was
+  // the only tool), so the heartbeat PAUSES instead of repainting "typing…"
+  // for a message that may never arrive. If other tools also ran, the final
+  // text IS sent and arrives into a briefly-dark indicator — under-promising
+  // beats lying. A voice note never suppresses the text, so sendVoice resets
+  // to typing as usual.
+  const photoDelivered = (result: unknown): StageAfter =>
+    (result as { sent?: boolean } | null | undefined)?.sent ? "pause" : "reset";
+  const stages: Array<{
+    name: string;
+    kind: ActivityKind;
+    after?: (result: unknown) => StageAfter;
+  }> = [
+    { name: "sendPhoto", kind: "upload_photo", after: photoDelivered },
+    { name: "sendVoice", kind: "record_voice" },
+    // Verb stays `typing` (browsing usually delivers nothing visual); the
+    // entry exists for the screenshot-delivered pause rule.
+    { name: "browse", kind: "typing", after: photoDelivered },
+  ];
+  for (const { name, kind, after } of stages) {
     const toolDef = tools[name];
-    if (toolDef?.execute && kind) {
+    if (toolDef?.execute) {
       toolDef.execute = wrapExecuteWithStage(
         toolDef.execute,
         kind,
         () => ctx.activity,
+        after,
       ) as typeof toolDef.execute;
     }
   }

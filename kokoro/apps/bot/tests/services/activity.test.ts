@@ -82,6 +82,30 @@ describe("startActivity", () => {
     expect(send).toHaveBeenCalledTimes(callsAfterStop);
   });
 
+  it("pause() silences beats until set()/reset() revives", () => {
+    vi.useFakeTimers();
+    const send = vi.fn().mockResolvedValue(undefined);
+    const handle = startActivity(adapterWith(send), "c1");
+
+    handle.pause();
+    vi.advanceTimersByTime(13_500);
+    expect(send).toHaveBeenCalledTimes(1); // only the initial emit
+
+    // Reviving with the SAME kind must still emit — the caller is
+    // announcing new visible work.
+    handle.set("typing");
+    expect(send).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(4_500);
+    expect(send).toHaveBeenCalledTimes(3);
+
+    handle.pause();
+    handle.reset();
+    expect(send).toHaveBeenCalledTimes(4);
+    expect(send).toHaveBeenLastCalledWith("c1", "typing");
+
+    handle.stop();
+  });
+
   it("returns an inert handle when the adapter has no activity support", () => {
     vi.useFakeTimers();
     const handle = startActivity(adapterWith(undefined), "c1");
@@ -112,6 +136,7 @@ describe("wrapExecuteWithStage", () => {
       handle: {
         set: (kind) => events.push(`set:${kind}`),
         reset: () => events.push("reset"),
+        pause: () => events.push("pause"),
         stop: () => events.push("stop"),
       },
     };
@@ -144,6 +169,30 @@ describe("wrapExecuteWithStage", () => {
 
     await expect(wrapped({}, {})).rejects.toThrow("boom");
     expect(events).toEqual(["set:record_voice", "reset"]);
+  });
+
+  it("pauses instead of resetting when the after-hook marks the output terminal", async () => {
+    const { handle, events } = recordingHandle();
+    const wrapped = wrapExecuteWithStage(
+      () => Promise.resolve({ sent: true }),
+      "upload_photo",
+      () => handle,
+      (result) => (result.sent ? "pause" : "reset"),
+    );
+    await wrapped({}, {});
+    expect(events).toEqual(["set:upload_photo", "pause"]);
+  });
+
+  it("resets when the after-hook declines (failed send)", async () => {
+    const { handle, events } = recordingHandle();
+    const wrapped = wrapExecuteWithStage(
+      () => Promise.resolve({ sent: false }),
+      "upload_photo",
+      () => handle,
+      (result) => (result.sent ? "pause" : "reset"),
+    );
+    await wrapped({}, {});
+    expect(events).toEqual(["set:upload_photo", "reset"]);
   });
 
   it("executes untouched when no activity handle exists", async () => {
