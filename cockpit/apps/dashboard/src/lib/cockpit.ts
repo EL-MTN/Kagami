@@ -1,14 +1,20 @@
+import { envSpec } from "../env";
 import type { AttentionItem, CockpitData, ServiceCard, ServiceId } from "./types";
 import { fmtNumber, shortError } from "./format";
 
 const DEFAULT_TIMEOUT_MS = 2_500;
 
+// Parsed once at module load. Every key is defaulted or optional and the URL
+// keys are warn-default, so this can degrade to the Portless defaults but
+// never throw — Cockpit must render even when misconfigured.
+const config = envSpec.parse(process.env);
+
 const URLS = {
-  kiokuApi: trimOrigin(process.env.KIOKU_API_URL ?? "https://api.kioku.localhost"),
-  kokoroDashboard: trimOrigin(process.env.KOKORO_DASHBOARD_URL ?? "https://kokoro.localhost"),
-  kizunaApi: trimOrigin(process.env.KIZUNA_API_URL ?? "https://api.kizuna.localhost"),
-  kansokuApi: trimOrigin(process.env.KANSOKU_API_URL ?? "https://api.kansoku.localhost"),
-  kaoApi: trimOrigin(process.env.KAO_API_URL ?? "https://api.kao.localhost"),
+  kiokuApi: trimOrigin(config.KIOKU_API_URL),
+  kokoroDashboard: trimOrigin(config.KOKORO_DASHBOARD_URL),
+  kizunaApi: trimOrigin(config.KIZUNA_API_URL),
+  kansokuApi: trimOrigin(config.KANSOKU_API_URL),
+  kaoApi: trimOrigin(config.KAO_API_URL),
 };
 
 const DASHBOARDS: Record<ServiceId, string> = {
@@ -371,7 +377,7 @@ async function readKao(): Promise<{ service: ServiceCard; attention: AttentionIt
   try {
     const health = await json<HealthOk>(URLS.kaoApi, "/healthz");
     const ok = health.ok === true || health.status === "ok";
-    const token = process.env.KAO_TOKEN?.trim() ?? "";
+    const token = config.KAO_TOKEN ?? "";
     const attention: AttentionItem[] = [];
 
     if (token.length < 16) {

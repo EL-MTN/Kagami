@@ -27,15 +27,12 @@ Portless serves the dashboard at `https://kagami.localhost`.
 
 ## Configuration
 
-The dashboard fetches local service URLs from environment variables, all with
-Portless defaults:
-
-- `KIOKU_API_URL`
-- `KOKORO_DASHBOARD_URL`
-- `KIZUNA_API_URL`
-- `KANSOKU_API_URL`
-- `KAO_API_URL`
-- `KAO_TOKEN` (needed for Kao grant status)
+Env vars are declared in `apps/dashboard/src/env.ts` (an `@kagami/env` spec);
+the generated table lives in [docs/configuration.md](docs/configuration.md).
+All service URLs default to the Portless topology, so no `.env` is required;
+`KAO_TOKEN` is the only var worth setting (it unlocks Kao grant status).
+`apps/dashboard/.env.example` and `apps/dashboard/turbo.json` are generated —
+edit `src/env.ts`, then `npm run env:gen`.
 
 ## Design
 

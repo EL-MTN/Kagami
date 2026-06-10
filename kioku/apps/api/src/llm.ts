@@ -1,39 +1,23 @@
 import "dotenv/config";
 import { createInference } from "@kagami/llm";
 import { embed, embedMany } from "ai";
+import { loadEnv } from "./config.js";
 import { logger } from "./logger.js";
 
-// Config is `{LLM,EMBEDDING}_KIND` (openai-compatible only here) + `_BASE_URL` /
-// `_API_KEY` / `LLM_MODEL` / `LLM_TIMEOUT_MS` / `EMBEDDING_MODEL`. See
-// .env.example; the deployed config points these at OpenAI.
-function resolveEndpoint(role: "LLM" | "EMBEDDING"): { baseURL: string; apiKey: string } {
-  return {
-    baseURL: process.env[`${role}_BASE_URL`] ?? "",
-    apiKey: process.env[`${role}_API_KEY`] ?? "",
-  };
-}
+// Config is `{LLM,EMBEDDING}_KIND` (openai-compatible only — the spec rejects
+// anything else at parse) + `_BASE_URL` / `_API_KEY` / `LLM_MODEL` /
+// `LLM_TIMEOUT_MS` / `EMBEDDING_MODEL`, declared in env.ts. The deployed
+// config points these at OpenAI.
+const env = loadEnv();
 
-// Kioku is openai-compatible only — reject a mis-set *_KIND loudly rather
-// than silently ignoring it.
-for (const role of ["LLM", "EMBEDDING"] as const) {
-  const kind = process.env[`${role}_KIND`];
-  if (kind && kind !== "openai-compatible") {
-    throw new Error(`${role}_KIND='${kind}' is unsupported in Kioku — only 'openai-compatible'.`);
-  }
-}
+const llm = { baseURL: env.LLM_BASE_URL ?? "", apiKey: env.LLM_API_KEY ?? "" };
+const emb = { baseURL: env.EMBEDDING_BASE_URL ?? "", apiKey: env.EMBEDDING_API_KEY ?? "" };
 
-const llm = resolveEndpoint("LLM");
-const emb = resolveEndpoint("EMBEDDING");
-
-// LLM_MODEL is canonical. MODEL is also honored: it's the longmemeval bench's
-// answerer-model variable — the bench reuses this `model` through
-// query/answer.ts (see apps/api/scripts/longmemeval*.ts), setting MODEL rather
-// than LLM_MODEL.
-const modelName = process.env.LLM_MODEL ?? process.env.MODEL ?? "";
-// Embedding model; override via EMBEDDING_MODEL in .env. The deployed config
-// sets it (+ base URL / key) to OpenAI `text-embedding-3-small`; see
-// .env.example.
-export const embeddingModelName = process.env.EMBEDDING_MODEL ?? "text-embedding-3-small";
+// LLM_MODEL is canonical; the spec maps the legacy MODEL alias (the
+// longmemeval bench's answerer-model variable — see
+// apps/api/scripts/longmemeval*.ts) onto it.
+const modelName = env.LLM_MODEL ?? "";
+export const embeddingModelName = env.EMBEDDING_MODEL;
 
 if (!modelName) {
   logger.warn("LLM_MODEL is unset. Set it in .env to whatever your provider exposes.");
@@ -49,28 +33,11 @@ if (!emb.baseURL) {
 
 // Provider construction, structured-output mode, the LM-Studio
 // `reasoning_content` repair (default-on for openai-compatible), retry, and
-// span/usage emission live in @kagami/llm.
-// `Number()` not `parseInt`: parseInt partial-parses ("180s" -> 180,
-// "1e5" -> 1), silently yielding a wrong timeout. `Number()` rejects
-// suffixed junk as NaN ("180s" -> NaN) and parses scientific notation
-// correctly ("1e5" -> 100000). A value must be a positive finite number
-// within Node's timer ceiling; anything else is treated as "unset" (no
-// gateway timeout) with a warn — an out-of-range value would otherwise
-// make AbortSignal.timeout() throw ERR_OUT_OF_RANGE (or int32-overflow
-// to an instant abort) on every call.
-const MAX_TIMEOUT_MS = 2_147_483_647; // Node setTimeout / AbortSignal.timeout ceiling
-const rawTimeout = process.env.LLM_TIMEOUT_MS;
-const parsedTimeout = rawTimeout ? Number(rawTimeout) : undefined;
-const timeoutMs =
-  parsedTimeout !== undefined &&
-  Number.isFinite(parsedTimeout) &&
-  parsedTimeout > 0 &&
-  parsedTimeout <= MAX_TIMEOUT_MS
-    ? parsedTimeout
-    : undefined;
-if (rawTimeout && timeoutMs === undefined) {
-  logger.warn(`LLM_TIMEOUT_MS="${rawTimeout}" is not a positive number within range — ignoring.`);
-}
+// span/usage emission live in @kagami/llm. LLM_TIMEOUT_MS validation
+// (positive finite number within Node's timer ceiling, warn + treat-as-unset
+// otherwise) lives in the env spec — an out-of-range value would make
+// AbortSignal.timeout() throw ERR_OUT_OF_RANGE on every call.
+const timeoutMs = env.LLM_TIMEOUT_MS;
 
 const inference = createInference({
   service: "kioku",

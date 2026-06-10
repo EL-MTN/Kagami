@@ -159,12 +159,15 @@ if [[ "$ui" == "tui" ]]; then
 fi
 
 # "Pretty in dev" is a property of THIS runner, not of each service's env.
-# Turbo multiplexes child stdout (TUI panes / streamed prefixes), so it's
-# never an interactive TTY and @kagami/logger's TTY gate would emit raw
-# NDJSON. Force human-pretty here once — Turbo forwards this to every dev
-# child — instead of repeating LOG_PRETTY in four .env files. Standalone
-# runs and production still auto-detect (and an explicit LOG_PRETTY in the
-# environment, e.g. `LOG_PRETTY=0 ./dev-all.sh`, still wins via `:-`).
+# Under --stream Turbo pipes child stdout (no TTY), so @kagami/logger's TTY
+# gate would emit raw NDJSON; the TUI hands children a PTY, which pretty-
+# prints regardless. Force human-pretty here once instead of repeating
+# LOG_PRETTY in every .env file. This export only reaches the dev children
+# because the root turbo.json `dev` task sets `passThroughEnv: ["*"]` —
+# Turbo 2 runs strict env mode by default and would otherwise filter it.
+# Standalone runs and production still auto-detect (and an explicit
+# LOG_PRETTY in the environment, e.g. `LOG_PRETTY=0 ./dev-all.sh`, still
+# wins via `:-`).
 export LOG_PRETTY="${LOG_PRETTY:-1}"
 
 # Build the turbo --filter list and hand off. `exec` replaces this shell so
