@@ -22,7 +22,8 @@ import { getMcpTools } from "../../services/mcp";
 import { MAX_ROUTINE_DEPTH } from "../../services/routine-executor";
 import { config } from "@kokoro/shared";
 import type { ToolSet } from "ai";
-import type { PlatformAdapter } from "@kokoro/shared";
+import type { ActivityKind, PlatformAdapter } from "@kokoro/shared";
+import { wrapExecuteWithStage, type ActivityHandle } from "../../services/activity";
 
 export interface ToolContext {
   chatId: string;
@@ -67,6 +68,15 @@ export interface ToolContext {
    * Defaults to "main" when omitted.
    */
   callingContext?: "main" | "watcher";
+  /**
+   * Live chat-activity heartbeat for this turn (see services/activity.ts).
+   * Set on paths where a user is watching the chat (conversational turns);
+   * absent on routine/watcher/proactive paths — nobody is staring at the
+   * chat header waiting, and an unprompted "typing…" before a scheduled
+   * message would read as uncanny. Long media tools switch the indicator
+   * verb through it (the stage map at the bottom of allTools).
+   */
+  activity?: ActivityHandle;
 }
 
 export function allTools(ctx: ToolContext) {
@@ -178,6 +188,27 @@ export function allTools(ctx: ToolContext) {
   // `in` guard keeps a built-in winning on any (prefix-impossible) collision.
   for (const [key, tool] of Object.entries(getMcpTools())) {
     if (!(key in tools)) tools[key] = tool;
+  }
+
+  // Stage-aware chat indicator: while a long media tool runs, the platform
+  // indicator switches from `typing` to the verb matching what the user is
+  // about to receive (Telegram renders "sending a photo…" / "recording a
+  // voice message…"). Only tools with 10s+ runtimes and an honest verb are
+  // mapped — switching for sub-3s tools is invisible flicker. Applied last so
+  // the wrap survives however the palette was assembled above.
+  const stageKinds: Partial<Record<string, ActivityKind>> = {
+    sendPhoto: "upload_photo",
+    sendVoice: "record_voice",
+  };
+  for (const [name, kind] of Object.entries(stageKinds)) {
+    const toolDef = tools[name];
+    if (toolDef?.execute && kind) {
+      toolDef.execute = wrapExecuteWithStage(
+        toolDef.execute,
+        kind,
+        () => ctx.activity,
+      ) as typeof toolDef.execute;
+    }
   }
 
   return tools;

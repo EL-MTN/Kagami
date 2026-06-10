@@ -8,6 +8,7 @@ import { sendSegmented } from "./response";
 import { trackUsage } from "./token-tracker";
 import { platformForChatId } from "../platform/registry";
 import { ingestClosedSession } from "@kokoro/memory";
+import { startActivity } from "../services/activity";
 
 const LLM_TIMEOUT_MS = 60_000;
 
@@ -41,43 +42,51 @@ export async function generateAcknowledgment(
   if (previouslyClosed) ingestClosedSession(previouslyClosed);
   const sessionId = conversation.sessionId;
 
-  const [baseSystemPrompt, messages, ack] = await Promise.all([
-    // No tools are passed on this turn (see below), so don't advertise the
-    // MCP tool palette in the prompt.
-    assembleSystemPrompt(chatId, { includeMcpHint: false }),
-    assembleMessages(chatId),
-    readInstruction("acknowledgment"),
-  ]);
+  // The user just tapped Approve and is watching the chat — this LLM pass
+  // takes seconds, so it gets the same never-go-dark indicator treatment as
+  // a conversational turn (no tools here, so the verb stays "typing…").
+  const activity = startActivity(adapter, chatId);
+  try {
+    const [baseSystemPrompt, messages, ack] = await Promise.all([
+      // No tools are passed on this turn (see below), so don't advertise the
+      // MCP tool palette in the prompt.
+      assembleSystemPrompt(chatId, { includeMcpHint: false }),
+      assembleMessages(chatId),
+      readInstruction("acknowledgment"),
+    ]);
 
-  const systemPrompt = ack ? `${baseSystemPrompt}\n\n---\n\n${ack}` : baseSystemPrompt;
+    const systemPrompt = ack ? `${baseSystemPrompt}\n\n---\n\n${ack}` : baseSystemPrompt;
 
-  // The bracketed event was just appended as a user-role message, so the
-  // history already ends correctly for the model.
+    // The bracketed event was just appended as a user-role message, so the
+    // history already ends correctly for the model.
 
-  const result = await generateText({
-    model: getModel(),
-    system: systemPrompt,
-    messages,
-    temperature: 0.6,
-    abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-  });
+    const result = await generateText({
+      model: getModel(),
+      system: systemPrompt,
+      messages,
+      temperature: 0.6,
+      abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    });
 
-  trackUsage("conversation", getModelName(), result.usage, {
-    chatId,
-    sessionId,
-  });
+    trackUsage("conversation", getModelName(), result.usage, {
+      chatId,
+      sessionId,
+    });
 
-  const responseText = result.text;
-  if (!responseText) {
-    logger.debug({ chatId }, "Acknowledgment turn produced no text");
-    return;
+    const responseText = result.text;
+    if (!responseText) {
+      logger.debug({ chatId }, "Acknowledgment turn produced no text");
+      return;
+    }
+
+    await appendMessage(conversation, {
+      role: "assistant",
+      content: responseText,
+      timestamp: new Date(),
+    });
+
+    await sendSegmented(adapter, chatId, responseText);
+  } finally {
+    activity.stop();
   }
-
-  await appendMessage(conversation, {
-    role: "assistant",
-    content: responseText,
-    timestamp: new Date(),
-  });
-
-  await sendSegmented(adapter, chatId, responseText);
 }

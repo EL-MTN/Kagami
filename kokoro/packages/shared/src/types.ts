@@ -26,8 +26,29 @@ export interface IncomingMessage {
   };
 }
 
+/**
+ * Ephemeral "what is the bot doing" verbs, rendered by platforms that
+ * support them (Telegram chat actions: "typing…", "sending a photo…",
+ * "recording a voice message…"). Deliberately a subset of Telegram's union —
+ * only verbs Kokoro can honestly promise are included; the verb is a promise
+ * about what the user is about to receive.
+ */
+export type ActivityKind =
+  | "typing"
+  | "upload_photo"
+  | "record_voice"
+  | "upload_voice"
+  | "upload_document";
+
 export interface PlatformAdapter {
   readonly platform: string;
+  /**
+   * Paint an ephemeral activity indicator in the chat (no message, no
+   * notification, self-expires in ~5s — callers re-emit to sustain it).
+   * Optional capability: platforms without an equivalent (iMessage via
+   * BlueBubbles today) simply omit it and callers degrade to silence.
+   */
+  sendActivity?(chatId: string, kind: ActivityKind): Promise<void>;
   sendText(chatId: string, text: string): Promise<void>;
   sendPhoto(
     chatId: string,

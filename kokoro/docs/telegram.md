@@ -7,8 +7,14 @@ The platform layer abstracts messaging services behind a common interface. Teleg
 Defined in `packages/shared/src/types.ts`:
 
 ```typescript
+type ActivityKind = "typing" | "upload_photo" | "record_voice" | "upload_voice" | "upload_document";
+
 interface PlatformAdapter {
   readonly platform: string;
+  // Optional capability: ephemeral chat-activity indicator ("typing…").
+  // Telegram implements it via sendChatAction; iMessage omits it and the
+  // heartbeat degrades to a no-op. See "Activity Indicators" below.
+  sendActivity?(chatId: string, kind: ActivityKind): Promise<void>;
   sendText(chatId: string, text: string): Promise<void>;
   sendPhoto(
     chatId: string,
@@ -85,22 +91,19 @@ createBot(token)
     ├─ message:text handler
     │   ├─ normalize(ctx) → IncomingMessage
     │   ├─ Rate limit check
-    │   ├─ Send typing action
-    │   ├─ handleMessage(incoming, adapter)
+    │   ├─ handleMessage(incoming, adapter) — owns the activity heartbeat
     │   └─ resetTimer(chatId)
     │
     ├─ message:photo handler
     │   ├─ normalizePhoto(ctx) → IncomingMessage (with base64 image)
     │   ├─ Rate limit check
-    │   ├─ Send typing action
-    │   ├─ handleMessage(incoming, adapter)
+    │   ├─ handleMessage(incoming, adapter) — owns the activity heartbeat
     │   └─ resetTimer(chatId)
     │
     ├─ message:voice handler / message:audio handler (see docs/voice.md)
     │   ├─ normalizeVoice/normalizeAudio(ctx) → IncomingMessage with audioBuffer + duration
     │   ├─ Rate limit check
-    │   ├─ Send typing action
-    │   ├─ handleMessage(incoming, adapter) — transcribes via STT if configured
+    │   ├─ handleMessage(incoming, adapter) — transcribes via STT if configured; owns the activity heartbeat
     │   └─ resetTimer(chatId)
     │
     ├─ message:location handler
@@ -145,6 +148,34 @@ When `ALLOWED_USER_IDS` is configured in env:
 ### Error Handling
 
 Both handlers catch errors and reply with a fallback message so the bot doesn't crash on failures.
+
+## Activity Indicators
+
+Telegram chat actions ("typing…" under the chat name and in the chat list)
+self-expire after ~5 seconds, while a conversational turn routinely runs
+30s+ across up to five agentic steps. Kokoro therefore runs a **heartbeat**
+per user-facing turn instead of one-shot actions:
+
+- `startActivity(adapter, chatId)` (`src/services/activity.ts`) emits
+  `typing` immediately, re-emits the current verb every 4.5s, and stops in
+  `handleMessage`'s `finally`. The acknowledgment turn (post-Approve) gets
+  the same treatment. Every emit is fail-open — an indicator must never
+  break a turn.
+- **Stage-aware verbs**: long media tools switch the verb while they run,
+  via a wrapper applied at the bottom of `allTools` (`ai/tools/index.ts`):
+  `sendPhoto` → `upload_photo` ("sending a photo…"), `sendVoice` →
+  `record_voice` ("recording a voice message…"). The wrapper resets to
+  `typing` in a `finally`, so the next LLM step reads truthfully. Fast tools
+  (sub-3s reads) are deliberately unmapped — switching for them is invisible
+  flicker. Parallel tool calls are last-write-wins; Telegram renders a
+  single verb.
+- **Scope**: only paths where a user is watching the chat. Routine
+  executions, watcher ticks, and proactive outreach get no indicator — an
+  unprompted "typing…" before a scheduled message reads as uncanny.
+- The verb set (`ActivityKind`) is a deliberate subset of Telegram's union:
+  only verbs Kokoro can honestly promise (the action is a promise about
+  what the user is about to receive). iMessage has no adapter support
+  today, so the heartbeat is inert there.
 
 ## Extending to a New Platform
 
