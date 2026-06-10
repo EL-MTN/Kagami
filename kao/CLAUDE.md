@@ -135,7 +135,7 @@ Common tasks → files. When a task touches multiple files, all are listed.
 | Add a new consumer grant (e.g. another service)  | `apps/api/src/grant-registry.ts` (version-controlled scope map)                                                                  |
 | Add an OAuth scope to an existing grant          | `apps/api/src/grant-registry.ts`                                                                                                 |
 | Add a REST endpoint                              | New router in `apps/api/src/routes/<name>.ts` + mount in `apps/api/src/server.ts`                                                |
-| Add an env var                                   | `apps/api/src/config.ts` (Zod schema) + `apps/api/.env.example`                                                                  |
+| Add an env var                                   | `apps/api/src/env.ts` (`@kagami/env` spec: schema + doc metadata), then `npm run env:gen` — `.env.example`, the docs table, and `apps/api/turbo.json` are generated |
 | Google OAuth token exchange / refresh / revoke   | `apps/api/src/lib/google.ts`                                                                                                     |
 | Bearer-token auth middleware (gates `/grants/*`) | `apps/api/src/lib/auth.ts`                                                                                                       |
 | CSRF state (grant-bound)                         | `apps/api/src/lib/oauth-state.ts`                                                                                                |
