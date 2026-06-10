@@ -32,14 +32,7 @@ service produces a down card and an attention row rather than breaking the page.
 
 ## Configuration
 
-Defaults target the Portless local URLs. Override only when running services
-outside the normal Kagami dev topology.
-
-```env
-KIOKU_API_URL=https://api.kioku.localhost
-KOKORO_DASHBOARD_URL=https://kokoro.localhost
-KIZUNA_API_URL=https://api.kizuna.localhost
-KANSOKU_API_URL=https://api.kansoku.localhost
-KAO_API_URL=https://api.kao.localhost
-KAO_TOKEN=
-```
+Declared in `src/env.ts` (an `@kagami/env` spec) and documented in the
+generated table in [configuration.md](configuration.md). Defaults target the
+Portless local URLs — override only when running services outside the normal
+Kagami dev topology. `KAO_TOKEN` unlocks Kao grant visibility.

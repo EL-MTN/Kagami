@@ -1,11 +1,11 @@
 import "dotenv/config";
 import { MongoClient, type Db } from "mongodb";
+import { loadEnv } from "../config.js";
 
 // Lazy singleton. The client is constructed on first getDb() call so
 // import-time side effects don't force a connection in code paths that
 // don't need one (tests, scripts that only read paths, etc.).
 
-const DEFAULT_URI = "mongodb://127.0.0.1:27017/kioku?directConnection=true";
 const FALLBACK_DB = "kioku";
 
 let client: MongoClient | null = null;
@@ -13,7 +13,7 @@ let connectPromise: Promise<MongoClient> | null = null;
 let dbName: string | null = null;
 
 function getUri(): string {
-  return process.env.MONGODB_URI ?? DEFAULT_URI;
+  return loadEnv().MONGODB_URI;
 }
 
 // Read the database name from the URI's path. MongoClient.db() with no args

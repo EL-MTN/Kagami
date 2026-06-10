@@ -33,8 +33,9 @@ export function renderEnvExample(spec: EnvSpec<unknown>): string {
     }
     const value = exampleValue(info);
     // Optional vars with nothing to suggest render commented-out so the
-    // template documents them without turning them on.
-    const commented = !info.required && info.defaultValue === undefined;
+    // template documents them without turning them on; `recommended` opts a
+    // var back in (optional at boot, but the template should ship it on).
+    const commented = !info.required && info.defaultValue === undefined && !info.meta.recommended;
     lines.push(`${commented ? "# " : ""}${info.key}=${value}`);
   }
 

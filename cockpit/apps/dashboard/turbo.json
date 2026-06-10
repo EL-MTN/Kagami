@@ -1,0 +1,26 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "dev": {
+      "env": [
+        "KANSOKU_API_URL",
+        "KAO_API_URL",
+        "KAO_TOKEN",
+        "KIOKU_API_URL",
+        "KIZUNA_API_URL",
+        "KOKORO_DASHBOARD_URL"
+      ]
+    },
+    "build": {
+      "env": [
+        "KANSOKU_API_URL",
+        "KAO_API_URL",
+        "KAO_TOKEN",
+        "KIOKU_API_URL",
+        "KIZUNA_API_URL",
+        "KOKORO_DASHBOARD_URL"
+      ]
+    }
+  }
+}

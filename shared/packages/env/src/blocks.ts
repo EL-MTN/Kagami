@@ -47,13 +47,41 @@ export function kansokuShipper() {
  */
 export function kaoConsumer() {
   const vars = {
-    KAO_URL: z.string().url().optional().meta({
-      doc: "Kao identity service origin; short-lived Google access tokens are vended\nfrom ${KAO_URL}/grants/<consumer>/token. Set together with KAO_TOKEN.",
-      example: "https://api.kao.localhost",
-      sharedAllowed: true,
-      crossService: true,
-      group: "Kao (Google identity)",
-    }),
+    KAO_URL: z
+      .string()
+      .url()
+      // Host-only URL. A path/query/fragment that smuggles in (e.g. `?debug=1`
+      // left over from a curl paste) would interpolate into malformed vend
+      // URLs like `https://api.kao.localhost?debug=1/grants/<consumer>/token`,
+      // and embedded userinfo (`https://user:secret@host`) is functionally
+      // dead at the wire (the Bearer header wins) but `${base}` flows into
+      // error messages, structured logs, and Kansoku — leaving credentials
+      // there would leak them. The try/catch is REQUIRED even though `.url()`
+      // runs first in the chain: zod's check pipeline does NOT short-circuit
+      // between siblings, so this refine still runs on the invalid string and
+      // a bare `new URL(s)` throw would escape `safeParse`.
+      .refine((s) => {
+        try {
+          const u = new URL(s);
+          return (
+            (u.pathname === "" || u.pathname === "/") &&
+            u.search === "" &&
+            u.hash === "" &&
+            u.username === "" &&
+            u.password === ""
+          );
+        } catch {
+          return false;
+        }
+      }, "KAO_URL must be host-only (no path, query, fragment, or userinfo)")
+      .optional()
+      .meta({
+        doc: "Kao identity service origin; short-lived Google access tokens are vended\nfrom ${KAO_URL}/grants/<consumer>/token. Set together with KAO_TOKEN.",
+        example: "https://api.kao.localhost",
+        sharedAllowed: true,
+        crossService: true,
+        group: "Kao (Google identity)",
+      }),
     KAO_TOKEN: z.string().min(16, "KAO_TOKEN must be at least 16 chars").optional().meta({
       doc: "Bearer presented to Kao's /grants/* vend surface (≥16 chars).",
       secret: true,

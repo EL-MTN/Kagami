@@ -240,4 +240,26 @@ describe("kaoConsumer block", () => {
     expect(config.KAO_URL).toBe("https://api.kao.localhost");
     expect(spec.parse({})).toEqual({});
   });
+
+  it("rejects a KAO_URL that is not host-only", () => {
+    const kao = kaoConsumer();
+    const spec = defineEnv({
+      service: "test",
+      component: "bot",
+      vars: { ...kao.vars },
+      cross: [...kao.cross],
+    });
+    const token = "x".repeat(32);
+    for (const url of [
+      "https://api.kao.localhost/api",
+      "https://api.kao.localhost?debug=1",
+      "https://api.kao.localhost/#frag",
+      "https://user:secret@api.kao.localhost",
+    ]) {
+      expect(() => spec.parse({ KAO_URL: url, KAO_TOKEN: token })).toThrow(/host-only/);
+    }
+    // A trailing slash is still an origin, not a path.
+    const config = spec.parse({ KAO_URL: "https://api.kao.localhost/", KAO_TOKEN: token });
+    expect(config.KAO_URL).toBe("https://api.kao.localhost/");
+  });
 });

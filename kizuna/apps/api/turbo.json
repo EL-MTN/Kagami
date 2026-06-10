@@ -1,0 +1,42 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "dev": {
+      "env": [
+        "KANSOKU_INGEST_TOKEN",
+        "KANSOKU_URL",
+        "KAO_TOKEN",
+        "KAO_URL",
+        "KIZUNA_DASHBOARD_ORIGIN",
+        "KIZUNA_GCAL_BACKFILL_DAYS",
+        "KIZUNA_GMAIL_BACKFILL_DAYS",
+        "KIZUNA_HOST",
+        "KIZUNA_INGEST_INTERVAL_SEC",
+        "LOG_LEVEL",
+        "MONGODB_URI",
+        "NEWSLETTER_DOMAIN_BLOCKLIST",
+        "PORT",
+        "USER_EMAILS"
+      ]
+    },
+    "test": {
+      "env": [
+        "KANSOKU_INGEST_TOKEN",
+        "KANSOKU_URL",
+        "KAO_TOKEN",
+        "KAO_URL",
+        "KIZUNA_DASHBOARD_ORIGIN",
+        "KIZUNA_GCAL_BACKFILL_DAYS",
+        "KIZUNA_GMAIL_BACKFILL_DAYS",
+        "KIZUNA_HOST",
+        "KIZUNA_INGEST_INTERVAL_SEC",
+        "LOG_LEVEL",
+        "MONGODB_URI",
+        "NEWSLETTER_DOMAIN_BLOCKLIST",
+        "PORT",
+        "USER_EMAILS"
+      ]
+    }
+  }
+}

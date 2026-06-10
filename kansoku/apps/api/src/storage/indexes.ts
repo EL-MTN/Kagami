@@ -1,28 +1,24 @@
 import type { Db } from "mongodb";
 import { getDb } from "./mongo.js";
+import { loadEnv } from "../config.js";
 import { logger } from "../logger.js";
-import { resolvePositiveInt } from "../lib/env.js";
 
 const SECONDS_PER_DAY = 24 * 60 * 60;
-const DEFAULT_LOGS_TTL_DAYS = 30;
-// Errors are fingerprinted + deduped, so the registry grows far slower than
-// `logs` — but it has no TTL today and fingerprint fragmentation (a stack
-// frame that varies, an inlined id the normalizer misses) still accretes
-// rows unboundedly. Keyed on `lastSeen`, so a fingerprint that stops
-// recurring ages out; an active one is continually refreshed and never
-// expires. 90 days default — long enough that a quarterly-recurring bug is
-// still grouped, not a fresh fingerprint.
-const DEFAULT_ERRORS_TTL_DAYS = 90;
 const MAX_TTL_DAYS = 365;
 
 /**
- * Resolve a day-valued TTL env var to seconds via the shared positive-int
- * parser, then cap at 365 days. Anything longer is presumably a typo (and,
- * for the time-series logs collection, bucket compaction degrades with very
- * long retention).
+ * Convert a day-valued TTL (validated by the env spec) to seconds, capped at
+ * 365 days. Anything longer is presumably a typo (and, for the time-series
+ * logs collection, bucket compaction degrades with very long retention).
+ * The errors-registry rationale: errors are fingerprinted + deduped, so the
+ * registry grows far slower than `logs`, but fingerprint fragmentation (a
+ * stack frame that varies, an inlined id the normalizer misses) still
+ * accretes rows unboundedly — keyed on `lastSeen`, a fingerprint that stops
+ * recurring ages out while an active one keeps refreshing. The 90-day
+ * default is long enough that a quarterly-recurring bug is still grouped,
+ * not a fresh fingerprint.
  */
-function resolveTtlSeconds(envVar: string, defaultDays: number): number {
-  const days = resolvePositiveInt(envVar, defaultDays);
+function ttlSeconds(days: number): number {
   return Math.min(days, MAX_TTL_DAYS) * SECONDS_PER_DAY;
 }
 
@@ -112,7 +108,10 @@ async function ensureTtlIndex(
 
 export async function ensureIndexes(): Promise<void> {
   const db = await getDb();
-  const logsTtlSeconds = resolveTtlSeconds("KANSOKU_LOGS_TTL_DAYS", DEFAULT_LOGS_TTL_DAYS);
+  // Read per call (not module scope) so a TTL env change is picked up by the
+  // collMod reconciliation on every restart.
+  const env = loadEnv();
+  const logsTtlSeconds = ttlSeconds(env.KANSOKU_LOGS_TTL_DAYS);
 
   await ensureTimeSeriesCollection(db, "logs", logsTtlSeconds);
 
@@ -136,7 +135,7 @@ export async function ensureIndexes(): Promise<void> {
   // `errors_last_seen` doubles as the retention TTL: a fingerprint that
   // stops recurring ages out `KANSOKU_ERRORS_TTL_DAYS` after its last hit,
   // while an active one keeps refreshing `lastSeen` and never expires.
-  const errorsTtlSeconds = resolveTtlSeconds("KANSOKU_ERRORS_TTL_DAYS", DEFAULT_ERRORS_TTL_DAYS);
+  const errorsTtlSeconds = ttlSeconds(env.KANSOKU_ERRORS_TTL_DAYS);
   await ensureTtlIndex(db, "errors", { lastSeen: -1 }, "errors_last_seen", errorsTtlSeconds);
   const errors = db.collection("errors");
   await errors.createIndex({ service: 1, lastSeen: -1 }, { name: "errors_service_last_seen" });

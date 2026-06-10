@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.46",
+    "@kagami/env": "*",
     "@kagami/llm": "*",
     "@kagami/logger": "*",
     "@modelcontextprotocol/sdk": "^1.29.0",

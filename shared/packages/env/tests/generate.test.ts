@@ -50,6 +50,24 @@ describe("renderEnvExample", () => {
     expect(text).toContain("# MODEL is a legacy alias for LLM_MODEL");
     expect(text.endsWith("\n")).toBe(true);
   });
+
+  it("renders recommended optionals uncommented", () => {
+    const spec = defineEnv({
+      service: "sample",
+      component: "api",
+      vars: {
+        LLM_BASE_URL: z.string().optional().meta({
+          doc: "Provider endpoint — optional at boot, required to be useful.",
+          example: "https://api.openai.com/v1",
+          recommended: true,
+        }),
+        SPARE_KNOB: z.string().optional().meta({ doc: "Stays commented." }),
+      },
+    });
+    const text = renderEnvExample(spec);
+    expect(text).toContain("\nLLM_BASE_URL=https://api.openai.com/v1");
+    expect(text).toContain("\n# SPARE_KNOB=");
+  });
 });
 
 describe("renderConfigDocTable", () => {

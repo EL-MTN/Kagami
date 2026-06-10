@@ -1,0 +1,72 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "dev": {
+      "env": [
+        "BM25_SIGMOID_MIDPOINT_15",
+        "BM25_SIGMOID_MIDPOINT_3",
+        "BM25_SIGMOID_MIDPOINT_6",
+        "BM25_SIGMOID_MIDPOINT_9",
+        "BM25_SIGMOID_MIDPOINT_GT15",
+        "BM25_SIGMOID_STEEPNESS_15",
+        "BM25_SIGMOID_STEEPNESS_3",
+        "BM25_SIGMOID_STEEPNESS_6",
+        "BM25_SIGMOID_STEEPNESS_9",
+        "BM25_SIGMOID_STEEPNESS_GT15",
+        "EMBEDDING_API_KEY",
+        "EMBEDDING_BASE_URL",
+        "EMBEDDING_KIND",
+        "EMBEDDING_MODEL",
+        "KANSOKU_INGEST_TOKEN",
+        "KANSOKU_URL",
+        "KIOKU_BULK_RATE_LIMIT_PER_MIN",
+        "KIOKU_HOST",
+        "KIOKU_SESSION_RATE_LIMIT_PER_MIN",
+        "KIOKU_TOP_K",
+        "LLM_API_KEY",
+        "LLM_BASE_URL",
+        "LLM_KIND",
+        "LLM_MODEL",
+        "LLM_TIMEOUT_MS",
+        "LOG_LEVEL",
+        "MODEL",
+        "MONGODB_URI",
+        "PORT"
+      ]
+    },
+    "test": {
+      "env": [
+        "BM25_SIGMOID_MIDPOINT_15",
+        "BM25_SIGMOID_MIDPOINT_3",
+        "BM25_SIGMOID_MIDPOINT_6",
+        "BM25_SIGMOID_MIDPOINT_9",
+        "BM25_SIGMOID_MIDPOINT_GT15",
+        "BM25_SIGMOID_STEEPNESS_15",
+        "BM25_SIGMOID_STEEPNESS_3",
+        "BM25_SIGMOID_STEEPNESS_6",
+        "BM25_SIGMOID_STEEPNESS_9",
+        "BM25_SIGMOID_STEEPNESS_GT15",
+        "EMBEDDING_API_KEY",
+        "EMBEDDING_BASE_URL",
+        "EMBEDDING_KIND",
+        "EMBEDDING_MODEL",
+        "KANSOKU_INGEST_TOKEN",
+        "KANSOKU_URL",
+        "KIOKU_BULK_RATE_LIMIT_PER_MIN",
+        "KIOKU_HOST",
+        "KIOKU_SESSION_RATE_LIMIT_PER_MIN",
+        "KIOKU_TOP_K",
+        "LLM_API_KEY",
+        "LLM_BASE_URL",
+        "LLM_KIND",
+        "LLM_MODEL",
+        "LLM_TIMEOUT_MS",
+        "LOG_LEVEL",
+        "MODEL",
+        "MONGODB_URI",
+        "PORT"
+      ]
+    }
+  }
+}
