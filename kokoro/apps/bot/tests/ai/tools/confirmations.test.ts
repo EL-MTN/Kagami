@@ -89,6 +89,30 @@ describe("requestConfirmation tool", () => {
     expect(persisted?.originRef).toBe("routine-log-7");
   });
 
+  it("cancels the freshly-created row when the prompt send fails (no invisible pending approval)", async () => {
+    // If the bubble never reaches the user, the row must not linger as
+    // pending: it would sit in the model's pending-confirmations context and
+    // block one-pending-per-chat guards while being unapprovable.
+    adapter.sendConfirmationPrompt = vi.fn().mockRejectedValue(new Error("message is too long"));
+    const tool = createRequestConfirmationTool("chat-1", adapter) as unknown as ExecutableTool;
+
+    const result = await tool.execute({
+      summary: "send email to alice",
+      action: { tool: "sendEmail", args: { to: "alice@x.com", subject: "hi", body: "hi" } },
+    });
+
+    // The tool surfaces the failure as a non-pending error result…
+    expect(result.pending).toBe(false);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe("message is too long");
+
+    // …and the orphaned row was cancelled, not left pending.
+    const rows = await PendingConfirmation.find({ chatId: "chat-1" });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("cancelled");
+    expect(rows[0]?.resultText).toBe("prompt delivery failed");
+  });
+
   it("rejects an action.tool that is not in GATED_TOOL_NAMES (defense-in-depth check)", async () => {
     // The Zod enum at the inputSchema would normally catch this before
     // execute runs, but the SDK invokes our execute() directly in tests

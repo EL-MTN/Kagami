@@ -15,6 +15,15 @@ import type { SandboxLanguage } from "../../services/code-sandbox";
  */
 export const MAX_CODE_LENGTH = 3000;
 
+/**
+ * Telegram caps a message at 4096 chars, and the prompt's fence grows with
+ * the longest backtick run in the code (see buildCodePrompt) — so a
+ * backtick-heavy script can outgrow the bubble even under MAX_CODE_LENGTH.
+ * Checked pre-raise: refusing here costs one tool-error turn; raising and
+ * failing the send would orphan a pending row the user never saw.
+ */
+const MAX_PROMPT_LENGTH = 4096;
+
 function buildCodePrompt(language: SandboxLanguage, code: string, description: string): string {
   const fenceTag = language === "python" ? "python" : "js";
   // The fence must be LONGER than any backtick run inside the code — an
@@ -69,12 +78,22 @@ export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) 
         ),
     }),
     execute: async ({ language, code, description }) => {
+      const promptText = buildCodePrompt(language, code, description);
+      if (promptText.length > MAX_PROMPT_LENGTH) {
+        return {
+          pending: false,
+          success: false,
+          reason:
+            "the code's long backtick runs make the approval prompt exceed the message size cap — build long backtick strings programmatically (e.g. '`' * n) instead of writing them literally",
+        };
+      }
+
       try {
         const id = await raisePendingConfirmation(chatId, adapter, {
           summary: `run ${language} code: ${description}`,
           action: { tool: "executeCode", args: { language, code } },
           origin: "conversation",
-          promptText: buildCodePrompt(language, code, description),
+          promptText,
         });
 
         // Never log the code body — only its shape (see gated-actions.ts).

@@ -55,9 +55,18 @@ export async function raisePendingConfirmation(
   const id = String(row._id);
 
   const promptText = input.promptText ?? `Approve action?\n\n${input.summary}`;
-  const messageId = await adapter.sendConfirmationPrompt(chatId, promptText, id);
-  if (messageId) {
-    await setPromptMessageId(id, messageId);
+  try {
+    const messageId = await adapter.sendConfirmationPrompt(chatId, promptText, id);
+    if (messageId) {
+      await setPromptMessageId(id, messageId);
+    }
+  } catch (error) {
+    // The bubble never reached the user — an unseen pending row must not
+    // linger (it would sit in the model's pending-confirmations context and
+    // block one-pending-per-chat guards while being unapprovable). Cancel it
+    // before rethrowing; best-effort — the TTL is the backstop.
+    await resolvePendingConfirmation(id, "cancelled", "prompt delivery failed").catch(() => {});
+    throw error;
   }
   return id;
 }

@@ -142,6 +142,20 @@ describe("executeCode — raises the confirmation, never executes directly", () 
     expect(input.promptText).toContain(`\`\`\`\`\`\`python\n${code}\n\`\`\`\`\`\``);
   });
 
+  it("refuses code whose fence growth would overflow the approval bubble — before any row exists", async () => {
+    // 2500 backticks (under the 3000 code cap) → two ~2501-char fences →
+    // promptText far past Telegram's 4096 limit. Raising would insert a
+    // pending row whose bubble can never be delivered (invisible approval),
+    // so the tool must bail out first.
+    const code = "`".repeat(2500);
+    const result = await runTool({ language: "python", code, description: "backtick flood" });
+
+    expect(result.pending).toBe(false);
+    expect(result.success).toBe(false);
+    expect(result.reason).toContain("backtick");
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
+  });
+
   it("returns a non-pending error result when raising the confirmation fails", async () => {
     vi.mocked(raisePendingConfirmation).mockRejectedValue(new Error("mongo down"));
 
