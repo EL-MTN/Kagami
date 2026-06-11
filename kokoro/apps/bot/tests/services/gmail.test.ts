@@ -15,10 +15,21 @@ vi.mock("@kokoro/shared", async (orig) => ({
 }));
 
 // Intercept withFreshAuth so we can plant arbitrary errors thrown "from
-// Google" and assert how gmail.ts's catch routes them.
-const { mockWithFreshAuth } = vi.hoisted(() => ({ mockWithFreshAuth: vi.fn() }));
+// Google" and assert how gmail.ts's catch routes them. For the
+// getOwnerAddress tests the mock EXECUTES the callback with a fake auth so
+// the token-keyed cache is exercised; googleapis is mocked so the callback's
+// getProfile call hits a controllable stub.
+const { mockWithFreshAuth, mockGetProfile } = vi.hoisted(() => ({
+  mockWithFreshAuth: vi.fn(),
+  mockGetProfile: vi.fn(),
+}));
 vi.mock("../../src/services/google-auth", () => ({
   withFreshAuth: mockWithFreshAuth,
+}));
+vi.mock("googleapis", () => ({
+  google: {
+    gmail: vi.fn(() => ({ users: { getProfile: mockGetProfile } })),
+  },
 }));
 
 import { getEmailById, getOwnerAddress } from "../../src/services/gmail";
@@ -81,18 +92,35 @@ describe("gmail.getEmailById — re-throw contract for Kao errors", () => {
 });
 
 describe("gmail.getOwnerAddress", () => {
-  // One test for the whole lifecycle — failure → success → cache — because the
-  // cache is module-level, so separate its would couple to execution order.
-  it("returns null on failure (uncached), then lowercases and caches the first success", async () => {
+  // One test for the whole lifecycle — failure → success → cache hit →
+  // token-rotation invalidation — because the cache is module-level, so
+  // separate `it`s would couple to execution order.
+  it("caches per access token and re-fetches when the token changes (re-consent safety)", async () => {
+    const runWithToken = (token: string) =>
+      mockWithFreshAuth.mockImplementation((op: (auth: unknown) => Promise<unknown>) =>
+        op({ credentials: { access_token: token } }),
+      );
+
+    // Failure → null, and nothing cached.
     mockWithFreshAuth.mockRejectedValueOnce(new Error("kao down"));
     expect(await getOwnerAddress()).toBeNull();
 
-    mockWithFreshAuth.mockResolvedValueOnce("Owner@Example.com");
+    // First success: lowercased, one profile fetch.
+    runWithToken("tok-1");
+    mockGetProfile.mockResolvedValue({ data: { emailAddress: "Owner@Example.com" } });
     expect(await getOwnerAddress()).toBe("owner@example.com");
+    expect(mockGetProfile).toHaveBeenCalledTimes(1);
 
-    // Cached: no further withFreshAuth round-trips.
-    const callsAfterSuccess = mockWithFreshAuth.mock.calls.length;
+    // Same token → cache hit, no second profile fetch.
     expect(await getOwnerAddress()).toBe("owner@example.com");
-    expect(mockWithFreshAuth.mock.calls.length).toBe(callsAfterSuccess);
+    expect(mockGetProfile).toHaveBeenCalledTimes(1);
+
+    // New token (hourly rotation OR a Kao re-consent to a different Google
+    // account) → cache miss, profile re-fetched, new address wins. This is
+    // the case that must never serve the stale "self" address.
+    runWithToken("tok-2");
+    mockGetProfile.mockResolvedValue({ data: { emailAddress: "other@example.com" } });
+    expect(await getOwnerAddress()).toBe("other@example.com");
+    expect(mockGetProfile).toHaveBeenCalledTimes(2);
   });
 });
