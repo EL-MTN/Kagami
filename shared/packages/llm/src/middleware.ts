@@ -1,11 +1,10 @@
-import { APICallError } from "ai";
 import type { LanguageModelV3CallOptions, LanguageModelV3Middleware } from "@ai-sdk/provider";
 
 /**
  * Per-attempt deadline. Merges a fresh `AbortSignal.timeout(ms)` into the
- * call's existing signal so the caller's own cancellation still wins. The
- * retry loop in fallback.ts re-invokes the wrapped leaf per attempt, so this
- * transform runs — and the budget resets — on every attempt.
+ * call's existing signal so the caller's own cancellation still wins; the
+ * attempt loop in fallback.ts re-invokes the wrapped leaf, so the budget
+ * resets per attempt.
  */
 export function timeoutMiddleware(ms: number): LanguageModelV3Middleware {
   return {
@@ -49,16 +48,3 @@ export const reasoningRepairMiddleware: LanguageModelV3Middleware = {
     };
   },
 };
-
-const RETRYABLE_STATUS = new Set([408, 409, 429, 500, 502, 503, 504]);
-
-/** Retryable iff the SDK flags it, the status is transient, or it timed out. */
-export function isRetryable(err: unknown): boolean {
-  if (APICallError.isInstance(err)) {
-    return (
-      err.isRetryable || (err.statusCode !== undefined && RETRYABLE_STATUS.has(err.statusCode))
-    );
-  }
-  // Provider-imposed deadline (AbortSignal.timeout) surfaces as TimeoutError.
-  return err instanceof Error && err.name === "TimeoutError";
-}
