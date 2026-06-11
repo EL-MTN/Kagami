@@ -19,18 +19,29 @@ export function localToday(): string {
   return localDateOf(new Date());
 }
 
+// Exact UTC midnight ⇒ almost certainly a bare calendar date that a
+// YAML parser inflated into an instant — js-yaml turns an unquoted
+// `started_at: 2026-05-15` into `Date.UTC(2026, 4, 15)` and types.ts
+// stringifies that to "2026-05-15T00:00:00.000Z". A calendar date must
+// keep its named day, not shift west of Greenwich. The cost: a true
+// instant landing on 00:00:00.000Z exactly also collapses to its UTC
+// date, which matches the legacy slice behavior.
+function calendarDayOf(d: Date): string {
+  return d.getTime() % 86_400_000 === 0 ? d.toISOString().slice(0, 10) : localDateOf(d);
+}
+
 // Session timestamps arrive as frontmatter `started_at` in assorted
 // shapes: a true instant ("2026-05-15T06:01:59.210Z"), a naive local
-// datetime, or a bare date. Convert parsable timestamps to the local
-// calendar day; keep date-only values verbatim (running them through
-// `new Date` would reinterpret them as UTC midnight and shift them back
-// a day anywhere west of Greenwich); fall back to the legacy 10-char
-// slice for anything unparsable so longmemeval-style frontmatter keeps
-// its historical behavior.
+// datetime, a bare date, or a YAML-inflated UTC-midnight instant.
+// Convert real instants to the local calendar day; keep date-only
+// values (verbatim or YAML-inflated) on their named day; fall back to
+// the legacy 10-char slice for anything unparsable so longmemeval-style
+// frontmatter keeps its historical behavior.
 export function sessionDateOf(value: unknown): string {
+  if (value instanceof Date) return calendarDayOf(value);
   const s = String(value);
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   const parsed = new Date(s);
   if (Number.isNaN(parsed.getTime())) return s.slice(0, 10);
-  return localDateOf(parsed);
+  return calendarDayOf(parsed);
 }

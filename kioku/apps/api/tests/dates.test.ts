@@ -34,6 +34,14 @@ describe("sessionDateOf", () => {
     expect(sessionDateOf("2026-05-15")).toBe("2026-05-15");
   });
 
+  it("keeps a YAML-inflated bare date on its named day", () => {
+    // js-yaml parses unquoted `started_at: 2026-05-15` into a UTC-midnight
+    // Date; types.ts stringifies it. The named day must survive — not
+    // shift to May 14 in PDT.
+    expect(sessionDateOf("2026-05-15T00:00:00.000Z")).toBe("2026-05-15");
+    expect(sessionDateOf(new Date("2026-05-15T00:00:00.000Z"))).toBe("2026-05-15");
+  });
+
   it("keeps the local day of a naive datetime", () => {
     expect(sessionDateOf("2026-05-15T22:30:00")).toBe("2026-05-15");
   });
