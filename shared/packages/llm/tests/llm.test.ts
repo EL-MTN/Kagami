@@ -7,11 +7,11 @@ import type {
   LanguageModelV3GenerateResult,
   LanguageModelV3Usage,
 } from "@ai-sdk/provider";
-import { APICallError } from "ai";
+import { APICallError, wrapLanguageModel } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createInference } from "../src";
-import { composeFallback, type Leaf } from "../src/fallback";
-import { isRetryable, reasoningRepairMiddleware, retryMiddleware } from "../src/middleware";
+import { composeFallback, isRetryable, type Leaf } from "../src/fallback";
+import { reasoningRepairMiddleware, timeoutMiddleware } from "../src/middleware";
 import { emitUsage } from "../src/observability";
 import { providerLabel, resolveModelId } from "../src/provider";
 import type { InferenceOptions, OpenAICompatibleProviderConfig } from "../src/types";
@@ -33,14 +33,19 @@ const genResult = (
   warnings: [],
 });
 
-function fakeModel(gen: () => Promise<LanguageModelV3GenerateResult>): LanguageModelV3 {
+type StreamHandshake = Awaited<ReturnType<LanguageModelV3["doStream"]>>;
+
+function fakeModel(
+  gen: () => Promise<LanguageModelV3GenerateResult>,
+  stream?: () => Promise<StreamHandshake>,
+): LanguageModelV3 {
   return {
     specificationVersion: "v3",
     provider: "fake",
     modelId: "fake-model",
     supportedUrls: {},
     doGenerate: gen,
-    doStream: () => Promise.reject(new Error("doStream not exercised")),
+    doStream: stream ?? (() => Promise.reject(new Error("doStream not exercised"))),
   };
 }
 
@@ -48,7 +53,8 @@ const leaf = (
   provider: string,
   modelId: string,
   gen: () => Promise<LanguageModelV3GenerateResult>,
-): Leaf => ({ model: fakeModel(gen), provider, modelId });
+  stream?: () => Promise<StreamHandshake>,
+): Leaf => ({ model: fakeModel(gen, stream), provider, modelId });
 
 /** A real logger with info/warn spied — fully typed, no `any`. */
 function spyLogger(): {
@@ -181,52 +187,276 @@ describe("reasoningRepairMiddleware", () => {
   });
 });
 
-// --- retry middleware -----------------------------------------------------
+// --- retry loop (inside composeFallback) -----------------------------------
 
-describe("retryMiddleware", () => {
-  it("retries a retryable failure then succeeds", async () => {
-    const wg = retryMiddleware({ maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 2 }).wrapGenerate;
-    if (!wg) throw new Error("wrapGenerate must be defined");
+describe("composeFallback retry", () => {
+  const fastRetry = { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 2 };
+
+  it("retries a retryable failure then succeeds, recording attempts on the span", async () => {
+    const { logger, info, warn } = spyLogger();
     let n = 0;
-    const out = await wg(
-      wrapArg(() => {
-        n += 1;
-        if (n < 3) return Promise.reject(apiErr(503, true));
-        return Promise.resolve(genResult([{ type: "text", text: "ok" }]));
-      }),
+    const m = composeFallback(
+      [
+        leaf("xai", "grok", () => {
+          n += 1;
+          if (n < 3) return Promise.reject(apiErr(503, true));
+          return Promise.resolve(genResult([{ type: "text", text: "ok" }]));
+        }),
+      ],
+      { logger, service: "s", retry: fastRetry },
     );
+    const res = await m.doGenerate({} as unknown as LanguageModelV3CallOptions);
     expect(n).toBe(3);
-    expect(out.content).toEqual([{ type: "text", text: "ok" }]);
+    expect(res.content).toEqual([{ type: "text", text: "ok" }]);
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[0]?.[1]).toBe("llm.retry");
+    expect(warn.mock.calls[0]?.[0]).toMatchObject({
+      provider: "xai",
+      attempt: 1,
+      max_attempts: 3,
+      cause: "http_503",
+    });
+    // Compact cause only — the raw error (with its request body) must not
+    // ride every retry line.
+    expect(warn.mock.calls[0]?.[0]).not.toHaveProperty("error");
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.event).toMatchObject({ status: "ok" });
+    expect(fields.llm).toMatchObject({
+      attempts: 3,
+      // Single-provider chain → labels carry no provider prefix.
+      attempt_errors: [
+        expect.stringMatching(/^http_503@\d+\.\ds$/),
+        expect.stringMatching(/^http_503@\d+\.\ds$/),
+      ],
+    });
   });
 
-  it("gives up immediately on a non-retryable failure", async () => {
-    const wg = retryMiddleware({ maxAttempts: 5, baseDelayMs: 1 }).wrapGenerate;
-    if (!wg) throw new Error("wrapGenerate must be defined");
+  it("does not retry a non-retryable failure (advances the chain instead)", async () => {
+    const { logger, warn } = spyLogger();
     let n = 0;
-    await expect(
-      wg(
-        wrapArg(() => {
+    const m = composeFallback(
+      [
+        leaf("xai", "grok", () => {
           n += 1;
           return Promise.reject(apiErr(400, false));
         }),
-      ),
-    ).rejects.toThrow("status 400");
+        leaf("openai", "gpt", () => Promise.resolve(genResult([{ type: "text", text: "ok" }]))),
+      ],
+      { logger, service: "s", retry: fastRetry },
+    );
+    await m.doGenerate({} as unknown as LanguageModelV3CallOptions);
     expect(n).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[1]).toBe("llm.fallback");
   });
 
-  it("stops after maxAttempts and rethrows the last error", async () => {
-    const wg = retryMiddleware({ maxAttempts: 2, baseDelayMs: 1, maxDelayMs: 1 }).wrapGenerate;
-    if (!wg) throw new Error("wrapGenerate must be defined");
-    let n = 0;
-    await expect(
-      wg(
-        wrapArg(() => {
-          n += 1;
-          return Promise.reject(apiErr(503, true));
+  it("emits an error span after exhausting every attempt, then rethrows", async () => {
+    const { logger, info } = spyLogger();
+    const m = composeFallback([leaf("xai", "grok", () => Promise.reject(apiErr(503, true)))], {
+      logger,
+      service: "s",
+      retry: { ...fastRetry, maxAttempts: 2 },
+    });
+    await expect(m.doGenerate({} as unknown as LanguageModelV3CallOptions)).rejects.toThrow(
+      "status 503",
+    );
+    expect(info).toHaveBeenCalledTimes(1);
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.event).toMatchObject({ status: "error" });
+    expect(fields.llm).toMatchObject({
+      provider: "xai",
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      attempts: 2,
+    });
+  });
+
+  it("stops retry AND failover once the caller's signal has aborted", async () => {
+    const { logger, info } = spyLogger();
+    const ac = new AbortController();
+    let primaryCalls = 0;
+    let fallbackCalls = 0;
+    const m = composeFallback(
+      [
+        leaf("xai", "grok", () => {
+          primaryCalls += 1;
+          ac.abort();
+          const e = new Error("The operation was aborted due to timeout");
+          e.name = "TimeoutError";
+          return Promise.reject(e);
         }),
-      ),
-    ).rejects.toThrow("status 503");
+        leaf("openai", "gpt", () => {
+          fallbackCalls += 1;
+          return Promise.resolve(genResult([{ type: "text", text: "never" }]));
+        }),
+      ],
+      { logger, service: "s", retry: fastRetry },
+    );
+    await expect(
+      m.doGenerate({ abortSignal: ac.signal } as unknown as LanguageModelV3CallOptions),
+    ).rejects.toThrow(/aborted/);
+    expect(primaryCalls).toBe(1);
+    expect(fallbackCalls).toBe(0);
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.event).toMatchObject({ status: "error" });
+    expect(fields.llm).toMatchObject({
+      attempts: 1,
+      attempt_errors: [expect.stringMatching(/^xai:aborted@\d+\.\ds$/)],
+    });
+  });
+
+  it("honors a caller abort that lands during the backoff sleep (no phantom attempt)", async () => {
+    const { logger, info } = spyLogger();
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    try {
+      const ac = new AbortController();
+      let n = 0;
+      const m = composeFallback(
+        [
+          leaf("xai", "grok", () => {
+            n += 1;
+            return Promise.reject(apiErr(503, true));
+          }),
+        ],
+        // ~4950ms deterministic backoff (random pinned) — far longer than the abort below.
+        { logger, service: "s", retry: { maxAttempts: 3, baseDelayMs: 5_000, maxDelayMs: 5_000 } },
+      );
+      setTimeout(() => ac.abort(), 20);
+      const startedAt = Date.now();
+      await expect(
+        m.doGenerate({ abortSignal: ac.signal } as unknown as LanguageModelV3CallOptions),
+      ).rejects.toHaveProperty("name", "AbortError");
+      expect(Date.now() - startedAt).toBeLessThan(2_000); // backoff was interrupted, not slept out
+      expect(n).toBe(1); // no attempt launched against the dead signal
+      const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+      expect(fields.event).toMatchObject({ status: "error" });
+      expect(fields.llm).toMatchObject({
+        attempts: 1,
+        attempt_errors: [expect.stringMatching(/^http_503@\d+\.\ds$/)],
+      });
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
+  it("rejects without calling any provider when the signal is already aborted", async () => {
+    const { logger, info } = spyLogger();
+    const ac = new AbortController();
+    ac.abort();
+    let n = 0;
+    const m = composeFallback(
+      [
+        leaf("xai", "grok", () => {
+          n += 1;
+          return Promise.resolve(genResult([{ type: "text", text: "x" }]));
+        }),
+      ],
+      { logger, service: "s", retry: fastRetry },
+    );
+    await expect(
+      m.doGenerate({ abortSignal: ac.signal } as unknown as LanguageModelV3CallOptions),
+    ).rejects.toHaveProperty("name", "AbortError");
+    expect(n).toBe(0);
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.event).toMatchObject({ status: "error" });
+    expect(fields.llm).toMatchObject({ attempts: 0 });
+  });
+
+  it("keeps a genuine provider error's label when it races the caller's abort", async () => {
+    const { logger, info } = spyLogger();
+    const ac = new AbortController();
+    const m = composeFallback(
+      [
+        leaf("xai", "grok", () => {
+          ac.abort();
+          return Promise.reject(apiErr(429, false));
+        }),
+        leaf("openai", "gpt", () => Promise.resolve(genResult([{ type: "text", text: "never" }]))),
+      ],
+      { logger, service: "s", retry: fastRetry },
+    );
+    await expect(
+      m.doGenerate({ abortSignal: ac.signal } as unknown as LanguageModelV3CallOptions),
+    ).rejects.toThrow("status 429");
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.llm).toMatchObject({
+      attempts: 1,
+      attempt_errors: [expect.stringMatching(/^xai:http_429@\d+\.\ds$/)],
+    });
+  });
+
+  it("clamps maxAttempts to at least 1 and rethrows the real error", async () => {
+    const { logger, info } = spyLogger();
+    const m = composeFallback([leaf("xai", "grok", () => Promise.reject(apiErr(400, false)))], {
+      logger,
+      service: "s",
+      retry: { maxAttempts: 0 },
+    });
+    await expect(m.doGenerate({} as unknown as LanguageModelV3CallOptions)).rejects.toThrow(
+      "status 400",
+    );
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.llm).toMatchObject({ attempts: 1 });
+  });
+
+  it("retries the stream handshake and emits a zero-token ok span", async () => {
+    const { logger, info } = spyLogger();
+    let n = 0;
+    const handshake = { stream: "fake" } as unknown as StreamHandshake;
+    const m = composeFallback(
+      [
+        leaf(
+          "xai",
+          "grok",
+          () => Promise.reject(new Error("doGenerate not exercised")),
+          () => {
+            n += 1;
+            if (n < 2) return Promise.reject(apiErr(503, true));
+            return Promise.resolve(handshake);
+          },
+        ),
+      ],
+      { logger, service: "s", retry: fastRetry },
+    );
+    const res = await m.doStream({} as unknown as LanguageModelV3CallOptions);
+    expect(res).toBe(handshake);
     expect(n).toBe(2);
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.event).toMatchObject({ status: "ok" });
+    expect(fields.llm).toMatchObject({ attempts: 2, prompt_tokens: 0, completion_tokens: 0 });
+  });
+
+  it("gives every attempt a fresh, unaborted deadline (timeoutMiddleware composition)", async () => {
+    const { logger } = spyLogger();
+    const seen: (AbortSignal | undefined)[] = [];
+    const abortedAtCall: boolean[] = [];
+    let n = 0;
+    const recording: LanguageModelV3 = {
+      specificationVersion: "v3",
+      provider: "fake",
+      modelId: "fake-model",
+      supportedUrls: {},
+      doGenerate: (options: LanguageModelV3CallOptions) => {
+        seen.push(options.abortSignal);
+        abortedAtCall.push(options.abortSignal?.aborted ?? false);
+        n += 1;
+        if (n === 1) return Promise.reject(apiErr(503, true));
+        return Promise.resolve(genResult([{ type: "text", text: "ok" }]));
+      },
+      doStream: () => Promise.reject(new Error("doStream not exercised")),
+    };
+    const wrapped = wrapLanguageModel({ model: recording, middleware: timeoutMiddleware(5_000) });
+    const m = composeFallback([{ model: wrapped, provider: "xai", modelId: "grok" }], {
+      logger,
+      service: "s",
+      retry: fastRetry,
+    });
+    await m.doGenerate({} as unknown as LanguageModelV3CallOptions);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBeInstanceOf(AbortSignal);
+    expect(seen[1]).toBeInstanceOf(AbortSignal);
+    expect(seen[0]).not.toBe(seen[1]); // the deadline resets per attempt
+    expect(abortedAtCall).toEqual([false, false]);
   });
 });
 
@@ -243,6 +473,8 @@ describe("emitUsage", () => {
       completionTokens: 4,
       durationMs: 12,
       fallbackUsed: false,
+      status: "ok",
+      attempts: 1,
     });
     expect(info).toHaveBeenCalledTimes(1);
     const [fields, msg] = info.mock.calls[0] as [Record<string, unknown>, string];
@@ -254,7 +486,31 @@ describe("emitUsage", () => {
       status: "ok",
     });
     expect(fields.llm).toMatchObject({ service: "kioku", prompt_tokens: 3, fallback_used: false });
+    expect(fields.llm).toMatchObject({ attempts: 1 });
+    expect(fields.llm).not.toHaveProperty("attempt_errors");
     expect(fields.trace).toBeUndefined();
+  });
+
+  it("carries error status and attempt history on a failed call", () => {
+    const { logger, info } = spyLogger();
+    emitUsage(logger, {
+      service: "kokoro",
+      provider: "xai",
+      model: "grok",
+      promptTokens: 0,
+      completionTokens: 0,
+      durationMs: 82000,
+      fallbackUsed: false,
+      status: "error",
+      attempts: 3,
+      attemptErrors: ["TimeoutError@30.0s", "TimeoutError@30.0s", "aborted@21.3s"],
+    });
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.event).toMatchObject({ status: "error" });
+    expect(fields.llm).toMatchObject({
+      attempts: 3,
+      attempt_errors: ["TimeoutError@30.0s", "TimeoutError@30.0s", "aborted@21.3s"],
+    });
   });
 
   it("attaches the active trace id when inside a trace context", () => {
@@ -269,6 +525,8 @@ describe("emitUsage", () => {
         completionTokens: 1,
         durationMs: 1,
         fallbackUsed: true,
+        status: "ok",
+        attempts: 1,
       }),
     );
     const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
@@ -301,12 +559,14 @@ describe("composeFallback", () => {
     expect(res.content).toEqual([{ type: "text", text: "y" }]);
     expect(warn).not.toHaveBeenCalled();
     const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.event).toMatchObject({ status: "ok" });
     expect(fields.llm).toMatchObject({
       provider: "anthropic",
       model: "claude",
       prompt_tokens: 11,
       completion_tokens: 22,
       fallback_used: false,
+      attempts: 1,
     });
   });
 
@@ -317,7 +577,7 @@ describe("composeFallback", () => {
         leaf("anthropic", "claude-smart", () => Promise.reject(apiErr(503, true))),
         leaf("xai", "grok-smart", () => Promise.resolve(genResult([{ type: "text", text: "z" }]))),
       ],
-      { logger, service: "kokoro" },
+      { logger, service: "kokoro", retry: { maxAttempts: 1 } },
     );
     const res = await m.doGenerate({} as unknown as LanguageModelV3CallOptions);
     expect(res.content).toEqual([{ type: "text", text: "z" }]);
@@ -325,21 +585,35 @@ describe("composeFallback", () => {
     const [warnFields] = warn.mock.calls[0] as [Record<string, unknown>, string];
     expect(warnFields).toMatchObject({ from: "anthropic", to: "xai" });
     const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
-    expect(fields.llm).toMatchObject({ provider: "xai", fallback_used: true });
+    expect(fields.llm).toMatchObject({ provider: "xai", fallback_used: true, attempts: 2 });
   });
 
   it("throws the last error when every provider in the tier fails", async () => {
-    const { logger } = spyLogger();
+    const { logger, info } = spyLogger();
     const m = composeFallback(
       [
         leaf("a", "m1", () => Promise.reject(apiErr(500, true))),
         leaf("b", "m2", () => Promise.reject(new Error("final boom"))),
       ],
-      { logger, service: "s" },
+      { logger, service: "s", retry: { maxAttempts: 1 } },
     );
     await expect(m.doGenerate({} as unknown as LanguageModelV3CallOptions)).rejects.toThrow(
       "final boom",
     );
+    // The terminal failure still produces exactly one span, with the history.
+    expect(info).toHaveBeenCalledTimes(1);
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.event).toMatchObject({ status: "error" });
+    expect(fields.llm).toMatchObject({
+      provider: "b",
+      model: "m2",
+      fallback_used: true,
+      attempts: 2,
+      attempt_errors: [
+        expect.stringMatching(/^a:http_500@\d+\.\ds$/),
+        expect.stringMatching(/^b:Error@\d+\.\ds$/),
+      ],
+    });
   });
 });
 
