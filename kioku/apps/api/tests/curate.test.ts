@@ -230,3 +230,43 @@ describe("applyCuration", () => {
     ).toBe(1);
   });
 });
+
+it("skips a merge when a member fact vanished between plan and apply", async () => {
+  const { appendFacts, deleteFacts } = await import("../src/storage/facts.ts");
+  await appendFacts([
+    fact("a", "User scheduled an email to Mark", E_A),
+    fact("b", "User scheduled an email to Mark on June 5", E_B),
+  ] as never[]);
+
+  verdictQueue.push({
+    actions: [
+      {
+        kind: "merge",
+        ids: ["a", "b"],
+        text: "User scheduled a welcoming email to Mark, sent June 5, 2026",
+        event_date: "2026-06-05",
+        category: "",
+        reason: "near-duplicates",
+      },
+    ],
+  });
+
+  const { planCuration, applyCuration } = await import("../src/ingest/curate.ts");
+  const plan = await planCuration();
+  // The plan was built against both facts; delete one before applying.
+  await deleteFacts(["b"], "test");
+
+  const result = await applyCuration(plan);
+  expect(result.staleSkipped).toBe(1);
+  expect(result.merged).toBe(0);
+  expect(result.mergedAway).toBe(0);
+
+  // The survivor is untouched — the merged text (composed from BOTH
+  // members) must not resurrect the deleted fact's content.
+  const { getDb } = await import("../src/storage/mongo.ts");
+  const db = await getDb();
+  const docs = await db.collection("facts").find({}).toArray();
+  expect(docs).toHaveLength(1);
+  expect(docs[0]!._id).toBe("a");
+  expect(docs[0]!.text).toBe("User scheduled an email to Mark");
+});

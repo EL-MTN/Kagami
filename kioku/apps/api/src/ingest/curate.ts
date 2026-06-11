@@ -94,6 +94,10 @@ export interface CurationApplyResult {
   rewritten: number;
   merged: number;
   mergedAway: number;
+  // Merges skipped because a member fact disappeared between plan and
+  // apply — the verdict's text was composed from ALL members, so
+  // applying it would resurrect the missing fact's content.
+  staleSkipped: number;
   entitiesUnlinked: number;
   entitiesRemoved: number;
 }
@@ -272,6 +276,7 @@ export async function applyCuration(
     rewritten: 0,
     merged: 0,
     mergedAway: 0,
+    staleSkipped: 0,
     entitiesUnlinked: 0,
     entitiesRemoved: 0,
   };
@@ -301,7 +306,19 @@ export async function applyCuration(
     const m = plan.merges[i]!;
     const embedding = mergeEmbeddings[i]!;
     const members = m.ids.map((id) => byId.get(id)).filter((f): f is Fact => f !== undefined);
-    if (members.length === 0) continue;
+    // Any missing member makes the whole merge stale: m.text was written
+    // from ALL members, so applying it with a member gone would resurrect
+    // the deleted fact's content inside the replacement memory. Skip the
+    // action entirely — the survivors keep their current form and the
+    // next curation run re-judges them.
+    if (members.length !== m.ids.length) {
+      logger.warn(
+        { ids: m.ids, missing: m.ids.filter((id) => !byId.has(id)) },
+        "curation merge skipped — plan stale, member fact missing",
+      );
+      result.staleSkipped += 1;
+      continue;
+    }
 
     if (m.ids.length === 1) {
       // No-op rewrite (verdict restated the fact verbatim): skip the

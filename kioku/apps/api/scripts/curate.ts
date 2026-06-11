@@ -104,6 +104,7 @@ async function main(): Promise<void> {
   console.log(
     `\nApplied: dropped=${result.dropped} rewritten=${result.rewritten} ` +
       `merged=${result.merged} (replacing ${result.mergedAway}) ` +
+      `staleSkipped=${result.staleSkipped} ` +
       `entityLinksRemoved=${result.entitiesUnlinked} entitiesRemoved=${result.entitiesRemoved}`,
   );
 }
