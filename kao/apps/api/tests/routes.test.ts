@@ -36,8 +36,8 @@ afterAll(async () => {
 const auth = { Authorization: `Bearer ${TOKEN}` };
 
 describe("open routes", () => {
-  it("GET /healthz is open and OK", async () => {
-    const res = await request(app).get("/healthz");
+  it("GET /health is open and OK", async () => {
+    const res = await request(app).get("/health");
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
   });

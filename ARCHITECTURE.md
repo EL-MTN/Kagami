@@ -314,7 +314,7 @@ See `kansoku/docs/architecture.md` for the full ingest path, data model, dashboa
 **Layout.**
 
 ```
-apps/api          Express API (entry: src/main.ts) — /healthz, /oauth/* (consent), /grants/* (vend), inline operator page at /
+apps/api          Express API (entry: src/main.ts) — /health, /oauth/* (consent), /grants/* (vend), inline operator page at /
 apps/dashboard    Next.js 16 operator UI at https://kao.localhost — overview + per-grant detail (RSC + Server Actions)
 packages/         (no directory today — workspace glob is a placeholder for future Kao-only libs)
 docs/             architecture, api, auth, configuration, testing
@@ -326,7 +326,7 @@ The dashboard injects `KAO_TOKEN` **server-side** on every `/grants/*` call from
 
 | Group    | Endpoints                                                                                                                                                                                                                  |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Health   | `GET /healthz`                                                                                                                                                                                                             |
+| Health   | `GET /health`                                                                                                                                                                                                              |
 | Operator | `GET /` (inline-HTML grant list + Connect links — open at localhost, no secret)                                                                                                                                            |
 | Consent  | `GET /oauth/:grant/start` (open@localhost; scopes from the registry, never the request), `GET /oauth/callback` (single, CSRF-state-verified; grant bound in signed state so only one redirect URI is registered in Google) |
 | Vend     | `GET /grants`, `GET /grants/:grant`, `GET /grants/:grant/token`, `DELETE /grants/:grant` — **all bearer-gated** (`KAO_TOKEN`)                                                                                              |

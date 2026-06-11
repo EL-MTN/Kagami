@@ -21,7 +21,7 @@ migrating to Kao keeps identical capability — no scope drift.
 
 ## Open endpoints (operator browser; not bearer-gated)
 
-### `GET /healthz`
+### `GET /health`
 
 `200 { "status": "ok", "service": "kao-api" }`. Liveness.
 

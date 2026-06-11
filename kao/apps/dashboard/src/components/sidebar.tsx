@@ -38,7 +38,7 @@ export function Sidebar() {
 async function ApiHealthBadge() {
   // Sidebar must render even if the API is unreachable, otherwise the
   // operator can't navigate to fix the problem. The Suspense boundary above
-  // lets the rest of the layout stream while we wait on /healthz.
+  // lets the rest of the layout stream while we wait on /health.
   const ok = await getHealth().then(
     () => true,
     () => false,

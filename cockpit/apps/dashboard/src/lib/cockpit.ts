@@ -375,7 +375,7 @@ async function readKansoku(): Promise<{ service: ServiceCard; attention: Attenti
 async function readKao(): Promise<{ service: ServiceCard; attention: AttentionItem[] }> {
   const checkedAt = nowIso();
   try {
-    const health = await json<HealthOk>(URLS.kaoApi, "/healthz");
+    const health = await json<HealthOk>(URLS.kaoApi, "/health");
     const ok = health.ok === true || health.status === "ok";
     const token = config.KAO_TOKEN ?? "";
     const attention: AttentionItem[] = [];

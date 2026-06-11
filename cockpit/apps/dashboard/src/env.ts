@@ -46,7 +46,7 @@ export const envSpec = defineEnv({
     ),
     KAO_API_URL: serviceUrl(
       "https://api.kao.localhost",
-      "Kao identity API origin. Probed for /healthz; grant status additionally\nneeds KAO_TOKEN.",
+      "Kao identity API origin. Probed for /health; grant status additionally\nneeds KAO_TOKEN.",
     ),
 
     KAO_TOKEN: z.string().optional().meta({

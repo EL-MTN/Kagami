@@ -18,7 +18,7 @@ workspace attention items, and deep links into the owning dashboards.
 | Kokoro  | `GET /api/ops/summary` on the Kokoro dashboard         | Pending approvals, failed routines/watchers |
 | Kizuna  | `GET /health`, `/oauth/google/status`, `/sync/*/state` | CRM API health, grant status, ingest state  |
 | Kansoku | `GET /health`, `/v1/errors`                            | Observability health + open error groups    |
-| Kao     | `GET /healthz`, bearer-gated `GET /grants`             | Identity service health + Google grants     |
+| Kao     | `GET /health`, bearer-gated `GET /grants`              | Identity service health + Google grants     |
 
 Each fetch has a short timeout and failures are isolated, so one unavailable
 service produces a down card and an attention row rather than breaking the page.

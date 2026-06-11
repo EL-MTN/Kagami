@@ -109,7 +109,7 @@ deleted as part of the dashboard pass.
 | `src/lib/html.ts`        | shared `escapeHtml` for the two inline operator pages (`home.ts` + the OAuth callback success page)                                    |
 | `src/storage/mongo.ts`   | raw driver, lazy singleton, cached connect promise                                                                                     |
 | `src/storage/grants.ts`  | `grants` collection: `getGrant`, `listGrants`, `upsertGrant`, `revokeGrant` (soft), `ensureGrantIndexes`                               |
-| `src/routes/health.ts`   | `GET /healthz`                                                                                                                         |
+| `src/routes/health.ts`   | `GET /health`                                                                                                                          |
 | `src/routes/oauth.ts`    | `GET /:grant/start`, `GET /callback` (open@localhost, CSRF-state-defended)                                                             |
 | `src/routes/grants.ts`   | the vend surface (mounted behind the bearer)                                                                                           |
 | `src/routes/home.ts`     | inline-HTML operator page (`GET /`) — fallback for when the Next.js dashboard isn't running                                            |

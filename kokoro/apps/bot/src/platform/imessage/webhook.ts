@@ -209,7 +209,7 @@ interface StartWebhookOptions {
  * Start the BlueBubbles webhook listener. Returns a stopper for graceful
  * shutdown. Routes:
  *   POST /webhook/bluebubbles → process inbound `new-message` events
- *   GET  /healthz             → liveness probe
+ *   GET  /health             → liveness probe
  */
 export function startBlueBubblesWebhook(opts: StartWebhookOptions): () => void {
   const dedupe = new GuidLru();
@@ -227,7 +227,7 @@ export function startBlueBubblesWebhook(opts: StartWebhookOptions): () => void {
     const ctx = incoming ? childSpan(incoming) : newTraceContext();
     void runWithTrace(ctx, async () => {
       try {
-        if (req.method === "GET" && req.url?.startsWith("/healthz")) {
+        if (req.method === "GET" && req.url?.startsWith("/health")) {
           res.writeHead(200, { "content-type": "text/plain" });
           res.end("ok");
           return;

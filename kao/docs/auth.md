@@ -19,7 +19,7 @@ So:
 
 | Surface                                          | Posture                                                                                     |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `GET /healthz`, `GET /`                          | open@localhost — liveness + an operator page that holds no secret                           |
+| `GET /health`, `GET /`                           | open@localhost — liveness + an operator page that holds no secret                           |
 | `GET /oauth/:grant/start`, `GET /oauth/callback` | open@localhost, **defended by signed CSRF state** (browser navigation can't carry a bearer) |
 | `GET/DELETE /grants/*` (incl. token vend)        | **always bearer-gated** — `Authorization: Bearer ${KAO_TOKEN}`                              |
 

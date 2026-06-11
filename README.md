@@ -827,7 +827,7 @@ maintenance sweeper.
 ### Google OAuth fails
 
 Google OAuth is centralized in Kao. First confirm Kao is running and
-`https://api.kao.localhost/healthz` responds.
+`https://api.kao.localhost/health` responds.
 
 Make sure the Google Cloud OAuth client has exactly this redirect URI:
 
