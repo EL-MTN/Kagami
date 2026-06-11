@@ -1,4 +1,5 @@
 import { cosineSimilarity } from "ai";
+import { localToday } from "../dates.js";
 import { embedQuestion } from "../llm.js";
 import { lemmatizeForBm25 } from "../retrieval/text.js";
 import { appendFacts, newFactId, readFactsInScope, type Fact } from "../storage/facts.js";
@@ -108,7 +109,7 @@ async function appendSingleFactImpl(input: AppendFactInput): Promise<AppendFactR
     };
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const fact: Fact = {
     id: newFactId(),
     text,

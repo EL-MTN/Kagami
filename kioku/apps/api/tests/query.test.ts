@@ -7,6 +7,7 @@ import {
   stripMemThinking,
 } from "../src/query/answer.ts";
 import { computeCitationRecall } from "../scripts/citation-recall.ts";
+import { localToday } from "../src/dates.ts";
 import type { RankedFact } from "../src/retrieval/embeddings.ts";
 
 const fact = (overrides: Partial<RankedFact>): RankedFact => ({
@@ -64,9 +65,9 @@ it("deriveQuestionDate returns max eventDate from facts", () => {
   expect(deriveQuestionDate(facts)).toBe("2024-06-20");
 });
 
-it("deriveQuestionDate falls back to wall clock on empty facts", () => {
-  const today = new Date().toISOString().slice(0, 10);
-  expect(deriveQuestionDate([])).toBe(today);
+it("deriveQuestionDate falls back to the local wall-clock day on empty facts", () => {
+  // Local, not UTC — after 5 PM PDT the UTC slice names tomorrow.
+  expect(deriveQuestionDate([])).toBe(localToday());
 });
 
 it("deriveQuestionDate uses createdAt when eventDate is empty", () => {

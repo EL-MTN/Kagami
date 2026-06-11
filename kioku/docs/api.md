@@ -40,7 +40,7 @@ app.use("/mcp", mcpRouter);
 | GET    | `/facts/count`       | —                                                                                              | `{ count }`                                                                                                                                        |
 | GET    | `/facts`             | `?limit=100&offset=0&since=YYYY-MM-DD&until=YYYY-MM-DD&source_session&user_id&run_id&agent_id` | `{ total, limit, offset, facts: Fact[] }` (`embedding` stripped via `publicFact`, sorted newest event_date first)                                  |
 | GET    | `/facts/:id`         | —                                                                                              | `Fact` (`embedding` stripped) or `404 { error: "not_found" }`                                                                                      |
-| GET    | `/facts/:id/history` | —                                                                                              | `{ id, events: HistoryEvent[] }` (newest first; today only ADD events are written)                                                                 |
+| GET    | `/facts/:id/history` | —                                                                                              | `{ id, events: HistoryEvent[] }` (newest first; ADD from ingest, UPDATE/DELETE from the curation pass)                                             |
 | POST   | `/recall`            | `{ query, k?, since?, until?, filters? }`                                                      | `{ facts: RecalledFact[], total }`                                                                                                                 |
 | POST   | `/query`             | `{ question, k?, filters? }`                                                                   | `{ answer, citations: string[] }` — citations are the deduped source session ids of the top-K retrieved facts (rank order, `raw/` prefix stripped) |
 | POST   | `/sessions`          | `{ transcript, user_id?, run_id?, agent_id?, metadata? }`                                      | `201 { sessionId, added, batches, failed }` — `500` if every batch errored (transcript persisted; retryable)                                       |
@@ -81,6 +81,12 @@ interface RecalledFact {
   event_date: string;
   source_session: string;
   created_at: string;
+  // Fused rank score + per-channel contributions (semantic cosine,
+  // normalized BM25, entity boost) — present whenever the ranker ran.
+  score?: number;
+  semantic?: number;
+  bm25?: number;
+  entity_boost?: number;
 }
 ```
 

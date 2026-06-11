@@ -145,3 +145,40 @@ Writes flow through `apps/api/src/storage/`:
 - `getOrComputeSessionSummary(...)` — read-then-upsert with `$setOnInsert`; first writer wins.
 
 See [storage.md](storage.md) for the schema and indexes.
+
+## Curation pass (`curate.ts`)
+
+The on-demand counterpart to extraction. Extraction is append-only and conservative; over time the store accretes conversational residue (play-by-play narration, transient states), paraphrased near-duplicates below the 0.97 cosine gate, roll-up/atomic double extractions, and same-day contradiction clusters. `planCuration()` re-reads the corpus with an LLM editor and `applyCuration()` executes its verdicts.
+
+```
+planCuration(scope)
+  readFactsInScope → clusterFacts (partitioned by (user, run, agent) —
+  merges never cross a scope boundary — then cosine ≥ 0.8 union-find;
+  multi-member clusters reviewed as units, singletons coalesced into
+  batches of 20 where multi-id merges are forbidden: those facts are
+  mechanically unrelated)
+  → one generateObject call per group against prompts/curate.md
+  → per-fact verdicts: keep | drop | merge
+
+applyCuration(plan)
+  drop       → deleteFacts + history DELETE + entity unlink
+  merge n=1  → rewriteFact in place (id stable) + history UPDATE + entity relink
+  merge n≥2  → one replacement fact (metadata.curated_from = member ids,
+               event_date = LLM-provided or earliest member) + history ADD
+               + member DELETEs + entity relink
+```
+
+Clustering is mechanical context assembly — every judgment is the LLM's (`prompts/curate.md` carries the drop/merge rulebook). Verdicts that fail validation (missing/duplicated ids, empty merge text) or error fail **open**: the group is kept untouched, the same default-keep posture as `relevance.ts`. Merged-text embeddings are batched up front so an embedding outage leaves the store untouched.
+
+Operator CLI:
+
+```bash
+npx tsx apps/api/scripts/curate.ts          # dry run — prints the plan
+npx tsx apps/api/scripts/curate.ts --apply  # execute (history-journaled, actor "curate")
+npx tsx apps/api/scripts/curate.ts --user u1 --run r1 --agent a1 --json
+npx tsx apps/api/scripts/curate.ts --relink # entity-link repair only (no LLM)
+```
+
+`--relink` is the repair path for the best-effort entity linking: ingest swallows entity-upsert failures by design (a fact write must never fail on the boost channel), and an embed outage now skips new entities rather than persisting dead empty-embedding rows. The sweep re-runs the idempotent upsert over every fact in scope, purging any legacy empty-embedding rows so those entities re-embed.
+
+This is the sanctioned exception to "atomic facts are write-once": the ingest path never updates or deletes, the curator may do both, and every mutation leaves an UPDATE/DELETE row in `history`.

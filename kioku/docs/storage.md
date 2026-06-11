@@ -214,7 +214,7 @@ Modeled on mem0's history table. Every fact mutation leaves a row, capturing old
 | `UPDATE` | `old_text`, `new_text` |
 | `DELETE` | `old_text`             |
 
-Today only `ADD` events are written (atomic facts are write-once). The `UPDATE` / `DELETE` shapes are reserved for future correction primitives.
+The ingest path writes only `ADD` events (atomic facts are write-once on ingest). `UPDATE` / `DELETE` rows are written by the curation pass (`ingest/curate.ts`, actor `curate`) via `rewriteFact()` / `deleteFacts()` in `facts.ts` — the sanctioned mutation path; see [ingest.md](ingest.md#curation-pass-curatets).
 
 #### Index
 

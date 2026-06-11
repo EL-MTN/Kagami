@@ -137,9 +137,15 @@ interface SemanticCandidate {
   score: number; // semantic score in [0, 1]
 }
 
-interface RankedResult {
+export interface RankedResult {
   id: string;
   score: number; // combined score in [0, 1]
+  // Per-channel contributions, pre-division — what the additive fusion
+  // actually summed. Surfaced so /recall (and the dashboard's score
+  // bars) can show WHY a fact ranked where it did.
+  semantic: number; // cosine component in [0, 1]
+  bm25: number; // sigmoid-normalized BM25 component in [0, 1]
+  entity: number; // entity boost in [0, ENTITY_BOOST_WEIGHT]
 }
 
 // Gate by semantic threshold, then add BM25 and entity boost (each
@@ -165,7 +171,13 @@ export function scoreAndRank(
     const bm25 = bm25Scores.get(r.id) ?? 0;
     const entity = entityBoosts.get(r.id) ?? 0;
     const raw = r.score + bm25 + entity;
-    scored.push({ id: r.id, score: Math.min(raw / maxPossible, 1.0) });
+    scored.push({
+      id: r.id,
+      score: Math.min(raw / maxPossible, 1.0),
+      semantic: r.score,
+      bm25,
+      entity,
+    });
   }
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, topK);

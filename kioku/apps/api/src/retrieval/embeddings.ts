@@ -11,6 +11,13 @@ export interface RankedFact {
   eventDate: string;
   sourceSession: string;
   createdAt: string;
+  // Fused rank score and its per-channel contributions, straight from
+  // scoreAndRank. Optional because test fixtures and degraded paths may
+  // construct RankedFacts without running the ranker.
+  score?: number;
+  semantic?: number;
+  bm25?: number;
+  entityBoost?: number;
 }
 
 // Mem0-OSS-shaped filter shape. Scope fields and `category` are declared
@@ -184,16 +191,23 @@ export const defaultFactRanker: FactRanker = async (question, k, opts = {}) => {
   const ranked = scoreAndRank(semanticResults, bm25Scores, entityBoosts, SEMANTIC_THRESHOLD, k);
 
   const docById = new Map(docs.map((d) => [d._id, d]));
-  return ranked
-    .map((r) => docById.get(r.id))
-    .filter((d): d is FactRow => Boolean(d))
-    .map((d) => ({
-      id: d._id,
-      text: d.text,
-      eventDate: d.event_date,
-      sourceSession: d.source_session,
-      createdAt: d.created_at,
-    }));
+  return ranked.flatMap((r) => {
+    const d = docById.get(r.id);
+    if (!d) return [];
+    return [
+      {
+        id: d._id,
+        text: d.text,
+        eventDate: d.event_date,
+        sourceSession: d.source_session,
+        createdAt: d.created_at,
+        score: r.score,
+        semantic: r.semantic,
+        bm25: r.bm25,
+        entityBoost: r.entity,
+      },
+    ];
+  });
 };
 
 // Per-fact entity boost.
