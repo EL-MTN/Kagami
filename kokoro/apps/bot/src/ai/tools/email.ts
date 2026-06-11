@@ -34,8 +34,11 @@ export function createCheckEmailTool() {
           return { success: true, email };
         }
 
-        logger.debug({ maxResults, query }, "Tool: checkEmail (list)");
-        const emails = await listEmails(query ?? "is:unread", maxResults);
+        // Blank-as-unset: an empty/whitespace query forwarded to Gmail would
+        // list the unfiltered mailbox, not the documented unread default.
+        const effectiveQuery = query?.trim() || "is:unread";
+        logger.debug({ maxResults, query: effectiveQuery }, "Tool: checkEmail (list)");
+        const emails = await listEmails(effectiveQuery, maxResults);
         return { success: true, count: emails.length, emails };
       } catch (error) {
         logger.error({ error: error }, "Tool: checkEmail failed");

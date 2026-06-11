@@ -118,6 +118,13 @@ export function createManageCalendarTool(options: ManageCalendarToolOptions = {}
           // after approval. List/create stay direct: cheap, easily reversed.
           case "update":
           case "delete": {
+            // Arg completeness is checked BEFORE the refusal: the model must
+            // fix a missing eventId here, not carry incomplete args into a
+            // requestConfirmation bubble that only fails at dispatch — after
+            // the user already tapped Approve.
+            if (!eventId) {
+              return { success: false, reason: `eventId is required for ${action}` };
+            }
             logger.warn(
               { action, eventId },
               "Tool: manageCalendar mutation invoked directly — refusing",

@@ -25,10 +25,13 @@ function getHeader(
   return headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
 }
 
-// Successful lookups only — a transient Kao/Gmail failure must not pin null
-// for the process lifetime. The address can only change with a re-consent to
-// a different Google account, which restarts the grant anyway.
-let cachedOwnerAddress: string | null = null;
+// Keyed by the vended access token, successful lookups only. A Kao re-consent
+// to a DIFFERENT Google account does not restart Kokoro — it just vends new
+// tokens — so a process-lifetime cache would keep treating the previous
+// account's address as "self" and wave an external send past the approval
+// gate. A new token forces a profile re-fetch; normal hourly token rotation
+// costs one extra getProfile per token, which is negligible.
+let ownerAddressCache: { token: string; address: string } | null = null;
 
 /**
  * The authenticated Gmail account's own address, lowercased — the definition
@@ -37,15 +40,20 @@ let cachedOwnerAddress: string | null = null;
  * null as "not provably self".
  */
 export async function getOwnerAddress(): Promise<string | null> {
-  if (cachedOwnerAddress) return cachedOwnerAddress;
   try {
-    const address = await withFreshAuth(async (auth) => {
+    return await withFreshAuth(async (auth) => {
+      const token = auth.credentials.access_token;
+      if (typeof token === "string" && ownerAddressCache?.token === token) {
+        return ownerAddressCache.address;
+      }
       const gmail = google.gmail({ version: "v1", auth });
       const res = await gmail.users.getProfile({ userId: "me" });
-      return res.data.emailAddress ?? null;
+      const address = res.data.emailAddress?.toLowerCase() ?? null;
+      if (address && typeof token === "string") {
+        ownerAddressCache = { token, address };
+      }
+      return address;
     });
-    cachedOwnerAddress = address ? address.toLowerCase() : null;
-    return cachedOwnerAddress;
   } catch (error) {
     logger.warn({ error }, "Failed to resolve the Gmail profile address");
     return null;

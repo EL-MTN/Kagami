@@ -89,6 +89,19 @@ describe("manageCalendar tool — full mode", () => {
     });
   });
 
+  it("still requires eventId for update/delete BEFORE pointing at the approval rail", async () => {
+    // The model must fix incomplete args here — not carry them into a
+    // requestConfirmation bubble that only fails at dispatch post-approval.
+    const missingUpdate = await tool.execute({ action: "update", summary: "x" });
+    expect(missingUpdate).toEqual({ success: false, reason: "eventId is required for update" });
+
+    const missingDelete = await tool.execute({ action: "delete" });
+    expect(missingDelete).toEqual({ success: false, reason: "eventId is required for delete" });
+
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
   it("refuses a direct update and points at requestConfirmation (code-enforced gate)", async () => {
     const result = await tool.execute({
       action: "update",

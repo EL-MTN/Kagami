@@ -74,6 +74,12 @@ describe("checkEmail tool", () => {
     expect(mockListEmails).toHaveBeenCalledWith("from:alice@example.com newer_than:7d", 10);
   });
 
+  it("treats a blank/whitespace query as the unread default (a bare q lists the whole mailbox)", async () => {
+    mockListEmails.mockResolvedValue([]);
+    await tool.execute({ maxResults: 10, query: "   " });
+    expect(mockListEmails).toHaveBeenCalledWith("is:unread", 10);
+  });
+
   it("single mode: calls getEmailById when emailId is supplied — list is skipped", async () => {
     mockGetById.mockResolvedValue({ id: "e1", body: "hello" });
     const result = await tool.execute({ maxResults: 10, emailId: "e1" });
