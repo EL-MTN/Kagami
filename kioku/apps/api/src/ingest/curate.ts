@@ -304,6 +304,16 @@ export async function applyCuration(
     if (members.length === 0) continue;
 
     if (m.ids.length === 1) {
+      // No-op rewrite (verdict restated the fact verbatim): skip the
+      // write so history doesn't accrue old_text === new_text rows.
+      const current = members[0]!;
+      if (
+        current.text === m.text &&
+        (m.event_date === undefined || m.event_date === current.event_date) &&
+        (m.category === undefined || m.category === current.category)
+      ) {
+        continue;
+      }
       const updated = await rewriteFact(
         m.ids[0]!,
         {
