@@ -30,7 +30,7 @@ const objectId = z.string().regex(/^[a-f0-9]{24}$/i, "must be a 24-char hex Obje
 const isoDatetime = z.string().datetime({ offset: true });
 
 const opaqueIdGuidance =
-  "Returned CRM IDs are opaque tool handles. Use PersonSummary.id, personId, primaryOrgId, participant person IDs, and sourceInteractionId only for follow-up CRM tool calls or internal correlation; do not quote raw IDs back unless Eric explicitly asks.";
+  "Returned CRM IDs are opaque tool handles. Use PersonSummary.id, personId, primaryOrgId, participant person IDs, and sourceInteractionId only for follow-up CRM tool calls or internal correlation; do not quote raw IDs back unless Goshujin-sama explicitly asks.";
 
 function clampLimit(value: number | undefined, defaultValue: number, min: number, max: number) {
   if (value === undefined || Number.isNaN(value)) return defaultValue;
@@ -181,12 +181,12 @@ export function createRecentInteractionsTool() {
 
 export function createListMyFollowupsTool() {
   return tool({
-    description: `List Kizuna followups in Eric-relative terms: i_owe means Eric owes the person, and they_owe means the person owes Eric. ${opaqueIdGuidance}`,
+    description: `List Kizuna followups in Goshujin-sama-relative terms: i_owe means Goshujin-sama owes the person, and they_owe means the person owes Goshujin-sama. ${opaqueIdGuidance}`,
     inputSchema: z.object({
       direction: z
         .enum(["i_owe", "they_owe"])
         .optional()
-        .describe("Optional Eric-relative direction."),
+        .describe("Optional Goshujin-sama-relative direction."),
       status: z
         .enum(["open", "done", "snoozed", "dismissed"])
         .optional()
@@ -284,7 +284,7 @@ export const logInteractionInputSchema = z.object({
 export const createFollowupInputSchema = z.object({
   personId: objectId.describe("PersonSummary.id from a CRM tool."),
   direction: followupDirection.describe(
-    "i_owe = Eric owes the person; they_owe = the person owes Eric.",
+    "i_owe = Goshujin-sama owes the person; they_owe = the person owes Goshujin-sama.",
   ),
   reason: z.string().min(1).max(400).describe("Short reason — what's owed."),
   dueAt: isoDatetime
@@ -348,7 +348,7 @@ export function createLogInteractionTool() {
 
 export function createCreateFollowupTool() {
   return tool({
-    description: `Create a Kizuna followup. direction is Eric-relative: i_owe means Eric owes the person, they_owe means the person owes Eric. ${writeGateGuidance} ${opaqueIdGuidance}`,
+    description: `Create a Kizuna followup. direction is Goshujin-sama-relative: i_owe means Goshujin-sama owes the person, they_owe means the person owes Goshujin-sama. ${writeGateGuidance} ${opaqueIdGuidance}`,
     inputSchema: createFollowupInputSchema,
     execute: (): Promise<CrmToolResult<FollowupSummary>> => {
       return Promise.resolve(refuseDirectInvocation<FollowupSummary>("createFollowup"));

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { tool } from "ai";
 import { z } from "zod";
 import { getRoutineById, isRecentlyDeclined } from "@kokoro/db";
-import { logger } from "@kokoro/shared";
+import { logger, validateCronAndDefaults } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
 import type { IRoutine, IRoutineParameter } from "@kokoro/db";
 import { parameterSchema } from "./routine-schema";
@@ -170,6 +170,13 @@ export async function proposeRefinement(opts: {
     newParameters !== undefined && paramsKey(newParameters) !== paramsKey(routine.parameters);
   if (!promptChanged && !paramsChanged) {
     return { proposed: false, reason: "the proposed prompt and parameters are unchanged" };
+  }
+
+  // A parameter change on a scheduled routine must keep every required
+  // parameter defaulted — cron runs have nobody to supply arguments.
+  if (paramsChanged && routine.cronSchedule) {
+    const cronErr = validateCronAndDefaults(routine.cronSchedule, newParameters ?? []);
+    if (cronErr) return { proposed: false, reason: cronErr.message };
   }
 
   const signature = computeRefinementSignature(
