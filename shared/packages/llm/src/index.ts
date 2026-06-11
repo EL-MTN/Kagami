@@ -1,8 +1,7 @@
 import { wrapLanguageModel } from "ai";
 import type { EmbeddingModel, LanguageModel } from "ai";
-import type { LanguageModelV3Middleware } from "@ai-sdk/provider";
 import { composeFallback, type Leaf } from "./fallback.js";
-import { retryMiddleware, timeoutMiddleware } from "./middleware.js";
+import { timeoutMiddleware } from "./middleware.js";
 import { buildEmbedding, buildLeaf, providerLabel, resolveModelId } from "./provider.js";
 import type { Inference, InferenceOptions, ProviderConfig } from "./types.js";
 
@@ -17,12 +16,17 @@ export type {
   UsageEvent,
 } from "./types.js";
 
-/** Wrap one resolved provider+model with timeout (inner) then retry (outer). */
-function leafFor(cfg: ProviderConfig, modelId: string, opts: InferenceOptions): Leaf {
-  const stack: LanguageModelV3Middleware[] = [retryMiddleware(opts.retry)];
-  if (cfg.timeoutMs !== undefined) stack.push(timeoutMiddleware(cfg.timeoutMs));
+/**
+ * Wrap one resolved provider+model with its per-attempt timeout. Retry,
+ * failover, and span emission live in `composeFallback` — see its doc.
+ */
+function leafFor(cfg: ProviderConfig, modelId: string): Leaf {
+  const bare = buildLeaf(cfg, modelId);
   return {
-    model: wrapLanguageModel({ model: buildLeaf(cfg, modelId), middleware: stack }),
+    model:
+      cfg.timeoutMs !== undefined
+        ? wrapLanguageModel({ model: bare, middleware: timeoutMiddleware(cfg.timeoutMs) })
+        : bare,
     provider: providerLabel(cfg),
     modelId,
   };
@@ -55,12 +59,13 @@ export function createInference(opts: InferenceOptions): Inference {
         // dropped, never downgraded (same-tier failover).
         const id = cfg === opts.chat ? primaryId : resolveModelId(cfg, name, opts.models);
         if (id === undefined) continue;
-        leaves.push(leafFor(cfg, id, opts));
+        leaves.push(leafFor(cfg, id));
       }
 
       return composeFallback(leaves, {
         logger: opts.logger,
         service: opts.service,
+        retry: opts.retry,
       });
     },
 
