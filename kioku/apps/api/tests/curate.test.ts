@@ -361,3 +361,64 @@ it("rewrite preserves an entity row it still mentions (no destroy-recreate)", as
   expect(after!._id).toEqual(before!._id);
   expect(after!.linked_memory_ids).toContain("a");
 });
+
+it("skips merges and drops whose target text changed since planning", async () => {
+  const { appendFacts, rewriteFact } = await import("../src/storage/facts.ts");
+  await appendFacts([
+    fact("a", "User scheduled an email to Mark", E_A),
+    fact("b", "User scheduled an email to Mark on June 5", E_B),
+    fact("c", "User checked the time", E_C),
+  ] as never[]);
+
+  // Two review groups (a+b cluster, then c's singleton batch) — one
+  // verdict each, in group order.
+  verdictQueue.push({
+    actions: [
+      {
+        kind: "merge",
+        ids: ["a", "b"],
+        text: "User scheduled a welcoming email to Mark, sent June 5, 2026",
+        event_date: "2026-06-05",
+        category: "",
+        reason: "near-duplicates",
+      },
+    ],
+  });
+  verdictQueue.push({
+    actions: [
+      { kind: "drop", ids: ["c"], text: "", event_date: "", category: "", reason: "narration" },
+    ],
+  });
+
+  const { planCuration, applyCuration } = await import("../src/ingest/curate.ts");
+  const plan = await planCuration();
+  expect(plan.merges).toHaveLength(1);
+  expect(plan.drops).toHaveLength(1);
+  // Between plan and apply, both a merge member and the drop target are
+  // rewritten — the verdicts judged text the model no longer sees.
+  await rewriteFact(
+    "b",
+    { text: "User cancelled the email to Mark", text_lemmatized: "x", embedding: [1, 0, 0] },
+    "test",
+  );
+  await rewriteFact(
+    "c",
+    {
+      text: "User checked the time, which mattered after all",
+      text_lemmatized: "x",
+      embedding: [0, 1, 0],
+    },
+    "test",
+  );
+
+  const result = await applyCuration(plan);
+  expect(result.staleSkipped).toBe(2);
+  expect(result.merged).toBe(0);
+  expect(result.dropped).toBe(0);
+
+  const { getDb } = await import("../src/storage/mongo.ts");
+  const db = await getDb();
+  expect(await db.collection("facts").countDocuments()).toBe(3);
+  const b = await db.collection("facts").findOne({ _id: "b" as never });
+  expect(b!.text).toBe("User cancelled the email to Mark"); // newer content untouched
+});
