@@ -89,33 +89,22 @@ describe("manageCalendar tool — full mode", () => {
     });
   });
 
-  it("update action requires eventId and forwards optional patch fields", async () => {
-    mockUpdate.mockResolvedValue({ id: "ev-1", summary: "updated" });
-    const missingId = await tool.execute({ action: "update", summary: "x" });
-    expect(missingId).toEqual({ success: false, reason: "eventId is required for update" });
-
-    await tool.execute({
+  it("refuses a direct update and points at requestConfirmation (code-enforced gate)", async () => {
+    const result = await tool.execute({
       action: "update",
       eventId: "ev-1",
       summary: "updated",
     });
-    expect(mockUpdate).toHaveBeenCalledWith("ev-1", {
-      summary: "updated",
-      description: undefined,
-      start: undefined,
-      end: undefined,
-      location: undefined,
-    });
+    expect(result.success).toBe(false);
+    expect(result.reason as string).toContain("requestConfirmation");
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it("delete action requires eventId and returns the deleted id on success", async () => {
-    mockDelete.mockResolvedValue(undefined);
-    const missingId = await tool.execute({ action: "delete" });
-    expect(missingId).toEqual({ success: false, reason: "eventId is required for delete" });
-
+  it("refuses a direct delete and points at requestConfirmation (code-enforced gate)", async () => {
     const result = await tool.execute({ action: "delete", eventId: "ev-1" });
-    expect(result).toEqual({ success: true, deleted: "ev-1" });
-    expect(mockDelete).toHaveBeenCalledWith("ev-1");
+    expect(result.success).toBe(false);
+    expect(result.reason as string).toContain("requestConfirmation");
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it("returns success:false with the error message when the underlying call throws", async () => {

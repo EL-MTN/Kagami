@@ -216,6 +216,35 @@ describe("dispatchGatedAction — sendEmail happy path", () => {
     });
   });
 
+  it("forwards cc/bcc when present", async () => {
+    vi.mocked(sendEmail).mockResolvedValue({ id: "msg-3", threadId: "th-3" });
+    await dispatchGatedAction("sendEmail", {
+      to: "alice@example.com",
+      subject: "hi",
+      body: "body",
+      cc: ["bob@example.com"],
+      bcc: ["carol@example.com"],
+    });
+    expect(vi.mocked(sendEmail)).toHaveBeenCalledWith("alice@example.com", "hi", "body", {
+      cc: ["bob@example.com"],
+      bcc: ["carol@example.com"],
+      threadId: undefined,
+      inReplyTo: undefined,
+    });
+  });
+
+  it("rejects malformed cc entries (not an email) before touching the service", async () => {
+    const result = await dispatchGatedAction("sendEmail", {
+      to: "alice@example.com",
+      subject: "hi",
+      body: "body",
+      cc: ["not-an-email"],
+    });
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_args");
+    expect(vi.mocked(sendEmail)).not.toHaveBeenCalled();
+  });
+
   it("propagates underlying sendEmail errors as a failed dispatch", async () => {
     vi.mocked(sendEmail).mockRejectedValue(new Error("gmail down"));
     const result = await dispatchGatedAction("sendEmail", {

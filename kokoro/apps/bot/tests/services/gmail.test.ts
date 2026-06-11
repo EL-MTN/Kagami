@@ -21,7 +21,7 @@ vi.mock("../../src/services/google-auth", () => ({
   withFreshAuth: mockWithFreshAuth,
 }));
 
-import { getEmailById } from "../../src/services/gmail";
+import { getEmailById, getOwnerAddress } from "../../src/services/gmail";
 import {
   KaoMisconfiguredError,
   KaoNoGrantError,
@@ -77,5 +77,22 @@ describe("gmail.getEmailById — re-throw contract for Kao errors", () => {
     const err = Object.assign(new Error("Not Found"), { status: 404 });
     mockWithFreshAuth.mockRejectedValueOnce(err);
     await expect(getEmailById("msg-missing")).resolves.toBeNull();
+  });
+});
+
+describe("gmail.getOwnerAddress", () => {
+  // One test for the whole lifecycle — failure → success → cache — because the
+  // cache is module-level, so separate its would couple to execution order.
+  it("returns null on failure (uncached), then lowercases and caches the first success", async () => {
+    mockWithFreshAuth.mockRejectedValueOnce(new Error("kao down"));
+    expect(await getOwnerAddress()).toBeNull();
+
+    mockWithFreshAuth.mockResolvedValueOnce("Owner@Example.com");
+    expect(await getOwnerAddress()).toBe("owner@example.com");
+
+    // Cached: no further withFreshAuth round-trips.
+    const callsAfterSuccess = mockWithFreshAuth.mock.calls.length;
+    expect(await getOwnerAddress()).toBe("owner@example.com");
+    expect(mockWithFreshAuth.mock.calls.length).toBe(callsAfterSuccess);
   });
 });

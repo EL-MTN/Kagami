@@ -25,13 +25,40 @@ function getHeader(
   return headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
 }
 
-export async function listUnreadEmails(maxResults = 10): Promise<EmailSummary[]> {
+// Successful lookups only — a transient Kao/Gmail failure must not pin null
+// for the process lifetime. The address can only change with a re-consent to
+// a different Google account, which restarts the grant anyway.
+let cachedOwnerAddress: string | null = null;
+
+/**
+ * The authenticated Gmail account's own address, lowercased — the definition
+ * of "self" for the sendEmail approval carve-out. Returns null when the
+ * profile can't be fetched (Kao down / not configured); callers must treat
+ * null as "not provably self".
+ */
+export async function getOwnerAddress(): Promise<string | null> {
+  if (cachedOwnerAddress) return cachedOwnerAddress;
+  try {
+    const address = await withFreshAuth(async (auth) => {
+      const gmail = google.gmail({ version: "v1", auth });
+      const res = await gmail.users.getProfile({ userId: "me" });
+      return res.data.emailAddress ?? null;
+    });
+    cachedOwnerAddress = address ? address.toLowerCase() : null;
+    return cachedOwnerAddress;
+  } catch (error) {
+    logger.warn({ error }, "Failed to resolve the Gmail profile address");
+    return null;
+  }
+}
+
+export async function listEmails(query: string, maxResults = 10): Promise<EmailSummary[]> {
   return withFreshAuth(async (auth) => {
     const gmail = google.gmail({ version: "v1", auth });
 
     const res = await gmail.users.messages.list({
       userId: "me",
-      q: "is:unread",
+      q: query,
       maxResults,
     });
 
@@ -62,6 +89,10 @@ export async function listUnreadEmails(maxResults = 10): Promise<EmailSummary[]>
 
     return emails;
   });
+}
+
+export async function listUnreadEmails(maxResults = 10): Promise<EmailSummary[]> {
+  return listEmails("is:unread", maxResults);
 }
 
 function extractPlainText(payload: {
@@ -127,7 +158,7 @@ export async function sendEmail(
   to: string,
   subject: string,
   body: string,
-  options?: { threadId?: string; inReplyTo?: string },
+  options?: { threadId?: string; inReplyTo?: string; cc?: string[]; bcc?: string[] },
 ): Promise<SendEmailResult> {
   return withFreshAuth(async (auth) => {
     const gmail = google.gmail({ version: "v1", auth });
@@ -136,6 +167,15 @@ export async function sendEmail(
     const encodedBody = Buffer.from(body).toString("base64");
 
     const messageParts = ["MIME-Version: 1.0", `To: ${to}`, `Subject: ${encodedSubject}`];
+
+    if (options?.cc?.length) {
+      messageParts.push(`Cc: ${options.cc.join(", ")}`);
+    }
+    // Gmail honors a Bcc header in raw messages: it delivers to those
+    // recipients and strips the header from what the others receive.
+    if (options?.bcc?.length) {
+      messageParts.push(`Bcc: ${options.bcc.join(", ")}`);
+    }
 
     if (options?.inReplyTo) {
       messageParts.push(`In-Reply-To: ${options.inReplyTo}`);

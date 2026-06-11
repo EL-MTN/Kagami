@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { isSkillRecentlyDeclined, type ISkill } from "@kokoro/db";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { raiseGuardedProposal, type ProposalResult } from "./proposal-guard";
+import { OWNER } from "../persona";
 
 /**
  * Proposal cores for the weekly skill curation pass (`services/skill-review`):
@@ -207,7 +208,7 @@ export async function proposeSkillRefinement(opts: {
     adapter,
     signature,
     isDeclined: isSkillRecentlyDeclined,
-    declinedReason: "Goshujin-sama declined this skill update recently",
+    declinedReason: `${OWNER} declined this skill update recently`,
     summary: `Update skill "${skill.name}"`,
     promptText: buildSkillRefinementPrompt({ skill, patch: pruned, changed, rationale }),
     origin: "routine",
@@ -248,7 +249,7 @@ export async function proposeSkillArchive(opts: {
     adapter,
     signature,
     isDeclined: isSkillRecentlyDeclined,
-    declinedReason: "Goshujin-sama declined archiving this skill recently",
+    declinedReason: `${OWNER} declined archiving this skill recently`,
     summary: `Archive skill "${skill.name}"`,
     promptText: buildSkillArchivePrompt({ name: skill.name, rationale }),
     origin: "routine",
@@ -319,7 +320,7 @@ export async function proposeSkillMerge(opts: {
     adapter,
     signature,
     isDeclined: isSkillRecentlyDeclined,
-    declinedReason: "Goshujin-sama declined this skill merge recently",
+    declinedReason: `${OWNER} declined this skill merge recently`,
     summary: `Merge ${absorbed.length + 1} skills into "${survivor.name}"`,
     promptText: buildSkillMergePrompt({ survivor, absorbed, patch: pruned, rationale }),
     origin: "routine",
