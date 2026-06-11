@@ -99,10 +99,6 @@ export async function listEmails(query: string, maxResults = 10): Promise<EmailS
   });
 }
 
-export async function listUnreadEmails(maxResults = 10): Promise<EmailSummary[]> {
-  return listEmails("is:unread", maxResults);
-}
-
 function extractPlainText(payload: {
   mimeType?: string | null;
   body?: { data?: string | null } | null;
