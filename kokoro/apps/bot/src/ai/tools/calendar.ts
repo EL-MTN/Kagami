@@ -1,13 +1,9 @@
 import { tool } from "ai";
 import { z } from "zod";
-import {
-  listUpcomingEvents,
-  createEvent,
-  updateEvent,
-  deleteEvent,
-} from "../../services/google-calendar";
+import { listUpcomingEvents, createEvent } from "../../services/google-calendar";
 import { createReminder, listRemindersForChat, deleteReminder } from "@kokoro/db";
 import { logger } from "@kokoro/shared";
+import { OWNER } from "../persona";
 
 const isoDatetime = z
   .string()
@@ -22,10 +18,22 @@ interface ManageCalendarToolOptions {
 
 function createListCalendarTool() {
   return tool({
-    description: "List upcoming events on Goshujin-sama's Google Calendar.",
+    description: `List upcoming events on ${OWNER}'s Google Calendar.`,
     inputSchema: z.object({
-      daysAhead: z.number().optional().describe("Number of days ahead to list events (default 7)"),
-      maxResults: z.number().optional().describe("Maximum number of events to return (default 10)"),
+      daysAhead: z
+        .number()
+        .int()
+        .min(1)
+        .max(365)
+        .optional()
+        .describe("Number of days ahead to list events (1-365, default 7)"),
+      maxResults: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Maximum number of events to return (1-100, default 10)"),
     }),
     execute: async ({ daysAhead, maxResults }) => {
       try {
@@ -49,12 +57,23 @@ export function createManageCalendarTool(options: ManageCalendarToolOptions = {}
   }
 
   return tool({
-    description:
-      "Manage Goshujin-sama's Google Calendar. List upcoming events, create, update, or delete events.",
+    description: `Manage ${OWNER}'s Google Calendar. List upcoming events or create new ones directly. Updates and deletes are approval-gated — calling them here is refused; wrap them in requestConfirmation({ summary, action: { tool: "manageCalendar", args } }) instead.`,
     inputSchema: z.object({
       action: z.enum(["list", "create", "update", "delete"]),
-      daysAhead: z.number().optional().describe("Number of days ahead to list events (default 7)"),
-      maxResults: z.number().optional().describe("Maximum number of events to return (default 10)"),
+      daysAhead: z
+        .number()
+        .int()
+        .min(1)
+        .max(365)
+        .optional()
+        .describe("Number of days ahead to list events (1-365, default 7)"),
+      maxResults: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Maximum number of events to return (1-100, default 10)"),
       eventId: z.string().optional().describe("Event ID for update/delete actions"),
       summary: z.string().optional().describe("Event title"),
       description: z.string().optional().describe("Event description"),
@@ -93,28 +112,27 @@ export function createManageCalendarTool(options: ManageCalendarToolOptions = {}
             return { success: true, event };
           }
 
-          case "update": {
-            if (!eventId) {
-              return { success: false, reason: "eventId is required for update" };
-            }
-            logger.debug({ eventId }, "Tool: manageCalendar (update)");
-            const updated = await updateEvent(eventId, {
-              summary,
-              description,
-              start,
-              end,
-              location,
-            });
-            return { success: true, event: updated };
-          }
-
+          // Code-enforced gate (same pattern as the CRM writes): mutating an
+          // existing event is externally visible and hard to reverse, so a
+          // direct call is refused — the gated dispatcher executes these
+          // after approval. List/create stay direct: cheap, easily reversed.
+          case "update":
           case "delete": {
+            // Arg completeness is checked BEFORE the refusal: the model must
+            // fix a missing eventId here, not carry incomplete args into a
+            // requestConfirmation bubble that only fails at dispatch — after
+            // the user already tapped Approve.
             if (!eventId) {
-              return { success: false, reason: "eventId is required for delete" };
+              return { success: false, reason: `eventId is required for ${action}` };
             }
-            logger.debug({ eventId }, "Tool: manageCalendar (delete)");
-            await deleteEvent(eventId);
-            return { success: true, deleted: eventId };
+            logger.warn(
+              { action, eventId },
+              "Tool: manageCalendar mutation invoked directly — refusing",
+            );
+            return {
+              success: false,
+              reason: `manageCalendar "${action}" is approval-gated. Wrap it in requestConfirmation({ summary, action: { tool: "manageCalendar", args } }) — direct invocation is refused.`,
+            };
           }
         }
       } catch (error) {
@@ -132,8 +150,7 @@ export function createManageCalendarTool(options: ManageCalendarToolOptions = {}
 
 export function createManageRemindersTool(chatId: string) {
   return tool({
-    description:
-      "Manage reminders for Goshujin-sama. Create, list, or delete reminders. Compose the reminder message at creation time — it will be sent as-is when it fires.",
+    description: `Manage reminders for ${OWNER}. Create, list, or delete reminders. Compose the reminder message at creation time — it will be sent as-is when it fires.`,
     inputSchema: z.object({
       action: z.enum(["create", "list", "delete"]),
       message: z

@@ -2,11 +2,12 @@ import { createHash } from "node:crypto";
 import { tool } from "ai";
 import { z } from "zod";
 import { getRoutineById, isRecentlyDeclined } from "@kokoro/db";
-import { logger } from "@kokoro/shared";
+import { logger, validateCronAndDefaults } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
 import type { IRoutine, IRoutineParameter } from "@kokoro/db";
 import { parameterSchema } from "./routine-schema";
 import { raiseGuardedProposal, type ProposalResult } from "./proposal-guard";
+import { OWNER } from "../persona";
 
 type RoutineParameter = z.infer<typeof parameterSchema>;
 
@@ -172,6 +173,13 @@ export async function proposeRefinement(opts: {
     return { proposed: false, reason: "the proposed prompt and parameters are unchanged" };
   }
 
+  // A parameter change on a scheduled routine must keep every required
+  // parameter defaulted — cron runs have nobody to supply arguments.
+  if (paramsChanged && routine.cronSchedule) {
+    const cronErr = validateCronAndDefaults(routine.cronSchedule, newParameters ?? []);
+    if (cronErr) return { proposed: false, reason: cronErr.message };
+  }
+
   const signature = computeRefinementSignature(
     routine.id,
     routine.version,
@@ -183,7 +191,7 @@ export async function proposeRefinement(opts: {
     chatId,
     adapter,
     signature,
-    declinedReason: "Goshujin-sama declined this refinement recently",
+    declinedReason: `${OWNER} declined this refinement recently`,
     summary: `Update routine "${routine.name}"`,
     promptText: buildRefinementPrompt({
       name: routine.name,
@@ -230,7 +238,7 @@ export async function proposeRetirement(opts: {
     chatId,
     adapter,
     signature,
-    declinedReason: "Goshujin-sama declined retiring this routine recently",
+    declinedReason: `${OWNER} declined retiring this routine recently`,
     summary: `Disable routine "${routine.name}"`,
     promptText: buildRetirementPrompt({ name: routine.name, rationale }),
     action: {
@@ -249,8 +257,7 @@ export async function proposeRetirement(opts: {
  */
 export function createProposeRoutineRefinementTool(chatId: string, adapter: PlatformAdapter) {
   return tool({
-    description:
-      "Offer to improve an existing routine's prompt when it has been failing or returning empty results (the Available Routines list flags these). Look the routine up first to get its id and current prompt, then pass a revised `prompt` that fixes the problem plus a one-line `rationale`. Only refine genuinely underperforming routines, on a natural closing turn, at most one at a time. Goshujin-sama gets a tap-to-approve bubble showing the before/after; the routine changes only if he approves. The refinement only touches the prompt (and parameters, if you pass them) — never the schedule or read/action permission. Returns immediately — don't call it again this turn.",
+    description: `Offer to improve an existing routine's prompt when it has been failing or returning empty results (the Available Routines list flags these). Look the routine up first to get its id and current prompt, then pass a revised \`prompt\` that fixes the problem plus a one-line \`rationale\`. Only refine genuinely underperforming routines, on a natural closing turn, at most one at a time. ${OWNER} gets a tap-to-approve bubble showing the before/after; the routine changes only if he approves. The refinement only touches the prompt (and parameters, if you pass them) — never the schedule or read/action permission. Returns immediately — don't call it again this turn.`,
     inputSchema: z.object({
       routineId: z
         .string()
@@ -265,7 +272,7 @@ export function createProposeRoutineRefinementTool(chatId: string, adapter: Plat
         .string()
         .min(1)
         .max(300)
-        .describe("One line on what was wrong and how this fixes it — shown to Goshujin-sama."),
+        .describe(`One line on what was wrong and how this fixes it — shown to ${OWNER}.`),
       newParameters: z
         .array(parameterSchema)
         .optional()
@@ -295,8 +302,7 @@ export function createProposeRoutineRefinementTool(chatId: string, adapter: Plat
           return {
             proposed: true,
             confirmationId: result.confirmationId,
-            message:
-              "Refinement prompt sent. Stop here — don't call this again this turn. Goshujin-sama will tap Approve or Deny.",
+            message: `Refinement prompt sent. Stop here — don't call this again this turn. ${OWNER} will tap Approve or Deny.`,
           };
         }
         return { proposed: false, reason: result.reason };

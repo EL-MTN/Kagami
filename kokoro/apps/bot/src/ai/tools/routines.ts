@@ -169,14 +169,22 @@ export function createManageRoutinesTool(chatId: string) {
             if (purity !== undefined) patch.purity = purity;
             if (parameters) patch.parameters = parameters;
 
+            // Validate the EFFECTIVE schedule + parameter combination whenever
+            // either side changes — a parameters-only patch on an already-
+            // scheduled routine must not strip a required default out from
+            // under its cron runs.
+            const effectiveCron =
+              cronSchedule !== undefined ? cronSchedule || null : existing.cronSchedule;
+            if (effectiveCron && (cronSchedule !== undefined || parameters)) {
+              const cronErr = validateCronAndDefaults(
+                effectiveCron,
+                parameters ?? existing.parameters,
+              );
+              if (cronErr) return { success: false, reason: cronErr.message };
+            }
+
             if (cronSchedule !== undefined) {
               if (cronSchedule) {
-                const cronErr = validateCronAndDefaults(
-                  cronSchedule,
-                  parameters ?? existing.parameters,
-                );
-                if (cronErr) return { success: false, reason: cronErr.message };
-
                 patch.cronSchedule = cronSchedule;
                 patch.nextRunAt = computeNextRunAt(cronSchedule);
               } else {
@@ -264,7 +272,9 @@ export function createManageRoutinesTool(chatId: string) {
 // ─── searchRoutines ──────────────────────────────────────────────────────────
 
 function matchesQuery(routine: IRoutine, terms: string[]): boolean {
-  const haystack = `${routine.name} ${routine.description}`.toLowerCase();
+  // Include the prompt — it carries the keywords that matter for discovery
+  // (searchSkills matches on body the same way).
+  const haystack = `${routine.name} ${routine.description} ${routine.prompt}`.toLowerCase();
   return terms.every((t) => haystack.includes(t));
 }
 
@@ -276,7 +286,7 @@ export function createSearchRoutinesTool(chatId: string) {
       query: z
         .string()
         .optional()
-        .describe("Search keywords to match against routine names and descriptions"),
+        .describe("Search keywords to match against routine names, descriptions, and prompts"),
     }),
     execute: async ({ query }) => {
       try {
@@ -349,8 +359,8 @@ export function createUseRoutineTool(
   return tool({
     description:
       callingContext === "watcher"
-        ? 'Invoke a read-purity routine by name. Watchers can only invoke routines marked `purity: "read"` — action routines (sends, writes, mutations) are rejected. The routine executes as a separate LLM call and returns its result synchronously.'
-        : "Invoke a routine by name with optional parameters. The routine executes as a separate LLM call and returns its result synchronously.",
+        ? 'Invoke a read-purity routine by name. Watchers can only invoke routines marked `purity: "read"` — action routines (sends, writes, mutations) are rejected. The routine executes as a separate LLM call and returns its result synchronously. Parameters are validated against the routine\'s declared schema — check searchRoutines first to see what it accepts.'
+        : "Invoke a routine by name with optional parameters. The routine executes as a separate LLM call and returns its result synchronously. Parameters are validated against the routine's declared schema — check searchRoutines first to see what it accepts.",
     inputSchema: z.object({
       routineName: z.string().describe("Name of the routine to invoke"),
       parameters: z

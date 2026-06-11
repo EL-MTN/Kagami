@@ -216,6 +216,35 @@ describe("dispatchGatedAction — sendEmail happy path", () => {
     });
   });
 
+  it("forwards cc/bcc when present", async () => {
+    vi.mocked(sendEmail).mockResolvedValue({ id: "msg-3", threadId: "th-3" });
+    await dispatchGatedAction("sendEmail", {
+      to: "alice@example.com",
+      subject: "hi",
+      body: "body",
+      cc: ["bob@example.com"],
+      bcc: ["carol@example.com"],
+    });
+    expect(vi.mocked(sendEmail)).toHaveBeenCalledWith("alice@example.com", "hi", "body", {
+      cc: ["bob@example.com"],
+      bcc: ["carol@example.com"],
+      threadId: undefined,
+      inReplyTo: undefined,
+    });
+  });
+
+  it("rejects malformed cc entries (not an email) before touching the service", async () => {
+    const result = await dispatchGatedAction("sendEmail", {
+      to: "alice@example.com",
+      subject: "hi",
+      body: "body",
+      cc: ["not-an-email"],
+    });
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_args");
+    expect(vi.mocked(sendEmail)).not.toHaveBeenCalled();
+  });
+
   it("propagates underlying sendEmail errors as a failed dispatch", async () => {
     vi.mocked(sendEmail).mockRejectedValue(new Error("gmail down"));
     const result = await dispatchGatedAction("sendEmail", {
@@ -766,6 +795,13 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
   });
 
   it("forwards newParameters only when supplied", async () => {
+    // A newParameters dispatch loads the routine to re-check the schedule +
+    // parameter invariant; an unscheduled routine passes straight through.
+    vi.mocked(getRoutineById).mockResolvedValue({
+      name: "r",
+      version: 1,
+      cronSchedule: null,
+    } as never);
     vi.mocked(applyRoutineRefinement).mockResolvedValue({ name: "r", version: 2 } as never);
 
     await dispatchGatedAction(
@@ -778,6 +814,27 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
     );
 
     expect(vi.mocked(applyRoutineRefinement).mock.calls[0][3]).toHaveProperty("parameters");
+  });
+
+  it("rejects newParameters that strip required defaults from a cron-scheduled routine", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue({
+      name: "morning-digest",
+      version: 1,
+      cronSchedule: "0 * * * *",
+    } as never);
+
+    const result = await dispatchGatedAction(
+      "updateRoutinePrompt",
+      {
+        ...draft,
+        newParameters: [{ name: "topic", type: "string", description: "t", required: true }],
+      },
+      { chatId: "chat-1" },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_parameters");
+    expect(vi.mocked(applyRoutineRefinement)).not.toHaveBeenCalled();
   });
 
   it("clears regression tracking (trackForRegression:false) for a revert", async () => {

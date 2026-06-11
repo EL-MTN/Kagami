@@ -50,22 +50,65 @@ interface BrowseFactoryOptions {
   adapter?: PlatformAdapter;
 }
 
+interface BrowseInput {
+  action: BrowseAction;
+  query?: string;
+  url?: string;
+  instruction?: string;
+  offset?: number;
+}
+
+const VISIT_CHUNK_CHARS = 4000;
+
 function createBrowseToolImpl(options: BrowseFactoryOptions) {
   const { allowedActions, description, logPrefix, chatId, adapter } = options;
   const actionEnum = z.enum(allowedActions as [BrowseAction, ...BrowseAction[]]);
+  const has = (a: BrowseAction) => allowedActions.includes(a);
+
+  // Param fields and their describes track the allowed-action set: a palette
+  // without `search` must not carry a dead `query` field inviting a confused
+  // call, and `url`'s describe must mention `login` only where login exists.
+  const urlField = z
+    .string()
+    .optional()
+    .describe(
+      has("login") ? "URL to visit (for visit/login actions)" : "URL to visit (for visit action)",
+    );
+  const instructionField = z
+    .string()
+    .optional()
+    .describe(
+      has("act")
+        ? "Natural language instruction (for extract/act actions)"
+        : "Natural language instruction (for extract action)",
+    );
+  const offsetField = z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe(
+      "Character offset into the page text (for visit) — when a visit returns truncated:true, call again with the next offset to keep reading",
+    );
+  const inputSchema = has("search")
+    ? z.object({
+        action: actionEnum,
+        query: z.string().optional().describe("Search query (for search action)"),
+        url: urlField,
+        instruction: instructionField,
+        offset: offsetField,
+      })
+    : z.object({
+        action: actionEnum,
+        url: urlField,
+        instruction: instructionField,
+        offset: offsetField,
+      });
 
   return tool({
     description,
-    inputSchema: z.object({
-      action: actionEnum,
-      query: z.string().optional().describe("Search query (for search action)"),
-      url: z.string().optional().describe("URL to visit (for visit action)"),
-      instruction: z
-        .string()
-        .optional()
-        .describe("Natural language instruction (for extract/act actions)"),
-    }),
-    execute: async ({ action, query, url, instruction }) => {
+    inputSchema,
+    execute: async ({ action, query, url, instruction, offset }: BrowseInput) => {
       // Serialize browser access — parallel tool calls share one page. Every
       // action uses the default per-action timeout, which sits below the
       // conversational turn budget; long autonomous runs go through the
@@ -100,17 +143,19 @@ function createBrowseToolImpl(options: BrowseFactoryOptions) {
                 case "visit": {
                   if (!url) return { success: false, reason: "url is required for visit" };
                   const visitUrl = normalizeUrl(url);
-                  logger.debug({ url: visitUrl }, `Tool: ${logPrefix} (visit)`);
+                  const start = offset ?? 0;
+                  logger.debug({ url: visitUrl, offset: start }, `Tool: ${logPrefix} (visit)`);
                   await page.goto(visitUrl, { waitUntil: "domcontentloaded" });
                   const pageText = await page
                     .evaluate(() => document.body.innerText)
                     .catch(() => "");
-                  const truncated = pageText.slice(0, 4000);
                   return {
                     success: true,
                     url: visitUrl,
-                    text: truncated,
-                    truncated: pageText.length > 4000,
+                    text: pageText.slice(start, start + VISIT_CHUNK_CHARS),
+                    offset: start,
+                    totalChars: pageText.length,
+                    truncated: pageText.length > start + VISIT_CHUNK_CHARS,
                   };
                 }
 
@@ -231,8 +276,8 @@ export function createBrowseTool(
   return createBrowseToolImpl({
     allowedActions: pickActions(ALL_BROWSE_ACTIONS, includeSearch),
     description: includeSearch
-      ? "Browse the web. Search for information, visit pages, extract data, interact with elements, or take screenshots."
-      : "Browse the web. Visit pages, extract data, interact with elements, or take screenshots. For lookups, use `webSearch`.",
+      ? "Browse the web. Search for information, visit pages, extract data, interact with elements, or take screenshots. Purchases, form submissions, and other irreversible page actions must be approval-gated: raise requestConfirmation with `browseAgent` instead of chaining `act`."
+      : "Browse the web. Visit pages, extract data, interact with elements, or take screenshots. For lookups, use `webSearch`. Purchases, form submissions, and other irreversible page actions must be approval-gated: raise requestConfirmation with `browseAgent` instead of chaining `act`.",
     logPrefix: "browse",
     chatId,
     adapter,

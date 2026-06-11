@@ -15,6 +15,7 @@ import {
   recordProposalDeclineFromConfirmation,
 } from "../../services/gated-actions";
 import { appendConfirmationResolution } from "../../services/confirmation-events";
+import { OWNER } from "../persona";
 
 // ─── raisePendingConfirmation ────────────────────────────────────────────────
 
@@ -104,15 +105,14 @@ export function createRequestConfirmationTool(
   const gatedToolEnum = z.enum(GATED_TOOL_NAMES);
 
   return tool({
-    description:
-      "Ask Goshujin-sama to approve an externally-visible or irreversible action before it runs. Use this for any action you wouldn't want to misfire — sending email to anyone other than yourself, deleting calendar events, browser-driven purchases. The user gets a tap-to-approve message; once they approve, the action runs and the result lands back in this chat. Returns immediately with { pending: true } — stop and wait, don't try the action again in the same turn.",
+    description: `Ask ${OWNER} to approve an externally-visible or irreversible action before it runs. Use this for any action you wouldn't want to misfire — sending email to anyone other than ${OWNER} himself, deleting calendar events, browser-driven purchases. The user gets a tap-to-approve message; once they approve, the action runs and the result lands back in this chat. Returns immediately with { pending: true } — stop and wait, don't try the action again in the same turn.`,
     inputSchema: z.object({
       summary: z
         .string()
         .min(1)
         .max(400)
         .describe(
-          "One short sentence shown to Goshujin-sama on the approval prompt. Be specific: 'send email to alice@x.com about the contract' beats 'send email'.",
+          `One short sentence shown to ${OWNER} on the approval prompt. Be specific: 'send email to alice@x.com about the contract' beats 'send email'.`,
         ),
       action: z
         .object({
@@ -148,8 +148,7 @@ export function createRequestConfirmationTool(
         return {
           pending: true,
           confirmationId: id,
-          message:
-            "Approval prompt sent. Stop here — don't call the action again in this turn. Goshujin-sama will tap Approve or Deny.",
+          message: `Approval prompt sent. Stop here — don't call the action again in this turn. ${OWNER} will tap Approve or Deny.`,
         };
       } catch (error) {
         logger.error({ error: error }, "Tool: requestConfirmation failed");
@@ -181,8 +180,7 @@ export function createCancelConfirmationTool(
   userId?: string,
 ) {
   return tool({
-    description:
-      "Cancel a pending approval request that you previously raised via requestConfirmation. Use this when Goshujin-sama changes his mind in chat instead of tapping the Deny button. Pass the confirmationId from the pending list in your context.",
+    description: `Cancel a pending approval request that you previously raised via requestConfirmation. Use this when ${OWNER} changes his mind in chat instead of tapping the Deny button. Pass the confirmationId from the pending list in your context.`,
     inputSchema: z.object({
       confirmationId: z.string().min(1).describe("The id of the pending confirmation to cancel."),
       reason: z

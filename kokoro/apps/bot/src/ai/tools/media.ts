@@ -57,8 +57,9 @@ export function createSendVoiceTool(chatId: string, adapter: PlatformAdapter) {
         await adapter.sendVoiceBuffer(chatId, audio.buffer, audio.durationSeconds);
         return { sent: true };
       } catch (err) {
+        const reason = err instanceof Error ? err.message : "Voice generation failed";
         logger.error({ error: err, text: text.slice(0, 100) }, "Voice generation failed");
-        return { sent: false, reason: "Voice generation failed" };
+        return { sent: false, reason };
       }
     },
   });
