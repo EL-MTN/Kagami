@@ -2,6 +2,7 @@ import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
 import { xai } from "@ai-sdk/xai";
 import { createInference } from "@kagami/llm";
+import type { ProviderConfig } from "@kagami/llm";
 import { config, logger } from "@kokoro/shared";
 import type { LanguageModel } from "ai";
 
@@ -34,7 +35,12 @@ const TIER_DEFAULTS: Record<string, Record<NonDefaultTier, string>> = {
 // `?? .anthropic` defends partial config mocks in tests where
 // `config.LLM_PROVIDER` is absent; for a real (Zod-validated) config the
 // provider is always a TIER_DEFAULTS key, so this is a no-op there.
-const tierDefaults = TIER_DEFAULTS[config.LLM_PROVIDER] ?? TIER_DEFAULTS.anthropic;
+// An openai-compatible endpoint has no per-vendor defaults — every tier
+// falls back to LLM_MODEL unless the env overrides name something else.
+const tierDefaults =
+  config.LLM_KIND === "openai-compatible"
+    ? { [ModelTier.Fast]: config.LLM_MODEL, [ModelTier.Smart]: config.LLM_MODEL }
+    : (TIER_DEFAULTS[config.LLM_PROVIDER] ?? TIER_DEFAULTS.anthropic);
 const tierModels: Record<NonDefaultTier, string> = {
   [ModelTier.Fast]: config.LLM_MODEL_FAST ?? tierDefaults[ModelTier.Fast],
   [ModelTier.Smart]: config.LLM_MODEL_SMART ?? tierDefaults[ModelTier.Smart],
@@ -77,19 +83,39 @@ export function getImageModelSpec(): { provider: string; modelId: string } {
 
 // Provider/key construction, retry, and span+usage emission now live in
 // @kagami/llm. This module stays the caller-side tier *policy* (the
-// ModelTier → model-id map above). Native
-// vendor reads provider API keys from env exactly as the bare SDK
-// singletons did, so behavior is unchanged.
-const inference = createInference({
-  service: "kokoro",
-  logger,
-  chat: {
-    kind: config.LLM_KIND,
+// ModelTier → model-id map above). Native vendors read their provider API
+// keys from env exactly as the bare SDK singletons did; openai-compatible
+// endpoints (OpenRouter, local servers) take LLM_BASE_URL + LLM_API_KEY.
+function chatConfig(): ProviderConfig {
+  if (config.LLM_KIND === "openai-compatible") {
+    if (!config.LLM_BASE_URL) {
+      // validateConfig() enforces this pairing at bot startup; the throw
+      // keeps the failure legible if construction ever precedes validation.
+      throw new Error('LLM_BASE_URL is required when LLM_KIND is "openai-compatible"');
+    }
+    return {
+      kind: "openai-compatible",
+      baseURL: config.LLM_BASE_URL,
+      name: config.LLM_PROVIDER_NAME,
+      model: config.LLM_MODEL,
+      models: tierModels,
+      ...(config.LLM_API_KEY ? { apiKey: config.LLM_API_KEY } : {}),
+      timeoutMs: config.LLM_ATTEMPT_TIMEOUT_MS,
+    };
+  }
+  return {
+    kind: "native",
     vendor: config.LLM_PROVIDER,
     model: config.LLM_MODEL,
     models: tierModels,
     timeoutMs: config.LLM_ATTEMPT_TIMEOUT_MS,
-  },
+  };
+}
+
+const inference = createInference({
+  service: "kokoro",
+  logger,
+  chat: chatConfig(),
 });
 
 export function getModel(tier: ModelTier = ModelTier.Default): LanguageModel {

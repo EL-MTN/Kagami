@@ -16,7 +16,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // We clear every one of these in beforeEach so each test starts from a known
 // blank slate, then each test sets the handful it needs.
 const RELEVANT_ENV_KEYS = [
+  "LLM_KIND",
   "LLM_PROVIDER",
+  "LLM_BASE_URL",
+  "LLM_API_KEY",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "XAI_API_KEY",
@@ -150,6 +153,38 @@ describe("validateConfig — LLM provider keys", () => {
     const { validateConfig } = await loadConfig();
     expect(() => validateConfig()).toThrow(ProcessExitSentinel);
     expect(loggedMessages()).toMatch(/XAI_API_KEY is required/);
+  });
+});
+
+describe("validateConfig — openai-compatible kind", () => {
+  it("rejects openai-compatible without LLM_BASE_URL and LLM_API_KEY", async () => {
+    vi.stubEnv("LLM_KIND", "openai-compatible");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.resetModules();
+    const { validateConfig } = await loadConfig();
+    expect(() => validateConfig()).toThrow(ProcessExitSentinel);
+    expect(loggedMessages()).toMatch(/LLM_BASE_URL is required when LLM_KIND/);
+    expect(loggedMessages()).toMatch(/LLM_API_KEY is required when LLM_KIND/);
+  });
+
+  it("accepts openai-compatible with base URL + key and no native provider key", async () => {
+    vi.stubEnv("LLM_KIND", "openai-compatible");
+    vi.stubEnv("LLM_BASE_URL", "https://openrouter.ai/api/v1");
+    vi.stubEnv("LLM_API_KEY", "k");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.resetModules();
+    const { validateConfig } = await loadConfig();
+    expect(() => validateConfig()).not.toThrow();
+    expect(exitCalled).toBe(false);
+  });
+
+  it("rejects a malformed LLM_BASE_URL at module-load parse", async () => {
+    vi.stubEnv("LLM_KIND", "openai-compatible");
+    vi.stubEnv("LLM_BASE_URL", "not-a-url");
+    vi.stubEnv("LLM_API_KEY", "k");
+    vi.resetModules();
+    await expect(loadConfig()).rejects.toThrow(ProcessExitSentinel);
+    expect(loggedMessages()).toMatch(/LLM_BASE_URL/);
   });
 });
 
