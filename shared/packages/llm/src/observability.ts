@@ -24,7 +24,7 @@ export function emitUsage(logger: Logger, ev: UsageEvent): void {
       kind: "span",
       name: "llm.generate",
       duration_ms: ev.durationMs,
-      status: "ok",
+      status: ev.status,
     },
     span: {
       id: span?.spanId ?? generateSpanId(),
@@ -37,9 +37,16 @@ export function emitUsage(logger: Logger, ev: UsageEvent): void {
       prompt_tokens: ev.promptTokens,
       completion_tokens: ev.completionTokens,
       fallback_used: ev.fallbackUsed,
+      attempts: ev.attempts,
+      ...(ev.attemptErrors && ev.attemptErrors.length > 0
+        ? { attempt_errors: ev.attemptErrors }
+        : {}),
     },
   };
   if (ctx) fields.trace = { id: ctx.traceId };
 
+  // info even for status:"error" — Kansoku fingerprints error-level lines, and
+  // the caller already logs the failure itself; an error-level span here would
+  // register every failed call twice in the errors registry.
   logger.info(fields, "llm.generate");
 }
