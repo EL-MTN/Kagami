@@ -2,6 +2,23 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { setupTestMongo, teardownTestMongo } from "./helpers/mongo.ts";
 
+// Controllable embed mock: deterministic tiny vectors normally, a
+// rejected promise when a test flips embedShouldFail (exercising the
+// skip-new-entities-on-failure path). cosineSimilarity stays real.
+let embedShouldFail = false;
+vi.mock("ai", async (importActual) => {
+  const actual = await importActual<typeof import("ai")>();
+  return {
+    ...actual,
+    embed: vi.fn(() => Promise.resolve({ embedding: [1, 0, 0] })),
+    embedMany: vi.fn((opts: { values: string[] }) =>
+      embedShouldFail
+        ? Promise.reject(new Error("embed down (test)"))
+        : Promise.resolve({ embeddings: opts.values.map(() => [1, 0, 0]) }),
+    ),
+  };
+});
+
 beforeAll(async () => {
   setupTestMongo("entities");
   const { ensureIndexes } = await import("../src/storage/indexes.ts");
@@ -70,45 +87,72 @@ it("parallel upsert-style updateOnes converge on union of linked_memory_ids", as
   expect([...linked].sort()).toEqual(["fact-A", "fact-B", "fact-C"]);
 });
 
-it("upsertEntitiesFromFacts stores new entities with empty embeddings when embedding fails", async () => {
-  vi.resetModules();
-  vi.doMock("../src/llm.ts", () => ({
-    embedTexts: vi.fn().mockRejectedValue(new Error("embedding provider down")),
-  }));
-
-  const { upsertEntitiesFromFacts } = await import("../src/storage/entities.ts");
-  const result = await upsertEntitiesFromFacts([
-    {
-      id: "fact-entity-failure",
-      text: "Mira visited New York.",
-      user_id: "default",
-      created_at: "2026-05-12T00:00:00Z",
-      event_date: "2026-05-12",
-      source_session: "raw/test",
-      embedding: [1, 0, 0],
-    },
-  ]);
-
+// NOTE: the previous contract here ("store new entities with empty
+// embeddings when embedding fails") was deliberately replaced: an empty
+// vector never matches $vectorSearch and nothing ever re-embedded it,
+// so a transient outage poisoned the entity forever. New entities are
+// now skipped on failure (self-healing on next mention or via
+// relinkAllEntities), and existing-link updates still proceed.
+it("embed failure skips new entities instead of persisting empty embeddings", async () => {
   const { getDb } = await import("../src/storage/mongo.ts");
   const db = await getDb();
-  const docs = await db
-    .collection<{ text: string; embedding: number[]; linked_memory_ids: string[] }>("entities")
-    .find({})
-    .sort({ text_lower: 1 })
-    .toArray();
+  // Pre-existing entity the fact also mentions — its link update must
+  // survive the embed outage.
+  await db.collection("entities").insertOne(makeDoc({ text: "Mira" }) as never);
 
-  expect(result).toEqual({ created: 2, linked: 2 });
-  expect(
-    docs.map((doc) => ({
-      text: doc.text,
-      embedding: doc.embedding,
-      linked_memory_ids: doc.linked_memory_ids,
-    })),
-  ).toEqual([
-    { text: "Mira", embedding: [], linked_memory_ids: ["fact-entity-failure"] },
-    { text: "New York", embedding: [], linked_memory_ids: ["fact-entity-failure"] },
-  ]);
+  embedShouldFail = true;
+  try {
+    const { upsertEntitiesFromFacts } = await import("../src/storage/entities.ts");
+    await upsertEntitiesFromFacts([
+      {
+        id: "fact-embed-fail",
+        text: "User met Mira in Zurich",
+        user_id: "default",
+        created_at: new Date().toISOString(),
+        event_date: "2026-06-01",
+        source_session: "raw/s",
+        embedding: [1, 0, 0],
+      },
+    ]);
+  } finally {
+    embedShouldFail = false;
+  }
 
-  vi.doUnmock("../src/llm.ts");
-  vi.resetModules();
+  const { getDb: getDb2 } = await import("../src/storage/mongo.ts");
+  const db2 = await getDb2();
+  // No empty-embedding rows persisted; the new entity was skipped.
+  expect(await db2.collection("entities").countDocuments({ embedding: { $size: 0 } })).toBe(0);
+  expect(await db2.collection("entities").findOne({ text_lower: "zurich" })).toBeNull();
+  // The existing entity still got the link.
+  const mira = await db2.collection("entities").findOne({ text_lower: "mira" });
+  expect(mira!.linked_memory_ids).toContain("fact-embed-fail");
+});
+
+it("relinkAllEntities purges empty-embedding rows and restores missing links", async () => {
+  const { getDb } = await import("../src/storage/mongo.ts");
+  const db = await getDb();
+  await db.collection("facts").deleteMany({});
+  // A fact whose entities were never linked (simulated past upsert failure)
+  // and a legacy empty-embedding row blocking re-embed of "Zurich".
+  await db.collection("facts").insertOne({
+    _id: "fact-relink",
+    text: "User met Mira in Zurich",
+    user_id: "default",
+    created_at: new Date().toISOString(),
+    event_date: "2026-06-01",
+    source_session: "raw/s",
+    embedding: [1, 0, 0],
+  } as never);
+  await db.collection("entities").insertOne(makeDoc({ text: "Zurich", embedding: [] }) as never);
+
+  const { relinkAllEntities } = await import("../src/storage/entities.ts");
+  const r = await relinkAllEntities({ user_id: "default" });
+  expect(r.purgedEmpty).toBe(1);
+
+  const zurich = await db.collection("entities").findOne({ text_lower: "zurich" });
+  expect(zurich).not.toBeNull();
+  expect(zurich!.embedding).toEqual([1, 0, 0]);
+  expect(zurich!.linked_memory_ids).toContain("fact-relink");
+  const mira = await db.collection("entities").findOne({ text_lower: "mira" });
+  expect(mira!.linked_memory_ids).toContain("fact-relink");
 });

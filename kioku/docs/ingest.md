@@ -173,6 +173,9 @@ Operator CLI:
 npx tsx apps/api/scripts/curate.ts          # dry run — prints the plan
 npx tsx apps/api/scripts/curate.ts --apply  # execute (history-journaled, actor "curate")
 npx tsx apps/api/scripts/curate.ts --user u1 --run r1 --agent a1 --json
+npx tsx apps/api/scripts/curate.ts --relink # entity-link repair only (no LLM)
 ```
+
+`--relink` is the repair path for the best-effort entity linking: ingest swallows entity-upsert failures by design (a fact write must never fail on the boost channel), and an embed outage now skips new entities rather than persisting dead empty-embedding rows. The sweep re-runs the idempotent upsert over every fact in scope, purging any legacy empty-embedding rows so those entities re-embed.
 
 This is the sanctioned exception to "atomic facts are write-once": the ingest path never updates or deletes, the curator may do both, and every mutation leaves an UPDATE/DELETE row in `history`.
