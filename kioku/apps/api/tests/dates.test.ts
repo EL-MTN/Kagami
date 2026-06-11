@@ -61,6 +61,19 @@ describe("sessionDateOf", () => {
     expect(sessionDateOf("2026-05-15T22:30:00")).toBe("2026-05-15");
   });
 
+  it("keeps an offsetless datetime's literal date under any KIOKU_TIMEZONE", () => {
+    // Offsetless = operator wall time; its literal date IS the day.
+    // Routing it through `new Date` would interpret it in the PROCESS
+    // zone and shift early-morning transcripts on hosts whose zone
+    // differs from KIOKU_TIMEZONE.
+    process.env.KIOKU_TIMEZONE = "Asia/Tokyo";
+    try {
+      expect(sessionDateOf("2026-05-15T00:30:00")).toBe("2026-05-15");
+    } finally {
+      delete process.env.KIOKU_TIMEZONE;
+    }
+  });
+
   it("normalizes longmemeval-style slash dates via naive-local parse", () => {
     // V8 parses this as 02:21 local — the calendar day is preserved and
     // the output gains canonical dashes.

@@ -152,8 +152,11 @@ The on-demand counterpart to extraction. Extraction is append-only and conservat
 
 ```
 planCuration(scope)
-  readFactsInScope → clusterFacts (cosine ≥ 0.8 union-find; multi-member
-  clusters reviewed as units, singletons coalesced into batches of 20)
+  readFactsInScope → clusterFacts (partitioned by (user, run, agent) —
+  merges never cross a scope boundary — then cosine ≥ 0.8 union-find;
+  multi-member clusters reviewed as units, singletons coalesced into
+  batches of 20 where multi-id merges are forbidden: those facts are
+  mechanically unrelated)
   → one generateObject call per group against prompts/curate.md
   → per-fact verdicts: keep | drop | merge
 

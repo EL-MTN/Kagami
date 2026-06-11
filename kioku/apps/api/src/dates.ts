@@ -63,6 +63,14 @@ export function sessionDateOf(value: unknown): string {
   if (value instanceof Date) return calendarDayOf(value);
   const s = String(value);
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // An offsetless ISO datetime is wall time in the operator's zone, so
+  // its literal date IS the calendar day. Parsing it through `new Date`
+  // would interpret it in the PROCESS zone and re-introduce the
+  // off-by-one for early-morning transcripts on any host whose zone
+  // differs from KIOKU_TIMEZONE (e.g. a UTC server).
+  if (/^\d{4}-\d{2}-\d{2}[T ]/.test(s) && !/(Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
+    return s.slice(0, 10);
+  }
   const parsed = new Date(s);
   if (Number.isNaN(parsed.getTime())) return s.slice(0, 10);
   return calendarDayOf(parsed);
