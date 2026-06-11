@@ -360,6 +360,14 @@ export async function applyCuration(
       (d, f) => (f.event_date < d ? f.event_date : d),
       members[0]!.event_date,
     );
+    // Carry forward member metadata — recall/query expose exact
+    // metadata.* filters, so dropping keys would silently unmatch the
+    // curated memory. Oldest→newest so a conflicting key resolves to
+    // its latest value; curated_from is reserved for provenance.
+    const mergedMeta: Record<string, unknown> = {};
+    for (const f of [...members].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
+      if (f.metadata) Object.assign(mergedMeta, f.metadata);
+    }
     const fact: Fact = {
       id: newFactId(),
       text: m.text,
@@ -371,7 +379,7 @@ export async function applyCuration(
       event_date: m.event_date ?? earliestDate,
       source_session: newest.source_session,
       embedding,
-      metadata: { curated_from: m.ids },
+      metadata: { ...mergedMeta, curated_from: m.ids },
       ...(m.category !== undefined
         ? { category: m.category }
         : newest.category !== undefined

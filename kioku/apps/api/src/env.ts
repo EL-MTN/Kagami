@@ -81,6 +81,27 @@ export const envSpec = defineEnv({
       group: "Retrieval",
     }),
 
+    KIOKU_TIMEZONE: z
+      .string()
+      .refine(
+        (tz) => {
+          try {
+            new Intl.DateTimeFormat("en-US", { timeZone: tz });
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { message: "must be a valid IANA timezone name (e.g. America/Los_Angeles)" },
+      )
+      .optional()
+      .meta({
+        doc: "Operator timezone (IANA name) for day-granular `event_date` stamping —\nlocalToday()/sessionDateOf() in src/dates.ts resolve calendar days in\nthis zone. Unset ⇒ the process timezone, which is correct on a personal\nmachine but WRONG on a UTC server: evening conversations would be\nstamped tomorrow, corrupting the answerer's newest-wins ordering. Set\nthis when deploying anywhere whose clock zone differs from the\noperator's.",
+        example: "America/Los_Angeles",
+        onInvalid: "warn-default",
+        group: "Retrieval",
+      }),
+
     KIOKU_BULK_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10).meta({
       doc: "Per-IP cap on POST /facts/bulk (embedding-heavy ingest), over a\none-minute window. Resolved at boot by routes/rate-limit.ts (throws on a\nnon-positive-integer override).",
       group: "Ingest rate limits",

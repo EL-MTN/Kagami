@@ -156,3 +156,43 @@ it("relinkAllEntities purges empty-embedding rows and restores missing links", a
   const mira = await db.collection("entities").findOne({ text_lower: "mira" });
   expect(mira!.linked_memory_ids).toContain("fact-relink");
 });
+
+it("scoped relink preserves empty rows linked to out-of-scope facts", async () => {
+  const { getDb } = await import("../src/storage/mongo.ts");
+  const db = await getDb();
+  await db.collection("facts").deleteMany({});
+  // In-scope fact mentioning Mira; an empty row fully in scope (Mira's
+  // own fact ids) gets purged+recreated, while an empty row linked to an
+  // out-of-scope fact must survive untouched.
+  await db.collection("facts").insertOne({
+    _id: "fact-scoped",
+    text: "User met Mira yesterday",
+    user_id: "default",
+    created_at: new Date().toISOString(),
+    event_date: "2026-06-01",
+    source_session: "raw/s",
+    embedding: [1, 0, 0],
+  } as never);
+  await db
+    .collection("entities")
+    .insertOne(
+      makeDoc({ text: "Mira", embedding: [], linked_memory_ids: ["fact-scoped"] }) as never,
+    );
+  await db
+    .collection("entities")
+    .insertOne(
+      makeDoc({ text: "Zurich", embedding: [], linked_memory_ids: ["other-vault-fact"] }) as never,
+    );
+
+  const { relinkAllEntities } = await import("../src/storage/entities.ts");
+  const r = await relinkAllEntities({ user_id: "default" });
+  expect(r.purgedEmpty).toBe(1); // only the fully-in-scope row
+
+  const mira = await db.collection("entities").findOne({ text_lower: "mira" });
+  expect(mira!.embedding).toEqual([1, 0, 0]); // recreated with a real embedding
+  expect(mira!.linked_memory_ids).toContain("fact-scoped");
+  const zurich = await db.collection("entities").findOne({ text_lower: "zurich" });
+  expect(zurich).not.toBeNull(); // out-of-scope row untouched
+  expect(zurich!.embedding).toEqual([]);
+  expect(zurich!.linked_memory_ids).toEqual(["other-vault-fact"]);
+});

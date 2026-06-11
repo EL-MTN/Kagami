@@ -1,18 +1,40 @@
+import { loadEnv } from "./config.js";
+
 // Local-calendar date helpers for day-granular `event_date` values.
 //
 // Facts carry YYYY-MM-DD event dates that the answerer resolves
-// newest-wins, so "today" must be the operator's local calendar day.
+// newest-wins, so "today" must be the OPERATOR's calendar day.
 // `new Date().toISOString().slice(0, 10)` is UTC: after 5 PM PDT it
 // names tomorrow, which stamped every evening conversation one day
 // into the future and fed the newest-wins contradiction logic a wrong
 // ordering. Same defect applied to slicing a transcript's `started_at`
 // instant — a 11 PM PDT session sliced to the next day's date.
+//
+// "Operator's day" is KIOKU_TIMEZONE (IANA name) when set, else the
+// process timezone — on a personal machine those agree, but a UTC
+// server MUST set KIOKU_TIMEZONE or the UTC-slice bug reappears wearing
+// a different hat.
+
+let fmtCache: { tz: string | undefined; fmt: Intl.DateTimeFormat } | null = null;
+function dayFormatter(): Intl.DateTimeFormat {
+  const tz = loadEnv().KIOKU_TIMEZONE;
+  if (!fmtCache || fmtCache.tz !== tz) {
+    // en-CA renders YYYY-MM-DD; timeZone undefined ⇒ process zone.
+    fmtCache = {
+      tz,
+      fmt: new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }),
+    };
+  }
+  return fmtCache.fmt;
+}
 
 export function localDateOf(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return dayFormatter().format(d);
 }
 
 export function localToday(): string {

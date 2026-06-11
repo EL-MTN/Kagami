@@ -30,14 +30,23 @@ interface Args {
 function parseArgs(argv: string[]): Args {
   const args: Args = { apply: false, json: false, relink: false };
   for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
+    const a = argv[i]!;
     if (a === "--apply") args.apply = true;
     else if (a === "--json") args.json = true;
     else if (a === "--relink") args.relink = true;
-    else if (a === "--user") args.user = argv[++i];
-    else if (a === "--run") args.run = argv[++i];
-    else if (a === "--agent") args.agent = argv[++i];
-    else {
+    else if (a === "--user" || a === "--run" || a === "--agent") {
+      // A scope flag without a value must fail fast — silently treating
+      // `--apply --user` as an empty scope would curate the default
+      // vault (destructively) instead of the intended one.
+      const v = argv[++i];
+      if (v === undefined || v.startsWith("--")) {
+        console.error(`${a} requires a value`);
+        process.exit(2);
+      }
+      if (a === "--user") args.user = v;
+      else if (a === "--run") args.run = v;
+      else args.agent = v;
+    } else {
       console.error(`unknown argument: ${a}`);
       process.exit(2);
     }

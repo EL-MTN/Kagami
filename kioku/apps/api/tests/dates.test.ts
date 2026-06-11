@@ -23,6 +23,21 @@ describe("localToday", () => {
   });
 });
 
+describe("KIOKU_TIMEZONE override", () => {
+  it("resolves calendar days in the configured zone, not the process zone", () => {
+    // 06:01 UTC June 11 = June 10 in PDT (process zone) but June 11 in Tokyo.
+    const instant = new Date("2026-06-11T06:01:59.210Z");
+    expect(localDateOf(instant)).toBe("2026-06-10");
+    process.env.KIOKU_TIMEZONE = "Asia/Tokyo";
+    try {
+      expect(localDateOf(instant)).toBe("2026-06-11");
+    } finally {
+      delete process.env.KIOKU_TIMEZONE;
+    }
+    expect(localDateOf(instant)).toBe("2026-06-10");
+  });
+});
+
 describe("sessionDateOf", () => {
   it("converts a Z-instant to the local calendar day", () => {
     // The live-store defect: an 11 PM PDT session sliced as UTC named
