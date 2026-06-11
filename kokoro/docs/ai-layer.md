@@ -134,6 +134,12 @@ watcherTools(ctx) → { searchMemory, searchSkills, readSkill, findPeople?, getP
 Two distinct tool sets are assembled depending on the calling context:
 
 - **`allTools(ctx)`** — full surface available to Mashiro in conversation and inside routine executors. Includes side-effecting tools (`sendEmail`, `rememberFact`, `manageReminders`, `sendPhoto`, etc.) plus CRM lookup tools (always), routine tools, and skill read tools. `proposeSkill` is added only on live conversational turns.
+
+**Design notes (deliberate trade-offs, revisit when the pressure changes):**
+
+- **Palette weight.** With everything enabled, ~32 tool schemas ride every conversational turn, including the four CRM write tools that exist purely as schema carriers for `requestConfirmation` and the full routine/watcher CRUD surface. This is accepted for now — discoverability beats token savings at current usage, and conditional registration (config flags, `conversational`, depth) already trims the obvious cases. If turn cost becomes a problem, the CRUD managers and CRM write carriers are the natural candidates for lazier exposure.
+- **Multi-action schema shape.** `browse`/`manageCalendar`/`manageRoutines`/`manageWatchers` use an action enum plus all-optional fields, with runtime "X is required for Y" errors, rather than discriminated unions. Unions would move those errors into schema validation, but provider support for `anyOf` in tool schemas is uneven (the `openai-compatible` local path in particular), and the runtime checks return clean recoverable envelopes. Keep the pattern consistent; revisit if the provider matrix narrows.
+- **Owner honorific.** Model-facing tool strings reference the user via the `OWNER` constant (`apps/bot/src/ai/persona.ts`) so a persona change is one edit. The prose context files (`context/soul.md`, `context/instructions/*.md`) still spell it out — they are persona artifacts edited as a set.
 - **`watcherTools(ctx)`** — read-only subset for watcher executor ticks (`apps/bot/src/services/watcher-executor.ts`). Watchers observe; they never mutate external state. `searchMemory`, `searchSkills`, `readSkill`, and the Kizuna CRM **read** tools are included; `rememberFact`, `proposeSkill`, and the Kizuna CRM **write** tools (`logInteraction`, `createFollowup`, `resolveFollowup`, `updatePerson`) are excluded. The browse tool is the `createReadOnlyBrowseTool()` variant, which restricts actions to `search`/`visit`/`extract` and excludes `screenshot` (sends a photo), `act` (mutates page state), and `login`. The calendar variant is `createManageCalendarTool({ mode: "readOnly" })`. `manageWatchers` is also excluded — watchers cannot create watchers.
 
 ### searchMemory
@@ -185,9 +191,9 @@ See [memory.md](memory.md) for the full memory subsystem (session ingest, sweepe
 ### checkEmail (conditional — requires Google OAuth)
 
 - **Purpose**: Check Goshujin-sama's email
-- **Parameters**: `{ maxResults?: number, emailId?: string }`
+- **Parameters**: `{ maxResults?: number, query?: string, emailId?: string }`
 - **Returns**: `{ success, count?, emails? }` or `{ success, email }` or `{ success: false, reason }`
-- **Behavior**: Lists unread emails or retrieves a specific email by ID. Only registered when `KAO_URL` is configured (Google access vended by Kao).
+- **Behavior**: Lists unread emails by default, searches the mailbox with Gmail query syntax when `query` is given (`from:alice@x.com newer_than:7d`, `subject:invoice`, …), or retrieves a specific email by ID. Only registered when `KAO_URL` is configured (Google access vended by Kao).
 
 ### requestConfirmation (always registered)
 
@@ -206,16 +212,16 @@ See [memory.md](memory.md) for the full memory subsystem (session ingest, sweepe
 ### sendEmail (conditional — requires Google OAuth)
 
 - **Purpose**: Send an email or reply to a thread on behalf of Goshujin-sama
-- **Parameters**: `{ to: string, subject: string, body: string, threadId?: string, inReplyTo?: string }`
+- **Parameters**: `{ to: string, subject: string, body: string, cc?: string[], bcc?: string[], threadId?: string, inReplyTo?: string }`
 - **Returns**: `{ success: true, id, threadId }` or `{ success: false, reason }`
-- **Behavior**: Composes a plain-text RFC 2822 message and sends via Gmail API. When `threadId` and `inReplyTo` are provided (from `checkEmail` results), sends as a threaded reply with proper `In-Reply-To` and `References` headers. Requires the `gmail.send` OAuth scope (consented under Kao's `kokoro` grant). Only registered when `KAO_URL` is configured.
+- **Behavior**: Composes a plain-text RFC 2822 message (with `Cc:`/`Bcc:` headers when supplied) and sends via Gmail API. When `threadId` and `inReplyTo` are provided (from `checkEmail` results), sends as a threaded reply with proper `In-Reply-To` and `References` headers. **Code-enforced approval gate** (same pattern as the CRM writes): a direct call sends only when addressed to the authenticated account's own address (`getOwnerAddress` — cached `users.getProfile` lookup, lowercased) with no cc/bcc; anything else — other recipients, any cc/bcc, or an unresolvable profile — is refused with an envelope pointing at `requestConfirmation`. The gated dispatcher calls the Gmail service directly, so approved sends are unaffected. Requires the `gmail.send` OAuth scope (consented under Kao's `kokoro` grant). Only registered when `KAO_URL` is configured.
 
 ### manageCalendar (conditional — requires Google OAuth)
 
 - **Purpose**: Manage Google Calendar events
-- **Parameters**: `{ action: "list"|"create"|"update"|"delete", daysAhead?, maxResults?, eventId?, summary?, description?, start?, end?, location? }`
+- **Parameters**: `{ action: "list"|"create"|"update"|"delete", daysAhead? (1-365), maxResults? (1-100), eventId?, summary?, description?, start?, end?, location? }`
 - **Returns**: `{ success, event? }` or `{ success, events? }` or `{ success: false, reason }`
-- **Behavior**: Dispatches to the appropriate calendar service function based on `action`. Date fields use ISO 8601 format.
+- **Behavior**: `list` and `create` execute directly (cheap, easily reversed). `update` and `delete` are **code-enforced approval-gated** — a direct call is refused with an envelope pointing at `requestConfirmation`; the gated dispatcher executes them after approval. The update/delete fields stay in the schema so the model can construct valid `requestConfirmation` args. Date fields use ISO 8601 format.
 
 ### manageReminders (conditional — requires Google OAuth)
 
@@ -234,18 +240,18 @@ See [memory.md](memory.md) for the full memory subsystem (session ingest, sweepe
 ### browse (always registered)
 
 - **Purpose**: Browse the web — visit pages, extract data, interact with elements, or take screenshots. (Autonomous multi-step browsing is **not** an inline action — it can't fit the per-action timeout; it lives in the confirmation-gated `browseAgent`.) When `BRAVE_SEARCH_API_KEY` is also set, the `search` action is dropped from the action enum so the LLM uses `webSearch` for lookups instead.
-- **Parameters**: `{ action: "search"?|"visit"|"extract"|"act"|"screenshot"|"login", query?, url?, instruction? }`
+- **Parameters**: `{ action: "search"?|"visit"|"extract"|"act"|"screenshot"|"login", query?, url?, instruction?, offset? }`. The schema tracks the allowed-action set: `query` is dropped entirely when `search` is excluded, and the `url`/`instruction` describes only mention `login`/`act` in palettes that have them. The tool description routes purchases / form submissions / other irreversible page actions through the `browseAgent` confirmation instead of chained `act` calls.
 - **Returns**: Varies by action. Always includes `{ success: boolean }`.
 - **Behavior**: Uses Stagehand (LLM-driven browser automation on accessibility tree). Supports two environments controlled by `BROWSER_ENV`: `local` runs a singleton Chromium instance with a persistent user profile, `cloud` delegates to Browserbase (requires `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID`). Lazy-initialized on first call, auto-shuts down after 5 minutes idle. Every inline action is wrapped in `withBrowserLock` with a **60 s** wall-clock timeout — deliberately below the conversational turn budget (`generate.ts` `LLM_TIMEOUT_MS` = 120 s) so a slow browse fails fast as a `{success:false}` tool result the LLM can answer around, rather than the turn-level abort killing the whole turn. On timeout the singleton is reset so the next call re-inits. Long autonomous runs don't belong inline — they go through the confirmation-gated `browseAgent` (`services/gated-actions.ts`), which dispatches outside the turn with its own 10-min budget.
 
-| Action       | Required param | What it does                                                                                | Stagehand method                            |
-| ------------ | -------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `search`     | `query`        | DuckDuckGo search → structured results (fallback only when `BRAVE_SEARCH_API_KEY` is unset) | `page.goto()` + `extract()` with Zod schema |
-| `visit`      | `url`          | Navigate + extract readable text (truncated 4000 chars)                                     | `page.goto()` + `page.evaluate(innerText)`  |
-| `extract`    | `instruction`  | Structured extraction from current page                                                     | `stagehand.extract(instruction)`            |
-| `act`        | `instruction`  | Interact with page (click, type, scroll)                                                    | `stagehand.act(instruction)`                |
-| `screenshot` | —              | Capture page → send as photo                                                                | `page.screenshot()`                         |
-| `login`      | `url`          | Opens login page for manual credential entry                                                | `page.goto()` (no browser release)          |
+| Action       | Required param | What it does                                                                                                                                             | Stagehand method                            |
+| ------------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `search`     | `query`        | DuckDuckGo search → structured results (fallback only when `BRAVE_SEARCH_API_KEY` is unset)                                                              | `page.goto()` + `extract()` with Zod schema |
+| `visit`      | `url`          | Navigate + extract readable text in 4000-char chunks — returns `{ text, offset, totalChars, truncated }`; pass `offset` to keep reading a truncated page | `page.goto()` + `page.evaluate(innerText)`  |
+| `extract`    | `instruction`  | Structured extraction from current page                                                                                                                  | `stagehand.extract(instruction)`            |
+| `act`        | `instruction`  | Interact with page (click, type, scroll)                                                                                                                 | `stagehand.act(instruction)`                |
+| `screenshot` | —              | Capture page → send as photo                                                                                                                             | `page.screenshot()`                         |
+| `login`      | `url`          | Opens login page for manual credential entry                                                                                                             | `page.goto()` (no browser release)          |
 
 Autonomous multi-step browsing (`stagehand.agent().execute()`, up to 25 steps) is the separate confirmation-gated `browseAgent` action, dispatched outside the conversational turn — see `services/gated-actions.ts`.
 

@@ -188,3 +188,21 @@ describe("browse — input schema tracks the allowed action set", () => {
     expect(shapeKeys(createReadOnlyBrowseTool())).toContain("query");
   });
 });
+
+describe("browse — visit pagination", () => {
+  it("slices from offset and reports offset/totalChars/truncated", async () => {
+    const sh = fakeStagehand();
+    const longText = "a".repeat(4000) + "b".repeat(100);
+    sh.context.pages()[0].evaluate = vi.fn(() => Promise.resolve(longText));
+    mockAcquireBrowser.mockResolvedValue(sh);
+    const tool = createReadOnlyBrowseTool() as unknown as ExecutableTool;
+
+    const first = await tool.execute({ action: "visit", url: "example.com" });
+    expect(first).toMatchObject({ success: true, offset: 0, totalChars: 4100, truncated: true });
+    expect((first.text as string).length).toBe(4000);
+
+    const second = await tool.execute({ action: "visit", url: "example.com", offset: 4000 });
+    expect(second).toMatchObject({ success: true, offset: 4000, truncated: false });
+    expect(second.text).toBe("b".repeat(100));
+  });
+});

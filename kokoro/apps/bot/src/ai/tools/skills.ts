@@ -11,6 +11,7 @@ import {
 import { logger } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { raiseGuardedProposal } from "./proposal-guard";
+import { OWNER } from "../persona";
 
 const skillNameSchema = z
   .string()
@@ -159,8 +160,7 @@ function buildSkillProposalPrompt(draft: {
 
 export function createProposeSkillTool(chatId: string, adapter: PlatformAdapter) {
   return tool({
-    description:
-      "Offer to save a reusable skill: durable procedural knowledge, preferences, heuristics, or operating instructions that should be loaded as context later. This does not create automation and does not execute anything. Use only on a natural closing turn, at most one at a time, when the lesson is broadly reusable and not a one-off fact. Goshujin-sama gets a tap-to-approve bubble; the skill is created only if he approves.",
+    description: `Offer to save a reusable skill: durable procedural knowledge, preferences, heuristics, or operating instructions that should be loaded as context later. This does not create automation and does not execute anything. Use only on a natural closing turn, at most one at a time, when the lesson is broadly reusable and not a one-off fact. ${OWNER} gets a tap-to-approve bubble; the skill is created only if he approves.`,
     inputSchema: z.object({
       name: skillNameSchema.describe(
         "Short unique skill name, lowercase with dashes, e.g. 'meeting-followup-style'.",
@@ -195,7 +195,7 @@ export function createProposeSkillTool(chatId: string, adapter: PlatformAdapter)
           adapter,
           signature,
           isDeclined: isSkillRecentlyDeclined,
-          declinedReason: "Goshujin-sama declined a similar skill recently",
+          declinedReason: `${OWNER} declined a similar skill recently`,
           summary: `Save skill "${name}"`,
           promptText: buildSkillProposalPrompt({
             name,
@@ -225,8 +225,7 @@ export function createProposeSkillTool(chatId: string, adapter: PlatformAdapter)
         return {
           proposed: true,
           confirmationId: result.confirmationId,
-          message:
-            "Skill-save prompt sent. Stop here — don't call this again this turn. Goshujin-sama will tap Approve or Deny.",
+          message: `Skill-save prompt sent. Stop here — don't call this again this turn. ${OWNER} will tap Approve or Deny.`,
         };
       } catch (error) {
         logger.error({ error, chatId }, "Tool: proposeSkill failed");

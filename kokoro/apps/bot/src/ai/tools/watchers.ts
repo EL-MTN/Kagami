@@ -10,6 +10,7 @@ import {
   isDuplicateKeyError,
 } from "@kokoro/db";
 import { logger, computeNextRunAt, validateCronAndDefaults } from "@kokoro/shared";
+import { OWNER } from "../persona";
 
 // ─── manageWatchers ──────────────────────────────────────────────────────────
 
@@ -19,8 +20,7 @@ const isoDatetime = z
 
 export function createManageWatchersTool(chatId: string) {
   return tool({
-    description:
-      "Manage watchers — scheduled detection jobs that monitor for change and notify Goshujin-sama only when a condition is met (price drops, listing matches, inbox events, etc.). Watchers are read-only by design: they observe and report. Lifecycle controls (oneShot, maxFires, cooldownMinutes) bound how often a watcher fires. Use the `snooze` action to silence a watcher temporarily without disabling it.",
+    description: `Manage watchers — scheduled detection jobs that monitor for change and notify ${OWNER} only when a condition is met (price drops, listing matches, inbox events, etc.). Watchers are read-only by design: they observe and report. Lifecycle controls (oneShot, maxFires, cooldownMinutes) bound how often a watcher fires. Use the \`snooze\` action to silence a watcher temporarily without disabling it.`,
     inputSchema: z.object({
       action: z.enum(["create", "list", "update", "delete", "enable", "disable", "snooze"]),
       watcherId: z

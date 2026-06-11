@@ -6,6 +6,7 @@ import { logger } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { parameterSchema } from "./routine-schema";
 import { raiseGuardedProposal } from "./proposal-guard";
+import { OWNER } from "../persona";
 
 /**
  * Stable signature for a proposed routine: normalized name + a short hash of
@@ -55,8 +56,7 @@ function buildProposalPrompt(draft: {
  */
 export function createProposeRoutineTool(chatId: string, adapter: PlatformAdapter) {
   return tool({
-    description:
-      "Offer to save a just-finished, repeatable multi-step task as a reusable on-demand routine. Only call this on a natural closing turn (never mid-task), at most one at a time, and only for genuinely reusable procedures — not trivial or one-off requests. Generalize the concrete run into a reusable prompt, with parameters for the parts that varied. Goshujin-sama gets a tap-to-approve bubble; the routine is created only if he approves. Returns immediately — don't call it again in the same turn.",
+    description: `Offer to save a just-finished, repeatable multi-step task as a reusable on-demand routine. Only call this on a natural closing turn (never mid-task), at most one at a time, and only for genuinely reusable procedures — not trivial or one-off requests. Generalize the concrete run into a reusable prompt, with parameters for the parts that varied. ${OWNER} gets a tap-to-approve bubble; the routine is created only if he approves. Returns immediately — don't call it again in the same turn.`,
     inputSchema: z.object({
       name: z
         .string()
@@ -92,7 +92,7 @@ export function createProposeRoutineTool(chatId: string, adapter: PlatformAdapte
           adapter,
           signature,
           isDeclined: isRecentlyDeclined,
-          declinedReason: "Goshujin-sama declined a similar routine recently",
+          declinedReason: `${OWNER} declined a similar routine recently`,
           summary: `Save routine "${name}"`,
           promptText: buildProposalPrompt({ name, description, prompt, parameters: params }),
           origin: "routine",
@@ -112,8 +112,7 @@ export function createProposeRoutineTool(chatId: string, adapter: PlatformAdapte
         return {
           proposed: true,
           confirmationId: result.confirmationId,
-          message:
-            "Routine-save prompt sent. Stop here — don't call this again this turn. Goshujin-sama will tap Approve or Deny.",
+          message: `Routine-save prompt sent. Stop here — don't call this again this turn. ${OWNER} will tap Approve or Deny.`,
         };
       } catch (error) {
         logger.error({ error, chatId }, "Tool: proposeRoutine failed");

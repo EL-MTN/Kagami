@@ -91,6 +91,8 @@ const sendEmailArgs = z.object({
   to: z.string().email(),
   subject: z.string().min(1),
   body: z.string().min(1),
+  cc: z.array(z.string().email()).max(20).optional(),
+  bcc: z.array(z.string().email()).max(20).optional(),
   threadId: z.string().optional(),
   inReplyTo: z.string().optional(),
 });
@@ -327,8 +329,8 @@ export async function dispatchGatedAction(
         const args = parsed.data as z.infer<typeof sendEmailArgs>;
         logger.info({ to: args.to, subject: args.subject }, "Dispatching approved sendEmail");
         const options =
-          args.threadId || args.inReplyTo
-            ? { threadId: args.threadId, inReplyTo: args.inReplyTo }
+          args.threadId || args.inReplyTo || args.cc?.length || args.bcc?.length
+            ? { threadId: args.threadId, inReplyTo: args.inReplyTo, cc: args.cc, bcc: args.bcc }
             : undefined;
         const result = await sendEmail(args.to, args.subject, args.body, options);
         return {
