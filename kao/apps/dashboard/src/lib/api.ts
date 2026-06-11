@@ -48,7 +48,7 @@ const apiUrl = z
 
 const API_URL = apiUrl.replace(/\/+$/, "");
 
-// Default upper-bound on any single API hop. The sidebar's `/healthz` probe
+// Default upper-bound on any single API hop. The sidebar's `/health` probe
 // renders inside `RootLayout`, so a hung Kao without a timeout would stall
 // every page navigation; this caps that wait.
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -106,7 +106,7 @@ function isEnvelope(value: unknown): value is ErrorEnvelope {
 
 interface CallOptions {
   // Default true. The bearer-gated /grants/* surface needs it; the open
-  // /healthz probe must NOT pass it (otherwise a missing KAO_TOKEN would
+  // /health probe must NOT pass it (otherwise a missing KAO_TOKEN would
   // surface as "API unreachable" instead of the real config error).
   auth?: boolean;
   timeoutMs?: number;
@@ -189,10 +189,10 @@ interface HealthResponse {
 // `force-dynamic` covers; no caching layer here.
 
 export async function getHealth(): Promise<HealthResponse> {
-  // /healthz is open at localhost — explicitly skip the bearer so a missing
+  // /health is open at localhost — explicitly skip the bearer so a missing
   // KAO_TOKEN doesn't surface as "API unreachable" in the sidebar. Shorter
   // timeout because this probe runs in the layout shell on every navigation.
-  return call<HealthResponse>("GET", "/healthz", { auth: false, timeoutMs: 2_000 });
+  return call<HealthResponse>("GET", "/health", { auth: false, timeoutMs: 2_000 });
 }
 
 export async function listGrants(): Promise<GrantStatus[]> {
