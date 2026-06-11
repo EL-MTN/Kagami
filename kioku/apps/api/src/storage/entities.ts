@@ -133,3 +133,20 @@ export async function upsertEntitiesFromFacts(
   await Promise.all(ops);
   return { created, linked };
 }
+
+// Curation removes/replaces facts; their ids must leave every entity's
+// linked_memory_ids. Entities whose link set empties are deleted — an
+// unlinked entity can still win the query-time $vectorSearch yet boosts
+// nothing, so keeping it only burns a candidate slot.
+export async function removeFactLinks(
+  factIds: string[],
+): Promise<{ unlinked: number; removedEntities: number }> {
+  if (factIds.length === 0) return { unlinked: 0, removedEntities: 0 };
+  const col = await entitiesCol();
+  const r = await col.updateMany(
+    { linked_memory_ids: { $in: factIds } },
+    { $pull: { linked_memory_ids: { $in: factIds } } },
+  );
+  const del = await col.deleteMany({ linked_memory_ids: { $size: 0 } });
+  return { unlinked: r.modifiedCount, removedEntities: del.deletedCount };
+}

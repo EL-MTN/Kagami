@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { generateText } from "ai";
 import { loadEnv } from "../config.js";
+import { localToday } from "../dates.js";
 import { model } from "../llm.js";
 import { paths } from "../paths.js";
 import {
@@ -99,7 +100,7 @@ export function deriveQuestionDate(facts: RankedFact[]): string {
     const d = f.eventDate || f.createdAt.slice(0, 10);
     if (d > max) max = d;
   }
-  return max || new Date().toISOString().slice(0, 10);
+  return max || localToday();
 }
 
 export function renderAnswerPrompt(

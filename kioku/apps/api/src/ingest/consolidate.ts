@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import { z } from "zod";
 import { embed, embedMany, cosineSimilarity, generateObject } from "ai";
 import type { Transcript } from "../types.js";
+import { localToday, sessionDateOf } from "../dates.js";
 import { getEmbeddingModel, model } from "../llm.js";
 import { paths } from "../paths.js";
 import { appendFacts, newFactId, readFactsInScope, type Fact } from "../storage/facts.js";
@@ -136,8 +137,8 @@ export async function consolidate(
   opts: ConsolidateOptions = {},
 ): Promise<{ added: number; batches: number; failed: number }> {
   const sessionId = transcript.frontmatter.id;
-  const sessionDate = String(transcript.frontmatter.started_at).slice(0, 10);
-  const currentDate = new Date().toISOString().slice(0, 10);
+  const sessionDate = sessionDateOf(transcript.frontmatter.started_at);
+  const currentDate = localToday();
 
   const userId = opts.user_id ?? "default";
   const runId = opts.run_id;
