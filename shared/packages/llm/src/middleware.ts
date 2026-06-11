@@ -1,11 +1,11 @@
 import { APICallError } from "ai";
 import type { LanguageModelV3CallOptions, LanguageModelV3Middleware } from "@ai-sdk/provider";
-import type { RetryOptions } from "./types.js";
 
 /**
  * Per-attempt deadline. Merges a fresh `AbortSignal.timeout(ms)` into the
- * call's existing signal so the caller's own cancellation still wins, and
- * every retry gets the full budget (composed inside retry — see index.ts).
+ * call's existing signal so the caller's own cancellation still wins. The
+ * retry loop in fallback.ts re-invokes the wrapped leaf per attempt, so this
+ * transform runs — and the budget resets — on every attempt.
  */
 export function timeoutMiddleware(ms: number): LanguageModelV3Middleware {
   return {
@@ -61,39 +61,4 @@ export function isRetryable(err: unknown): boolean {
   }
   // Provider-imposed deadline (AbortSignal.timeout) surfaces as TimeoutError.
   return err instanceof Error && err.name === "TimeoutError";
-}
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
-/**
- * Full-jitter backoff: `delay = random(0, min(cap, base * 2^attempt))`.
- * Implemented here, not imported — `@kagami/logger`'s jitter is private to its
- * Kansoku shipper. Stream calls retry only the `doStream()`
- * handshake; a stream that has started cannot be safely replayed.
- */
-export function retryMiddleware(opts?: RetryOptions): LanguageModelV3Middleware {
-  const maxAttempts = opts?.maxAttempts ?? 3;
-  const base = opts?.baseDelayMs ?? 250;
-  const cap = opts?.maxDelayMs ?? 8_000;
-
-  async function withRetry<T>(fn: () => PromiseLike<T>): Promise<T> {
-    let lastErr: unknown;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        return await fn();
-      } catch (err) {
-        lastErr = err;
-        if (attempt === maxAttempts - 1 || !isRetryable(err)) throw err;
-        const ceil = Math.min(cap, base * 2 ** attempt);
-        await sleep(Math.random() * ceil);
-      }
-    }
-    throw lastErr;
-  }
-
-  return {
-    specificationVersion: "v3",
-    wrapGenerate: ({ doGenerate }) => withRetry(doGenerate),
-    wrapStream: ({ doStream }) => withRetry(doStream),
-  };
 }

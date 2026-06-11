@@ -95,4 +95,10 @@ export interface UsageEvent {
   completionTokens: number;
   durationMs: number;
   fallbackUsed: boolean;
+  /** `"error"` when the call returned nothing: every attempt on every provider failed, or the caller aborted. */
+  status: "ok" | "error";
+  /** Total attempts across the whole call, including failovers. */
+  attempts: number;
+  /** One compact label per failed attempt, e.g. `"xai:TimeoutError@30021ms"`. */
+  attemptErrors?: string[];
 }
