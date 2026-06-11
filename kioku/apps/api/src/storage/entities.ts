@@ -157,11 +157,19 @@ export async function relinkAllEntities(scope: {
   agent_id?: string;
 }): Promise<{ created: number; linked: number; purgedEmpty: number }> {
   const col = await entitiesCol();
+  const facts = await readFactsInScope(scope);
   // Empty-embedding rows (written before the skip-on-failure guard)
   // block $setOnInsert from ever re-embedding them — drop them first;
-  // the sweep below recreates them with real embeddings.
-  const purged = await col.deleteMany({ embedding: { $size: 0 } });
-  const facts = await readFactsInScope(scope);
+  // the sweep below recreates them with real embeddings. Scoped runs
+  // purge only rows whose every link is inside the scope: deleting a
+  // row shared with out-of-scope facts would lose those links for good
+  // (the sweep can only recreate from in-scope facts). Rows left behind
+  // stay broken until an unscoped --relink.
+  const inScopeIds = facts.map((f) => f.id);
+  const purged = await col.deleteMany({
+    embedding: { $size: 0 },
+    linked_memory_ids: { $not: { $elemMatch: { $nin: inScopeIds } } },
+  });
   let created = 0;
   let linked = 0;
   const BATCH = 50;

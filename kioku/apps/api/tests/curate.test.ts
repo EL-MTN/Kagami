@@ -188,8 +188,16 @@ describe("applyCuration", () => {
   it("merge of two replaces members with one provenance-tagged fact", async () => {
     const { appendFacts } = await import("../src/storage/facts.ts");
     await appendFacts([
-      fact("a", "User scheduled an email to Mark", E_A, { event_date: "2026-06-05" }),
-      fact("b", "User scheduled an email to Mark on June 5", E_B, { event_date: "2026-06-06" }),
+      fact("a", "User scheduled an email to Mark", E_A, {
+        event_date: "2026-06-05",
+        created_at: "2026-06-05T00:00:00.000Z",
+        metadata: { ingest_run: "r1", channel: "telegram" },
+      }),
+      fact("b", "User scheduled an email to Mark on June 5", E_B, {
+        event_date: "2026-06-06",
+        created_at: "2026-06-06T00:00:00.000Z",
+        metadata: { ingest_run: "r2" },
+      }),
     ] as never[]);
 
     verdictQueue.push({
@@ -217,7 +225,13 @@ describe("applyCuration", () => {
     const merged = docs[0]!;
     expect(merged.text).toContain("welcoming email");
     expect(merged.event_date).toBe("2026-06-05");
-    expect(merged.metadata).toEqual({ curated_from: ["a", "b"] });
+    // Member metadata carries forward (newest wins per key) so exact
+    // metadata.* recall filters keep matching; curated_from is appended.
+    expect(merged.metadata).toEqual({
+      ingest_run: "r2",
+      channel: "telegram",
+      curated_from: ["a", "b"],
+    });
 
     // Journal: ADD for the new fact, DELETE for both members.
     expect(
