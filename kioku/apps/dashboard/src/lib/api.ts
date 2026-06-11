@@ -10,7 +10,6 @@ export interface Fact {
   created_at: string;
   event_date: string;
   source_session: string;
-  hash: string;
   category?: string;
   metadata?: Record<string, unknown>;
 }
@@ -103,8 +102,17 @@ export async function getFact(id: string): Promise<Fact | null> {
   }
 }
 
-export async function getFactHistory(id: string): Promise<{ id: string; events: HistoryEvent[] }> {
-  return api(`/facts/${id}/history`);
+// Null on failure (API flake, network) rather than throwing — the fact
+// page degrades to a "history unavailable" note instead of crashing.
+// Note the endpoint never 404s: an unknown id returns empty events.
+export async function getFactHistory(
+  id: string,
+): Promise<{ id: string; events: HistoryEvent[] } | null> {
+  try {
+    return await api(`/facts/${id}/history`);
+  } catch {
+    return null;
+  }
 }
 
 export async function recall(body: { query: string; k?: number }): Promise<RecallResponse> {

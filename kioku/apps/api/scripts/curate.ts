@@ -4,6 +4,8 @@
 //   npx tsx scripts/curate.ts --apply         # apply the plan
 //   npx tsx scripts/curate.ts --user u1 --run r1 --agent a1
 //   npx tsx scripts/curate.ts --json          # machine-readable plan
+//   npx tsx scripts/curate.ts --relink        # repair entity links only
+//                                             # (no LLM; idempotent upsert sweep)
 //
 // Dry run prints the plan and writes nothing. --apply re-plans and
 // executes: drops + merges delete/replace facts (journaled in `history`
@@ -13,22 +15,25 @@
 
 import "dotenv/config";
 import { planCuration, applyCuration, type CurationPlan } from "../src/ingest/curate.js";
+import { relinkAllEntities } from "../src/storage/entities.js";
 import { closeMongo } from "../src/storage/mongo.js";
 
 interface Args {
   apply: boolean;
   json: boolean;
+  relink: boolean;
   user?: string;
   run?: string;
   agent?: string;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { apply: false, json: false };
+  const args: Args = { apply: false, json: false, relink: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--apply") args.apply = true;
     else if (a === "--json") args.json = true;
+    else if (a === "--relink") args.relink = true;
     else if (a === "--user") args.user = argv[++i];
     else if (a === "--run") args.run = argv[++i];
     else if (a === "--agent") args.agent = argv[++i];
@@ -73,6 +78,14 @@ async function main(): Promise<void> {
     ...(args.run !== undefined ? { run_id: args.run } : {}),
     ...(args.agent !== undefined ? { agent_id: args.agent } : {}),
   };
+
+  if (args.relink) {
+    const r = await relinkAllEntities({ user_id: scope.user_id ?? "default", ...scope });
+    console.log(
+      `Relinked entities: created=${r.created} linked=${r.linked} purgedEmpty=${r.purgedEmpty}`,
+    );
+    return;
+  }
 
   const plan = await planCuration(scope);
 

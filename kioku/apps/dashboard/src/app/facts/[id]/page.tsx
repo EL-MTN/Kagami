@@ -25,7 +25,6 @@ export default async function FactDetailPage({ params }: { params: Promise<{ id:
     { label: "event_date", value: fact.event_date || "—" },
     { label: "created_at", value: fact.created_at },
     { label: "source_session", value: fact.source_session, mono: true },
-    { label: "hash", value: fact.hash, mono: true },
   ];
   if (fact.run_id) meta.push({ label: "run_id", value: fact.run_id, mono: true });
   if (fact.agent_id) meta.push({ label: "agent_id", value: fact.agent_id, mono: true });
@@ -90,7 +89,9 @@ export default async function FactDetailPage({ params }: { params: Promise<{ id:
           <h3 className="kicker mb-4 inline-flex items-center gap-2">
             <Layers className="h-3 w-3" strokeWidth={1.75} /> Audit log
           </h3>
-          {history.events.length === 0 ? (
+          {!history ? (
+            <EmptyState variant="inline">History unavailable.</EmptyState>
+          ) : history.events.length === 0 ? (
             <EmptyState variant="inline">No history events.</EmptyState>
           ) : (
             <ol className="relative space-y-0">

@@ -153,6 +153,10 @@ it("scoreAndRank gates by threshold then fuses additively", () => {
   expect(ranked[0]!.id).toBe("a"); // a wins
   // a: (0.8 + 0.6 + 0.4) / 2.5 = 0.72
   expect(Math.abs(ranked[0]!.score - 0.72)).toBeLessThan(1e-9);
+  // Per-channel contributions surface pre-division for the dashboard.
+  expect(ranked[0]!.semantic).toBe(0.8);
+  expect(ranked[0]!.bm25).toBe(0.6);
+  expect(ranked[0]!.entity).toBe(0.4);
 });
 
 it("scoreAndRank divisor adapts to active signals", () => {
