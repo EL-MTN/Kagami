@@ -73,10 +73,25 @@ describe("clusterFacts", () => {
       [fact("a", "A", E_A), fact("b", "B", E_B), fact("c", "C", E_C)] as never[],
       0.8,
     );
-    // a+b cluster; c is a singleton batch.
+    // a+b cluster (clustered: true); c is a singleton batch.
     expect(groups).toHaveLength(2);
-    const sizes = groups.map((g) => g.length).sort();
-    expect(sizes).toEqual([1, 2]);
+    const cluster = groups.find((g) => g.clustered);
+    const batch = groups.find((g) => !g.clustered);
+    expect(cluster!.members.map((f) => f.id).sort()).toEqual(["a", "b"]);
+    expect(batch!.members.map((f) => f.id)).toEqual(["c"]);
+  });
+
+  it("never clusters across (user, run, agent) scope boundaries", async () => {
+    const { clusterFacts } = await import("../src/ingest/curate.ts");
+    // Identical embeddings but different run_id — a merge across them
+    // would collapse two scopes into one, breaking run-scoped recall.
+    const groups = clusterFacts(
+      [fact("a", "A", E_A), fact("b", "B", E_B, { run_id: "r2" })] as never[],
+      0.8,
+    );
+    // Each lands in its own (cross-scope) singleton batch — no cluster.
+    expect(groups.every((g) => !g.clustered)).toBe(true);
+    expect(groups.flatMap((g) => g.members.map((f) => f.id)).sort()).toEqual(["a", "b"]);
   });
 });
 
@@ -95,6 +110,32 @@ describe("planCuration fail-open", () => {
     expect(plan.failedGroups).toBe(1);
     expect(plan.drops).toHaveLength(0);
     expect(plan.keep.sort()).toEqual(["a", "b"]);
+  });
+
+  it("rejects a multi-id merge inside a singleton batch", async () => {
+    const { appendFacts } = await import("../src/storage/facts.ts");
+    // Orthogonal embeddings — these land in one singleton review batch,
+    // mechanically unrelated. A model merging them must fail open.
+    await appendFacts([fact("a", "Fact A", E_A), fact("c", "Fact C", E_C)] as never[]);
+
+    verdictQueue.push({
+      actions: [
+        {
+          kind: "merge",
+          ids: ["a", "c"],
+          text: "Synthetic combination of unrelated facts",
+          event_date: "",
+          category: "",
+          reason: "model overreach",
+        },
+      ],
+    });
+
+    const { planCuration } = await import("../src/ingest/curate.ts");
+    const plan = await planCuration();
+    expect(plan.failedGroups).toBe(1);
+    expect(plan.merges).toHaveLength(0);
+    expect(plan.keep.sort()).toEqual(["a", "c"]);
   });
 
   it("keeps a group untouched when the LLM call rejects", async () => {
@@ -283,4 +324,40 @@ it("skips a merge when a member fact vanished between plan and apply", async () 
   expect(docs).toHaveLength(1);
   expect(docs[0]!._id).toBe("a");
   expect(docs[0]!.text).toBe("User scheduled an email to Mark");
+});
+
+it("rewrite preserves an entity row it still mentions (no destroy-recreate)", async () => {
+  const { appendFacts } = await import("../src/storage/facts.ts");
+  const { upsertEntitiesFromFacts } = await import("../src/storage/entities.ts");
+  const f = fact("a", "User met Mirabelle at the conversation desk", E_A);
+  await appendFacts([f] as never[]);
+  await upsertEntitiesFromFacts([f] as never[]);
+
+  const { getDb } = await import("../src/storage/mongo.ts");
+  const db = await getDb();
+  const before = await db.collection("entities").findOne({ text_lower: "mirabelle" });
+  expect(before).not.toBeNull(); // linked only to fact "a"
+
+  verdictQueue.push({
+    actions: [
+      {
+        kind: "merge",
+        ids: ["a"],
+        text: "User met Mirabelle",
+        event_date: "",
+        category: "",
+        reason: "strip narration",
+      },
+    ],
+  });
+
+  const { planCuration, applyCuration } = await import("../src/ingest/curate.ts");
+  const result = await applyCuration(await planCuration());
+  expect(result.rewritten).toBe(1);
+
+  // Same row, same _id — relink-before-prune never deleted it.
+  const after = await db.collection("entities").findOne({ text_lower: "mirabelle" });
+  expect(after).not.toBeNull();
+  expect(after!._id).toEqual(before!._id);
+  expect(after!.linked_memory_ids).toContain("a");
 });

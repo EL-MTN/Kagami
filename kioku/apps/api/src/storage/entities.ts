@@ -197,3 +197,22 @@ export async function removeFactLinks(
   const del = await col.deleteMany({ linked_memory_ids: { $size: 0 } });
   return { unlinked: r.modifiedCount, removedEntities: del.deletedCount };
 }
+
+// Rewrite-path unlink: pull `factId` only from entities the rewritten
+// text no longer mentions (`keepTextLowers` = the new text's entity
+// keys). Rows the fact still mentions are never touched, so an entity
+// whose only link is this fact survives a rewrite intact instead of
+// being deleted and re-created (which would lose it outright if the
+// re-create's embed call failed transiently).
+export async function pruneFactLinks(
+  factId: string,
+  keepTextLowers: string[],
+): Promise<{ unlinked: number; removedEntities: number }> {
+  const col = await entitiesCol();
+  const r = await col.updateMany(
+    { linked_memory_ids: factId, text_lower: { $nin: keepTextLowers } },
+    { $pull: { linked_memory_ids: factId } },
+  );
+  const del = await col.deleteMany({ linked_memory_ids: { $size: 0 } });
+  return { unlinked: r.modifiedCount, removedEntities: del.deletedCount };
+}
