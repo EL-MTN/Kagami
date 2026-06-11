@@ -43,8 +43,21 @@ interface IncomingMessage {
   text: string;
   imageBase64?: string;
   imageMimeType?: string;
+  audioBuffer?: Buffer; // inbound voice notes / audio attachments
+  audioMimeType?: string;
+  audioDurationSeconds?: number;
+  documentBuffer?: Buffer; // inbound generic files → workspace inbox/
+  documentMimeType?: string;
+  documentFileName?: string;
   timestamp: Date;
   replyToMessageId?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+    heading?: number;
+    accuracy?: number;
+    livePeriod?: number;
+  };
 }
 ```
 
@@ -54,18 +67,20 @@ Implemented in `apps/bot/src/platform/telegram/adapter.ts`. Singleton accessed v
 
 ### Methods
 
-| Method                                                 | Description                                                                                                                                                               |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `normalize(ctx)`                                       | Extract text message from Grammy context → `IncomingMessage`                                                                                                              |
-| `normalizePhoto(ctx)`                                  | Download photo from Telegram API, convert to base64, detect MIME type → `IncomingMessage`                                                                                 |
-| `normalizeLocation(ctx)`                               | Extract location from message → `IncomingMessage` with `location` field                                                                                                   |
-| `normalizeLocationEdit(ctx)`                           | Extract location from edited message (live location update) → `IncomingMessage`                                                                                           |
-| `sendText(chatId, text)`                               | Send plain text message                                                                                                                                                   |
-| `sendPhoto(chatId, photo, caption)`                    | Send photo by file path or file_id. Returns file_id for caching.                                                                                                          |
-| `sendPhotoBuffer(chatId, buffer, caption)`             | Send photo from memory buffer. Returns file_id.                                                                                                                           |
-| `sendVoiceBuffer(chatId, buffer, duration?)`           | Send voice message from buffer (used by the `sendVoice` tool).                                                                                                            |
-| `sendConfirmationPrompt(chatId, text, confirmationId)` | Send a message with `[✓ Approve][✗ Deny]` inline buttons. Callback data is `confirm:<confirmationId>:<approve\|deny>`. Returns the platform message id for later editing. |
-| `editConfirmationPrompt(chatId, messageId, text)`      | Replace a confirmation prompt's body with a terminal-state line and clear the inline keyboard. Tolerant of failures (user may have deleted the message).                  |
+| Method                                                          | Description                                                                                                                                                                                                                                      |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `normalize(ctx)`                                                | Extract text message from Grammy context → `IncomingMessage`                                                                                                                                                                                     |
+| `normalizePhoto(ctx)`                                           | Download photo from Telegram API, convert to base64, detect MIME type → `IncomingMessage`                                                                                                                                                        |
+| `normalizeDocument(ctx)`                                        | Download a generic file attachment (PDF/CSV/…) → `IncomingMessage` with `documentBuffer`/`documentMimeType`/`documentFileName`. Files over the Bot API's 20 MB bot-download cap return an honest `[file … too large to receive]` marker instead. |
+| `normalizeLocation(ctx)`                                        | Extract location from message → `IncomingMessage` with `location` field                                                                                                                                                                          |
+| `normalizeLocationEdit(ctx)`                                    | Extract location from edited message (live location update) → `IncomingMessage`                                                                                                                                                                  |
+| `sendText(chatId, text)`                                        | Send plain text message                                                                                                                                                                                                                          |
+| `sendPhoto(chatId, photo, caption)`                             | Send photo by file path or file_id. Returns file_id for caching.                                                                                                                                                                                 |
+| `sendPhotoBuffer(chatId, buffer, caption)`                      | Send photo from memory buffer. Returns file_id.                                                                                                                                                                                                  |
+| `sendVoiceBuffer(chatId, buffer, duration?)`                    | Send voice message from buffer (used by the `sendVoice` tool).                                                                                                                                                                                   |
+| `sendFileBuffer(chatId, buffer, fileName, mimeType?, caption?)` | Send any buffer as a document attachment via `sendDocument` (used by the `sendFile` workspace tool). Telegram sniffs the content type; the InputFile name is what the recipient sees.                                                            |
+| `sendConfirmationPrompt(chatId, text, confirmationId)`          | Send a message with `[✓ Approve][✗ Deny]` inline buttons. Callback data is `confirm:<confirmationId>:<approve\|deny>`. Returns the platform message id for later editing.                                                                        |
+| `editConfirmationPrompt(chatId, messageId, text)`               | Replace a confirmation prompt's body with a terminal-state line and clear the inline keyboard. Tolerant of failures (user may have deleted the message).                                                                                         |
 
 ### Photo Handling
 
@@ -104,6 +119,12 @@ createBot(token)
     │   ├─ normalizeVoice/normalizeAudio(ctx) → IncomingMessage with audioBuffer + duration
     │   ├─ Rate limit check
     │   ├─ handleMessage(incoming, adapter) — transcribes via STT if configured; owns the activity heartbeat
+    │   └─ resetTimer(chatId)
+    │
+    ├─ message:document handler
+    │   ├─ normalizeDocument(ctx) → IncomingMessage with documentBuffer + fileName (20 MB Bot API cap)
+    │   ├─ Rate limit check
+    │   ├─ handleMessage(incoming, adapter) — saves to workspace inbox/ (or placeholders when disabled)
     │   └─ resetTimer(chatId)
     │
     ├─ message:location handler

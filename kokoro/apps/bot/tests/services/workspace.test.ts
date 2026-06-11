@@ -306,3 +306,67 @@ describe("workspaceSummary", () => {
     expect(summary).toContain("+2 more");
   });
 });
+
+describe("sanitizeFileName", () => {
+  it("passes ordinary names through and keeps unicode", async () => {
+    const { sanitizeFileName } = await import("../../src/services/workspace");
+    expect(sanitizeFileName("lease.pdf")).toBe("lease.pdf");
+    expect(sanitizeFileName("メモ 2026.txt")).toBe("メモ 2026.txt");
+  });
+
+  it("flattens path separators and falls back for empty/dot-only names", async () => {
+    const { sanitizeFileName } = await import("../../src/services/workspace");
+    expect(sanitizeFileName("../../etc/passwd")).toBe("..-..-etc-passwd");
+    expect(sanitizeFileName("a\\b.txt")).toBe("a-b.txt");
+    expect(sanitizeFileName(undefined, "application/pdf")).toBe("file.pdf");
+    expect(sanitizeFileName("...", "text/csv")).toBe("file.csv");
+    expect(sanitizeFileName(undefined)).toBe("file");
+  });
+
+  it("caps long names preserving the extension", async () => {
+    const { sanitizeFileName } = await import("../../src/services/workspace");
+    const long = `${"x".repeat(200)}.pdf`;
+    const out = sanitizeFileName(long);
+    expect(out.length).toBe(120);
+    expect(out.endsWith(".pdf")).toBe(true);
+  });
+});
+
+describe("saveInboundDocument", () => {
+  it("saves under inbox/ with chat-upload provenance", async () => {
+    const { saveInboundDocument } = await import("../../src/services/workspace");
+    await saveInboundDocument({
+      fileName: "lease.pdf",
+      data: Buffer.from("pdf"),
+      mimeType: "application/pdf",
+      sourceChatId: "chat-9",
+    });
+
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "inbox/lease.pdf",
+        mimeType: "application/pdf",
+        source: "chat-upload",
+        sourceChatId: "chat-9",
+      }),
+    );
+  });
+
+  it("dedupes occupied names with numbered siblings", async () => {
+    const { saveInboundDocument } = await import("../../src/services/workspace");
+    // inbox/lease.pdf and inbox/lease-2.pdf exist; lease-3 is free.
+    mockGetByPath.mockImplementation((path: string) =>
+      Promise.resolve(
+        path === "inbox/lease.pdf" || path === "inbox/lease-2.pdf" ? row(path) : null,
+      ),
+    );
+
+    const result = await saveInboundDocument({
+      fileName: "lease.pdf",
+      data: Buffer.from("pdf"),
+      sourceChatId: "chat-9",
+    });
+
+    expect(result.path).toBe("inbox/lease-3.pdf");
+  });
+});

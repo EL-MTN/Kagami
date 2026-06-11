@@ -81,6 +81,26 @@ export class BlueBubblesAdapter implements PlatformAdapter {
     });
   }
 
+  async sendFileBuffer(
+    chatId: string,
+    buffer: Buffer,
+    fileName: string,
+    mimeType?: string,
+    caption?: string,
+  ): Promise<void> {
+    await this.client.sendAttachment({
+      chatGuid: this.toChatGuid(chatId),
+      filename: fileName,
+      buffer,
+      mimeType: mimeType ?? "application/octet-stream",
+    });
+    if (caption) {
+      // Same caption rule as sendPhotoBuffer: attachments carry no caption,
+      // so it follows as its own bubble.
+      await this.client.sendText({ chatGuid: this.toChatGuid(chatId), message: caption });
+    }
+  }
+
   async sendConfirmationPrompt(
     chatId: string,
     text: string,
@@ -137,6 +157,13 @@ interface NormalizedWebhookEvent {
   chatGuid: string;
   /** message GUID, used for dedupe */
   messageGuid: string;
+  /**
+   * A document attachment whose bytes were NOT inlined in the webhook
+   * payload. This function stays pure (unit-testable, no I/O), so the
+   * fetch-by-GUID happens in the webhook handler, which populates
+   * `message.documentBuffer` before calling `handleMessage`.
+   */
+  pendingDocument?: { guid: string; mimeType?: string; fileName?: string };
 }
 
 /**
@@ -217,13 +244,54 @@ export function normalizeWebhookEvent(
     }
   }
 
-  const effectiveText = isVoice ? voicePlaceholder : !text && attachment ? "[attachment]" : text;
+  // Everything that isn't an image or audio is a document (PDF, CSV,
+  // archive, …) destined for the workspace inbox. Inline `data` is decoded
+  // here; a payload without it becomes a `pendingDocument` for the webhook
+  // handler to fetch by GUID. The 25 MB cap mirrors the audio cap — the
+  // workspace re-enforces its own quota at save time.
+  const isDocument =
+    attachment !== undefined && !attachment.mimeType?.startsWith("image/") && !isVoice;
+  let documentBuffer: Buffer | undefined;
+  let pendingDocument: NormalizedWebhookEvent["pendingDocument"];
+  let documentDropNote: string | undefined;
+  const documentMimeType = isDocument ? (attachment.mimeType ?? undefined) : undefined;
+  const documentFileName = isDocument ? (attachment.transferName ?? undefined) : undefined;
+  if (isDocument) {
+    if (attachment.data) {
+      const buf = Buffer.from(attachment.data, "base64");
+      if (buf.length <= MAX_AUDIO_BYTES) {
+        documentBuffer = buf;
+      } else {
+        documentDropNote = `[file "${documentFileName ?? "attachment"}" too large to receive — 25 MB cap]`;
+        logger.warn(
+          { attachmentGuid: attachment.guid, bytes: buf.length },
+          "iMessage document attachment exceeded 25 MB cap; dropped",
+        );
+      }
+    } else {
+      pendingDocument = {
+        guid: attachment.guid,
+        mimeType: documentMimeType,
+        fileName: documentFileName,
+      };
+    }
+  }
+
+  const effectiveText = isVoice
+    ? voicePlaceholder
+    : documentDropNote
+      ? text
+        ? `${text}\n${documentDropNote}`
+        : documentDropNote
+      : !text && attachment && !documentBuffer && !pendingDocument
+        ? "[attachment]"
+        : text;
 
   // `audioBuffer` is only ever set inside the `isVoice` branch above, and
   // that branch unconditionally sets `voicePlaceholder` as `effectiveText`.
   // So a truthy `audioBuffer` always implies truthy `effectiveText`, and the
-  // null-return guard only needs to consider text + image presence.
-  if (!effectiveText && !imageBase64) {
+  // null-return guard only needs to consider text + image + document presence.
+  if (!effectiveText && !imageBase64 && !documentBuffer && !pendingDocument) {
     return null;
   }
 
@@ -237,8 +305,11 @@ export function normalizeWebhookEvent(
     imageMimeType,
     audioBuffer,
     audioMimeType,
+    documentBuffer,
+    documentMimeType: documentBuffer ? documentMimeType : undefined,
+    documentFileName: documentBuffer ? documentFileName : undefined,
     timestamp: new Date(),
   };
 
-  return { message, chatGuid, messageGuid: data.guid };
+  return { message, chatGuid, messageGuid: data.guid, pendingDocument };
 }

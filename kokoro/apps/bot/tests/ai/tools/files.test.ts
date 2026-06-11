@@ -196,3 +196,46 @@ describe("deleteFile", () => {
     expect(result).toEqual({ success: false, reason: 'no file at "old.txt"' });
   });
 });
+
+describe("sendFile", () => {
+  it("reads the workspace file and sends it through the adapter", async () => {
+    const { fakeAdapter } = await import("@kokoro/test-utils");
+    const { createSendFileTool } = await import("../../../src/ai/tools/files");
+    mockRead.mockResolvedValue({
+      path: "reports/june.csv",
+      data: Buffer.from("a,b\n1,2\n"),
+      mimeType: "text/csv",
+      size: 8,
+      updatedAt: new Date(),
+    });
+
+    const adapter = fakeAdapter();
+    const result = await exec(createSendFileTool("chat-7", adapter), {
+      path: "reports/june.csv",
+      caption: "june numbers",
+    });
+
+    expect(adapter.calls.sendFileBuffer).toEqual([
+      {
+        chatId: "chat-7",
+        bytes: 8,
+        fileName: "june.csv",
+        mimeType: "text/csv",
+        caption: "june numbers",
+      },
+    ]);
+    expect(result).toMatchObject({ success: true, sent: true, fileName: "june.csv", size: "8 B" });
+  });
+
+  it("relays a missing-file refusal without sending", async () => {
+    const { fakeAdapter } = await import("@kokoro/test-utils");
+    const { createSendFileTool } = await import("../../../src/ai/tools/files");
+    mockRead.mockRejectedValue(new WorkspaceError('no file at "ghost.csv"'));
+
+    const adapter = fakeAdapter();
+    const result = await exec(createSendFileTool("chat-7", adapter), { path: "ghost.csv" });
+
+    expect(adapter.calls.sendFileBuffer).toHaveLength(0);
+    expect(result).toEqual({ success: false, reason: 'no file at "ghost.csv"' });
+  });
+});

@@ -276,6 +276,75 @@ export async function deleteWorkspaceFile(rawPath: string): Promise<void> {
   logger.info({ path, size: deleted.size }, "Workspace: file moved to trash");
 }
 
+// Reverse mime→extension lookup for inbound attachments with no filename.
+function extensionForMime(mimeType: string | undefined): string {
+  if (!mimeType) return "";
+  for (const [ext, mime] of Object.entries(MIME_BY_EXTENSION)) {
+    if (mime === mimeType) return `.${ext}`;
+  }
+  return "";
+}
+
+/**
+ * Reduce a platform-supplied attachment filename to a single safe path
+ * segment: path separators and control characters become hyphens, dot-only
+ * names fall back to "file", and the stem is capped at 120 chars with the
+ * extension preserved.
+ */
+export function sanitizeFileName(raw: string | undefined, mimeType?: string): string {
+  const cleaned = (raw ?? "")
+    .replace(/[/\\]/g, "-")
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, "-")
+    .trim()
+    .replace(/^\.+$/, "");
+  if (!cleaned) return `file${extensionForMime(mimeType)}`;
+  if (cleaned.length <= 120) return cleaned;
+  const dot = cleaned.lastIndexOf(".");
+  const ext = dot > 0 ? cleaned.slice(dot) : "";
+  return cleaned.slice(0, 120 - ext.length) + ext;
+}
+
+export interface SaveInboundDocumentInput {
+  fileName?: string;
+  data: Buffer;
+  mimeType?: string;
+  sourceChatId: string;
+}
+
+/**
+ * Save an inbound chat attachment under inbox/, never overwriting: an
+ * occupied name gets a numbered sibling (lease.pdf → lease-2.pdf → …), with
+ * a random-suffix fallback if a hundred generations of the same name
+ * somehow exist. Quota violations propagate as WorkspaceError for the
+ * message handler to relay.
+ */
+export async function saveInboundDocument(
+  input: SaveInboundDocumentInput,
+): Promise<WorkspaceWriteResult> {
+  const name = sanitizeFileName(input.fileName, input.mimeType);
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : "";
+
+  let candidate = `inbox/${name}`;
+  for (let i = 2; await getWorkspaceFileByPath(candidate); i++) {
+    if (i > 100) {
+      candidate = `inbox/${stem}-${generateWorkspaceKey().slice(0, 8)}${ext}`;
+      break;
+    }
+    candidate = `inbox/${stem}-${i}${ext}`;
+  }
+
+  return writeWorkspaceFile({
+    path: candidate,
+    data: input.data,
+    mimeType: input.mimeType ?? guessMimeType(name),
+    source: "chat-upload",
+    sourceChatId: input.sourceChatId,
+  });
+}
+
 const SUMMARY_MAX_PATHS = 8;
 
 /**

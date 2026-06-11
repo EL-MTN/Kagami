@@ -68,6 +68,32 @@ export class BlueBubblesClient {
     return { guid: tempGuid };
   }
 
+  /**
+   * Fetch an attachment's raw bytes by GUID. Used when the webhook payload
+   * doesn't inline `data` (BlueBubbles only inlines below its configured
+   * size threshold). `maxBytes` aborts oversized downloads early via the
+   * Content-Length header when the server provides one, and re-checks the
+   * actual byte count after download either way.
+   */
+  async downloadAttachment(guid: string, maxBytes: number): Promise<Buffer> {
+    const url = this.buildUrl(`/api/v1/attachment/${encodeURIComponent(guid)}/download`);
+    const res = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`BlueBubbles downloadAttachment ${res.status}: ${text.slice(0, 300)}`);
+    }
+    const contentLength = Number(res.headers.get("content-length"));
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      throw new Error(`BlueBubbles attachment ${guid} is ${contentLength} bytes (cap ${maxBytes})`);
+    }
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length > maxBytes) {
+      throw new Error(`BlueBubbles attachment ${guid} is ${buffer.length} bytes (cap ${maxBytes})`);
+    }
+    logger.debug({ guid, bytes: buffer.length }, "BlueBubbles downloadAttachment ok");
+    return buffer;
+  }
+
   async sendAttachment(opts: SendAttachmentOptions): Promise<{ guid: string }> {
     const url = this.buildUrl("/api/v1/message/attachment");
     const tempGuid = crypto.randomUUID();

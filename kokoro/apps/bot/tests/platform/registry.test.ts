@@ -10,6 +10,7 @@ function stubAdapter(platform: string): PlatformAdapter {
     sendPhoto: () => Promise.resolve(undefined),
     sendPhotoBuffer: () => Promise.resolve(undefined),
     sendVoiceBuffer: () => Promise.resolve(),
+    sendFileBuffer: () => Promise.resolve(),
     sendConfirmationPrompt: () => Promise.resolve(undefined),
     editConfirmationPrompt: () => Promise.resolve(),
   };

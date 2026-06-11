@@ -18,6 +18,7 @@ import { appendConfirmationResolution } from "../../services/confirmation-events
 import { generateAcknowledgment } from "../../ai/acknowledge";
 import { resetTimer } from "../../scheduler/proactive";
 import { BlueBubblesAdapter, normalizeWebhookEvent, type BlueBubblesMessageEvent } from "./adapter";
+import type { BlueBubblesClient } from "./client";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 15;
@@ -203,6 +204,8 @@ interface StartWebhookOptions {
   /** Token expected on incoming webhook calls (?password=... or X-Webhook-Token). */
   password: string;
   adapter: BlueBubblesAdapter;
+  /** REST client for fetch-by-GUID of attachments the webhook didn't inline. */
+  client: BlueBubblesClient;
 }
 
 /**
@@ -295,6 +298,27 @@ export function startBlueBubblesWebhook(opts: StartWebhookOptions): () => void {
         if (isRateLimited(message.userId)) {
           logger.warn({ handle: message.userId }, "iMessage rate limited");
           return;
+        }
+
+        // Document attachment whose bytes weren't inlined: fetch by GUID
+        // before the AI pipeline runs. Failure degrades to an honest marker
+        // rather than a silent drop; whether the bytes are kept (workspace)
+        // or placeholdered (workspace disabled) is handleMessage's decision.
+        if (normalized.pendingDocument) {
+          const { guid, mimeType, fileName } = normalized.pendingDocument;
+          const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+          try {
+            message.documentBuffer = await opts.client.downloadAttachment(guid, MAX_DOCUMENT_BYTES);
+            message.documentMimeType = mimeType;
+            message.documentFileName = fileName;
+          } catch (error) {
+            logger.warn(
+              { error: error, attachmentGuid: guid },
+              "iMessage attachment fetch-by-GUID failed; document dropped",
+            );
+            const note = `[file "${fileName ?? "attachment"}" could not be retrieved]`;
+            message.text = message.text ? `${message.text}\n${note}` : note;
+          }
         }
 
         logger.info(

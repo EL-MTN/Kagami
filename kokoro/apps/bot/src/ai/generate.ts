@@ -11,8 +11,9 @@ import {
   generateAudioKey,
 } from "@kokoro/db";
 import type { IncomingMessage, PlatformAdapter } from "@kokoro/shared";
-import { logger } from "@kokoro/shared";
+import { config, logger } from "@kokoro/shared";
 import { transcribeAudio } from "../stt/transcriber";
+import { WorkspaceError, humanBytes, saveInboundDocument } from "../services/workspace";
 import {
   extractResponseText,
   collectToolCalls,
@@ -119,6 +120,34 @@ async function runTurn(
       }
       // outcome.reason === "disabled": leave the adapter's "[voice note]" placeholder
     }
+  }
+
+  // Inbound document attachments land in the workspace inbox. The marker
+  // tells the model (and the transcript) what happened to the file — saved
+  // where, refused why, or dropped because the workspace is off. Adapters
+  // already enforce platform download caps; the workspace enforces its own
+  // quotas here.
+  if (incoming.documentBuffer) {
+    const displayName = incoming.documentFileName ?? "attachment";
+    let note: string;
+    if (!config.WORKSPACE_ENABLED) {
+      note = `[received file "${displayName}" — workspace is disabled, file not kept]`;
+    } else {
+      try {
+        const saved = await saveInboundDocument({
+          fileName: incoming.documentFileName,
+          data: incoming.documentBuffer,
+          mimeType: incoming.documentMimeType,
+          sourceChatId: incoming.chatId,
+        });
+        note = `[file saved to workspace: ${saved.path} (${humanBytes(saved.size)})]`;
+      } catch (error) {
+        const reason = error instanceof WorkspaceError ? error.message : "save failed";
+        logger.error({ error: error, fileName: displayName }, "Inbound document save failed");
+        note = `[received file "${displayName}" but couldn't save it: ${reason}]`;
+      }
+    }
+    messageText = messageText ? `${messageText}\n${note}` : note;
   }
 
   await appendMessage(convo, {

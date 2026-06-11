@@ -21,6 +21,7 @@ import {
   createDeleteFileTool,
   createListFilesTool,
   createReadFileTool,
+  createSendFileTool,
   createWriteFileTool,
 } from "./files";
 import { createCrmTools, createCrmWriteTools } from "./crm";
@@ -177,6 +178,8 @@ export function allTools(ctx: ToolContext) {
     tools.readFile = createReadFileTool();
     tools.writeFile = createWriteFileTool(ctx.chatId);
     tools.deleteFile = createDeleteFileTool();
+    // Sends to the user's own chat — the same trust class as sendPhoto.
+    tools.sendFile = createSendFileTool(ctx.chatId, ctx.adapter);
   }
 
   Object.assign(tools, createCrmTools());
@@ -236,6 +239,9 @@ export function allTools(ctx: ToolContext) {
   }> = [
     { name: "sendPhoto", kind: "upload_photo", after: photoDelivered },
     { name: "sendVoice", kind: "record_voice" },
+    // A document send never suppresses the final text, so it resets to
+    // typing like sendVoice does.
+    { name: "sendFile", kind: "upload_document" },
     // Verb stays `typing` (browsing usually delivers nothing visual); the
     // entry exists for the screenshot-delivered pause rule.
     { name: "browse", kind: "typing", after: photoDelivered },

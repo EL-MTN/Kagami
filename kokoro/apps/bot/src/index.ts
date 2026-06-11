@@ -81,6 +81,7 @@ async function main() {
       port: config.BLUEBUBBLES_WEBHOOK_PORT,
       password: config.BLUEBUBBLES_PASSWORD,
       adapter: bbAdapter,
+      client,
     });
   } else if (config.ALLOWED_IMESSAGE_HANDLES.length > 0) {
     logger.warn(

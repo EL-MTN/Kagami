@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { logger } from "@kokoro/shared";
+import type { PlatformAdapter } from "@kokoro/shared";
 import {
   WorkspaceError,
   deleteWorkspaceFile,
@@ -158,6 +159,39 @@ export function createWriteFileTool(sourceChatId: string) {
       } catch (err) {
         logger.error({ error: err, path }, "Tool: writeFile failed");
         return failureFrom(err, "writing the file");
+      }
+    },
+  });
+}
+
+export function createSendFileTool(chatId: string, adapter: PlatformAdapter) {
+  return tool({
+    description:
+      "Send a file from the persistent workspace to this chat as a document attachment. Works for any file type — the user receives the actual file, not its text.",
+    inputSchema: z.object({
+      path: z.string().min(1).describe("Workspace path of the file to send."),
+      caption: z
+        .string()
+        .max(1024)
+        .optional()
+        .describe("Optional short caption shown with the file."),
+    }),
+    execute: async ({ path, caption }) => {
+      try {
+        logger.debug({ path, chatId }, "Tool: sendFile");
+        const file = await readWorkspaceFile(path);
+        const fileName = file.path.slice(file.path.lastIndexOf("/") + 1);
+        await adapter.sendFileBuffer(chatId, file.data, fileName, file.mimeType, caption);
+        return {
+          success: true,
+          sent: true,
+          path: file.path,
+          fileName,
+          size: humanBytes(file.size),
+        };
+      } catch (err) {
+        logger.error({ error: err, path }, "Tool: sendFile failed");
+        return failureFrom(err, "sending the file");
       }
     },
   });
