@@ -192,7 +192,7 @@ describe("getPersonContext CRM tool", () => {
 });
 
 describe("listMyFollowups CRM tool", () => {
-  it("defaults status=open, clamps limit, and documents Eric-relative direction", async () => {
+  it("defaults status=open, clamps limit, and documents Goshujin-sama-relative direction", async () => {
     mockListMyFollowups.mockResolvedValue({ items: [] });
 
     const tool = createListMyFollowupsTool() as unknown as ExecutableTool;
@@ -203,7 +203,7 @@ describe("listMyFollowups CRM tool", () => {
       status: "open",
       limit: 50,
     });
-    expect(tool.description).toContain("i_owe means Eric owes the person");
+    expect(tool.description).toContain("i_owe means Goshujin-sama owes the person");
     expect(result).toMatchObject({ success: true, count: 0, data: [] });
   });
 });

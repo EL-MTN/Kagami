@@ -105,7 +105,7 @@ export function createRequestConfirmationTool(
 
   return tool({
     description:
-      "Ask Goshujin-sama to approve an externally-visible or irreversible action before it runs. Use this for any action you wouldn't want to misfire — sending email to anyone other than yourself, deleting calendar events, browser-driven purchases. The user gets a tap-to-approve message; once they approve, the action runs and the result lands back in this chat. Returns immediately with { pending: true } — stop and wait, don't try the action again in the same turn.",
+      "Ask Goshujin-sama to approve an externally-visible or irreversible action before it runs. Use this for any action you wouldn't want to misfire — sending email to anyone other than Goshujin-sama himself, deleting calendar events, browser-driven purchases. The user gets a tap-to-approve message; once they approve, the action runs and the result lands back in this chat. Returns immediately with { pending: true } — stop and wait, don't try the action again in the same turn.",
     inputSchema: z.object({
       summary: z
         .string()

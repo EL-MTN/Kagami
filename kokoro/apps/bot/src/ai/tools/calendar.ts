@@ -24,8 +24,20 @@ function createListCalendarTool() {
   return tool({
     description: "List upcoming events on Goshujin-sama's Google Calendar.",
     inputSchema: z.object({
-      daysAhead: z.number().optional().describe("Number of days ahead to list events (default 7)"),
-      maxResults: z.number().optional().describe("Maximum number of events to return (default 10)"),
+      daysAhead: z
+        .number()
+        .int()
+        .min(1)
+        .max(365)
+        .optional()
+        .describe("Number of days ahead to list events (1-365, default 7)"),
+      maxResults: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Maximum number of events to return (1-100, default 10)"),
     }),
     execute: async ({ daysAhead, maxResults }) => {
       try {
@@ -53,8 +65,20 @@ export function createManageCalendarTool(options: ManageCalendarToolOptions = {}
       "Manage Goshujin-sama's Google Calendar. List upcoming events, create, update, or delete events.",
     inputSchema: z.object({
       action: z.enum(["list", "create", "update", "delete"]),
-      daysAhead: z.number().optional().describe("Number of days ahead to list events (default 7)"),
-      maxResults: z.number().optional().describe("Maximum number of events to return (default 10)"),
+      daysAhead: z
+        .number()
+        .int()
+        .min(1)
+        .max(365)
+        .optional()
+        .describe("Number of days ahead to list events (1-365, default 7)"),
+      maxResults: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Maximum number of events to return (1-100, default 10)"),
       eventId: z.string().optional().describe("Event ID for update/delete actions"),
       summary: z.string().optional().describe("Event title"),
       description: z.string().optional().describe("Event description"),

@@ -766,6 +766,13 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
   });
 
   it("forwards newParameters only when supplied", async () => {
+    // A newParameters dispatch loads the routine to re-check the schedule +
+    // parameter invariant; an unscheduled routine passes straight through.
+    vi.mocked(getRoutineById).mockResolvedValue({
+      name: "r",
+      version: 1,
+      cronSchedule: null,
+    } as never);
     vi.mocked(applyRoutineRefinement).mockResolvedValue({ name: "r", version: 2 } as never);
 
     await dispatchGatedAction(
@@ -778,6 +785,27 @@ describe("dispatchGatedAction — updateRoutinePrompt (dispatch-only)", () => {
     );
 
     expect(vi.mocked(applyRoutineRefinement).mock.calls[0][3]).toHaveProperty("parameters");
+  });
+
+  it("rejects newParameters that strip required defaults from a cron-scheduled routine", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue({
+      name: "morning-digest",
+      version: 1,
+      cronSchedule: "0 * * * *",
+    } as never);
+
+    const result = await dispatchGatedAction(
+      "updateRoutinePrompt",
+      {
+        ...draft,
+        newParameters: [{ name: "topic", type: "string", description: "t", required: true }],
+      },
+      { chatId: "chat-1" },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.detail.reason).toBe("invalid_parameters");
+    expect(vi.mocked(applyRoutineRefinement)).not.toHaveBeenCalled();
   });
 
   it("clears regression tracking (trackForRegression:false) for a revert", async () => {

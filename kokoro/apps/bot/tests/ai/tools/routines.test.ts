@@ -199,6 +199,27 @@ describe("manageRoutines — update", () => {
     expect(reloaded?.nextRunAt).toBeNull();
   });
 
+  it("rejects a parameters-only update that strips required defaults from a scheduled routine", async () => {
+    const created = await tool.execute({
+      action: "create",
+      name: "sched-params",
+      description: "x",
+      prompt: "p",
+      reportMode: "always",
+      cronSchedule: "0 * * * *",
+      parameters: [
+        { name: "topic", type: "string", description: "w", required: true, default: "news" },
+      ],
+    });
+    const result = await tool.execute({
+      action: "update",
+      routineId: created.routineId,
+      parameters: [{ name: "topic", type: "string", description: "w", required: true }],
+    });
+    expect(result.success).toBe(false);
+    expect(result.reason as string).toMatch(/Cron-scheduled routines require defaults/);
+  });
+
   it("returns 'Routine not found' for an id that doesn't belong to this chat", async () => {
     const result = await tool.execute({
       action: "update",
@@ -410,6 +431,19 @@ describe("searchRoutines tool", () => {
 
     const noMatch = await tool.execute({ query: "missing" });
     expect(noMatch.count).toBe(0);
+  });
+
+  it("matches keywords that appear only in the prompt", async () => {
+    await createRoutine("chat-1", {
+      name: "digest",
+      description: "daily digest",
+      prompt: "fetch hackernews headlines and summarize",
+      reportMode: "always",
+    });
+    const result = await tool.execute({ query: "hackernews" });
+    expect((result.routines as Array<Record<string, unknown>>).map((s) => s.name)).toEqual([
+      "digest",
+    ]);
   });
 
   it("returns parameters and schedule fields in the listing", async () => {

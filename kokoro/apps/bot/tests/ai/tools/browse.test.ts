@@ -169,3 +169,22 @@ describe("browse — full mode", () => {
     expect(await tool.execute({ action: "login" })).toMatchObject({ success: false });
   });
 });
+
+describe("browse — input schema tracks the allowed action set", () => {
+  function shapeKeys(t: unknown): string[] {
+    const schema = (t as { inputSchema: { shape: Record<string, unknown> } }).inputSchema;
+    return Object.keys(schema.shape);
+  }
+
+  it("omits the dead query field when search is excluded", () => {
+    expect(
+      shapeKeys(createBrowseTool("chat-1", fakeAdapter(), { includeSearch: false })),
+    ).not.toContain("query");
+    expect(shapeKeys(createReadOnlyBrowseTool({ includeSearch: false }))).not.toContain("query");
+  });
+
+  it("keeps the query field when search is included", () => {
+    expect(shapeKeys(createBrowseTool("chat-1", fakeAdapter()))).toContain("query");
+    expect(shapeKeys(createReadOnlyBrowseTool())).toContain("query");
+  });
+});

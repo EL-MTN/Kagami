@@ -50,22 +50,52 @@ interface BrowseFactoryOptions {
   adapter?: PlatformAdapter;
 }
 
+interface BrowseInput {
+  action: BrowseAction;
+  query?: string;
+  url?: string;
+  instruction?: string;
+}
+
 function createBrowseToolImpl(options: BrowseFactoryOptions) {
   const { allowedActions, description, logPrefix, chatId, adapter } = options;
   const actionEnum = z.enum(allowedActions as [BrowseAction, ...BrowseAction[]]);
+  const has = (a: BrowseAction) => allowedActions.includes(a);
+
+  // Param fields and their describes track the allowed-action set: a palette
+  // without `search` must not carry a dead `query` field inviting a confused
+  // call, and `url`'s describe must mention `login` only where login exists.
+  const urlField = z
+    .string()
+    .optional()
+    .describe(
+      has("login") ? "URL to visit (for visit/login actions)" : "URL to visit (for visit action)",
+    );
+  const instructionField = z
+    .string()
+    .optional()
+    .describe(
+      has("act")
+        ? "Natural language instruction (for extract/act actions)"
+        : "Natural language instruction (for extract action)",
+    );
+  const inputSchema = has("search")
+    ? z.object({
+        action: actionEnum,
+        query: z.string().optional().describe("Search query (for search action)"),
+        url: urlField,
+        instruction: instructionField,
+      })
+    : z.object({
+        action: actionEnum,
+        url: urlField,
+        instruction: instructionField,
+      });
 
   return tool({
     description,
-    inputSchema: z.object({
-      action: actionEnum,
-      query: z.string().optional().describe("Search query (for search action)"),
-      url: z.string().optional().describe("URL to visit (for visit action)"),
-      instruction: z
-        .string()
-        .optional()
-        .describe("Natural language instruction (for extract/act actions)"),
-    }),
-    execute: async ({ action, query, url, instruction }) => {
+    inputSchema,
+    execute: async ({ action, query, url, instruction }: BrowseInput) => {
       // Serialize browser access — parallel tool calls share one page. Every
       // action uses the default per-action timeout, which sits below the
       // conversational turn budget; long autonomous runs go through the
