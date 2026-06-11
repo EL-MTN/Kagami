@@ -45,8 +45,7 @@ export function emitUsage(logger: Logger, ev: UsageEvent): void {
   };
   if (ctx) fields.trace = { id: ctx.traceId };
 
-  // info even for status:"error" — Kansoku fingerprints error-level lines, and
-  // the caller already logs the failure itself; an error-level span here would
-  // register every failed call twice in the errors registry.
+  // info even for status:"error" — an error-level span would double-register
+  // every failed call in Kansoku's fingerprint registry (see ARCHITECTURE.md).
   logger.info(fields, "llm.generate");
 }

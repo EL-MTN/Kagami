@@ -7,11 +7,11 @@ import type {
   LanguageModelV3GenerateResult,
   LanguageModelV3Usage,
 } from "@ai-sdk/provider";
-import { APICallError } from "ai";
+import { APICallError, wrapLanguageModel } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createInference } from "../src";
-import { composeFallback, type Leaf } from "../src/fallback";
-import { isRetryable, reasoningRepairMiddleware } from "../src/middleware";
+import { composeFallback, isRetryable, type Leaf } from "../src/fallback";
+import { reasoningRepairMiddleware, timeoutMiddleware } from "../src/middleware";
 import { emitUsage } from "../src/observability";
 import { providerLabel, resolveModelId } from "../src/provider";
 import type { InferenceOptions, OpenAICompatibleProviderConfig } from "../src/types";
@@ -33,14 +33,19 @@ const genResult = (
   warnings: [],
 });
 
-function fakeModel(gen: () => Promise<LanguageModelV3GenerateResult>): LanguageModelV3 {
+type StreamHandshake = Awaited<ReturnType<LanguageModelV3["doStream"]>>;
+
+function fakeModel(
+  gen: () => Promise<LanguageModelV3GenerateResult>,
+  stream?: () => Promise<StreamHandshake>,
+): LanguageModelV3 {
   return {
     specificationVersion: "v3",
     provider: "fake",
     modelId: "fake-model",
     supportedUrls: {},
     doGenerate: gen,
-    doStream: () => Promise.reject(new Error("doStream not exercised")),
+    doStream: stream ?? (() => Promise.reject(new Error("doStream not exercised"))),
   };
 }
 
@@ -48,7 +53,8 @@ const leaf = (
   provider: string,
   modelId: string,
   gen: () => Promise<LanguageModelV3GenerateResult>,
-): Leaf => ({ model: fakeModel(gen), provider, modelId });
+  stream?: () => Promise<StreamHandshake>,
+): Leaf => ({ model: fakeModel(gen, stream), provider, modelId });
 
 /** A real logger with info/warn spied — fully typed, no `any`. */
 function spyLogger(): {
@@ -204,14 +210,23 @@ describe("composeFallback retry", () => {
     expect(res.content).toEqual([{ type: "text", text: "ok" }]);
     expect(warn).toHaveBeenCalledTimes(2);
     expect(warn.mock.calls[0]?.[1]).toBe("llm.retry");
-    expect(warn.mock.calls[0]?.[0]).toMatchObject({ provider: "xai", attempt: 1, max_attempts: 3 });
+    expect(warn.mock.calls[0]?.[0]).toMatchObject({
+      provider: "xai",
+      attempt: 1,
+      max_attempts: 3,
+      cause: "http_503",
+    });
+    // Compact cause only — the raw error (with its request body) must not
+    // ride every retry line.
+    expect(warn.mock.calls[0]?.[0]).not.toHaveProperty("error");
     const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
     expect(fields.event).toMatchObject({ status: "ok" });
     expect(fields.llm).toMatchObject({
       attempts: 3,
+      // Single-provider chain → labels carry no provider prefix.
       attempt_errors: [
-        expect.stringMatching(/^xai:http_503@\d+ms$/),
-        expect.stringMatching(/^xai:http_503@\d+ms$/),
+        expect.stringMatching(/^http_503@\d+\.\ds$/),
+        expect.stringMatching(/^http_503@\d+\.\ds$/),
       ],
     });
   });
@@ -286,8 +301,162 @@ describe("composeFallback retry", () => {
     expect(fields.event).toMatchObject({ status: "error" });
     expect(fields.llm).toMatchObject({
       attempts: 1,
-      attempt_errors: [expect.stringMatching(/^xai:aborted@\d+ms$/)],
+      attempt_errors: [expect.stringMatching(/^xai:aborted@\d+\.\ds$/)],
     });
+  });
+
+  it("honors a caller abort that lands during the backoff sleep (no phantom attempt)", async () => {
+    const { logger, info } = spyLogger();
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    try {
+      const ac = new AbortController();
+      let n = 0;
+      const m = composeFallback(
+        [
+          leaf("xai", "grok", () => {
+            n += 1;
+            return Promise.reject(apiErr(503, true));
+          }),
+        ],
+        // ~4950ms deterministic backoff (random pinned) — far longer than the abort below.
+        { logger, service: "s", retry: { maxAttempts: 3, baseDelayMs: 5_000, maxDelayMs: 5_000 } },
+      );
+      setTimeout(() => ac.abort(), 20);
+      const startedAt = Date.now();
+      await expect(
+        m.doGenerate({ abortSignal: ac.signal } as unknown as LanguageModelV3CallOptions),
+      ).rejects.toHaveProperty("name", "AbortError");
+      expect(Date.now() - startedAt).toBeLessThan(2_000); // backoff was interrupted, not slept out
+      expect(n).toBe(1); // no attempt launched against the dead signal
+      const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+      expect(fields.event).toMatchObject({ status: "error" });
+      expect(fields.llm).toMatchObject({
+        attempts: 1,
+        attempt_errors: [expect.stringMatching(/^http_503@\d+\.\ds$/)],
+      });
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
+  it("rejects without calling any provider when the signal is already aborted", async () => {
+    const { logger, info } = spyLogger();
+    const ac = new AbortController();
+    ac.abort();
+    let n = 0;
+    const m = composeFallback(
+      [
+        leaf("xai", "grok", () => {
+          n += 1;
+          return Promise.resolve(genResult([{ type: "text", text: "x" }]));
+        }),
+      ],
+      { logger, service: "s", retry: fastRetry },
+    );
+    await expect(
+      m.doGenerate({ abortSignal: ac.signal } as unknown as LanguageModelV3CallOptions),
+    ).rejects.toHaveProperty("name", "AbortError");
+    expect(n).toBe(0);
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.event).toMatchObject({ status: "error" });
+    expect(fields.llm).toMatchObject({ attempts: 0 });
+  });
+
+  it("keeps a genuine provider error's label when it races the caller's abort", async () => {
+    const { logger, info } = spyLogger();
+    const ac = new AbortController();
+    const m = composeFallback(
+      [
+        leaf("xai", "grok", () => {
+          ac.abort();
+          return Promise.reject(apiErr(429, false));
+        }),
+        leaf("openai", "gpt", () => Promise.resolve(genResult([{ type: "text", text: "never" }]))),
+      ],
+      { logger, service: "s", retry: fastRetry },
+    );
+    await expect(
+      m.doGenerate({ abortSignal: ac.signal } as unknown as LanguageModelV3CallOptions),
+    ).rejects.toThrow("status 429");
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.llm).toMatchObject({
+      attempts: 1,
+      attempt_errors: [expect.stringMatching(/^xai:http_429@\d+\.\ds$/)],
+    });
+  });
+
+  it("clamps maxAttempts to at least 1 and rethrows the real error", async () => {
+    const { logger, info } = spyLogger();
+    const m = composeFallback([leaf("xai", "grok", () => Promise.reject(apiErr(400, false)))], {
+      logger,
+      service: "s",
+      retry: { maxAttempts: 0 },
+    });
+    await expect(m.doGenerate({} as unknown as LanguageModelV3CallOptions)).rejects.toThrow(
+      "status 400",
+    );
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.llm).toMatchObject({ attempts: 1 });
+  });
+
+  it("retries the stream handshake and emits a zero-token ok span", async () => {
+    const { logger, info } = spyLogger();
+    let n = 0;
+    const handshake = { stream: "fake" } as unknown as StreamHandshake;
+    const m = composeFallback(
+      [
+        leaf(
+          "xai",
+          "grok",
+          () => Promise.reject(new Error("doGenerate not exercised")),
+          () => {
+            n += 1;
+            if (n < 2) return Promise.reject(apiErr(503, true));
+            return Promise.resolve(handshake);
+          },
+        ),
+      ],
+      { logger, service: "s", retry: fastRetry },
+    );
+    const res = await m.doStream({} as unknown as LanguageModelV3CallOptions);
+    expect(res).toBe(handshake);
+    expect(n).toBe(2);
+    const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
+    expect(fields.event).toMatchObject({ status: "ok" });
+    expect(fields.llm).toMatchObject({ attempts: 2, prompt_tokens: 0, completion_tokens: 0 });
+  });
+
+  it("gives every attempt a fresh, unaborted deadline (timeoutMiddleware composition)", async () => {
+    const { logger } = spyLogger();
+    const seen: (AbortSignal | undefined)[] = [];
+    const abortedAtCall: boolean[] = [];
+    let n = 0;
+    const recording: LanguageModelV3 = {
+      specificationVersion: "v3",
+      provider: "fake",
+      modelId: "fake-model",
+      supportedUrls: {},
+      doGenerate: (options: LanguageModelV3CallOptions) => {
+        seen.push(options.abortSignal);
+        abortedAtCall.push(options.abortSignal?.aborted ?? false);
+        n += 1;
+        if (n === 1) return Promise.reject(apiErr(503, true));
+        return Promise.resolve(genResult([{ type: "text", text: "ok" }]));
+      },
+      doStream: () => Promise.reject(new Error("doStream not exercised")),
+    };
+    const wrapped = wrapLanguageModel({ model: recording, middleware: timeoutMiddleware(5_000) });
+    const m = composeFallback([{ model: wrapped, provider: "xai", modelId: "grok" }], {
+      logger,
+      service: "s",
+      retry: fastRetry,
+    });
+    await m.doGenerate({} as unknown as LanguageModelV3CallOptions);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBeInstanceOf(AbortSignal);
+    expect(seen[1]).toBeInstanceOf(AbortSignal);
+    expect(seen[0]).not.toBe(seen[1]); // the deadline resets per attempt
+    expect(abortedAtCall).toEqual([false, false]);
   });
 });
 
@@ -334,21 +503,13 @@ describe("emitUsage", () => {
       fallbackUsed: false,
       status: "error",
       attempts: 3,
-      attemptErrors: [
-        "xai:TimeoutError@30021ms",
-        "xai:TimeoutError@30007ms",
-        "xai:aborted@21340ms",
-      ],
+      attemptErrors: ["TimeoutError@30.0s", "TimeoutError@30.0s", "aborted@21.3s"],
     });
     const [fields] = info.mock.calls[0] as [Record<string, unknown>, string];
     expect(fields.event).toMatchObject({ status: "error" });
     expect(fields.llm).toMatchObject({
       attempts: 3,
-      attempt_errors: [
-        "xai:TimeoutError@30021ms",
-        "xai:TimeoutError@30007ms",
-        "xai:aborted@21340ms",
-      ],
+      attempt_errors: ["TimeoutError@30.0s", "TimeoutError@30.0s", "aborted@21.3s"],
     });
   });
 
@@ -449,8 +610,8 @@ describe("composeFallback", () => {
       fallback_used: true,
       attempts: 2,
       attempt_errors: [
-        expect.stringMatching(/^a:http_500@\d+ms$/),
-        expect.stringMatching(/^b:Error@\d+ms$/),
+        expect.stringMatching(/^a:http_500@\d+\.\ds$/),
+        expect.stringMatching(/^b:Error@\d+\.\ds$/),
       ],
     });
   });

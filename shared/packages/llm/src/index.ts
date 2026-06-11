@@ -17,10 +17,8 @@ export type {
 } from "./types.js";
 
 /**
- * Wrap one resolved provider+model with its per-attempt timeout. Retry and
- * failover live in `composeFallback` (one seam for attempts, failover, and
- * span emission); its loop re-invokes this wrapped model per attempt, which
- * is what makes the deadline per-attempt.
+ * Wrap one resolved provider+model with its per-attempt timeout. Retry,
+ * failover, and span emission live in `composeFallback` — see its doc.
  */
 function leafFor(cfg: ProviderConfig, modelId: string): Leaf {
   const bare = buildLeaf(cfg, modelId);
@@ -67,7 +65,7 @@ export function createInference(opts: InferenceOptions): Inference {
       return composeFallback(leaves, {
         logger: opts.logger,
         service: opts.service,
-        ...(opts.retry ? { retry: opts.retry } : {}),
+        retry: opts.retry,
       });
     },
 

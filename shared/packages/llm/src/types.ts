@@ -99,6 +99,10 @@ export interface UsageEvent {
   status: "ok" | "error";
   /** Total attempts across the whole call, including failovers. */
   attempts: number;
-  /** One compact label per failed attempt, e.g. `"xai:TimeoutError@30021ms"`. */
+  /**
+   * One compact label per failed attempt, e.g. `"TimeoutError@30.0s"` —
+   * provider-prefixed (`"xai:http_429@1.2s"`) only when a fallback chain
+   * makes the provider ambiguous.
+   */
   attemptErrors?: string[];
 }
