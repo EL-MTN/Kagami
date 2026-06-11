@@ -5,7 +5,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createXai } from "@ai-sdk/xai";
 import { wrapLanguageModel } from "ai";
 import type { EmbeddingModelV3, LanguageModelV3 } from "@ai-sdk/provider";
-import { reasoningRepairMiddleware } from "./middleware.js";
+import { hoistSystemMessagesMiddleware, reasoningRepairMiddleware } from "./middleware.js";
 import type {
   NativeProviderConfig,
   OpenAICompatibleProviderConfig,
@@ -44,7 +44,12 @@ function buildNative(cfg: NativeProviderConfig, modelId: string): LanguageModelV
   if (cfg.apiKey !== undefined) settings.apiKey = cfg.apiKey;
   if (cfg.baseURL !== undefined) settings.baseURL = cfg.baseURL;
   const provider = NATIVE_FACTORIES[cfg.vendor](settings);
-  return provider(modelId);
+  const model = provider(modelId);
+  // Anthropic rejects system messages that follow user/assistant turns.
+  if (cfg.vendor === "anthropic") {
+    return wrapLanguageModel({ model, middleware: hoistSystemMessagesMiddleware });
+  }
+  return model;
 }
 
 function openAICompatibleProvider(cfg: OpenAICompatibleProviderConfig) {

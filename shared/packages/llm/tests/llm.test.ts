@@ -11,7 +11,11 @@ import { APICallError, wrapLanguageModel } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createInference } from "../src";
 import { composeFallback, isRetryable, type Leaf } from "../src/fallback";
-import { reasoningRepairMiddleware, timeoutMiddleware } from "../src/middleware";
+import {
+  hoistSystemMessagesMiddleware,
+  reasoningRepairMiddleware,
+  timeoutMiddleware,
+} from "../src/middleware";
 import { emitUsage } from "../src/observability";
 import { providerLabel, resolveModelId } from "../src/provider";
 import type { InferenceOptions, OpenAICompatibleProviderConfig } from "../src/types";
@@ -145,6 +149,54 @@ describe("isRetryable", () => {
   });
   it("does not retry arbitrary errors", () => {
     expect(isRetryable(new Error("boom"))).toBe(false);
+  });
+});
+
+// --- system-hoist middleware ----------------------------------------------
+
+describe("hoistSystemMessagesMiddleware", () => {
+  const tp = hoistSystemMessagesMiddleware.transformParams;
+  if (!tp) throw new Error("transformParams must be defined");
+
+  const sys = (text: string) => ({ role: "system" as const, content: text });
+  const user = (text: string) => ({
+    role: "user" as const,
+    content: [{ type: "text" as const, text }],
+  });
+
+  const paramsWith = (prompt: unknown) => ({ prompt }) as unknown as LanguageModelV3CallOptions;
+
+  it("hoists a trailing system message into the leading block", async () => {
+    const out = await tp({
+      params: paramsWith([sys("persona"), user("hi"), sys("time: 19:56")]),
+      type: "generate",
+      model: fakeModel(() => Promise.reject(new Error("n/a"))),
+    });
+    expect(out.prompt.map((m) => m.role)).toEqual(["system", "system", "user"]);
+    expect(out.prompt[1]).toEqual(sys("time: 19:56"));
+  });
+
+  it("preserves relative order of displaced system messages and the rest", async () => {
+    const out = await tp({
+      params: paramsWith([sys("a"), user("u1"), sys("b"), user("u2"), sys("c")]),
+      type: "generate",
+      model: fakeModel(() => Promise.reject(new Error("n/a"))),
+    });
+    expect(out.prompt.map((m) => m.role)).toEqual(["system", "system", "system", "user", "user"]);
+    expect(out.prompt[1]).toEqual(sys("b"));
+    expect(out.prompt[2]).toEqual(sys("c"));
+    expect(out.prompt[3]).toEqual(user("u1"));
+  });
+
+  it("is a no-op when the prompt is already conformant", async () => {
+    const prompt = [sys("a"), sys("b"), user("hi")];
+    const params = paramsWith(prompt);
+    const out = await tp({
+      params,
+      type: "generate",
+      model: fakeModel(() => Promise.reject(new Error("n/a"))),
+    });
+    expect(out).toBe(params); // same object — nothing rebuilt
   });
 });
 

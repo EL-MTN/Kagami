@@ -20,6 +20,35 @@ export function timeoutMiddleware(ms: number): LanguageModelV3Middleware {
 }
 
 /**
+ * Anthropic accepts system messages only as a leading block (they become the
+ * top-level `system` param); one appearing after a user/assistant turn makes
+ * the message converter throw `AI_UnsupportedFunctionalityError`. Callers
+ * legitimately trail system messages — Kokoro appends minute-precision time
+ * after the history so the cacheable prefix stays stable on OpenAI-shaped
+ * providers — so hoist displaced system messages into the leading block
+ * instead of failing the call. No-op when the prompt is already conformant.
+ */
+export const hoistSystemMessagesMiddleware: LanguageModelV3Middleware = {
+  specificationVersion: "v3",
+  transformParams: ({ params }: { params: LanguageModelV3CallOptions }) => {
+    const prompt = params.prompt;
+    let boundary = 0;
+    while (boundary < prompt.length && prompt[boundary]?.role === "system") boundary += 1;
+    const tail = prompt.slice(boundary);
+    const displaced = tail.filter((m) => m.role === "system");
+    if (displaced.length === 0) return Promise.resolve(params);
+    return Promise.resolve({
+      ...params,
+      prompt: [
+        ...prompt.slice(0, boundary),
+        ...displaced,
+        ...tail.filter((m) => m.role !== "system"),
+      ],
+    });
+  },
+};
+
+/**
  * Promote a stranded `reasoning_content` to a text part. Ported verbatim from
  * Kioku's `apps/api/src/llm.ts` so openai-compatible callers lose no behavior:
  * thinking-mode models (GLM/Qwen on LM Studio) sometimes emit their final
