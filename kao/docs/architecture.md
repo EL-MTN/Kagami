@@ -99,7 +99,8 @@ deleted as part of the dashboard pass.
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/main.ts`            | boot: `loadConfig` → `connectMongo` → `ensureGrantIndexes` → `createApp` → listen; SIGINT/SIGTERM graceful close                       |
 | `src/server.ts`          | Express app; mount order; **bearer middleware in front of `/grants`** only                                                             |
-| `src/config.ts`          | zod env schema; `callbackUrl()` derives the one redirect URI from `KAO_PUBLIC_URL`                                                     |
+| `src/env.ts`             | `@kagami/env` spec — the zod env schema + doc metadata (generates `.env.example` / docs table / `turbo.json`)                          |
+| `src/config.ts`          | thin `loadConfig()` over the spec; `callbackUrl()` derives the one redirect URI from `KAO_PUBLIC_URL`                                  |
 | `src/grant-registry.ts`  | the version-controlled per-consumer scope map; `isGrantName` type guard; `scopesFor` returns a copy                                    |
 | `src/lib/encryption.ts`  | AES-256-GCM envelope, ported verbatim from Kizuna (`KAO_ENCRYPTION_KEY`)                                                               |
 | `src/lib/oauth-state.ts` | HMAC CSRF state, ported from Kizuna + **grant bound into the signed payload**; process-local secret, 10-min TTL                        |

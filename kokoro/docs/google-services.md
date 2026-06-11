@@ -99,11 +99,12 @@ Retry is bounded to one attempt: if Kao itself can't get a new token from Google
 
 ### Gmail Service (`apps/bot/src/services/gmail.ts`)
 
-| Function                           | Description                                                      |
-| ---------------------------------- | ---------------------------------------------------------------- |
-| `listUnreadEmails(maxResults?)`    | Lists unread emails with metadata (from, subject, snippet, date) |
-| `getEmailById(messageId)`          | Retrieves full email body (plain text, truncated to 2000 chars)  |
-| `sendEmail({ to, subject, body })` | Sends an email via the Gmail API                                 |
+| Function                                 | Description                                                                             |
+| ---------------------------------------- | --------------------------------------------------------------------------------------- |
+| `listEmails(query, maxResults?)`         | Lists emails matching a Gmail search query with metadata (from, subject, snippet, date) |
+| `getEmailById(messageId)`                | Retrieves full email body (plain text, truncated to 2000 chars)                         |
+| `sendEmail(to, subject, body, options?)` | Sends an email via the Gmail API (`options`: threadId / inReplyTo / cc / bcc)           |
+| `getOwnerAddress()`                      | Resolves (and caches) the authenticated account's own address — the self-send gate      |
 
 ### Calendar Service (`apps/bot/src/services/google-calendar.ts`)
 
