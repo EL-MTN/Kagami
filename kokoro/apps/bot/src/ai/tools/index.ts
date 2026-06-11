@@ -131,7 +131,9 @@ export function allTools(ctx: ToolContext) {
   // CRM writes are unconditional (sendEmail/manageCalendar still require Kao for
   // Google access). The wrapper's enum is the same in all cases; the dispatcher
   // fails at runtime if a tool is selected whose backing service isn't
-  // configured. Behavioral guidance steers the LLM correctly.
+  // configured. The mutation-class tools (CRM writes, non-self sendEmail,
+  // manageCalendar update/delete) refuse direct invocation in their own
+  // execute bodies, so the gate holds even if prompt guidance fails.
   tools.requestConfirmation = createRequestConfirmationTool(ctx.chatId, ctx.adapter);
   tools.cancelConfirmation = createCancelConfirmationTool(ctx.chatId, ctx.adapter, ctx.userId);
 

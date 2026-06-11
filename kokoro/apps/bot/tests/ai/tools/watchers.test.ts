@@ -69,6 +69,19 @@ describe("manageWatchers — create", () => {
     expect(result.cooldownMs).toBe(30 * 60_000);
   });
 
+  it("treats maxFires=0 on create as unlimited", async () => {
+    const result = await tool.execute({
+      action: "create",
+      name: "uncapped",
+      description: "x",
+      prompt: "y",
+      cronSchedule: "0 * * * *",
+      maxFires: 0,
+    });
+    expect(result.success).toBe(true);
+    expect(result.maxFires).toBeNull();
+  });
+
   it("rejects empty cronSchedule", async () => {
     const result = await tool.execute({
       action: "create",
@@ -138,6 +151,20 @@ describe("manageWatchers — update", () => {
     const watcherId = created.watcherId as string;
     await tool.execute({ action: "update", watcherId, cooldownMinutes: 0 });
     expect((await getWatcherById(watcherId))?.cooldownMs).toBeNull();
+  });
+
+  it("setting maxFires=0 clears the cap back to unlimited", async () => {
+    const created = await tool.execute({
+      action: "create",
+      name: "mf",
+      description: "x",
+      prompt: "y",
+      cronSchedule: "0 * * * *",
+      maxFires: 3,
+    });
+    const watcherId = created.watcherId as string;
+    await tool.execute({ action: "update", watcherId, maxFires: 0 });
+    expect((await getWatcherById(watcherId))?.maxFires).toBeNull();
   });
 
   it("re-validates and re-computes nextRunAt when cronSchedule changes", async () => {

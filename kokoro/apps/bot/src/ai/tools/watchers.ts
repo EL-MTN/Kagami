@@ -10,6 +10,7 @@ import {
   isDuplicateKeyError,
 } from "@kokoro/db";
 import { logger, computeNextRunAt, validateCronAndDefaults } from "@kokoro/shared";
+import { OWNER } from "../persona";
 
 // ─── manageWatchers ──────────────────────────────────────────────────────────
 
@@ -19,8 +20,7 @@ const isoDatetime = z
 
 export function createManageWatchersTool(chatId: string) {
   return tool({
-    description:
-      "Manage watchers — scheduled detection jobs that monitor for change and notify Goshujin-sama only when a condition is met (price drops, listing matches, inbox events, etc.). Watchers are read-only by design: they observe and report. Lifecycle controls (oneShot, maxFires, cooldownMinutes) bound how often a watcher fires. Use the `snooze` action to silence a watcher temporarily without disabling it.",
+    description: `Manage watchers — scheduled detection jobs that monitor for change and notify ${OWNER} only when a condition is met (price drops, listing matches, inbox events, etc.). Watchers are read-only by design: they observe and report. Lifecycle controls (oneShot, maxFires, cooldownMinutes) bound how often a watcher fires. Use the \`snooze\` action to silence a watcher temporarily without disabling it.`,
     inputSchema: z.object({
       action: z.enum(["create", "list", "update", "delete", "enable", "disable", "snooze"]),
       watcherId: z
@@ -55,16 +55,18 @@ export function createManageWatchersTool(chatId: string) {
       maxFires: z
         .number()
         .int()
-        .positive()
+        .nonnegative()
         .optional()
-        .describe("Archive after this many real fires. Pass null/omit for unlimited."),
+        .describe(
+          "Archive after this many real fires. Omit for unlimited; pass 0 to clear the cap.",
+        ),
       cooldownMinutes: z
         .number()
         .int()
         .nonnegative()
         .optional()
         .describe(
-          "Minimum minutes between notifications. Triggers within the window are silenced (still logged).",
+          "Minimum minutes between notifications. Triggers within the window are silenced (still logged). Pass 0 to clear the cooldown.",
         ),
       untilHours: z
         .number()
@@ -119,7 +121,7 @@ export function createManageWatchersTool(chatId: string) {
               nextRunAt,
               expiresAt: expires,
               oneShot: oneShot ?? false,
-              maxFires: maxFires ?? null,
+              maxFires: maxFires != null && maxFires > 0 ? maxFires : null,
               cooldownMs:
                 cooldownMinutes != null && cooldownMinutes > 0 ? cooldownMinutes * 60_000 : null,
             });
@@ -179,7 +181,7 @@ export function createManageWatchersTool(chatId: string) {
             if (prompt) patch.prompt = prompt;
             if (expiresAt !== undefined) patch.expiresAt = new Date(expiresAt);
             if (oneShot !== undefined) patch.oneShot = oneShot;
-            if (maxFires !== undefined) patch.maxFires = maxFires;
+            if (maxFires !== undefined) patch.maxFires = maxFires === 0 ? null : maxFires;
             if (cooldownMinutes !== undefined) {
               patch.cooldownMs = cooldownMinutes === 0 ? null : cooldownMinutes * 60_000;
             }

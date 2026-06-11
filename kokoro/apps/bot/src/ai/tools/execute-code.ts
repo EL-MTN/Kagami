@@ -4,6 +4,7 @@ import { logger } from "@kokoro/shared";
 import type { PlatformAdapter } from "@kokoro/shared";
 import { raisePendingConfirmation } from "./confirmations";
 import type { SandboxLanguage } from "../../services/code-sandbox";
+import { OWNER } from "../persona";
 
 /**
  * Schema cap on the code body, chosen so the FULL program always fits in the
@@ -68,8 +69,7 @@ function buildCodePrompt(language: SandboxLanguage, code: string, description: s
  */
 export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) {
   return tool({
-    description:
-      "Run a short self-contained Python or Node script in a locked-down sandbox — use it for exact math, data transforms, text processing, or anything better computed than reasoned. The sandbox has NO network, no host filesystem, no installed packages beyond the language's standard library, ~2 minutes of wall clock, and capped output: write a single script that prints its result to stdout. Goshujin-sama gets a tap-to-approve bubble showing the code; it runs only if he approves. Returns immediately with { pending: true } — stop and wait, don't call it again in the same turn.",
+    description: `Run a short self-contained Python or Node script in a locked-down sandbox — use it for exact math, data transforms, text processing, or anything better computed than reasoned. The sandbox has NO network, no host filesystem, no installed packages beyond the language's standard library, ~2 minutes of wall clock, and capped output: write a single script that prints its result to stdout. ${OWNER} gets a tap-to-approve bubble showing the code; it runs only if he approves. Returns immediately with { pending: true } — stop and wait, don't call it again in the same turn.`,
     inputSchema: z.object({
       language: z
         .enum(["python", "node"])
@@ -129,8 +129,7 @@ export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) 
         return {
           pending: true,
           confirmationId: id,
-          message:
-            "Approval prompt sent with the code. Stop here — don't call this again in this turn. Goshujin-sama will tap Approve or Deny.",
+          message: `Approval prompt sent with the code. Stop here — don't call this again in this turn. ${OWNER} will tap Approve or Deny.`,
         };
       } catch (error) {
         logger.error({ error, chatId }, "Tool: executeCode failed");

@@ -40,7 +40,7 @@ packages/db/src/models/watcher.ts           — Watcher + WatcherLog Mongoose mo
 - `archivedAt` — soft-delete, excluded from `getDueWatchers`
 - `enabled` — manual disable toggle
 - `oneShot` — when `true`, archive after the first real fire
-- `maxFires` — when set, archive after this many real fires
+- `maxFires` — when set, archive after this many real fires (`manageWatchers` treats `maxFires: 0` as "clear the cap / unlimited", mirroring the `cooldownMinutes: 0` convention)
 - `cooldownMs` — minimum milliseconds between notifications; triggers within the window are suppressed (logged but not sent)
 - `snoozedUntil` — suppress notifications until this date; detection still runs
 

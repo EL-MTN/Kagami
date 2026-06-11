@@ -12,6 +12,7 @@ import {
   type PersonSummary,
 } from "@kokoro/kizuna";
 import { logger } from "@kokoro/shared";
+import { OWNER } from "../persona";
 
 type CrmToolResult<T> =
   | {
@@ -29,8 +30,7 @@ type CrmToolResult<T> =
 const objectId = z.string().regex(/^[a-f0-9]{24}$/i, "must be a 24-char hex ObjectId");
 const isoDatetime = z.string().datetime({ offset: true });
 
-const opaqueIdGuidance =
-  "Returned CRM IDs are opaque tool handles. Use PersonSummary.id, personId, primaryOrgId, participant person IDs, and sourceInteractionId only for follow-up CRM tool calls or internal correlation; do not quote raw IDs back unless Eric explicitly asks.";
+const opaqueIdGuidance = `Returned CRM IDs are opaque tool handles. Use PersonSummary.id, personId, primaryOrgId, participant person IDs, and sourceInteractionId only for follow-up CRM tool calls or internal correlation; do not quote raw IDs back unless ${OWNER} explicitly asks.`;
 
 function clampLimit(value: number | undefined, defaultValue: number, min: number, max: number) {
   if (value === undefined || Number.isNaN(value)) return defaultValue;
@@ -181,12 +181,12 @@ export function createRecentInteractionsTool() {
 
 export function createListMyFollowupsTool() {
   return tool({
-    description: `List Kizuna followups in Eric-relative terms: i_owe means Eric owes the person, and they_owe means the person owes Eric. ${opaqueIdGuidance}`,
+    description: `List Kizuna followups in ${OWNER}-relative terms: i_owe means ${OWNER} owes the person, and they_owe means the person owes ${OWNER}. ${opaqueIdGuidance}`,
     inputSchema: z.object({
       direction: z
         .enum(["i_owe", "they_owe"])
         .optional()
-        .describe("Optional Eric-relative direction."),
+        .describe(`Optional ${OWNER}-relative direction.`),
       status: z
         .enum(["open", "done", "snoozed", "dismissed"])
         .optional()
@@ -234,11 +234,11 @@ export function createListMyFollowupsTool() {
 // `services/gated-actions.ts` calls the underlying `@kokoro/kizuna` client
 // function directly, so dispatch is unaffected.
 //
-// This is stricter than the older gated tools (sendEmail/manageCalendar/
-// browseAgent) which rely on prompt-only guidance plus incidental runtime
-// barriers (OAuth tokens, a launchable browser session). CRM writes have no
-// such incidental barrier — the CRM tools are always registered — so the gate
-// is promoted to a hard code-level check.
+// sendEmail (non-self sends) and manageCalendar (update/delete) enforce the
+// same pattern in their own execute bodies — prompt guidance steers the model
+// to the wrapper, but code is what refuses a direct mutation. browseAgent
+// needs no refusal: it has no inline tool at all (autonomous browsing exists
+// only as a dispatchable action).
 //
 // Schemas are exported and re-used by the gated dispatcher's argument
 // re-validator so the two layers can never drift apart again.
@@ -271,7 +271,7 @@ export const logInteractionInputSchema = z.object({
     .min(1)
     .max(50)
     .describe(
-      "Each personId is a PersonSummary.id. role is from/to/cc/attendee/subject from Goshujin-sama's perspective.",
+      `Each personId is a PersonSummary.id. role is from/to/cc/attendee/subject from ${OWNER}'s perspective.`,
     ),
   context: z
     .array(z.string().min(1).max(80))
@@ -284,7 +284,7 @@ export const logInteractionInputSchema = z.object({
 export const createFollowupInputSchema = z.object({
   personId: objectId.describe("PersonSummary.id from a CRM tool."),
   direction: followupDirection.describe(
-    "i_owe = Eric owes the person; they_owe = the person owes Eric.",
+    `i_owe = ${OWNER} owes the person; they_owe = the person owes ${OWNER}.`,
   ),
   reason: z.string().min(1).max(400).describe("Short reason — what's owed."),
   dueAt: isoDatetime
@@ -348,7 +348,7 @@ export function createLogInteractionTool() {
 
 export function createCreateFollowupTool() {
   return tool({
-    description: `Create a Kizuna followup. direction is Eric-relative: i_owe means Eric owes the person, they_owe means the person owes Eric. ${writeGateGuidance} ${opaqueIdGuidance}`,
+    description: `Create a Kizuna followup. direction is ${OWNER}-relative: i_owe means ${OWNER} owes the person, they_owe means the person owes ${OWNER}. ${writeGateGuidance} ${opaqueIdGuidance}`,
     inputSchema: createFollowupInputSchema,
     execute: (): Promise<CrmToolResult<FollowupSummary>> => {
       return Promise.resolve(refuseDirectInvocation<FollowupSummary>("createFollowup"));

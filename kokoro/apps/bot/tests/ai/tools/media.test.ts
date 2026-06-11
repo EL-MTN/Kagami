@@ -102,14 +102,14 @@ describe("sendVoice tool", () => {
     ]);
   });
 
-  it("returns sent:false on TTS failure and skips the adapter call", async () => {
+  it("returns sent:false with the real error on TTS failure and skips the adapter call", async () => {
     mockGenerateVoice.mockRejectedValue(new Error("tts 500"));
     const adapter = fakeAdapter();
     const tool = createSendVoiceTool("chat-1", adapter) as unknown as ExecutableTool;
 
     const result = await tool.execute({ text: "anything" });
 
-    expect(result).toEqual({ sent: false, reason: "Voice generation failed" });
+    expect(result).toEqual({ sent: false, reason: "tts 500" });
     expect(adapter.calls.sendVoiceBuffer).toEqual([]);
   });
 });

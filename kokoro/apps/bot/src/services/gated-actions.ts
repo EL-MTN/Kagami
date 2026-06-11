@@ -25,7 +25,7 @@ import {
 import { parameterSchema } from "../ai/tools/routine-schema";
 import { ROUTINE_PROPOSAL_TOOLS } from "../ai/tools/routine-proposal-tools";
 import { SKILL_PROPOSAL_TOOLS } from "../ai/tools/skill-proposal-tools";
-import { config, logger, runWithSpan } from "@kokoro/shared";
+import { config, logger, runWithSpan, validateCronAndDefaults } from "@kokoro/shared";
 import type { IPendingConfirmation } from "@kokoro/db";
 
 /**
@@ -91,6 +91,8 @@ const sendEmailArgs = z.object({
   to: z.string().email(),
   subject: z.string().min(1),
   body: z.string().min(1),
+  cc: z.array(z.string().email()).max(20).optional(),
+  bcc: z.array(z.string().email()).max(20).optional(),
   threadId: z.string().optional(),
   inReplyTo: z.string().optional(),
 });
@@ -327,8 +329,8 @@ export async function dispatchGatedAction(
         const args = parsed.data as z.infer<typeof sendEmailArgs>;
         logger.info({ to: args.to, subject: args.subject }, "Dispatching approved sendEmail");
         const options =
-          args.threadId || args.inReplyTo
-            ? { threadId: args.threadId, inReplyTo: args.inReplyTo }
+          args.threadId || args.inReplyTo || args.cc?.length || args.bcc?.length
+            ? { threadId: args.threadId, inReplyTo: args.inReplyTo, cc: args.cc, bcc: args.bcc }
             : undefined;
         const result = await sendEmail(args.to, args.subject, args.body, options);
         return {
@@ -584,6 +586,31 @@ export async function dispatchGatedAction(
           { chatId: ctx.chatId, routineId: args.routineId, baseVersion: args.baseVersion },
           "Dispatching approved updateRoutinePrompt",
         );
+
+        // Re-enforce the schedule + parameter invariant at the dispatch
+        // boundary (mirrors the propose-time check in `proposeRefinement`):
+        // a scheduled routine must keep every required parameter defaulted,
+        // or its cron runs start failing parameter validation.
+        if (args.newParameters !== undefined) {
+          const current = await getRoutineById(args.routineId, ctx.chatId);
+          if (!current) {
+            return {
+              success: false,
+              summary: "routine not found",
+              detail: { reason: "not_found", routineId: args.routineId },
+            };
+          }
+          if (current.cronSchedule) {
+            const cronErr = validateCronAndDefaults(current.cronSchedule, args.newParameters);
+            if (cronErr) {
+              return {
+                success: false,
+                summary: `cannot update routine "${current.name}" — ${cronErr.message}`,
+                detail: { reason: "invalid_parameters", routineId: args.routineId },
+              };
+            }
+          }
+        }
 
         // Atomic compare-and-set on version: the write only lands if the routine
         // is still at the version the proposal was raised against, so a

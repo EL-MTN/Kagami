@@ -25,13 +25,48 @@ function getHeader(
   return headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
 }
 
-export async function listUnreadEmails(maxResults = 10): Promise<EmailSummary[]> {
+// Keyed by the vended access token, successful lookups only. A Kao re-consent
+// to a DIFFERENT Google account does not restart Kokoro — it just vends new
+// tokens — so a process-lifetime cache would keep treating the previous
+// account's address as "self" and wave an external send past the approval
+// gate. A new token forces a profile re-fetch; normal hourly token rotation
+// costs one extra getProfile per token, which is negligible.
+let ownerAddressCache: { token: string; address: string } | null = null;
+
+/**
+ * The authenticated Gmail account's own address, lowercased — the definition
+ * of "self" for the sendEmail approval carve-out. Returns null when the
+ * profile can't be fetched (Kao down / not configured); callers must treat
+ * null as "not provably self".
+ */
+export async function getOwnerAddress(): Promise<string | null> {
+  try {
+    return await withFreshAuth(async (auth) => {
+      const token = auth.credentials.access_token;
+      if (typeof token === "string" && ownerAddressCache?.token === token) {
+        return ownerAddressCache.address;
+      }
+      const gmail = google.gmail({ version: "v1", auth });
+      const res = await gmail.users.getProfile({ userId: "me" });
+      const address = res.data.emailAddress?.toLowerCase() ?? null;
+      if (address && typeof token === "string") {
+        ownerAddressCache = { token, address };
+      }
+      return address;
+    });
+  } catch (error) {
+    logger.warn({ error }, "Failed to resolve the Gmail profile address");
+    return null;
+  }
+}
+
+export async function listEmails(query: string, maxResults = 10): Promise<EmailSummary[]> {
   return withFreshAuth(async (auth) => {
     const gmail = google.gmail({ version: "v1", auth });
 
     const res = await gmail.users.messages.list({
       userId: "me",
-      q: "is:unread",
+      q: query,
       maxResults,
     });
 
@@ -62,6 +97,10 @@ export async function listUnreadEmails(maxResults = 10): Promise<EmailSummary[]>
 
     return emails;
   });
+}
+
+export async function listUnreadEmails(maxResults = 10): Promise<EmailSummary[]> {
+  return listEmails("is:unread", maxResults);
 }
 
 function extractPlainText(payload: {
@@ -127,7 +166,7 @@ export async function sendEmail(
   to: string,
   subject: string,
   body: string,
-  options?: { threadId?: string; inReplyTo?: string },
+  options?: { threadId?: string; inReplyTo?: string; cc?: string[]; bcc?: string[] },
 ): Promise<SendEmailResult> {
   return withFreshAuth(async (auth) => {
     const gmail = google.gmail({ version: "v1", auth });
@@ -136,6 +175,15 @@ export async function sendEmail(
     const encodedBody = Buffer.from(body).toString("base64");
 
     const messageParts = ["MIME-Version: 1.0", `To: ${to}`, `Subject: ${encodedSubject}`];
+
+    if (options?.cc?.length) {
+      messageParts.push(`Cc: ${options.cc.join(", ")}`);
+    }
+    // Gmail honors a Bcc header in raw messages: it delivers to those
+    // recipients and strips the header from what the others receive.
+    if (options?.bcc?.length) {
+      messageParts.push(`Bcc: ${options.bcc.join(", ")}`);
+    }
 
     if (options?.inReplyTo) {
       messageParts.push(`In-Reply-To: ${options.inReplyTo}`);

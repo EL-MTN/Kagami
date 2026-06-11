@@ -38,7 +38,13 @@ const CHAT = "chat-1";
 const ROUTINE_ID = "444444444444444444444444";
 
 function fakeRoutine(
-  over: Partial<{ name: string; prompt: string; version: number; enabled: boolean }> = {},
+  over: Partial<{
+    name: string;
+    prompt: string;
+    version: number;
+    enabled: boolean;
+    cronSchedule: string;
+  }> = {},
 ) {
   return {
     _id: ROUTINE_ID,
@@ -48,6 +54,7 @@ function fakeRoutine(
     parameters: [],
     version: over.version ?? 1,
     enabled: over.enabled ?? true,
+    cronSchedule: over.cronSchedule ?? null,
   } as never;
 }
 
@@ -208,6 +215,17 @@ describe("proposeRoutineRefinement — parameters", () => {
       { name: "y", type: "string", description: "", required: true },
     ]);
     expect(a).not.toBe(b);
+  });
+
+  it("rejects a parameters change that strips required defaults from a scheduled routine", async () => {
+    vi.mocked(getRoutineById).mockResolvedValue(fakeRoutine({ cronSchedule: "0 * * * *" }));
+    const result = await runTool({
+      ...input,
+      newParameters: [{ name: "topic", type: "string", description: "t", required: true }],
+    });
+    expect(result.proposed).toBe(false);
+    expect(result.reason as string).toMatch(/defaults/i);
+    expect(vi.mocked(raisePendingConfirmation)).not.toHaveBeenCalled();
   });
 });
 
