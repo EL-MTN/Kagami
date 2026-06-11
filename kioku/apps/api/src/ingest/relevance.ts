@@ -36,6 +36,8 @@ DROP only statements whose ENTIRE content is conversational with zero embedded f
 - standalone affection / pleasantries with no fact ("User said they miss the assistant", "User wished the assistant good morning")
 - the assistant's own feelings or social actions ("Assistant felt happy to help", "Assistant greeted the user")
 - pure acknowledgements ("User said ok", "User confirmed everything is good")
+- conversation mechanics with no content ("User repeated the request for clarity", "User checked the assistant's last message", "User checked the time and was told it was 6:45 PM", "User asked the assistant for a selfie")
+- the assistant's own tool/capability/connection state ("the assistant's email tool only returns unread messages", "User learned the assistant has tools for email, calendar, and reminders", "User was informed the email connection wasn't set up yet")
 
 If in any doubt at all, KEEP. Return the ids of the statements to DROP; omit every id you keep; return an empty list if nothing is purely conversational.`;
 

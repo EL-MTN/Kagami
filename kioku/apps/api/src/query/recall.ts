@@ -10,6 +10,13 @@ interface RecalledFact {
   event_date: string;
   source_session: string;
   created_at: string;
+  // Fused rank score plus per-channel contributions (semantic cosine,
+  // normalized BM25, entity boost) — the dashboard's score bars render
+  // these. Present whenever the ranker ran (i.e. always on this path).
+  score?: number;
+  semantic?: number;
+  bm25?: number;
+  entity_boost?: number;
 }
 
 interface RecallOptions {
@@ -45,5 +52,9 @@ export async function recall(query: string, opts: RecallOptions = {}): Promise<R
     event_date: f.eventDate,
     source_session: f.sourceSession,
     created_at: f.createdAt,
+    ...(f.score !== undefined ? { score: f.score } : {}),
+    ...(f.semantic !== undefined ? { semantic: f.semantic } : {}),
+    ...(f.bm25 !== undefined ? { bm25: f.bm25 } : {}),
+    ...(f.entityBoost !== undefined ? { entity_boost: f.entityBoost } : {}),
   }));
 }

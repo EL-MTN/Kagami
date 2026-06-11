@@ -13,7 +13,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 ├── apps/
 │   ├── api/          # Express HTTP server + MCP transport (entry: src/server.ts)
 │   │   ├── src/
-│   │   │   ├── ingest/      # consolidate, append, sessions, session-summary, transcript parser
+│   │   │   ├── ingest/      # consolidate, append, curate, sessions, session-summary, transcript parser
 │   │   │   ├── query/       # answer.ts (single-shot LLM answerer) + recall.ts (no-LLM ranked retrieval)
 │   │   │   ├── retrieval/   # hybrid ranker (cosine + BM25 + entity boost), scoring, lemmatizer + entity extractor
 │   │   │   ├── routes/      # per-resource Express routers (facts, recall, query, sessions, meta, filters)
@@ -28,7 +28,7 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 │   │   │   ├── extraction.md   # ingest prompt (8K-token rulebook)
 │   │   │   └── answer.md       # answerer prompt (3K-token rulebook)
 │   │   ├── tests/           # vitest suite + mongodb-memory-server harness
-│   │   ├── scripts/         # longmemeval, longmemeval-worker, citation-recall, probe-bm25-scores, variance-probe
+│   │   ├── scripts/         # longmemeval, longmemeval-worker, citation-recall, probe-bm25-scores, variance-probe, curate
 │   │   ├── tsconfig.json    # extends @kagami/tsconfig/server.json (+ esModuleInterop, allowImportingTsExtensions)
 │   │   ├── tsconfig.build.json # prod build: tsc -p this → dist/ (extends @kagami/tsconfig/server.build.json)
 │   │   ├── eslint.config.js # imports from @kagami/eslint-config/base
@@ -89,7 +89,7 @@ Apps share no in-process code. The dashboard reaches the API only through `fetch
 - **Trace context** — `traceMiddleware` from `@kagami/logger/express-trace` is mounted before `pinoHttp` so every log line inside a request — including body-parse errors (`PayloadTooLargeError`, malformed JSON) and pino-http's completion log — auto-carries `traceId`/`spanId` via the pino mixin. Incoming W3C `traceparent` headers (e.g. from Kokoro's `tracedFetch`) open a child span; absence mints a fresh trace.
 - **Inference via `@kagami/llm`** — `generateObject()` (extraction/summary) and `generateText()` (answerer) run on models from the `@kagami/llm` gateway; `embed()` / `embedMany()` still call the `ai` SDK directly. Any OpenAI-compatible endpoint works (LM Studio, OpenAI, vLLM, Ollama).
 - **No classes for services** — prefer standalone exported functions. Routers, ranker, ingest paths, and MCP tools are all plain functions.
-- **Atomic facts are write-once** — no UPDATE/DELETE on the `facts` collection. Corrections happen by appending newer facts with later `event_date`; the answerer prompt resolves contradictions newest-wins. Every mutation leaves a row in `history`.
+- **Atomic facts are write-once on ingest** — the ingest path never UPDATEs/DELETEs the `facts` collection. Corrections happen by appending newer facts with later `event_date`; the answerer prompt resolves contradictions newest-wins. The one sanctioned mutation path is the operator-run curation pass (`ingest/curate.ts` via `scripts/curate.ts`): LLM-judged drop/merge/rewrite of accreted noise, every mutation journaled as an UPDATE/DELETE row in `history` (actor `curate`). Every mutation leaves a row in `history`.
 - **Race-safe by Mongo primitives where it matters** — `entities_text_lower_unique` plus `$setOnInsert` / `$addToSet` upserts on the entity store. Fact dedup is cosine-based at the ingest layer (no storage-layer hash index); the single-fact append path serializes on a process-wide async lock so concurrent cosine read-then-act calls don't both insert.
 - **Embeddings persisted at write time** — query is one embed call; the dense pre-pass uses `$vectorSearch` (HNSW), with cosine recomputed in app over the candidate union to preserve the `SEMANTIC_THRESHOLD = 0.1` contract (Atlas's `(1 + cos) / 2` transform doesn't line up).
 - **Whole-corpus BM25** — `$search` runs against the whole `facts_text` corpus, not a cosine-prefiltered window, so a fact strong on keywords but weak on cosine can still surface. The sigmoid that normalizes raw BM25 into the additive fusion is calibrated against Lucene/Atlas's score range — re-tune via `scripts/probe-bm25-scores.ts`.
@@ -108,6 +108,7 @@ Common tasks → files. When a task touches multiple files, all are listed.
 | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Add a REST endpoint                                            | New router in `apps/api/src/routes/<name>.ts` + mount in `apps/api/src/server.ts`                                                                                                                                                                                                        |
 | Add an ingest pipeline step                                    | `apps/api/src/ingest/` (e.g. `consolidate.ts`, `append.ts`, `sessions.ts`); wire into `ingestSessionFromString()` in `sessions.ts`                                                                                                                                                       |
+| Curate the live store (LLM drop/merge/rewrite of noisy facts)  | `apps/api/src/ingest/curate.ts` + `prompts/curate.md`; operator CLI `npx tsx apps/api/scripts/curate.ts` (dry run by default, `--apply` to execute)                                                                                                                                      |
 | Add a retrieval scorer / re-ranker                             | `apps/api/src/retrieval/embeddings.ts` (`defaultFactRanker`) + `apps/api/src/retrieval/scoring.ts` (fusion)                                                                                                                                                                              |
 | Hybrid retrieval glue ($vectorSearch + $search + entity boost) | `apps/api/src/retrieval/embeddings.ts` + `scoring.ts` + `text.ts` (lemmatizer + entity extractor)                                                                                                                                                                                        |
 | Add a fact schema field                                        | `apps/api/src/storage/facts.ts` (extend `Fact` interface) + `apps/api/src/storage/indexes.ts` if filterable                                                                                                                                                                              |
