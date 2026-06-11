@@ -103,13 +103,16 @@ describe("allTools — minimum-config baseline", () => {
         "cancelConfirmation",
         "createFollowup",
         "delegate",
+        "deleteFile",
         "findPeople",
         "getCurrentTime",
         "getPersonContext",
+        "listFiles",
         "listMyFollowups",
         "logInteraction",
         "manageRoutines",
         "manageWatchers",
+        "readFile",
         "recentInteractions",
         "readSkill",
         "rememberFact",
@@ -118,8 +121,10 @@ describe("allTools — minimum-config baseline", () => {
         "searchMemory",
         "searchRoutines",
         "searchSkills",
+        "sendFile",
         "updatePerson",
         "useRoutine",
+        "writeFile",
       ].sort(),
     );
   });
@@ -308,6 +313,9 @@ describe("watcherTools — read-only invariant", () => {
       "createFollowup",
       "resolveFollowup",
       "updatePerson",
+      "writeFile", // workspace mutations — listFiles/readFile (read-only) are allowed
+      "deleteFile",
+      "sendFile",
     ];
     for (const f of forbidden) {
       expect(names, `watcherTools must not include ${f}`).not.toContain(f);
@@ -333,6 +341,8 @@ describe("watcherTools — read-only invariant", () => {
         "searchMemory",
         "searchSkills",
         "readSkill",
+        "listFiles",
+        "readFile",
       ]),
     );
   });

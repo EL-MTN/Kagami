@@ -93,10 +93,8 @@ async function assemblePromptShell(
     if (executeCode) parts.push(executeCode);
   }
 
-  if (config.WORKSPACE_ENABLED) {
-    const workspace = await readInstruction("workspace");
-    if (workspace) parts.push(workspace);
-  }
+  const workspace = await readInstruction("workspace");
+  if (workspace) parts.push(workspace);
 
   const routines = await readInstruction("routines");
   if (routines) parts.push(routines);
@@ -277,7 +275,6 @@ async function assemblePendingConfirmationsContext(chatId: string): Promise<stri
 }
 
 async function assembleWorkspaceContext(): Promise<string | null> {
-  if (!config.WORKSPACE_ENABLED) return null;
   try {
     return await workspaceSummary();
   } catch (error) {

@@ -170,17 +170,16 @@ export function allTools(ctx: ToolContext) {
   tools.searchMemory = createSearchMemoryTool();
   tools.rememberFact = createRememberFactTool();
 
-  // Persistent workspace — one global file tree (not chat-scoped). Writes are
+  // Persistent workspace — one global file tree (not chat-scoped), always on
+  // (its only dependency is Mongo, which the bot already requires). Writes are
   // ungated by design: same trust class as rememberFact (nothing leaves the
   // system), and data loss is covered by the trash instead of approval taps.
-  if (config.WORKSPACE_ENABLED) {
-    tools.listFiles = createListFilesTool();
-    tools.readFile = createReadFileTool();
-    tools.writeFile = createWriteFileTool(ctx.chatId);
-    tools.deleteFile = createDeleteFileTool();
-    // Sends to the user's own chat — the same trust class as sendPhoto.
-    tools.sendFile = createSendFileTool(ctx.chatId, ctx.adapter);
-  }
+  tools.listFiles = createListFilesTool();
+  tools.readFile = createReadFileTool();
+  tools.writeFile = createWriteFileTool(ctx.chatId);
+  tools.deleteFile = createDeleteFileTool();
+  // Sends to the user's own chat — the same trust class as sendPhoto.
+  tools.sendFile = createSendFileTool(ctx.chatId, ctx.adapter);
 
   Object.assign(tools, createCrmTools());
   Object.assign(tools, createCrmWriteTools());
@@ -315,11 +314,9 @@ function readOnlyToolSubset(ctx: ToolContext): ToolSet {
   tools.readSkill = createReadSkillTool(ctx.chatId);
 
   // Workspace reads are pure — a watcher can key off state a routine
-  // accumulated. writeFile/deleteFile are omitted: they mutate.
-  if (config.WORKSPACE_ENABLED) {
-    tools.listFiles = createListFilesTool();
-    tools.readFile = createReadFileTool();
-  }
+  // accumulated. writeFile/deleteFile/sendFile are omitted: they mutate or send.
+  tools.listFiles = createListFilesTool();
+  tools.readFile = createReadFileTool();
 
   Object.assign(tools, createCrmTools());
 

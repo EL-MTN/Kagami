@@ -12,8 +12,7 @@ export interface IncomingMessage {
   /**
    * Raw bytes of an inbound document attachment (anything that isn't an
    * image or audio: PDFs, CSVs, archives, …). The message handler saves it
-   * to the persistent workspace under inbox/ when WORKSPACE_ENABLED;
-   * otherwise it's acknowledged with a placeholder and dropped.
+   * to the persistent workspace under inbox/.
    */
   documentBuffer?: Buffer;
   documentMimeType?: string;

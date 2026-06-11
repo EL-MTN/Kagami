@@ -69,7 +69,7 @@ assembleSystemPrompt(chatId)
     ├─ 6. Web search                 ← apps/bot/context/instructions/web-search.md (conditional on BRAVE_SEARCH_API_KEY)
     ├─ 7. Browser                    ← apps/bot/context/instructions/browser.md (always)
     ├─ 8. Code execution             ← apps/bot/context/instructions/execute-code.md (conditional on EXECUTE_CODE_ENABLED)
-    ├─ 9. Workspace behavior         ← apps/bot/context/instructions/workspace.md (conditional on WORKSPACE_ENABLED)
+    ├─ 9. Workspace behavior         ← apps/bot/context/instructions/workspace.md (always)
     ├─ 10. Routine behavior          ← apps/bot/context/instructions/routines.md (always)
     ├─ 11. Skill behavior            ← apps/bot/context/instructions/skills.md (always)
     ├─ 12. Proposal behavior         ← routine-proposals.md + routine-refinement.md + skill-proposals.md (conversational only)
@@ -77,7 +77,7 @@ assembleSystemPrompt(chatId)
     ├─ 14. Skill context             ← listSkillsForChat → enabled skill catalog (Mongo)
     ├─ 15. Pending approvals         ← listPendingConfirmations (Mongo)
     ├─ 16. Location context          ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (Mongo, always)
-    ├─ 17. Workspace context         ← workspaceSummary() — file count, total size, recent paths (Mongo, conditional on WORKSPACE_ENABLED + non-empty)
+    ├─ 17. Workspace context         ← workspaceSummary() — file count, total size, recent paths (Mongo, only when non-empty)
     └─ 18. Response format           ← apps/bot/context/instructions/response-format.md
 
     All parts joined with "\n\n---\n\n"
@@ -279,13 +279,13 @@ Autonomous multi-step browsing (`stagehand.agent().execute()`, up to 25 steps) i
 - **Logging**: the code body is **never logged** — only `{ language, codeLength }` — so secrets pasted into a script can't reach Kansoku. The full code persists only in the `PendingConfirmation` row (24 h TTL). The run is spanned as `code.execute`.
 - **Palette**: registered in `allTools` only when `EXECUTE_CODE_ENABLED` is set; deliberately **absent** from `readOnlyToolSubset` / `watcherTools` / `routineToolsUnderWatcher` — execution is a mutation-class capability, so observation runs and delegate sub-tasks never see it. System-prompt rule in `apps/bot/context/instructions/execute-code.md` (loaded only when enabled). See [confirmations.md](confirmations.md#dispatch-only-actions-not-llm-raisable).
 
-### listFiles / readFile / writeFile / deleteFile / sendFile (conditional — requires WORKSPACE_ENABLED)
+### listFiles / readFile / writeFile / deleteFile / sendFile (always registered)
 
 - **Purpose**: The persistent file workspace — **one global file tree** shared across every chat, channel, and routine (not chat-scoped; the workspace follows Kioku's global-memory model, not the chat-scoped skills/routines model). Durable artifacts: drafts, notes, datasets — documents and data, where `rememberFact` holds atomic facts.
 - **Parameters**: `listFiles({ prefix? })`, `readFile({ path, offset? })`, `writeFile({ path, content (≤48 KB UTF-8 text), overwrite? })`, `deleteFile({ path })`, `sendFile({ path, caption? })`
 - **Returns**: `listFiles` returns path/size/mimeType/modified per file plus totals; `readFile` returns text in 4000-char chunks with `hasMore`/`nextOffset` (binary files return metadata only); `writeFile`/`deleteFile`/`sendFile` return confirmation shapes.
 - **Behavior**: Backed by `apps/bot/src/services/workspace.ts` (policy: path normalization, quotas, mime inference) over `WorkspaceFile` rows + a dedicated `workspace` GridFS bucket in `@kokoro/db`. Paths are normalized relative paths — absolute paths, `.`/`..` segments, backslashes, and control characters are rejected, Unicode filenames pass through. Every write allocates a fresh GridFS key and swaps the row before removing the old blob, so a live path always has bytes behind it. Quotas (`WORKSPACE_MAX_FILE_MB` 25 / `WORKSPACE_MAX_TOTAL_MB` 256 / `WORKSPACE_MAX_FILES` 500) fail writes with model-readable reasons. `writeFile` onto an occupied path requires `overwrite: true` — clobber-blind writes fail on purpose. `deleteFile` is a **soft delete**: 30-day trash, purged by daily maintenance (`purgeDeletedWorkspaceFiles`). Writes record `source` (`agent`, `chat-upload`, or `sandbox` in Phase 3) and `sourceChatId` as provenance only — access is never scoped by chat. `sendFile` reads the file and delivers it through `PlatformAdapter.sendFileBuffer` — Telegram `sendDocument`, BlueBubbles `sendAttachment` (caption as a follow-up bubble) — with the `upload_document` activity verb while in flight.
-- **Inbound documents**: any non-image/non-audio attachment received on either platform is saved to `inbox/` with a deduped filename (`lease.pdf` → `lease-2.pdf`), `source: "chat-upload"`, and a `[file saved to workspace: inbox/… (size)]` marker appended to the message so the model knows. Telegram documents arrive via the `message:document` handler (Bot API caps bot downloads at 20 MB → honest too-large marker); iMessage attachments arrive inline or via fetch-by-GUID (`BlueBubblesClient.downloadAttachment`, 25 MB cap). With `WORKSPACE_ENABLED` off, the file is dropped with a `workspace is disabled` marker.
+- **Inbound documents**: any non-image/non-audio attachment received on either platform is saved to `inbox/` with a deduped filename (`lease.pdf` → `lease-2.pdf`), `source: "chat-upload"`, and a `[file saved to workspace: inbox/… (size)]` marker appended to the message so the model knows. Telegram documents arrive via the `message:document` handler (Bot API caps bot downloads at 20 MB → honest too-large marker); iMessage attachments arrive inline or via fetch-by-GUID (`BlueBubblesClient.downloadAttachment`, 25 MB cap). Save failures (quota, corrupt payload) degrade to an explicit `couldn't save it` marker.
 - **Gating**: writes are deliberately **ungated** — the same trust class as `rememberFact` (nothing leaves the system); data-loss risk is covered by the trash, not approval taps. `sendFile` sends to the user's own chat — the same trust class as `sendPhoto`.
 - **Palette**: all five in `allTools`; `listFiles`/`readFile` also in `readOnlyToolSubset` (watcher ticks and delegate sub-tasks can read state a routine accumulated; they can never write or send it). System-prompt rule in `apps/bot/context/instructions/workspace.md`, plus a dynamic one-line `## Workspace` summary (count, total size, recent paths) when non-empty.
 

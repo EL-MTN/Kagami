@@ -291,14 +291,6 @@ export const envSpec = defineEnv({
       group: "Sandboxed code execution",
     }),
 
-    WORKSPACE_ENABLED: z
-      .string()
-      .default("false")
-      .transform((s) => s === "true")
-      .meta({
-        doc: 'Persistent file workspace: one global file tree (GridFS-backed, shared\nacross every chat, channel, and routine) exposed to the model via the\nlistFiles/readFile/writeFile/deleteFile tools. Deletes are soft (30-day\ntrash, purged by daily maintenance). Only the literal "true" enables.',
-        group: "Persistent workspace",
-      }),
     WORKSPACE_MAX_FILE_MB: z.coerce.number().int().positive().default(25).meta({
       doc: "Per-file size cap (MB) — matches the inbound media caps.",
       group: "Persistent workspace",
