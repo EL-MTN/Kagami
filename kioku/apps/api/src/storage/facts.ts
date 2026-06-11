@@ -107,3 +107,67 @@ export async function appendFacts(facts: Fact[], actor?: string): Promise<void> 
   }));
   await recordEvents(events);
 }
+
+// Curation-only mutations. The ingest path never updates or deletes a
+// fact ("atomic facts are write-once"); the curation pass (ingest/
+// curate.ts) is the sanctioned exception, and every mutation it makes
+// journals an UPDATE / DELETE row in `history`.
+
+export async function deleteFacts(ids: string[], actor?: string): Promise<number> {
+  if (ids.length === 0) return 0;
+  const col = await factsCol();
+  const docs = await col
+    .find({ _id: { $in: ids } })
+    .project<{ _id: string; text: string }>({ text: 1 })
+    .toArray();
+  if (docs.length === 0) return 0;
+  await col.deleteMany({ _id: { $in: docs.map((d) => d._id) } });
+  await recordEvents(
+    docs.map((d) => ({
+      memory_id: d._id,
+      event: "DELETE" as const,
+      old_text: d.text,
+      actor,
+    })),
+  );
+  return docs.length;
+}
+
+export interface FactRewrite {
+  text: string;
+  text_lemmatized: string;
+  embedding: number[];
+  event_date?: string;
+  category?: string;
+}
+
+// In-place rewrite keeping the fact's id stable so entity links and
+// source_session survive. Returns the post-rewrite fact, or null when
+// the id doesn't exist.
+export async function rewriteFact(
+  id: string,
+  changes: FactRewrite,
+  actor?: string,
+): Promise<Fact | null> {
+  const col = await factsCol();
+  const before = await col.findOne({ _id: id });
+  if (!before) return null;
+  const $set: Partial<FactDoc> = {
+    text: changes.text,
+    text_lemmatized: changes.text_lemmatized,
+    embedding: changes.embedding,
+    ...(changes.event_date !== undefined ? { event_date: changes.event_date } : {}),
+    ...(changes.category !== undefined ? { category: changes.category } : {}),
+  };
+  await col.updateOne({ _id: id }, { $set });
+  await recordEvents([
+    {
+      memory_id: id,
+      event: "UPDATE",
+      old_text: before.text,
+      new_text: changes.text,
+      actor,
+    },
+  ]);
+  return fromDoc({ ...before, ...$set });
+}

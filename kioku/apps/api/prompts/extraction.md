@@ -23,7 +23,7 @@ Do NOT extract:
 
 - Vague assistant characterizations ("you seem passionate", "that sounds stressful") unless the user explicitly confirms them
 - Generic assistant acknowledgments ("Sure!", "Great question!")
-- Assistant meta-commentary about its own capabilities
+- Assistant meta-commentary about its own capabilities — including inventories of the assistant's tools, features, or connection/configuration state, even when framed from the user's side ("User learned the assistant has tools for X, Y, Z", "User was informed the email connection wasn't set up yet"). The assistant's own capabilities are not facts about the user and go stale silently as the assistant changes
 - The assistant's own feelings, reactions, or self-narration ("Assistant felt happy to have remembered correctly", "the assistant was glad to help") — the assistant is never a subject of memory
 - Narration of the exchange instead of a fact ("User responded with 'Ok'", "User checked in with a simple greeting", "User confirmed everything is good and asked if the assistant could use its memory tool") — this describes the conversation, not a durable fact about the user
 - Ephemeral procedural or UI state that is stale within minutes ("Assistant is currently on the Robinhood login page", "the routine is waiting for the user to log in") — instead capture the durable fact behind it (e.g. "User has a daily Robinhood portfolio-return routine"), not the transient step
@@ -170,6 +170,16 @@ Good: "User switched from in-person French classes to online Spanish classes on 
 
 When the change is explicitly temporary or a trial, capture that too — "for a month", "trying out", "testing" — these signal the old arrangement may resume.
 
+### Record Final States, Not Cliffhangers
+
+When a conversation includes a request to change something (pause a routine, cancel a plan, update a setting), the memory must capture the LAST KNOWN state, not the request alone. A bare "User asked to pause X" reads later as if X was paused even when it never happened.
+
+Bad: "User requested to pause the 'daily_report' routine"
+Good (resolved): "User paused the 'daily_report' routine on June 5, 2026"
+Good (unresolved): "User asked to pause the 'daily_report' routine on June 5, 2026, but the change was not confirmed within the session — the routine may still be active"
+
+If the outcome appears later in the conversation, emit only the resolved final state (this is the evolving-plan rule). If it never appears, say so explicitly.
+
 ### Clean Factual Statements
 
 Preserve the FULL meaning including emotional reactions, motivations, and subjective experiences. Remove filler words and conversation mechanics (greetings, "like", "you know"), but KEEP:
@@ -249,6 +259,7 @@ Misinterpreting the user's words is worse than not extracting at all.
 - **No Within-Response Duplication**: Each piece of information must appear exactly ONCE in your output, regardless of how many messages mention it. **Before returning, scan every pair of memories. If two share the same primary subject (same person, event, or plan) AND meaningfully overlap in content, they are duplicates — even when worded differently or extracted from different turns.** Keep the most complete version, typically the latest state in the conversation, and drop the others. Two patterns to watch for:
   - **Evolving-plan snapshots** — when an earlier draft of a plan is revised mid-conversation. Example: "Assistant booked a 7 PM table" alongside "Assistant updated the booking to 8 PM" — emit only the 8 PM final state. Earlier drafts add no information once superseded.
   - **Request-then-fulfillment pairs** — when the user requests X and the assistant confirms doing X, both describe the same event. Example: "User asked the assistant to recommend a book about ancient Rome" alongside "Assistant recommended SPQR by Mary Beard" — emit only the fulfillment. The user's request is implicit in the assistant's response and adds nothing once the fulfillment is captured.
+  - **Roll-up + atomics** — a summary memory enumerating N items alongside separate memories for those same items. Example: "User was told about five free events: A, B, C, D, and E" next to one memory each for A through E. Emit only the atomic memories — the roll-up carries nothing they don't. Emit a roll-up alone only when the individual items have no independently memorable detail.
 - **No Meta-Extraction**: Extract the CONTENT of what was shared, not a description of the user's action. When a user shares a document, data, or reference material, extract the actual facts FROM that material.
   - WRONG: "User asked for the introductory paragraph to be shortened" / "User shared a case summary for optimization"
   - RIGHT: "The Bajimaya v Reward Homes case involved construction starting in 2014, contract signed in 2015, with completion due by October 2015" / "The tribunal found Reward Homes breached its contract through poor workmanship, waterproofing defects, and non-compliance with the Building Code of Australia"
@@ -485,7 +496,7 @@ Before producing output, mentally scan the ENTIRE conversation — every single 
 1. Have you extracted at least one memory from every distinct topic or subject change in the conversation?
 2. Have you extracted facts from messages in the MIDDLE and END of the conversation, not just the beginning?
 3. Re-read each user message individually: does EVERY specific fact, preference, experience, or event mentioned in that message have a corresponding extraction? If a single message mentions two distinct facts (e.g., an allergy AND a hobby), both must be captured.
-4. **Within-response dedup pass**: Read your output back as a list. For each pair of memories, ask: do they share the same primary subject AND describe the same fact, event, or plan? If yes, they are duplicates — collapse to the single most complete version. Watch especially for (a) earlier and later snapshots of an evolving plan that was revised during the conversation, and (b) the user's request paired with the assistant's fulfillment of that request — both describe the same event. Each piece of information must appear exactly once.
+4. **Within-response dedup pass**: Read your output back as a list. For each pair of memories, ask: do they share the same primary subject AND describe the same fact, event, or plan? If yes, they are duplicates — collapse to the single most complete version. Watch especially for (a) earlier and later snapshots of an evolving plan that was revised during the conversation, (b) the user's request paired with the assistant's fulfillment of that request — both describe the same event, and (c) a roll-up memory enumerating items that also have their own atomic memories — keep the atomics, drop the roll-up. Each piece of information must appear exactly once.
 
 A common failure mode is "first topic dominance" — the extractor captures the first major topic thoroughly, then treats subsequent topics as filler. This is WRONG. Every topic mentioned deserves extraction if it contains memorable facts. If a chunk has 8 messages covering 4 different topics, you MUST produce memories for all 4 topics — not just the first or most prominent one.
 
