@@ -2,7 +2,19 @@ import { z } from "zod";
 import { sendEmail } from "./gmail";
 import { updateEvent, deleteEvent } from "./google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser, withBrowserLock } from "./browser";
-import { runCode, CodeSandboxError } from "./code-sandbox";
+import {
+  runCode,
+  CodeSandboxError,
+  type RunCodeResult,
+  type SandboxLanguage,
+} from "./code-sandbox";
+import {
+  cleanupWorkspaceDir,
+  formatWorkspaceDelta,
+  materializeWorkspace,
+  syncBackWorkspace,
+  withWorkspaceSandboxLock,
+} from "./workspace-sandbox";
 import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
 import {
   createRoutine,
@@ -254,6 +266,10 @@ const executeCodeArgs = z.object({
     .min(1)
     .max(3000)
     .refine((value) => !value.includes("\u0000") && !/\p{Bidi_Control}/u.test(value)),
+  // Mount the persistent workspace at /workspace (ephemeral copy + sync-back;
+  // see workspace-sandbox.ts). The bubble's first line stated it, so it's part
+  // of what the user approved.
+  useWorkspace: z.boolean().optional(),
 });
 
 // CRM-write schemas are imported from `apps/bot/src/ai/tools/crm.ts` so the
@@ -298,6 +314,79 @@ interface DispatchContext {
    * (`createRoutine`); ignored by the global Google/CRM actions. Sourced from
    * the resolved `PendingConfirmation` row, never from LLM-supplied args. */
   chatId?: string;
+}
+
+/**
+ * Shared result shaping for executeCode runs (plain and workspace-mounted).
+ * The summary stays bubble-short; `resultText` carries the full (≤4000-char)
+ * program output into the conversation resolution event so the
+ * acknowledgment turn can actually relay the result (or the traceback) —
+ * `detail` alone never reaches the user. `workspaceNote` (the sync delta or
+ * the discarded-changes line) rides on both: it's as much a result of the
+ * run as stdout is.
+ */
+function executeCodeDispatchResult(
+  language: SandboxLanguage,
+  result: RunCodeResult,
+  workspaceNote: string | null,
+): DispatchResult {
+  const withNote = (text: string | undefined): string | undefined => {
+    if (!workspaceNote) return text;
+    return text ? `${text}\n[workspace] ${workspaceNote}` : `[workspace] ${workspaceNote}`;
+  };
+  const resultText = withNote(result.output || undefined);
+  const noteSuffix = workspaceNote ? ` — ${workspaceNote}` : "";
+
+  if (result.timedOut) {
+    return {
+      success: false,
+      summary: `code execution timed out after ${Math.round(
+        config.EXECUTE_CODE_TIMEOUT_MS / 1000,
+      )}s${noteSuffix}`,
+      detail: { reason: "timeout", language, output: result.output, workspaceNote },
+      resultText,
+    };
+  }
+  if (result.oomKilled) {
+    return {
+      success: false,
+      summary: `code was killed (out of memory, ${config.EXECUTE_CODE_MEMORY_MB} MB cap)${noteSuffix}`,
+      detail: { reason: "oom", language, output: result.output, workspaceNote },
+      resultText,
+    };
+  }
+  if (result.outputOverflow) {
+    // The client buffer blew before the program's real exit status was
+    // known — a stdout flood is a failed run, not "code ran".
+    return {
+      success: false,
+      summary: `code produced too much output (1 MB cap) and was stopped${noteSuffix}`,
+      detail: { reason: "output_overflow", language, output: result.output, workspaceNote },
+      resultText,
+    };
+  }
+  if (result.exitCode !== 0) {
+    return {
+      success: false,
+      summary: `code exited with code ${result.exitCode}${noteSuffix}`,
+      detail: {
+        reason: "nonzero_exit",
+        exitCode: result.exitCode,
+        language,
+        output: result.output,
+        workspaceNote,
+      },
+      resultText,
+    };
+  }
+  return {
+    success: true,
+    // trim() here is display-only (output keeps its real whitespace, so it
+    // usually ends in "\n") — `detail.output` and `resultText` stay byte-exact.
+    summary: `code ran: ${result.output.trim().slice(0, 200)}${noteSuffix}`,
+    detail: { exitCode: result.exitCode, language, output: result.output, workspaceNote },
+    resultText,
+  };
 }
 
 export async function dispatchGatedAction(
@@ -1002,70 +1091,55 @@ export async function dispatchGatedAction(
         // Kansoku. The full code lives only in the PendingConfirmation row
         // (24h TTL), same as every other gated action's args.
         logger.info(
-          { language: args.language, codeLength: args.code.length },
+          {
+            language: args.language,
+            codeLength: args.code.length,
+            useWorkspace: args.useWorkspace === true,
+          },
           "Dispatching approved executeCode",
         );
 
-        const result = await runWithSpan("code.execute", () =>
-          runCode({ language: args.language, code: args.code }),
-        );
+        // Plain run: hermetic container, no mounts — unchanged behavior.
+        if (!args.useWorkspace) {
+          const result = await runWithSpan("code.execute", () =>
+            runCode({ language: args.language, code: args.code }),
+          );
+          return executeCodeDispatchResult(args.language, result, null);
+        }
 
-        // The summary stays bubble-short; `resultText` carries the full
-        // (≤4000-char) program output into the conversation resolution event
-        // so the acknowledgment turn can actually relay the result (or the
-        // traceback) — `detail` alone never reaches the user.
-        const resultText = result.output || undefined;
-
-        if (result.timedOut) {
-          return {
-            success: false,
-            summary: `code execution timed out after ${Math.round(
-              config.EXECUTE_CODE_TIMEOUT_MS / 1000,
-            )}s`,
-            detail: { reason: "timeout", language: args.language, output: result.output },
-            resultText,
-          };
-        }
-        if (result.oomKilled) {
-          return {
-            success: false,
-            summary: `code was killed (out of memory, ${config.EXECUTE_CODE_MEMORY_MB} MB cap)`,
-            detail: { reason: "oom", language: args.language, output: result.output },
-            resultText,
-          };
-        }
-        if (result.outputOverflow) {
-          // The client buffer blew before the program's real exit status was
-          // known — a stdout flood is a failed run, not "code ran".
-          return {
-            success: false,
-            summary: "code produced too much output (1 MB cap) and was stopped",
-            detail: { reason: "output_overflow", language: args.language, output: result.output },
-            resultText,
-          };
-        }
-        if (result.exitCode !== 0) {
-          return {
-            success: false,
-            summary: `code exited with code ${result.exitCode}`,
-            detail: {
-              reason: "nonzero_exit",
-              exitCode: result.exitCode,
-              language: args.language,
-              output: result.output,
-            },
-            resultText,
-          };
-        }
-        return {
-          success: true,
-          // trim() here is display-only (output now keeps its real whitespace,
-          // so it usually ends in "\n") — `detail.output` and `resultText`
-          // stay byte-exact.
-          summary: `code ran: ${result.output.trim().slice(0, 200)}`,
-          detail: { exitCode: result.exitCode, language: args.language, output: result.output },
-          resultText,
-        };
+        // Workspace run: materialize an ephemeral copy, mount it, and sync
+        // changes back through the normal quota path. Serialized by the
+        // workspace lock so two runs can't race the materialize→sync window.
+        // A torn run (timeout / OOM / output overflow) is NOT synced — its
+        // files may be half-written; the canonical store stays at the
+        // pre-run state and the summary says so.
+        return await withWorkspaceSandboxLock(async () => {
+          const materialization = await runWithSpan("code.workspace.materialize", () =>
+            materializeWorkspace(),
+          );
+          try {
+            const result = await runWithSpan("code.execute", () =>
+              runCode({
+                language: args.language,
+                code: args.code,
+                workspaceDir: materialization.dir,
+              }),
+            );
+            const torn = result.timedOut || result.oomKilled || result.outputOverflow;
+            let workspaceNote: string | null;
+            if (torn) {
+              workspaceNote = "workspace changes discarded (run did not finish cleanly)";
+            } else {
+              const delta = await runWithSpan("code.workspace.sync", () =>
+                syncBackWorkspace(materialization),
+              );
+              workspaceNote = formatWorkspaceDelta(delta);
+            }
+            return executeCodeDispatchResult(args.language, result, workspaceNote);
+          } finally {
+            await cleanupWorkspaceDir(materialization.dir);
+          }
+        });
       }
     }
   } catch (error) {

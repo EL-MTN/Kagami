@@ -188,6 +188,33 @@ describe("runCode — docker invocation", () => {
 
     const args = promisifiedMock.mock.calls[0][1] as string[];
     expect(args.slice(-3)).toEqual(["node:22-slim", "node", "-"]);
+    // No workspaceDir → no mount: the hermetic profile has exactly one
+    // writable path (the /tmp tmpfs).
+    expect(args).not.toContain("--volume");
+    expect(args).not.toContain("--workdir");
+  });
+
+  it("mounts workspaceDir read-write at /workspace (and only then)", async () => {
+    promisifiedMock.mockReturnValueOnce(resolvedRun("ok\n").promise);
+
+    await runCode({
+      language: "python",
+      code: "open('out.txt','w').write('x')",
+      workspaceDir: "/tmp/kokoro-ws-abc123",
+    });
+
+    const args = promisifiedMock.mock.calls[0][1] as string[];
+    // The mount slots between the env overrides and `-i` — the rest of the
+    // pinned security profile is unchanged (rootfs stays --read-only; the
+    // volume is the single extra writable path).
+    const volumeIdx = args.indexOf("--volume");
+    expect(volumeIdx).toBeGreaterThan(-1);
+    expect(args[volumeIdx + 1]).toBe("/tmp/kokoro-ws-abc123:/workspace:rw");
+    expect(args[volumeIdx + 2]).toBe("--workdir");
+    expect(args[volumeIdx + 3]).toBe("/workspace");
+    expect(args[volumeIdx + 4]).toBe("-i");
+    expect(args).toContain("--read-only");
+    expect(args).toContain("--network");
   });
 
   it("writes the code via stdin (never argv) and swallows EPIPE", async () => {

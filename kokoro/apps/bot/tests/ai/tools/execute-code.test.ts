@@ -217,3 +217,34 @@ describe("executeCode — raises the confirmation, never executes directly", () 
     expect(result.reason).toBe("mongo down");
   });
 });
+
+describe("executeCode — workspace mount (useWorkspace)", () => {
+  it("carries useWorkspace into the action args and flags the bubble's first line", async () => {
+    await runTool({
+      language: "python",
+      code: "open('out.txt','w').write('x')",
+      description: "write a file",
+      useWorkspace: true,
+    });
+
+    const [, , input] = vi.mocked(raisePendingConfirmation).mock.calls[0];
+    expect(input.action).toEqual({
+      tool: "executeCode",
+      args: { language: "python", code: "open('out.txt','w').write('x')", useWorkspace: true },
+    });
+    expect(input.summary).toBe("run python code (workspace mounted): write a file");
+    // The mount changes what the user is approving — the bubble must say so.
+    expect(input.promptText).toContain(
+      "Run this python code in the sandbox — with workspace access (/workspace mounted read-write)?",
+    );
+  });
+
+  it("omits the workspace line entirely on plain runs", async () => {
+    await runTool({ language: "python", code: "print(1)", description: "plain" });
+
+    const input = vi.mocked(raisePendingConfirmation).mock.calls[0][2];
+    expect(input.promptText).toContain("Run this python code in the sandbox?");
+    expect(input.promptText).not.toContain("workspace");
+    expect(input.summary).toBe("run python code: plain");
+  });
+});

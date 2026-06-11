@@ -43,6 +43,15 @@ export interface RunCodeOptions {
   timeoutMs?: number;
   /** Hard memory cap (swap pinned to the same value). Defaults to config.EXECUTE_CODE_MEMORY_MB. */
   memoryMb?: number;
+  /**
+   * Host directory bind-mounted read-write at /workspace (and set as the
+   * workdir). Callers pass an EPHEMERAL materialized copy of the persistent
+   * workspace (see workspace-sandbox.ts), never canonical storage — the
+   * sync-back diff is the only path from the container back to the store.
+   * The rootfs stays --read-only; this is the single writable mount besides
+   * the /tmp tmpfs.
+   */
+  workspaceDir?: string;
 }
 
 export interface RunCodeResult {
@@ -239,6 +248,9 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     "--user",
     "65534:65534",
     ...PROXY_ENV_OVERRIDES,
+    ...(opts.workspaceDir
+      ? ["--volume", `${opts.workspaceDir}:/workspace:rw`, "--workdir", "/workspace"]
+      : []),
     "-i",
     image,
     ...(opts.language === "python" ? ["python3", "-"] : ["node", "-"]),
