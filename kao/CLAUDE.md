@@ -24,8 +24,8 @@ Kao consolidates the two pre-existing, divergent OAuth implementations:
 > Google OAuth and is not a consumer.
 
 Kao is a Kagami subtree-sibling (added natively, not via `git subtree`). It
-consumes `@kagami/eslint-config`, `@kagami/tsconfig`, and `@kagami/logger`
-from `Kagami/shared/packages/`. No top-level `package.json`/`turbo.json`.
+consumes `@kagami/eslint-config`, `@kagami/tsconfig`, `@kagami/logger`, and
+`@kagami/env` from `Kagami/shared/packages/`. No top-level `package.json`/`turbo.json`.
 
 This file is the project guide. Cross-service facts live in the workspace root: see [`../CLAUDE.md`](../CLAUDE.md) and [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
 
@@ -38,7 +38,8 @@ kao/
 │   │   ├── src/
 │   │   │   ├── main.ts             # boot: loadConfig → connectMongo → ensureGrantIndexes → createApp
 │   │   │   ├── server.ts           # Express app; bearer-gates /grants/*, leaves /oauth/* open@localhost
-│   │   │   ├── config.ts           # zod env schema; callbackUrl() derives the single redirect URI
+│   │   │   ├── env.ts              # @kagami/env spec (zod schemas + doc metadata; generates .env.example/docs/turbo.json)
+│   │   │   ├── config.ts           # thin loadConfig() over the spec; callbackUrl() derives the single redirect URI
 │   │   │   ├── grant-registry.ts   # version-controlled per-consumer scope map (the least-privilege source of truth)
 │   │   │   ├── lib/                # logger, errors, encryption (ported), oauth-state (ported + grant-bound), google, auth (bearer), html (shared escapeHtml)
 │   │   │   ├── storage/            # mongo (raw driver, lazy singleton) + grants repository
@@ -130,22 +131,22 @@ For production the API compiles via `tsconfig.build.json` (extends
 
 Common tasks → files. When a task touches multiple files, all are listed.
 
-| Task                                             | File(s)                                                                                                                          |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| Add a new consumer grant (e.g. another service)  | `apps/api/src/grant-registry.ts` (version-controlled scope map)                                                                  |
-| Add an OAuth scope to an existing grant          | `apps/api/src/grant-registry.ts`                                                                                                 |
-| Add a REST endpoint                              | New router in `apps/api/src/routes/<name>.ts` + mount in `apps/api/src/server.ts`                                                |
+| Task                                             | File(s)                                                                                                                                                             |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Add a new consumer grant (e.g. another service)  | `apps/api/src/grant-registry.ts` (version-controlled scope map)                                                                                                     |
+| Add an OAuth scope to an existing grant          | `apps/api/src/grant-registry.ts`                                                                                                                                    |
+| Add a REST endpoint                              | New router in `apps/api/src/routes/<name>.ts` + mount in `apps/api/src/server.ts`                                                                                   |
 | Add an env var                                   | `apps/api/src/env.ts` (`@kagami/env` spec: schema + doc metadata), then `npm run env:gen` — `.env.example`, the docs table, and `apps/api/turbo.json` are generated |
-| Google OAuth token exchange / refresh / revoke   | `apps/api/src/lib/google.ts`                                                                                                     |
-| Bearer-token auth middleware (gates `/grants/*`) | `apps/api/src/lib/auth.ts`                                                                                                       |
-| CSRF state (grant-bound)                         | `apps/api/src/lib/oauth-state.ts`                                                                                                |
-| Refresh-token encryption at rest                 | `apps/api/src/lib/encryption.ts`                                                                                                 |
-| Grants Mongo repository                          | `apps/api/src/storage/grants.ts`                                                                                                 |
-| Inline operator page (no-dashboard fallback)     | `apps/api/src/routes/home.ts`                                                                                                    |
-| Next.js operator dashboard                       | `apps/dashboard/src/app/page.tsx` (RSC; reads `listGrants`)                                                                      |
-| Logger init                                      | `apps/api/src/lib/logger.ts`                                                                                                     |
-| API server entrypoint                            | `apps/api/src/main.ts` (boot: `loadConfig → connectMongo → ensureGrantIndexes → createApp`); Express in `apps/api/src/server.ts` |
-| Tests                                            | `apps/api/tests/*.test.ts`                                                                                                       |
+| Google OAuth token exchange / refresh / revoke   | `apps/api/src/lib/google.ts`                                                                                                                                        |
+| Bearer-token auth middleware (gates `/grants/*`) | `apps/api/src/lib/auth.ts`                                                                                                                                          |
+| CSRF state (grant-bound)                         | `apps/api/src/lib/oauth-state.ts`                                                                                                                                   |
+| Refresh-token encryption at rest                 | `apps/api/src/lib/encryption.ts`                                                                                                                                    |
+| Grants Mongo repository                          | `apps/api/src/storage/grants.ts`                                                                                                                                    |
+| Inline operator page (no-dashboard fallback)     | `apps/api/src/routes/home.ts`                                                                                                                                       |
+| Next.js operator dashboard                       | `apps/dashboard/src/app/page.tsx` (RSC; reads `listGrants`)                                                                                                         |
+| Logger init                                      | `apps/api/src/lib/logger.ts`                                                                                                                                        |
+| API server entrypoint                            | `apps/api/src/main.ts` (boot: `loadConfig → connectMongo → ensureGrantIndexes → createApp`); Express in `apps/api/src/server.ts`                                    |
+| Tests                                            | `apps/api/tests/*.test.ts`                                                                                                                                          |
 
 ## Doc Maintenance
 

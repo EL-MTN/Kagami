@@ -1,8 +1,6 @@
 import { logger } from "./logger.js";
 import { envSpec, type Config } from "./env.js";
 
-export type { Config };
-
 const secretKeys = new Set(envSpec.keys.filter((info) => info.meta.secret).map((info) => info.key));
 
 // Memoize on the raw values of the declared keys, aliases included (the same

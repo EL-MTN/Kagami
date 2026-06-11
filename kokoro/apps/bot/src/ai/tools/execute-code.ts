@@ -14,7 +14,7 @@ import { OWNER } from "../persona";
  * behind. Mirrored by `executeCodeArgs` in gated-actions.ts, which re-enforces
  * it at the dispatch boundary.
  */
-export const MAX_CODE_LENGTH = 3000;
+const MAX_CODE_LENGTH = 3000;
 
 /**
  * Telegram caps a message at 4096 chars, and the prompt's fence grows with

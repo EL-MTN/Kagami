@@ -26,10 +26,9 @@ kizuna/
 │   │   ├── scripts/        # import-vcards.ts (vCard → POST /people)
 │   │   └── tsconfig.build.json # prod build: tsc -p this → dist/ (extends @kagami/tsconfig/server.build.json)
 │   └── dashboard/          # Next.js 16 App Router (https://kizuna.localhost)
-│       ├── app/
-│       │   └── (app)/      # all routes — Today, Followups, Interactions, People, Contexts, Sync, Errors, Tombstones (no login)
-│       ├── components/     # sidebar, nav-link, shell/, ui/ (shadcn-shaped)
-│       └── lib/            # api client, types, format
+│       ├── src/app/         # routes — Today, Followups, Interactions, People, Contexts, Sync, Errors, Tombstones (no login)
+│       ├── src/components/  # sidebar, nav-link, shell/, ui/ (shadcn-shaped)
+│       └── src/lib/         # api client, types, format
 ├── packages/               # reserved for future Kizuna-only libs (currently empty)
 ├── portless.json           # api.kizuna + kizuna Portless registrations
 └── docs/
@@ -46,7 +45,7 @@ All commands run from the Kagami workspace root (Kizuna no longer has a top-leve
 npm run kizuna:dev              # both Kizuna apps under Portless (https://kizuna.localhost + https://api.kizuna.localhost)
 npm run kizuna:dev:api          # API only
 npm run kizuna:dev:dashboard    # Dashboard only
-./dev-all.sh                    # Kioku → Kokoro + Kizuna together with prefixed output
+./dev-all.sh                    # all domain services + Cockpit under Turbo's TUI
 
 npm run typecheck               # all workspaces (tsc --noEmit)
 npm run test                    # all workspaces
@@ -108,7 +107,7 @@ Common tasks → files. When a task touches multiple files, all are listed.
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Add a Mongoose model                                   | `apps/api/src/db/models/<model>.ts`                                                                                                                                 |
 | Add a REST endpoint                                    | New router in `apps/api/src/routes/<name>.ts` + mount in `apps/api/src/server.ts`                                                                                   |
-| Add a sync source (Gmail, Calendar, etc.)              | `apps/api/src/ingest/<source>/` + register in `apps/api/src/ingest/scheduler.ts`                                                                                    |
+| Add a sync source (Gmail, Calendar, etc.)              | `apps/api/src/ingest/<source>.ts` (flat files, e.g. `gmail.ts`) + register in `apps/api/src/ingest/scheduler.ts`                                                    |
 | Add an env var                                         | `apps/api/src/env.ts` (`@kagami/env` spec: schema + doc metadata), then `npm run env:gen` — `.env.example`, the docs table, and `apps/api/turbo.json` are generated |
 | Kao identity client (calls `/grants/kizuna/token`)     | `apps/api/src/lib/kao-client.ts`                                                                                                                                    |
 | Interaction writer (the canonical `recordInteraction`) | `apps/api/src/db/recordInteraction.ts`                                                                                                                              |
@@ -130,5 +129,5 @@ See `/docs` for:
 - [sync.md](docs/sync.md) — Gmail + Calendar ingest pipeline (state machines, cursors, dedup via `sourceRef`, scheduler)
 - [auth.md](docs/auth.md) — single-user-localhost trust model, USER_EMAILS allowlist, Kao-delegated Google identity (KAO_URL/KAO_TOKEN), threat model
 - [dashboard.md](docs/dashboard.md) — Next.js inspector pages, design system ("Mashiro Daylight"), data flow
-- [configuration.md](docs/configuration.md) — env vars, encryption-key generation, common setups, Portless
+- [configuration.md](docs/configuration.md) — env vars, common setups, Portless (encryption keys live in Kao)
 - [testing.md](docs/testing.md) — vitest + supertest + mongodb-memory-server harness, what's covered, patterns

@@ -20,9 +20,8 @@ Kizuna's test suite covers the API workspace. Pure helpers run with no infrastru
 - **MongoDB:** real `mongod` started in-process by `mongodb-memory-server`. One instance is shared across the whole run via vitest `globalSetup`; each `startHarness()` call connects to a unique database name (`kizuna_test_<random>`) on that instance. `connectDb` runs `syncIndexes` so partial-unique indexes (notably `interactions_sourceRef_unique`) fire correctly. On `stop()` the harness drops its database before disconnecting.
 - **HTTP:** `supertest` against a live `createApp({ db, config })`. No port binding — `supertest` invokes the request handler directly.
 - **Google APIs:** never actually called.
-  - `OAuth2Client.prototype.getToken` is `vi.spyOn`'d in OAuth tests.
+  - OAuth tests mock Kao with `vi.spyOn(globalThis, "fetch")` — Kizuna holds no Google OAuth client of its own (token exchange lives in Kao).
   - Gmail / Calendar clients are interfaces: tests inject `FakeGmailClient` / `FakeCalendarClient` (`apps/api/tests/helpers/fake-gmail.ts` and `apps/api/tests/helpers/fake-calendar.ts`). The real clients (`makeGmailClient` / `makeCalendarClient`) are dynamically imported only by `runGmailSyncOnce` / `runCalendarSyncOnce`, which are bypassed in tests in favor of `runGmailSync({ client })` / `runCalendarSync({ client })`.
-- **Encryption:** real `aes-256-gcm` with a per-test key (`randomBytes(32).toString('base64')`).
 
 ## Layout
 
@@ -127,20 +126,13 @@ it("creates a person with source=concierge and firstSeen set", async () => {
 });
 ```
 
-### Spying on Google clients
+### Mocking Kao (OAuth surface)
 
 ```ts
-const spy = vi.spyOn(OAuth2Client.prototype, "getToken") as unknown as {
-  mockResolvedValue: (v: unknown) => unknown;
-};
-spy.mockResolvedValue({
-  tokens: {
-    refresh_token: "1//refresh-fake",
-    scope: "gmail.readonly calendar.readonly",
-    expiry_date: Date.now() + 3_500_000,
-  },
-  res: null,
-});
+const fetchSpy = vi.spyOn(globalThis, "fetch");
+fetchSpy.mockResolvedValue(
+  new Response(JSON.stringify({ status: "active", scopes: ["gmail.readonly"] }), { status: 200 }),
+);
 ```
 
 The dashboard never appears in tests. The OAuth callback lives in Kao now, not Kizuna — the only Kizuna-side OAuth surface is `POST /oauth/google/start` (303 to `${KAO_URL}/oauth/kizuna/start`, Origin-checked, with side effects on paused SyncStates) and `GET /oauth/google/status` (server-side fetch of `${KAO_URL}/grants/kizuna`). Both are covered by `oauth.test.ts` using `vi.spyOn(globalThis, "fetch")` to mock Kao's responses.

@@ -26,7 +26,8 @@ kioku/                # subtree of the Kagami workspace; no project-local packag
 │   │   │   └── logger.ts    # pino logger
 │   │   ├── prompts/
 │   │   │   ├── extraction.md   # ingest prompt (8K-token rulebook)
-│   │   │   └── answer.md       # answerer prompt (3K-token rulebook)
+│   │   │   ├── answer.md       # answerer prompt (3K-token rulebook)
+│   │   │   └── curate.md       # curation prompt (operator-run drop/merge/rewrite pass)
 │   │   ├── tests/           # vitest suite + mongodb-memory-server harness
 │   │   ├── scripts/         # longmemeval, longmemeval-worker, citation-recall, probe-bm25-scores, variance-probe, curate
 │   │   ├── tsconfig.json    # extends @kagami/tsconfig/server.json (+ esModuleInterop, allowImportingTsExtensions)

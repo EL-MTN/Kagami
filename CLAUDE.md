@@ -177,6 +177,7 @@ All HTTP entry points are served as HTTPS named URLs by [Portless](https://githu
 | Kansoku | API       | `https://api.kansoku.localhost` |
 | Kao     | dashboard | `https://kao.localhost`         |
 | Kao     | API       | `https://api.kao.localhost`     |
+| Cockpit | dashboard | `https://kagami.localhost`      |
 
 Each project keeps its own `portless.json` next to its code. Numeric `PORT` defaults inside apps only matter when running an app standalone outside Portless; normal local development should use the named HTTPS URLs above.
 
@@ -193,7 +194,7 @@ All five projects share tooling via `shared/packages/`:
 Other workspace-wide conventions:
 
 - **Language**: TypeScript (strict, ESM), Node ≥ 22
-- **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs are `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, `kansoku/{apps,packages}/*`, `kao/{apps,packages}/*`, and `shared/packages/*`.
+- **Package layout**: nested monorepo via npm workspaces + Turborepo. Workspace globs are `kioku/{apps,packages}/*`, `kokoro/{apps,packages}/*`, `kizuna/{apps,packages}/*`, `kansoku/{apps,packages}/*`, `kao/{apps,packages}/*`, `cockpit/{apps,packages}/*`, and `shared/packages/*`.
 - **Apps split**: `apps/api` (or `apps/bot` for Kokoro) + `apps/dashboard` (Kao's dashboard injects its `KAO_TOKEN` bearer server-side; the API also still serves an inline-HTML operator page at `GET /` as a no-dashboard fallback)
 - **Local dev hosting**: Portless via stable HTTPS named `*.localhost` URLs
 - **Env & Turbo env mode**: every app self-loads its `.env` from disk (`dotenv` in the APIs/bot, Next.js auto-load in the dashboards) — that path bypasses Turbo entirely. `turbo.json` pins `envMode: "strict"` (the Turbo 2 default) for cached tasks, and gives `dev` `"passThroughEnv": ["*"]` so shell-set vars (`LOG_PRETTY=1 ./dev-all.sh`, `KANSOKU_URL=… npm run kokoro:dev`) reach dev processes — dotenv never overrides a pre-set var, so a shell override beats `.env` as intended. `build` and `test` list `.env*` in `inputs` because `next build` and several test suites read `.env` at run time; editing a `.env` invalidates those caches.

@@ -262,7 +262,7 @@ https://www.googleapis.com/auth/calendar.readonly
 | Code           | When                                                                                             |
 | -------------- | ------------------------------------------------------------------------------------------------ |
 | `bad_request`  | Zod parse failure, mongoose `ValidationError` / `CastError` / `StrictModeError`, custom 400s     |
-| `unauthorized` | Currently unused (the legacy OAuth callback is hosted by Kao); reserved                          |
+| `unauthorized` | Disallowed `Origin` on `POST /oauth/google/start` (cross-origin form-CSRF defense)               |
 | `not_found`    | 404s from `errors.notFound(...)` and the catch-all 404 middleware                                |
 | `conflict`     | E11000 duplicate-key (e.g. `Organization.domain` unique, `Interaction.sourceRef` unique partial) |
 | `rate_limited` | Reserved; not currently raised from any code path                                                |
