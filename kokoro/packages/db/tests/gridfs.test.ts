@@ -5,13 +5,17 @@ import { describe, expect, it } from "vitest";
 import {
   generateAudioKey,
   generateImageKey,
+  generateWorkspaceKey,
   readAudio,
   readImage,
+  readWorkspaceBlob,
   removeAudio,
   removeImage,
   removeImages,
+  removeWorkspaceBlob,
   writeAudio,
   writeImage,
+  writeWorkspaceBlob,
 } from "../src/gridfs";
 
 withTestDb({ syncIndexes: false });
@@ -180,5 +184,37 @@ describe("removeImages / removeAudios (batch)", () => {
     await writeImage(k, Buffer.from("i"), "image/png");
     await removeImages([k, "does-not-exist"]);
     expect(await readImage(k)).toBeNull();
+  });
+});
+
+describe("workspace bucket roundtrip", () => {
+  it("write then read returns identical bytes and mimeType", async () => {
+    const key = generateWorkspaceKey();
+    const original = Buffer.from("path,price\nwidget,9.99\n");
+    await writeWorkspaceBlob(key, original, "text/csv");
+
+    const result = await readWorkspaceBlob(key);
+    expect(result).not.toBeNull();
+    expect(Buffer.compare(result!.data, original)).toBe(0);
+    expect(result!.mimeType).toBe("text/csv");
+  });
+
+  it("readWorkspaceBlob returns null for an unknown key", async () => {
+    expect(await readWorkspaceBlob("missing-key")).toBeNull();
+  });
+
+  it("stores in its own bucket, isolated from images and audio", async () => {
+    const key = generateWorkspaceKey();
+    await writeWorkspaceBlob(key, Buffer.from("ws"), "text/plain");
+    expect(await listBucketFilenames("workspace")).toContain(key);
+    expect(await listBucketFilenames("images")).not.toContain(key);
+    expect(await readImage(key)).toBeNull();
+  });
+
+  it("removeWorkspaceBlob deletes the blob", async () => {
+    const key = generateWorkspaceKey();
+    await writeWorkspaceBlob(key, Buffer.from("bye"), "text/plain");
+    await removeWorkspaceBlob(key);
+    expect(await readWorkspaceBlob(key)).toBeNull();
   });
 });

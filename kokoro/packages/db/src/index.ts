@@ -10,7 +10,24 @@ export {
   readAudio,
   removeAudio,
   removeAudios,
+  generateWorkspaceKey,
+  writeWorkspaceBlob,
+  readWorkspaceBlob,
+  removeWorkspaceBlob,
+  removeWorkspaceBlobs,
 } from "./gridfs";
+export {
+  WorkspaceFile,
+  upsertWorkspaceFile,
+  getWorkspaceFileByPath,
+  listWorkspaceFiles,
+  getWorkspaceTotals,
+  softDeleteWorkspaceFile,
+  purgeDeletedWorkspaceFiles,
+  type IWorkspaceFile,
+  type WorkspaceFileInput,
+  type WorkspaceFileSource,
+} from "./models/workspace-file";
 export {
   Conversation,
   getOrCreateSession,

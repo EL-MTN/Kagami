@@ -18,6 +18,7 @@ import { DATE_CONTEXT, moodForTimeOfDay, timeOfDayFor } from "./prompts";
 import { ROUTINE_PROPOSAL_TOOLS } from "./tools/routine-proposal-tools";
 import { SKILL_PROPOSAL_TOOLS } from "./tools/skill-proposal-tools";
 import { getMcpSummary } from "../services/mcp";
+import { workspaceSummary } from "../services/workspace";
 import { config, logger, parseMarkdown } from "@kokoro/shared";
 import type { ModelMessage, UserContent, ToolContent } from "ai";
 
@@ -90,6 +91,11 @@ async function assemblePromptShell(
   if (config.EXECUTE_CODE_ENABLED) {
     const executeCode = await readInstruction("execute-code");
     if (executeCode) parts.push(executeCode);
+  }
+
+  if (config.WORKSPACE_ENABLED) {
+    const workspace = await readInstruction("workspace");
+    if (workspace) parts.push(workspace);
   }
 
   const routines = await readInstruction("routines");
@@ -270,6 +276,16 @@ async function assemblePendingConfirmationsContext(chatId: string): Promise<stri
   }
 }
 
+async function assembleWorkspaceContext(): Promise<string | null> {
+  if (!config.WORKSPACE_ENABLED) return null;
+  try {
+    return await workspaceSummary();
+  } catch (error) {
+    logger.warn({ error: error }, "Failed to load workspace context");
+    return null;
+  }
+}
+
 async function assembleLocationContext(chatId: string): Promise<string | null> {
   try {
     const latest = await getLatestLocation(chatId);
@@ -307,16 +323,19 @@ export async function assembleSystemPrompt(
   // These three reads are independent and each fail-soft — run them
   // concurrently so prompt-build latency is the slowest, not the sum. Pushed in
   // a fixed order afterward so the assembled prompt stays deterministic.
-  const [routineContext, skillContext, pendingContext, locationContext] = await Promise.all([
-    assembleRoutineContext(chatId, includeMcpHint),
-    assembleSkillContext(chatId),
-    assemblePendingConfirmationsContext(chatId),
-    assembleLocationContext(chatId),
-  ]);
+  const [routineContext, skillContext, pendingContext, locationContext, workspaceContext] =
+    await Promise.all([
+      assembleRoutineContext(chatId, includeMcpHint),
+      assembleSkillContext(chatId),
+      assemblePendingConfirmationsContext(chatId),
+      assembleLocationContext(chatId),
+      assembleWorkspaceContext(),
+    ]);
   if (routineContext) parts.push(routineContext);
   if (skillContext) parts.push(skillContext);
   if (pendingContext) parts.push(pendingContext);
   if (locationContext) parts.push(locationContext);
+  if (workspaceContext) parts.push(workspaceContext);
 
   const responseFormat = await readInstruction("response-format");
   if (responseFormat) parts.push(responseFormat);

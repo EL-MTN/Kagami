@@ -69,20 +69,22 @@ assembleSystemPrompt(chatId)
     ├─ 6. Web search                 ← apps/bot/context/instructions/web-search.md (conditional on BRAVE_SEARCH_API_KEY)
     ├─ 7. Browser                    ← apps/bot/context/instructions/browser.md (always)
     ├─ 8. Code execution             ← apps/bot/context/instructions/execute-code.md (conditional on EXECUTE_CODE_ENABLED)
-    ├─ 9. Routine behavior           ← apps/bot/context/instructions/routines.md (always)
-    ├─ 10. Skill behavior            ← apps/bot/context/instructions/skills.md (always)
-    ├─ 11. Proposal behavior         ← routine-proposals.md + routine-refinement.md + skill-proposals.md (conversational only)
-    ├─ 12. Routine context           ← listRoutinesForChat → enabled routine names (Mongo)
-    ├─ 13. Skill context             ← listSkillsForChat → enabled skill catalog (Mongo)
-    ├─ 14. Pending approvals         ← listPendingConfirmations (Mongo)
-    ├─ 15. Location context          ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (Mongo, always)
-    └─ 16. Response format           ← apps/bot/context/instructions/response-format.md
+    ├─ 9. Workspace behavior         ← apps/bot/context/instructions/workspace.md (conditional on WORKSPACE_ENABLED)
+    ├─ 10. Routine behavior          ← apps/bot/context/instructions/routines.md (always)
+    ├─ 11. Skill behavior            ← apps/bot/context/instructions/skills.md (always)
+    ├─ 12. Proposal behavior         ← routine-proposals.md + routine-refinement.md + skill-proposals.md (conversational only)
+    ├─ 13. Routine context           ← listRoutinesForChat → enabled routine names (Mongo)
+    ├─ 14. Skill context             ← listSkillsForChat → enabled skill catalog (Mongo)
+    ├─ 15. Pending approvals         ← listPendingConfirmations (Mongo)
+    ├─ 16. Location context          ← last known location if within LOCATION_CONTEXT_MAX_AGE_H (Mongo, always)
+    ├─ 17. Workspace context         ← workspaceSummary() — file count, total size, recent paths (Mongo, conditional on WORKSPACE_ENABLED + non-empty)
+    └─ 18. Response format           ← apps/bot/context/instructions/response-format.md
 
     All parts joined with "\n\n---\n\n"
 
 assembleProactiveSystemPrompt(chatId)
     │
-    ├─ shell (1–10 above; proposal behavior omitted)
+    ├─ shell (1–11 above; proposal behavior omitted)
     ├─ Active reminders              ← pending + recently fired (Mongo)
     ├─ Pending approvals             ← (Mongo)
     ├─ Location context              ← (Mongo, conditional)
@@ -276,6 +278,15 @@ Autonomous multi-step browsing (`stagehand.agent().execute()`, up to 25 steps) i
 - **Behavior**: Proposal pattern (like `proposeRoutine`, not like `requestConfirmation`): the tool calls `raisePendingConfirmation` directly with the full code as a fenced block in `promptText` — the 3000-char schema cap guarantees the bubble shows the **entire program**, never a truncated preview an executable suffix could hide behind (the fence lengthens past any backtick run in the code so an embedded ```can't break the block, the model-supplied description above the fence is stripped of backticks so it can't pair into the program's fence, NUL- and bidi-control-bearing code is rejected at the schema and again at dispatch (the formatter strips NULs for display, and bidi controls render visually reordered — Trojan-Source style — so display and execution would diverge), and a pre-raise guard refuses code whose grown prompt would exceed Telegram's 4096-char message cap rather than orphan an undeliverable row) — so the user reviews the program body before approving. The action name`executeCode`lives in`DISPATCH*ONLY_TOOL_NAMES`— deliberately absent from`requestConfirmation`'s enum, so the model cannot route code execution behind a ≤400-char summary. On approve, `dispatchGatedAction`re-checks`EXECUTE_CODE_ENABLED`(pending rows live up to 24 h — turning the flag off also stops already-raised approvals), re-validates the args, then runs the code in an **ephemeral Docker container** via`apps/bot/src/services/code-sandbox.ts`: `--network none`, empty env (with explicit empty `--env`overrides for the proxy variables Docker would otherwise inject from the client's`~/.docker/config.json`— proxy URLs can carry credentials, and`--network none`blocks their use but not their read),`--cap-drop ALL`, `no-new-privileges`, read-only rootfs + 64 MB `/tmp` tmpfs, numeric nobody user, pid/memory/CPU caps, code delivered via stdin (never argv), at most 2 concurrent runs. Non-zero exit, timeout (`EXECUTE_CODE_TIMEOUT_MS`, default 120 s — enforced by a host-side `docker rm -f`retried until it lands — each attempt itself bounded so a daemon that accepts but never answers can't pin the loop — with a kill-the-client backstop so a wedged daemon can't let the run outlive the deadline holding a semaphore slot; not Node's client-only timeout — and a run that exits cleanly after the deadline, in the window before the reap lands, still reports `timedOut` rather than success), OOM (exit 137 heuristic against the`EXECUTE_CODE_MEMORY_MB`cap), and output overflow (>1 MB of stdout+stderr kills the run — reported as a failure, not a noisy success; its reap uses the same retried path, so one transient rm failure can't leak a live container past the concurrency cap) are reported as results the LLM can react to; daemon-down / image-missing surface as friendly`CodeSandboxError` summaries (fail-open — chat continues). Output is stdout+stderr combined, capped at 4000 chars. Startup (`apps/bot/src/index.ts`) sweeps orphaned `kokoro-exec-\*` containers and pre-pulls both images (`EXECUTE_CODE*{PYTHON,NODE}\_IMAGE`), fire-and-forget — container names are boot-scoped (`kokoro-exec-<bootId>-<uuid>`) and the sweep removes only other boots' names, so it can never reap a run approved while it is still in flight; `docker run`is pinned to`--pull never`, so the startup pre-pull is the only pull path — a registry download can never eat (or overrun) the execution timeout.
 - **Logging**: the code body is **never logged** — only `{ language, codeLength }` — so secrets pasted into a script can't reach Kansoku. The full code persists only in the `PendingConfirmation` row (24 h TTL). The run is spanned as `code.execute`.
 - **Palette**: registered in `allTools` only when `EXECUTE_CODE_ENABLED` is set; deliberately **absent** from `readOnlyToolSubset` / `watcherTools` / `routineToolsUnderWatcher` — execution is a mutation-class capability, so observation runs and delegate sub-tasks never see it. System-prompt rule in `apps/bot/context/instructions/execute-code.md` (loaded only when enabled). See [confirmations.md](confirmations.md#dispatch-only-actions-not-llm-raisable).
+
+### listFiles / readFile / writeFile / deleteFile (conditional — requires WORKSPACE_ENABLED)
+
+- **Purpose**: The persistent file workspace — **one global file tree** shared across every chat, channel, and routine (not chat-scoped; the workspace follows Kioku's global-memory model, not the chat-scoped skills/routines model). Durable artifacts: drafts, notes, datasets — documents and data, where `rememberFact` holds atomic facts.
+- **Parameters**: `listFiles({ prefix? })`, `readFile({ path, offset? })`, `writeFile({ path, content (≤48 KB UTF-8 text), overwrite? })`, `deleteFile({ path })`
+- **Returns**: `listFiles` returns path/size/mimeType/modified per file plus totals; `readFile` returns text in 4000-char chunks with `hasMore`/`nextOffset` (binary files return metadata only); `writeFile`/`deleteFile` return confirmation shapes.
+- **Behavior**: Backed by `apps/bot/src/services/workspace.ts` (policy: path normalization, quotas, mime inference) over `WorkspaceFile` rows + a dedicated `workspace` GridFS bucket in `@kokoro/db`. Paths are normalized relative paths — absolute paths, `.`/`..` segments, backslashes, and control characters are rejected, Unicode filenames pass through. Every write allocates a fresh GridFS key and swaps the row before removing the old blob, so a live path always has bytes behind it. Quotas (`WORKSPACE_MAX_FILE_MB` 25 / `WORKSPACE_MAX_TOTAL_MB` 256 / `WORKSPACE_MAX_FILES` 500) fail writes with model-readable reasons. `writeFile` onto an occupied path requires `overwrite: true` — clobber-blind writes fail on purpose. `deleteFile` is a **soft delete**: 30-day trash, purged by daily maintenance (`purgeDeletedWorkspaceFiles`). Writes record `source` (`agent` here; `chat-upload`/`sandbox` arrive in later phases) and `sourceChatId` as provenance only — access is never scoped by chat.
+- **Gating**: writes are deliberately **ungated** — the same trust class as `rememberFact` (nothing leaves the system); data-loss risk is covered by the trash, not approval taps.
+- **Palette**: all four in `allTools`; `listFiles`/`readFile` also in `readOnlyToolSubset` (watcher ticks and delegate sub-tasks can read state a routine accumulated; they can never write it). System-prompt rule in `apps/bot/context/instructions/workspace.md`, plus a dynamic one-line `## Workspace` summary (count, total size, recent paths) when non-empty.
 
 ### searchSkills / readSkill
 
