@@ -32,6 +32,8 @@ Drop a memory only when, after mentally stripping the conversational framing, no
 - **Single-use lookups with no preference signal** — a one-off weather report's numbers ("66°F, 51% humidity"). If the lookup reveals something durable (user was in San Jose that day), prefer a merge that keeps the durable part over a drop.
 - **Pure pleasantries / acknowledgements** that carry no fact.
 
+A memory that matches a DROP class must be dropped — do NOT rescue it by rewriting or merging it into something else. A greeting stays a greeting however it is reworded.
+
 Do NOT drop:
 
 - Questions/requests that reveal a durable interest ("User inquired about selling put options for Tesla" → reveals an options-trading interest — keep or merge, don't drop)
@@ -39,8 +41,10 @@ Do NOT drop:
 
 # WHAT TO MERGE
 
+A merge must yield ONE atomic fact about ONE subject or episode. NEVER concatenate several distinct events into an enumerating mega-memory — if a group covers distinct events, keep or rewrite them separately. A merged text that repeats an item twice, or reads as a list of unrelated items, is wrong.
+
 - **Near-identical restatements** — same fact worded twice. Merge into the most complete version.
-- **Roll-up vs atomics** — a summary enumerating items that also exist as separate memories: DROP the roll-up and KEEP the atomics (this is a drop + keeps, not a merge) unless the roll-up holds a detail the atomics lack — then merge that detail into the relevant atomic.
+- **Roll-up vs atomics** — a summary enumerating items that also exist as separate memories: DROP the roll-up and KEEP the atomics (this is a drop + keeps, NOT a merge). Never merge the roll-up into the atomics — that just builds a bigger roll-up. Only if the roll-up holds a detail no atomic has: merge that one detail into the matching atomic (ids = roll-up + that atomic) and keep the other atomics untouched.
 - **Request → fulfillment → confirmation chains** — collapse to ONE memory recording the final outcome. "User asked to schedule X" + "User scheduled X, pending approval" + "approval prompt was sent" → one memory with the final known state.
 - **Narrative arcs** — several memories narrating one episode (a troubleshooting session, a multi-step setup). Replace with 1-2 memories capturing the durable outcome and any reusable lesson; the step-by-step retelling goes.
 - **Same-day contradictions** — states that conflict within one event_date ("email wasn't connected" vs "user received an email"). Order by created_at and merge into the resolution, capturing the transition: "User's email connection was initially unavailable on June 10, 2026, and was connected later that day."
@@ -52,6 +56,7 @@ Do NOT drop:
 Follow the store's extraction standards:
 
 - Atomic: one durable fact, self-contained, pronouns replaced with names or "User".
+- Sourced ONLY from the memories listed in the merge's `ids`. Never import a detail from another memory in the group — if you want its content, its id belongs in the merge.
 - 15-80 words (up to 100 for detail-rich content). 1-2 sentences.
 - Preserve EVERY proper noun, title, quantity, and exact date from the members. Never generalize a specific ("robinhood_daily_return" stays verbatim, "7 AM on weekdays" stays verbatim).
 - Capture transitions: what changed, from what, to what.
