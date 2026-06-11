@@ -71,7 +71,12 @@ export function trackUsage(
   usage: TokenUsageData,
   metadata?: TrackUsageMetadata,
 ): void {
-  const provider = config.LLM_PROVIDER;
+  // Match the gateway's span label: openai-compatible traffic is served by
+  // LLM_BASE_URL, not the native LLM_PROVIDER (which Stagehand still uses).
+  const provider =
+    config.LLM_KIND === "openai-compatible"
+      ? (config.LLM_PROVIDER_NAME ?? "openai-compatible")
+      : config.LLM_PROVIDER;
   const promptTokens = usage.promptTokens ?? 0;
   const completionTokens = usage.completionTokens ?? 0;
   const totalTokens = usage.totalTokens ?? promptTokens + completionTokens;

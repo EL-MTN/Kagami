@@ -96,20 +96,25 @@ export const envSpec = defineEnv({
     }),
 
     LLM_KIND: z.enum(["native", "openai-compatible"]).default("native").meta({
-      doc: "Chat inference kind — `native` (first-party provider SDKs via the\n@kagami/llm gateway) or `openai-compatible` (any OpenAI-shaped endpoint,\ne.g. OpenRouter or a local server; requires LLM_BASE_URL + LLM_API_KEY).",
+      doc: "Chat inference kind — `native` (first-party provider SDKs via the\n@kagami/llm gateway) or `openai-compatible` (any OpenAI-shaped endpoint\nsuch as OpenRouter or a local server; requires LLM_BASE_URL +\nLLM_API_KEY).",
       group: "LLM",
     }),
     LLM_PROVIDER: z.enum(["anthropic", "openai", "xai"]).default("anthropic").meta({
-      doc: "Chat provider when LLM_KIND=native: anthropic | openai | xai. The\nmatching *_API_KEY is required (validated at bot startup). Ignored when\nLLM_KIND=openai-compatible.",
+      doc: "Native provider for chat (anthropic | openai | xai) — the matching\n*_API_KEY is required at bot startup under BOTH kinds. With\nLLM_KIND=openai-compatible, chat ignores it but browser automation\n(Stagehand) still selects its model and key from it.",
       group: "LLM",
     }),
-    LLM_BASE_URL: z.string().url().optional().meta({
-      doc: "OpenAI-compatible endpoint origin — required when\nLLM_KIND=openai-compatible.",
-      example: "https://openrouter.ai/api/v1",
-      group: "LLM",
-    }),
-    LLM_PROVIDER_NAME: z.string().default("openai-compatible").meta({
-      doc: "Provider label surfaced in logs/spans when LLM_KIND=openai-compatible\n(native kinds label by vendor automatically).",
+    LLM_BASE_URL: z
+      .string()
+      .url()
+      .regex(/^https?:\/\//, "LLM_BASE_URL must start with http:// or https://")
+      .optional()
+      .meta({
+        doc: "OpenAI-compatible endpoint base URL — required when\nLLM_KIND=openai-compatible.",
+        example: "https://openrouter.ai/api/v1",
+        group: "LLM",
+      }),
+    LLM_PROVIDER_NAME: z.string().optional().meta({
+      doc: 'Optional provider label surfaced in logs/spans when\nLLM_KIND=openai-compatible — unset lets the @kagami/llm gateway default\nto "openai-compatible" (native kinds label by vendor automatically).',
       example: "openrouter",
       group: "LLM",
     }),
@@ -137,7 +142,7 @@ export const envSpec = defineEnv({
       group: "LLM",
     }),
     ANTHROPIC_API_KEY: z.string().optional().meta({
-      doc: "Anthropic API key — required when LLM_PROVIDER=anthropic (the default).",
+      doc: "Anthropic API key — required when LLM_PROVIDER=anthropic (the default),\nunder both LLM_KIND values (browser automation uses the native provider\neven when chat is openai-compatible).",
       secret: true,
       recommended: true,
       group: "LLM",
@@ -376,10 +381,13 @@ export const envSpec = defineEnv({
     ...kansoku.vars,
   },
   cross: [
-    // 1. LLM kind/provider → credential pairings
+    // 1. LLM kind/provider → credential pairings. The native keyMap check
+    // runs under BOTH kinds: browser automation (Stagehand) selects its model
+    // and key from LLM_PROVIDER even when chat runs on an openai-compatible
+    // endpoint.
     (config) => {
+      const issues: string[] = [];
       if (config.LLM_KIND === "openai-compatible") {
-        const issues: string[] = [];
         if (!config.LLM_BASE_URL) {
           issues.push('LLM_BASE_URL is required when LLM_KIND is "openai-compatible"');
         }
@@ -388,7 +396,10 @@ export const envSpec = defineEnv({
             'LLM_API_KEY is required when LLM_KIND is "openai-compatible" (any non-empty placeholder works for local servers that don\'t enforce auth)',
           );
         }
-        return issues;
+      } else if (config.LLM_BASE_URL || config.LLM_API_KEY) {
+        issues.push(
+          'LLM_BASE_URL / LLM_API_KEY are set but ignored when LLM_KIND is "native" — did you mean LLM_KIND=openai-compatible?',
+        );
       }
       const keyMap = {
         anthropic: "ANTHROPIC_API_KEY",
@@ -396,9 +407,16 @@ export const envSpec = defineEnv({
         xai: "XAI_API_KEY",
       } as const;
       const required = keyMap[config.LLM_PROVIDER];
-      return config[required]
-        ? []
-        : [`${required} is required when LLM_PROVIDER is "${config.LLM_PROVIDER}"`];
+      if (!config[required]) {
+        issues.push(
+          `${required} is required when LLM_PROVIDER is "${config.LLM_PROVIDER}"${
+            config.LLM_KIND === "openai-compatible"
+              ? " (browser automation/Stagehand uses the native provider even when chat is openai-compatible)"
+              : ""
+          }`,
+        );
+      }
+      return issues;
     },
     // 2. IMAGE_GENERATION_MODEL "provider/model" format + provider key
     (config) => {

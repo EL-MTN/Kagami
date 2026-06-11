@@ -5,21 +5,30 @@ The AI layer handles LLM integration, prompt assembly, tool orchestration, image
 ## Provider Configuration
 
 Defined in `apps/bot/src/ai/provider.ts`. Chat goes through the shared
-`@kagami/llm` gateway (`createInference`, `kind: "native"`) — the gateway owns
-provider/key construction, retry, same-tier fallback, and span/usage emission;
-`provider.ts` stays the caller-side **tier policy** (the `ModelTier` → model-id
-map). Image / TTS / STT still use the Vercel AI SDK directly.
+`@kagami/llm` gateway (`createInference`) with one of two kinds — `native`
+(first-party provider SDKs) or `openai-compatible` (any OpenAI-shaped endpoint
+such as OpenRouter or a local server) — the gateway owns provider/key
+construction, retry, same-tier fallback, and span/usage emission;
+`provider.ts` stays the caller-side **tier policy** (the `ModelTier` →
+model-id map) plus the env→`ProviderConfig` adaptation (`chatConfig()`).
+Image / TTS / STT still use the Vercel AI SDK directly, and browser
+automation (Stagehand) selects its model and key from `LLM_PROVIDER` under
+both kinds — the native provider key stays required even when chat runs on an
+openai-compatible endpoint.
 
 | Env Variable                 | Description                                                                                                                                                                                                   |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LLM_KIND`                   | `"native"` (only supported value for Kokoro chat; default)                                                                                                                                                    |
-| `LLM_PROVIDER`               | `"anthropic"` (default), `"openai"`, or `"xai"`                                                                                                                                                               |
-| `LLM_MODEL`                  | Default-tier model id (default: `"claude-sonnet-4-6"`; recommended xAI model: `grok-4-1-fast-non-reasoning`)                                                                                                  |
-| `LLM_MODEL_FAST`             | Optional override for the `Fast` tier (unset → per-provider default below)                                                                                                                                    |
-| `LLM_MODEL_SMART`            | Optional override for the `Smart` tier (unset → per-provider default below)                                                                                                                                   |
-| `ANTHROPIC_API_KEY`          | Required if provider is `anthropic` (validated at startup)                                                                                                                                                    |
-| `OPENAI_API_KEY`             | Required if provider is `openai` (validated at startup)                                                                                                                                                       |
-| `XAI_API_KEY`                | Required if provider is `xai` (validated at startup)                                                                                                                                                          |
+| `LLM_KIND`                   | `"native"` (default) or `"openai-compatible"` (requires `LLM_BASE_URL` + `LLM_API_KEY`)                                                                                                                       |
+| `LLM_PROVIDER`               | `"anthropic"` (default), `"openai"`, or `"xai"` — chat provider under `native`; Stagehand model source under both kinds                                                                                       |
+| `LLM_BASE_URL`               | OpenAI-compatible endpoint base URL (e.g., `https://openrouter.ai/api/v1`) — required when `LLM_KIND=openai-compatible`                                                                                       |
+| `LLM_API_KEY`                | Key for `LLM_BASE_URL` — required when `LLM_KIND=openai-compatible` (any non-empty placeholder for local no-auth servers)                                                                                     |
+| `LLM_PROVIDER_NAME`          | Optional span/log label for the openai-compatible endpoint (e.g., `openrouter`); unset → gateway default `"openai-compatible"`                                                                                |
+| `LLM_MODEL`                  | Default-tier model id (default: `"claude-sonnet-4-6"`; openai-compatible ids are endpoint-shaped, e.g. `deepseek/deepseek-v4-flash`)                                                                          |
+| `LLM_MODEL_FAST`             | Optional override for the `Fast` tier (unset → per-provider default below; openai-compatible → `LLM_MODEL`)                                                                                                   |
+| `LLM_MODEL_SMART`            | Optional override for the `Smart` tier (unset → per-provider default below; openai-compatible → `LLM_MODEL`)                                                                                                  |
+| `ANTHROPIC_API_KEY`          | Required if `LLM_PROVIDER` is `anthropic` — under both `LLM_KIND` values (validated at startup)                                                                                                               |
+| `OPENAI_API_KEY`             | Required if `LLM_PROVIDER` is `openai` — under both `LLM_KIND` values (validated at startup)                                                                                                                  |
+| `XAI_API_KEY`                | Required if `LLM_PROVIDER` is `xai` — under both `LLM_KIND` values (validated at startup)                                                                                                                     |
 | `IMAGE_GENERATION_MODEL`     | Image model in `provider/model` format (e.g., `xai/grok-imagine-image`, `google/gemini-2.5-flash-image`, `openai/gpt-image-1`). Enables `sendPhoto` tool when set.                                            |
 | `TTS_PROVIDER`               | TTS model in `provider/model` format (e.g., `elevenlabs/eleven_flash_v2_5`). Enables `sendVoice` tool when set.                                                                                               |
 | `TTS_VOICE_ID`               | ElevenLabs voice identifier                                                                                                                                                                                   |

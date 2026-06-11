@@ -20,6 +20,7 @@ const RELEVANT_ENV_KEYS = [
   "LLM_PROVIDER",
   "LLM_BASE_URL",
   "LLM_API_KEY",
+  "LLM_PROVIDER_NAME",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "XAI_API_KEY",
@@ -159,7 +160,6 @@ describe("validateConfig — LLM provider keys", () => {
 describe("validateConfig — openai-compatible kind", () => {
   it("rejects openai-compatible without LLM_BASE_URL and LLM_API_KEY", async () => {
     vi.stubEnv("LLM_KIND", "openai-compatible");
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
     vi.resetModules();
     const { validateConfig } = await loadConfig();
     expect(() => validateConfig()).toThrow(ProcessExitSentinel);
@@ -167,20 +167,50 @@ describe("validateConfig — openai-compatible kind", () => {
     expect(loggedMessages()).toMatch(/LLM_API_KEY is required when LLM_KIND/);
   });
 
-  it("accepts openai-compatible with base URL + key and no native provider key", async () => {
+  it("accepts openai-compatible with base URL + key (native key still present for Stagehand)", async () => {
     vi.stubEnv("LLM_KIND", "openai-compatible");
     vi.stubEnv("LLM_BASE_URL", "https://openrouter.ai/api/v1");
     vi.stubEnv("LLM_API_KEY", "k");
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
     vi.resetModules();
     const { validateConfig } = await loadConfig();
     expect(() => validateConfig()).not.toThrow();
     expect(exitCalled).toBe(false);
   });
 
+  it("still requires the native provider key under openai-compatible (Stagehand)", async () => {
+    vi.stubEnv("LLM_KIND", "openai-compatible");
+    vi.stubEnv("LLM_BASE_URL", "https://openrouter.ai/api/v1");
+    vi.stubEnv("LLM_API_KEY", "k");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.resetModules();
+    const { validateConfig } = await loadConfig();
+    expect(() => validateConfig()).toThrow(ProcessExitSentinel);
+    expect(loggedMessages()).toMatch(
+      /ANTHROPIC_API_KEY is required when LLM_PROVIDER is "anthropic" \(browser automation/,
+    );
+  });
+
+  it("rejects LLM_BASE_URL/LLM_API_KEY set while LLM_KIND stays native", async () => {
+    vi.stubEnv("LLM_BASE_URL", "https://openrouter.ai/api/v1");
+    vi.stubEnv("LLM_API_KEY", "k");
+    vi.resetModules();
+    const { validateConfig } = await loadConfig();
+    expect(() => validateConfig()).toThrow(ProcessExitSentinel);
+    expect(loggedMessages()).toMatch(/set but ignored when LLM_KIND is "native"/);
+  });
+
   it("rejects a malformed LLM_BASE_URL at module-load parse", async () => {
     vi.stubEnv("LLM_KIND", "openai-compatible");
     vi.stubEnv("LLM_BASE_URL", "not-a-url");
+    vi.stubEnv("LLM_API_KEY", "k");
+    vi.resetModules();
+    await expect(loadConfig()).rejects.toThrow(ProcessExitSentinel);
+    expect(loggedMessages()).toMatch(/LLM_BASE_URL/);
+  });
+
+  it("rejects a protocol-less LLM_BASE_URL (URL-parses but isn't http)", async () => {
+    vi.stubEnv("LLM_KIND", "openai-compatible");
+    vi.stubEnv("LLM_BASE_URL", "localhost:1234/v1");
     vi.stubEnv("LLM_API_KEY", "k");
     vi.resetModules();
     await expect(loadConfig()).rejects.toThrow(ProcessExitSentinel);

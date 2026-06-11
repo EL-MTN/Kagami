@@ -89,17 +89,23 @@ export function getImageModelSpec(): { provider: string; modelId: string } {
 function chatConfig(): ProviderConfig {
   if (config.LLM_KIND === "openai-compatible") {
     if (!config.LLM_BASE_URL) {
-      // validateConfig() enforces this pairing at bot startup; the throw
-      // keeps the failure legible if construction ever precedes validation.
-      throw new Error('LLM_BASE_URL is required when LLM_KIND is "openai-compatible"');
+      // ESM import hoisting evaluates this module before index.ts reaches its
+      // validateConfig() call, so this throw — not the env cross-rule — is
+      // what the bot actually hits on this misconfig. Name both pairing vars
+      // so the operator fixes them in one pass.
+      throw new Error(
+        'LLM_KIND is "openai-compatible" but LLM_BASE_URL is unset — set LLM_BASE_URL (and LLM_API_KEY) in apps/bot/.env',
+      );
     }
     return {
       kind: "openai-compatible",
       baseURL: config.LLM_BASE_URL,
+      // Unset name/apiKey are fine: the gateway defaults the label to
+      // "openai-compatible" and only forwards a defined apiKey.
       name: config.LLM_PROVIDER_NAME,
       model: config.LLM_MODEL,
       models: tierModels,
-      ...(config.LLM_API_KEY ? { apiKey: config.LLM_API_KEY } : {}),
+      apiKey: config.LLM_API_KEY,
       timeoutMs: config.LLM_ATTEMPT_TIMEOUT_MS,
     };
   }
