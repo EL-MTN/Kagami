@@ -62,6 +62,9 @@
         "TIMEZONE",
         "TTS_PROVIDER",
         "TTS_VOICE_ID",
+        "WORKSPACE_MAX_FILES",
+        "WORKSPACE_MAX_FILE_MB",
+        "WORKSPACE_MAX_TOTAL_MB",
         "XAI_API_KEY"
       ]
     },
@@ -125,6 +128,9 @@
         "TIMEZONE",
         "TTS_PROVIDER",
         "TTS_VOICE_ID",
+        "WORKSPACE_MAX_FILES",
+        "WORKSPACE_MAX_FILE_MB",
+        "WORKSPACE_MAX_TOTAL_MB",
         "XAI_API_KEY"
       ]
     }

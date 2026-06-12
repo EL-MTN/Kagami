@@ -68,6 +68,47 @@ export class BlueBubblesClient {
     return { guid: tempGuid };
   }
 
+  /**
+   * Fetch an attachment's raw bytes by GUID. Used when the webhook payload
+   * doesn't inline `data` (BlueBubbles only inlines below its configured
+   * size threshold). `maxBytes` rejects early via the Content-Length header
+   * when the server provides one, then streams the body with a running cap —
+   * a missing or under-reported header must not let an oversized attachment
+   * buffer fully into the bot process before the size check.
+   */
+  async downloadAttachment(guid: string, maxBytes: number): Promise<Buffer> {
+    const url = this.buildUrl(`/api/v1/attachment/${encodeURIComponent(guid)}/download`);
+    const res = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`BlueBubbles downloadAttachment ${res.status}: ${text.slice(0, 300)}`);
+    }
+    const contentLength = Number(res.headers.get("content-length"));
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      throw new Error(`BlueBubbles attachment ${guid} is ${contentLength} bytes (cap ${maxBytes})`);
+    }
+    if (!res.body) {
+      throw new Error(`BlueBubbles attachment ${guid}: response has no body`);
+    }
+    const chunks: Buffer[] = [];
+    let total = 0;
+    // Throwing out of the for-await cancels the underlying stream, so an
+    // oversized download stops at the cap instead of completing.
+    for await (const chunk of res.body) {
+      const buf = Buffer.from(chunk);
+      total += buf.length;
+      if (total > maxBytes) {
+        throw new Error(
+          `BlueBubbles attachment ${guid} exceeds ${maxBytes} bytes; download aborted`,
+        );
+      }
+      chunks.push(buf);
+    }
+    const buffer = Buffer.concat(chunks);
+    logger.debug({ guid, bytes: buffer.length }, "BlueBubbles downloadAttachment ok");
+    return buffer;
+  }
+
   async sendAttachment(opts: SendAttachmentOptions): Promise<{ guid: string }> {
     const url = this.buildUrl("/api/v1/message/attachment");
     const tempGuid = crypto.randomUUID();

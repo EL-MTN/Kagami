@@ -4,6 +4,7 @@ import {
   cleanupOldRoutineLogs,
   cleanupOldWatcherLogs,
   cleanupOldLocations,
+  purgeDeletedWorkspaceFiles,
 } from "@kokoro/db";
 import { logger, withRootTrace } from "@kokoro/shared";
 import { sweepPendingFacts, sweepPendingIngests, sweepStaleActiveSessions } from "@kokoro/memory";
@@ -42,23 +43,38 @@ async function runKiokuSweep(): Promise<void> {
 
 async function runDailyCleanup(): Promise<void> {
   try {
-    const [deletedReminders, deletedConvos, deletedLogs, deletedWatcherLogs, deletedLocations] =
-      await Promise.all([
-        cleanupFiredReminders(30),
-        cleanupOldConversations(90),
-        cleanupOldRoutineLogs(90),
-        cleanupOldWatcherLogs(90),
-        cleanupOldLocations(90),
-      ]);
+    const [
+      deletedReminders,
+      deletedConvos,
+      deletedLogs,
+      deletedWatcherLogs,
+      deletedLocations,
+      purgedWorkspaceFiles,
+    ] = await Promise.all([
+      cleanupFiredReminders(30),
+      cleanupOldConversations(90),
+      cleanupOldRoutineLogs(90),
+      cleanupOldWatcherLogs(90),
+      cleanupOldLocations(90),
+      purgeDeletedWorkspaceFiles(30),
+    ]);
     if (
       deletedReminders > 0 ||
       deletedConvos > 0 ||
       deletedLogs > 0 ||
       deletedWatcherLogs > 0 ||
-      deletedLocations > 0
+      deletedLocations > 0 ||
+      purgedWorkspaceFiles > 0
     ) {
       logger.info(
-        { deletedReminders, deletedConvos, deletedLogs, deletedWatcherLogs, deletedLocations },
+        {
+          deletedReminders,
+          deletedConvos,
+          deletedLogs,
+          deletedWatcherLogs,
+          deletedLocations,
+          purgedWorkspaceFiles,
+        },
         "Daily cleanup complete",
       );
     }

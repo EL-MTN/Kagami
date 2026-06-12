@@ -17,15 +17,24 @@ import {
 import { appendConfirmationResolution } from "../../services/confirmation-events";
 import { generateAcknowledgment } from "../../ai/acknowledge";
 import { resetTimer } from "../../scheduler/proactive";
-import { BlueBubblesAdapter, normalizeWebhookEvent, type BlueBubblesMessageEvent } from "./adapter";
+import {
+  BlueBubblesAdapter,
+  IMESSAGE_MAX_ATTACHMENT_BYTES,
+  normalizeWebhookEvent,
+  type BlueBubblesMessageEvent,
+} from "./adapter";
+import type { BlueBubblesClient } from "./client";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 15;
 const DEDUPE_LRU_CAP = 200;
-// Largest webhook body we'll accept. BlueBubbles inlines image attachments
-// as base64; a 10 MB image becomes ~13 MB in JSON, plus envelope. 25 MB
-// covers realistic attachments while keeping a hard ceiling on RAM.
-const MAX_WEBHOOK_BODY_BYTES = 25 * 1024 * 1024;
+// Largest webhook body we'll accept. BlueBubbles inlines attachments as
+// base64 (4/3 inflation), so the advertised IMESSAGE_MAX_ATTACHMENT_BYTES
+// (25 MB raw) arrives as ~33.4 MB of JSON plus envelope — the body limit
+// must cover that or inline attachments above ~18 MB raw get an opaque 413
+// instead of reaching the attachment-size check. 35 MB honors the cap while
+// keeping a hard ceiling on RAM.
+const MAX_WEBHOOK_BODY_BYTES = 35 * 1024 * 1024;
 
 // Strict standalone match — must be the entire reply (with optional
 // trailing punctuation/whitespace). Conversational phrases like
@@ -203,6 +212,8 @@ interface StartWebhookOptions {
   /** Token expected on incoming webhook calls (?password=... or X-Webhook-Token). */
   password: string;
   adapter: BlueBubblesAdapter;
+  /** REST client for fetch-by-GUID of attachments the webhook didn't inline. */
+  client: BlueBubblesClient;
 }
 
 /**
@@ -295,6 +306,29 @@ export function startBlueBubblesWebhook(opts: StartWebhookOptions): () => void {
         if (isRateLimited(message.userId)) {
           logger.warn({ handle: message.userId }, "iMessage rate limited");
           return;
+        }
+
+        // Document attachment whose bytes weren't inlined: fetch by GUID
+        // before the AI pipeline runs. Failure degrades to an honest marker
+        // rather than a silent drop; handleMessage saves the fetched bytes to
+        // the workspace inbox.
+        if (normalized.pendingDocument) {
+          const { guid, mimeType, fileName } = normalized.pendingDocument;
+          try {
+            message.documentBuffer = await opts.client.downloadAttachment(
+              guid,
+              IMESSAGE_MAX_ATTACHMENT_BYTES,
+            );
+            message.documentMimeType = mimeType;
+            message.documentFileName = fileName;
+          } catch (error) {
+            logger.warn(
+              { error: error, attachmentGuid: guid },
+              "iMessage attachment fetch-by-GUID failed; document dropped",
+            );
+            const note = `[file "${fileName ?? "attachment"}" could not be retrieved]`;
+            message.text = message.text ? `${message.text}\n${note}` : note;
+          }
         }
 
         logger.info(

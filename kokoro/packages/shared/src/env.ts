@@ -291,6 +291,19 @@ export const envSpec = defineEnv({
       group: "Sandboxed code execution",
     }),
 
+    WORKSPACE_MAX_FILE_MB: z.coerce.number().int().positive().default(25).meta({
+      doc: "Per-file size cap (MB) — matches the inbound media caps.",
+      group: "Persistent workspace",
+    }),
+    WORKSPACE_MAX_TOTAL_MB: z.coerce.number().int().positive().default(256).meta({
+      doc: "Total live workspace size cap (MB). Writes that would breach fail with\na clear reason so the model can clean up.",
+      group: "Persistent workspace",
+    }),
+    WORKSPACE_MAX_FILES: z.coerce.number().int().positive().default(500).meta({
+      doc: "Max live (non-trashed) files in the workspace.",
+      group: "Persistent workspace",
+    }),
+
     GOOGLE_MAPS_API_KEY: z.string().optional().meta({
       doc: "Optional geocoding key for location awareness — without it, geocoding\ndegrades to raw coordinates (reverseGeocode returns null); never a hard\nrequirement.",
       secret: true,

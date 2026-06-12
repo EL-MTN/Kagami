@@ -37,7 +37,12 @@ function sanitizeDescription(description: string): string {
   return description.replace(/`/g, "'");
 }
 
-function buildCodePrompt(language: SandboxLanguage, code: string, description: string): string {
+function buildCodePrompt(
+  language: SandboxLanguage,
+  code: string,
+  description: string,
+  useWorkspace: boolean,
+): string {
   const fenceTag = language === "python" ? "python" : "js";
   // The fence must be LONGER than any backtick run inside the code — an
   // embedded ``` would otherwise close the block early and the bubble would
@@ -48,7 +53,9 @@ function buildCodePrompt(language: SandboxLanguage, code: string, description: s
     code.match(/`+/g)?.reduce((max, run) => Math.max(max, run.length), 0) ?? 0;
   const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
   return [
-    `Run this ${language} code in the sandbox?`,
+    // Workspace access changes what the user is approving (the run can read
+    // and rewrite their files), so it's stated on the bubble's first line.
+    `Run this ${language} code in the sandbox${useWorkspace ? " — with workspace access (/workspace mounted read-write)" : ""}?`,
     ``,
     description,
     ``,
@@ -69,7 +76,7 @@ function buildCodePrompt(language: SandboxLanguage, code: string, description: s
  */
 export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) {
   return tool({
-    description: `Run a short self-contained Python or Node script in a locked-down sandbox — use it for exact math, data transforms, text processing, or anything better computed than reasoned. The sandbox has NO network, no host filesystem, no installed packages beyond the language's standard library, ~2 minutes of wall clock, and capped output: write a single script that prints its result to stdout. ${OWNER} gets a tap-to-approve bubble showing the code; it runs only if he approves. Returns immediately with { pending: true } — stop and wait, don't call it again in the same turn.`,
+    description: `Run a short self-contained Python or Node script in a locked-down sandbox — use it for exact math, data transforms, text processing, or anything better computed than reasoned. The sandbox has NO network, no installed packages beyond the language's standard library, ~2 minutes of wall clock, and capped output: write a single script that prints its result to stdout. Set useWorkspace: true to mount the persistent workspace read-write at /workspace — the run can then read existing files (e.g. inbox/data.csv) and any files it writes there are saved back to the workspace after it finishes (this is how to produce results bigger than stdout, like a CSV or chart to sendFile later). ${OWNER} gets a tap-to-approve bubble showing the code; it runs only if he approves. Returns immediately with { pending: true } — stop and wait, don't call it again in the same turn.`,
     inputSchema: z.object({
       language: z
         .enum(["python", "node"])
@@ -100,10 +107,16 @@ export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) 
         .describe(
           "One short sentence on what the code does, shown on the approval prompt. Be specific: 'compute compound interest over 30 years' beats 'run calculation'.",
         ),
+      useWorkspace: z
+        .boolean()
+        .optional()
+        .describe(
+          "Mount the persistent workspace read-write at /workspace. The run sees every workspace file; files it writes/changes/deletes under /workspace are synced back afterward. Leave unset for pure computation.",
+        ),
     }),
-    execute: async ({ language, code, description }) => {
+    execute: async ({ language, code, description, useWorkspace }) => {
       const safeDescription = sanitizeDescription(description);
-      const promptText = buildCodePrompt(language, code, safeDescription);
+      const promptText = buildCodePrompt(language, code, safeDescription, useWorkspace ?? false);
       if (promptText.length > MAX_PROMPT_LENGTH) {
         return {
           pending: false,
@@ -115,8 +128,8 @@ export function createExecuteCodeTool(chatId: string, adapter: PlatformAdapter) 
 
       try {
         const id = await raisePendingConfirmation(chatId, adapter, {
-          summary: `run ${language} code: ${safeDescription}`,
-          action: { tool: "executeCode", args: { language, code } },
+          summary: `run ${language} code${useWorkspace ? " (workspace mounted)" : ""}: ${safeDescription}`,
+          action: { tool: "executeCode", args: { language, code, useWorkspace } },
           origin: "conversation",
           promptText,
         });

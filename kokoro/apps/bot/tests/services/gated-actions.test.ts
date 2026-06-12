@@ -49,6 +49,15 @@ vi.mock("../../src/services/code-sandbox", () => {
   }
   return { runCode: vi.fn(), CodeSandboxError };
 });
+vi.mock("../../src/services/workspace-sandbox", () => ({
+  materializeWorkspace: vi.fn(),
+  syncBackWorkspace: vi.fn(),
+  cleanupWorkspaceDir: vi.fn().mockResolvedValue(undefined),
+  formatWorkspaceDelta: vi.fn(),
+  // Pass-through lock: serialization is the real module's concern; the
+  // dispatcher tests only assert the callback runs.
+  withWorkspaceSandboxLock: vi.fn((fn: () => Promise<unknown>) => fn()),
+}));
 vi.mock("@kokoro/kizuna", () => ({
   logInteraction: vi.fn(),
   createFollowup: vi.fn(),
@@ -75,6 +84,12 @@ import { sendEmail } from "../../src/services/gmail";
 import { updateEvent, deleteEvent } from "../../src/services/google-calendar";
 import { acquireBrowser, releaseBrowser, resetBrowser } from "../../src/services/browser";
 import { runCode, CodeSandboxError } from "../../src/services/code-sandbox";
+import {
+  cleanupWorkspaceDir,
+  formatWorkspaceDelta,
+  materializeWorkspace,
+  syncBackWorkspace,
+} from "../../src/services/workspace-sandbox";
 import { createFollowup, logInteraction, resolveFollowup, updatePerson } from "@kokoro/kizuna";
 import {
   createRoutine,
@@ -1436,7 +1451,12 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
     // …while detail.output and resultText stay byte-exact: resultText carries
     // the full (already ≤4000-capped) output so the acknowledgment turn can
     // relay what the code actually produced — the summary is just a preview.
-    expect(result.detail).toEqual({ exitCode: 0, language: "python", output: "42\n" });
+    expect(result.detail).toEqual({
+      exitCode: 0,
+      language: "python",
+      output: "42\n",
+      workspaceNote: null,
+    });
     expect(result.resultText).toBe("42\n");
     expect(vi.mocked(runCode)).toHaveBeenCalledWith({ language: "python", code: CODE });
   });
@@ -1447,7 +1467,7 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
     await dispatchGatedAction("executeCode", { language: "python", code: CODE });
 
     expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-      { language: "python", codeLength: CODE.length },
+      { language: "python", codeLength: CODE.length, useWorkspace: false },
       "Dispatching approved executeCode",
     );
     // No log call on any level may carry the code body (keys/personal data
@@ -1473,6 +1493,7 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
       exitCode: 1,
       language: "python",
       output: "Traceback…",
+      workspaceNote: null,
     });
     // Failures relay their output too — the model needs the traceback to react.
     expect(result.resultText).toBe("Traceback…");
@@ -1488,7 +1509,12 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
     expect(result.success).toBe(false);
     // 120s = the EXECUTE_CODE_TIMEOUT_MS default (no env override in tests).
     expect(result.summary).toBe("code execution timed out after 120s");
-    expect(result.detail).toEqual({ reason: "timeout", language: "node", output: "partial" });
+    expect(result.detail).toEqual({
+      reason: "timeout",
+      language: "node",
+      output: "partial",
+      workspaceNote: null,
+    });
   });
 
   it("reports an OOM kill with the configured memory cap in the summary", async () => {
@@ -1501,7 +1527,12 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
     expect(result.success).toBe(false);
     // 512 MB = the EXECUTE_CODE_MEMORY_MB default (no env override in tests).
     expect(result.summary).toBe("code was killed (out of memory, 512 MB cap)");
-    expect(result.detail).toEqual({ reason: "oom", language: "python", output: "" });
+    expect(result.detail).toEqual({
+      reason: "oom",
+      language: "python",
+      output: "",
+      workspaceNote: null,
+    });
     // Empty output → no resultText; handlers fall back to the summary.
     expect(result.resultText).toBeUndefined();
   });
@@ -1521,6 +1552,7 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
       reason: "output_overflow",
       language: "python",
       output: "flood…[truncated 996000]",
+      workspaceNote: null,
     });
   });
 
@@ -1539,6 +1571,121 @@ describe("dispatchGatedAction — executeCode (dispatch-only)", () => {
       "Docker daemon is not running — code execution is unavailable until it's started.",
     );
     expect(result.detail).toEqual({ reason: "daemon_unavailable" });
+  });
+
+  describe("workspace-mounted runs (useWorkspace)", () => {
+    const MATERIALIZATION = { dir: "/tmp/kokoro-ws-test", manifest: new Map([["a.txt", "h1"]]) };
+
+    beforeEach(() => {
+      vi.mocked(materializeWorkspace).mockResolvedValue(MATERIALIZATION);
+      vi.mocked(syncBackWorkspace).mockResolvedValue({
+        added: [{ path: "out.csv", size: 12_288 }],
+        modified: [],
+        deleted: [],
+        skipped: [],
+      });
+      vi.mocked(formatWorkspaceDelta).mockReturnValue("wrote out.csv (12.0 KB)");
+      vi.mocked(cleanupWorkspaceDir).mockResolvedValue(undefined);
+    });
+
+    it("materializes, mounts, syncs back, and reports the file delta", async () => {
+      vi.mocked(runCode).mockResolvedValue(sandboxResult({ output: "done\n" }));
+
+      const result = await dispatchGatedAction("executeCode", {
+        language: "python",
+        code: CODE,
+        useWorkspace: true,
+      });
+
+      expect(vi.mocked(materializeWorkspace)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(runCode)).toHaveBeenCalledWith({
+        language: "python",
+        code: CODE,
+        workspaceDir: "/tmp/kokoro-ws-test",
+      });
+      expect(vi.mocked(syncBackWorkspace)).toHaveBeenCalledWith(MATERIALIZATION);
+      expect(vi.mocked(cleanupWorkspaceDir)).toHaveBeenCalledWith("/tmp/kokoro-ws-test");
+
+      expect(result.success).toBe(true);
+      expect(result.summary).toBe("code ran: done — wrote out.csv (12.0 KB)");
+      // The delta rides on resultText too — it's as much a run result as stdout.
+      expect(result.resultText).toBe("done\n\n[workspace] wrote out.csv (12.0 KB)");
+      expect(result.detail.workspaceNote).toBe("wrote out.csv (12.0 KB)");
+    });
+
+    it("adds no suffix when the run changed nothing", async () => {
+      vi.mocked(runCode).mockResolvedValue(sandboxResult({ output: "42\n" }));
+      vi.mocked(formatWorkspaceDelta).mockReturnValue(null);
+
+      const result = await dispatchGatedAction("executeCode", {
+        language: "python",
+        code: CODE,
+        useWorkspace: true,
+      });
+
+      expect(result.summary).toBe("code ran: 42");
+      expect(result.resultText).toBe("42\n");
+      expect(result.detail.workspaceNote).toBeNull();
+    });
+
+    it("discards workspace changes on a torn run (timeout) — no sync-back", async () => {
+      vi.mocked(runCode).mockResolvedValue(
+        sandboxResult({ exitCode: 137, timedOut: true, output: "partial" }),
+      );
+
+      const result = await dispatchGatedAction("executeCode", {
+        language: "python",
+        code: CODE,
+        useWorkspace: true,
+      });
+
+      expect(vi.mocked(syncBackWorkspace)).not.toHaveBeenCalled();
+      expect(vi.mocked(cleanupWorkspaceDir)).toHaveBeenCalledWith("/tmp/kokoro-ws-test");
+      expect(result.success).toBe(false);
+      expect(result.summary).toContain("workspace changes discarded");
+    });
+
+    it("syncs back on a non-zero exit — the program wrote those files deliberately", async () => {
+      // sys.exit(1) after writing results is a legitimate pattern; only
+      // timeout/OOM/overflow (torn writes) discard.
+      vi.mocked(runCode).mockResolvedValue(sandboxResult({ exitCode: 1, output: "Traceback…" }));
+
+      const result = await dispatchGatedAction("executeCode", {
+        language: "python",
+        code: CODE,
+        useWorkspace: true,
+      });
+
+      expect(vi.mocked(syncBackWorkspace)).toHaveBeenCalledTimes(1);
+      expect(result.success).toBe(false);
+      expect(result.summary).toBe("code exited with code 1 — wrote out.csv (12.0 KB)");
+    });
+
+    it("cleans up the ephemeral dir even when the run throws", async () => {
+      vi.mocked(runCode).mockRejectedValue(
+        new CodeSandboxError("daemon_unavailable", "Docker daemon is not running."),
+      );
+
+      const result = await dispatchGatedAction("executeCode", {
+        language: "python",
+        code: CODE,
+        useWorkspace: true,
+      });
+
+      expect(vi.mocked(cleanupWorkspaceDir)).toHaveBeenCalledWith("/tmp/kokoro-ws-test");
+      expect(result.success).toBe(false);
+      expect(result.summary).toBe("Docker daemon is not running.");
+    });
+
+    it("never touches the workspace machinery without useWorkspace", async () => {
+      vi.mocked(runCode).mockResolvedValue(sandboxResult());
+
+      await dispatchGatedAction("executeCode", { language: "python", code: CODE });
+
+      expect(vi.mocked(materializeWorkspace)).not.toHaveBeenCalled();
+      expect(vi.mocked(syncBackWorkspace)).not.toHaveBeenCalled();
+      expect(vi.mocked(runCode)).toHaveBeenCalledWith({ language: "python", code: CODE });
+    });
   });
 });
 

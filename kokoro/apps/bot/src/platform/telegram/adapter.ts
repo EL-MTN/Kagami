@@ -192,6 +192,71 @@ export class TelegramAdapter implements PlatformAdapter {
     );
   }
 
+  /**
+   * Telegram document attachments (generic files: PDFs, CSVs, archives, …).
+   * Downloads from the CDN and hands the bytes to `handleMessage`, which owns
+   * the workspace save (or the disabled-placeholder fallback). The 20 MB cap
+   * is the Bot API's own `getFile` limit — files above it are physically
+   * undownloadable by bots, so the user gets an honest marker instead of a
+   * silent drop.
+   */
+  async normalizeDocument(ctx: Context): Promise<IncomingMessage | null> {
+    const msg = ctx.message;
+    const doc = msg?.document;
+    if (!msg || !doc || !msg.from) return null;
+    const base = {
+      platform: "telegram",
+      chatId: String(msg.chat.id),
+      userId: String(msg.from.id),
+      userName: msg.from.first_name || "Unknown",
+      timestamp: new Date(msg.date * 1000),
+      replyToMessageId: msg.reply_to_message ? String(msg.reply_to_message.message_id) : undefined,
+    };
+
+    const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
+    const oversize = {
+      ...base,
+      text: `${msg.caption ? `${msg.caption}\n` : ""}[file "${doc.file_name ?? "unnamed"}" too large to receive — Telegram caps bot downloads at 20 MB]`,
+    };
+    if (doc.file_size !== undefined && doc.file_size > MAX_DOCUMENT_BYTES) {
+      logger.warn(
+        { fileId: doc.file_id, fileSize: doc.file_size },
+        "Document exceeds Bot API 20 MB download cap; skipping download",
+      );
+      return oversize;
+    }
+
+    try {
+      const file = await ctx.api.getFile(doc.file_id);
+      const res = await fetch(
+        `https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`,
+      );
+      if (!res.ok) {
+        logger.error({ status: res.status, fileId: doc.file_id }, "Failed to download document");
+        return null;
+      }
+      const buffer = Buffer.from(await res.arrayBuffer());
+      // `file_size` is documented optional — re-check after download.
+      if (buffer.length > MAX_DOCUMENT_BYTES) {
+        logger.warn(
+          { fileId: doc.file_id, bytes: buffer.length },
+          "Downloaded document exceeds 20 MB cap; dropping buffer",
+        );
+        return oversize;
+      }
+      return {
+        ...base,
+        text: msg.caption ?? "",
+        documentBuffer: buffer,
+        documentMimeType: doc.mime_type,
+        documentFileName: doc.file_name,
+      };
+    } catch (error) {
+      logger.error({ error: error, fileId: doc.file_id }, "Error downloading document");
+      return null;
+    }
+  }
+
   normalizeLocation(ctx: Context): IncomingMessage | null {
     const msg = ctx.message;
     if (!msg?.location || !msg.from) return null;
@@ -285,6 +350,22 @@ export class TelegramAdapter implements PlatformAdapter {
       logger.debug({ fileId }, "Cached telegram file_id from buffer");
     }
     return fileId;
+  }
+
+  async sendFileBuffer(
+    chatId: string,
+    buffer: Buffer,
+    fileName: string,
+    _mimeType?: string,
+    caption?: string,
+  ): Promise<void> {
+    // Telegram sniffs the content type itself; the InputFile name is what
+    // the recipient sees and what determines the document's extension.
+    const input = new InputFile(buffer, fileName);
+    await this.bot.api.sendDocument(Number(chatId), input, {
+      caption: caption ? markdownToTelegramHtml(caption) : undefined,
+      parse_mode: "HTML",
+    });
   }
 
   async sendConfirmationPrompt(

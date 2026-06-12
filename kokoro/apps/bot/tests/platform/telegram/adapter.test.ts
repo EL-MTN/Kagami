@@ -86,3 +86,43 @@ describe("redactPromptPayload", () => {
     expect(odd.payload.text).toBe(42);
   });
 });
+
+describe("sendFileBuffer", () => {
+  it("sends the buffer as a document with the given filename and caption", async () => {
+    const sendDocument = vi.fn().mockResolvedValue({ message_id: 9 });
+    const adapter = new TelegramAdapter({ api: { sendDocument } } as unknown as Bot);
+
+    await adapter.sendFileBuffer(
+      "42",
+      Buffer.from("a,b\n1,2\n"),
+      "report.csv",
+      "text/csv",
+      "june data",
+    );
+
+    expect(sendDocument).toHaveBeenCalledTimes(1);
+    const [chatId, input, opts] = vi.mocked(sendDocument).mock.calls[0] as [
+      number,
+      { filename?: string },
+      { caption?: string; parse_mode?: string },
+    ];
+    expect(chatId).toBe(42);
+    expect(input.filename).toBe("report.csv");
+    expect(opts.caption).toContain("june data");
+    expect(opts.parse_mode).toBe("HTML");
+  });
+
+  it("omits the caption field when none is given", async () => {
+    const sendDocument = vi.fn().mockResolvedValue({ message_id: 9 });
+    const adapter = new TelegramAdapter({ api: { sendDocument } } as unknown as Bot);
+
+    await adapter.sendFileBuffer("42", Buffer.from("x"), "a.bin");
+
+    const [, , opts] = vi.mocked(sendDocument).mock.calls[0] as [
+      number,
+      unknown,
+      { caption?: string },
+    ];
+    expect(opts.caption).toBeUndefined();
+  });
+});

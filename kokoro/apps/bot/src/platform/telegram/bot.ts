@@ -320,6 +320,42 @@ export function createBot(token: string): Bot {
     }
   });
 
+  // Generic file attachments (PDFs, CSVs, archives, …). The adapter
+  // downloads the bytes (Bot API caps bot downloads at 20 MB); handleMessage
+  // saves them to the workspace inbox or placeholders when it's disabled.
+  bot.on("message:document", async (ctx) => {
+    const incoming = await adapter.normalizeDocument(ctx);
+    if (!incoming) return;
+
+    if (isRateLimited(incoming.userId)) {
+      logger.warn({ userId: incoming.userId }, "Rate limited");
+      await ctx.reply("slow down babe, i can't keep up lol");
+      return;
+    }
+
+    logger.info(
+      {
+        userId: incoming.userId,
+        fileName: incoming.documentFileName,
+        bytes: incoming.documentBuffer?.length,
+      },
+      "Incoming document",
+    );
+
+    try {
+      // No one-shot chat action here — handleMessage owns the activity
+      // heartbeat for the whole turn (services/activity.ts).
+      await handleMessage(incoming, adapter);
+      resetTimer(incoming.chatId);
+    } catch (error) {
+      logger.error(
+        { error: error, userId: incoming.userId, chatId: incoming.chatId },
+        "Error handling document message",
+      );
+      await ctx.reply("sorry something went wrong, give me a sec 💭");
+    }
+  });
+
   bot.on("message:text", async (ctx) => {
     const incoming = adapter.normalize(ctx);
     if (!incoming) return;

@@ -17,6 +17,13 @@ import { createProposeRoutineRefinementTool } from "./routine-refinements";
 import { createDelegateTool } from "./delegate";
 import { createExecuteCodeTool } from "./execute-code";
 import { createSearchMemoryTool, createRememberFactTool } from "./memory";
+import {
+  createDeleteFileTool,
+  createListFilesTool,
+  createReadFileTool,
+  createSendFileTool,
+  createWriteFileTool,
+} from "./files";
 import { createCrmTools, createCrmWriteTools } from "./crm";
 import { getMcpTools } from "../../services/mcp";
 import { MAX_ROUTINE_DEPTH } from "../../services/routine-executor";
@@ -163,6 +170,17 @@ export function allTools(ctx: ToolContext) {
   tools.searchMemory = createSearchMemoryTool();
   tools.rememberFact = createRememberFactTool();
 
+  // Persistent workspace — one global file tree (not chat-scoped), always on
+  // (its only dependency is Mongo, which the bot already requires). Writes are
+  // ungated by design: same trust class as rememberFact (nothing leaves the
+  // system), and data loss is covered by the trash instead of approval taps.
+  tools.listFiles = createListFilesTool();
+  tools.readFile = createReadFileTool();
+  tools.writeFile = createWriteFileTool(ctx.chatId);
+  tools.deleteFile = createDeleteFileTool();
+  // Sends to the user's own chat — the same trust class as sendPhoto.
+  tools.sendFile = createSendFileTool(ctx.chatId, ctx.adapter);
+
   Object.assign(tools, createCrmTools());
   Object.assign(tools, createCrmWriteTools());
 
@@ -220,6 +238,9 @@ export function allTools(ctx: ToolContext) {
   }> = [
     { name: "sendPhoto", kind: "upload_photo", after: photoDelivered },
     { name: "sendVoice", kind: "record_voice" },
+    // A document send never suppresses the final text, so it resets to
+    // typing like sendVoice does.
+    { name: "sendFile", kind: "upload_document" },
     // Verb stays `typing` (browsing usually delivers nothing visual); the
     // entry exists for the screenshot-delivered pause rule.
     { name: "browse", kind: "typing", after: photoDelivered },
@@ -291,6 +312,11 @@ function readOnlyToolSubset(ctx: ToolContext): ToolSet {
   // so they are safe for watcher/under-watcher observation runs.
   tools.searchSkills = createSearchSkillsTool(ctx.chatId);
   tools.readSkill = createReadSkillTool(ctx.chatId);
+
+  // Workspace reads are pure — a watcher can key off state a routine
+  // accumulated. writeFile/deleteFile/sendFile are omitted: they mutate or send.
+  tools.listFiles = createListFilesTool();
+  tools.readFile = createReadFileTool();
 
   Object.assign(tools, createCrmTools());
 

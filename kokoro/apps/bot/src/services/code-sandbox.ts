@@ -43,6 +43,15 @@ export interface RunCodeOptions {
   timeoutMs?: number;
   /** Hard memory cap (swap pinned to the same value). Defaults to config.EXECUTE_CODE_MEMORY_MB. */
   memoryMb?: number;
+  /**
+   * Host directory bind-mounted read-write at /workspace (and set as the
+   * workdir). Callers pass an EPHEMERAL materialized copy of the persistent
+   * workspace (see workspace-sandbox.ts), never canonical storage — the
+   * sync-back diff is the only path from the container back to the store.
+   * The rootfs stays --read-only; this is the single writable mount besides
+   * the /tmp tmpfs.
+   */
+  workspaceDir?: string;
 }
 
 export interface RunCodeResult {
@@ -211,6 +220,18 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     opts.language === "python" ? config.EXECUTE_CODE_PYTHON_IMAGE : config.EXECUTE_CODE_NODE_IMAGE;
   const name = `${BOOT_NAME_PREFIX}${randomUUID()}`;
 
+  // `docker run --volume` splits the spec on `:` (and `,` delimits volume
+  // options). A workspace dir containing either — e.g. a colon in TMPDIR —
+  // would silently mis-parse into the wrong host path or container target.
+  // Refuse rather than mount somewhere unintended; the caller's sync-back
+  // would otherwise diff against a directory the container never wrote to.
+  if (opts.workspaceDir && /[:,]/.test(opts.workspaceDir)) {
+    throw new CodeSandboxError(
+      "internal",
+      `workspace mount path contains an unsupported character (: or ,): ${opts.workspaceDir}`,
+    );
+  }
+
   // Args array, never a shell — the code body only ever travels via stdin.
   const args = [
     "run",
@@ -239,6 +260,9 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     "--user",
     "65534:65534",
     ...PROXY_ENV_OVERRIDES,
+    ...(opts.workspaceDir
+      ? ["--volume", `${opts.workspaceDir}:/workspace:rw`, "--workdir", "/workspace"]
+      : []),
     "-i",
     image,
     ...(opts.language === "python" ? ["python3", "-"] : ["node", "-"]),

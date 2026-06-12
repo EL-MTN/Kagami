@@ -9,6 +9,13 @@ export interface FakeAdapterCalls {
   }>;
   sendPhotoBuffer: Array<{ chatId: string; bytes: number; caption?: string }>;
   sendVoiceBuffer: Array<{ chatId: string; bytes: number; duration?: number }>;
+  sendFileBuffer: Array<{
+    chatId: string;
+    bytes: number;
+    fileName: string;
+    mimeType?: string;
+    caption?: string;
+  }>;
   sendConfirmationPrompt: Array<{ chatId: string; text: string; confirmationId: string }>;
   editConfirmationPrompt: Array<{ chatId: string; messageId: string; text: string }>;
 }
@@ -44,6 +51,7 @@ export function fakeAdapter(
     sendPhoto: [],
     sendPhotoBuffer: [],
     sendVoiceBuffer: [],
+    sendFileBuffer: [],
     sendConfirmationPrompt: [],
     editConfirmationPrompt: [],
   };
@@ -56,6 +64,7 @@ export function fakeAdapter(
       calls.sendPhoto.length = 0;
       calls.sendPhotoBuffer.length = 0;
       calls.sendVoiceBuffer.length = 0;
+      calls.sendFileBuffer.length = 0;
       calls.sendConfirmationPrompt.length = 0;
       calls.editConfirmationPrompt.length = 0;
     },
@@ -73,6 +82,10 @@ export function fakeAdapter(
     },
     sendVoiceBuffer(chatId, buffer, duration) {
       calls.sendVoiceBuffer.push({ chatId, bytes: buffer.length, duration });
+      return Promise.resolve();
+    },
+    sendFileBuffer(chatId, buffer, fileName, mimeType, caption) {
+      calls.sendFileBuffer.push({ chatId, bytes: buffer.length, fileName, mimeType, caption });
       return Promise.resolve();
     },
     sendConfirmationPrompt(chatId, text, confirmationId) {

@@ -4,6 +4,7 @@ import { logger } from "@kokoro/shared";
 
 const IMAGE_BUCKET = "images";
 const AUDIO_BUCKET = "audio";
+const WORKSPACE_BUCKET = "workspace";
 
 // Cache GridFSBucket instances per (db, bucketName). The mongo driver tracks
 // a `checkedIndexes` flag on each bucket — the very first upload runs a
@@ -131,4 +132,37 @@ export async function removeAudio(key: string): Promise<void> {
 
 export async function removeAudios(keys: string[]): Promise<void> {
   await removeBlobs(AUDIO_BUCKET, keys);
+}
+
+// Workspace bucket — blob storage for the persistent file workspace (one
+// global file tree shared across chats/channels/routines). Rows in the
+// WorkspaceFile collection own the path→key mapping and metadata; this bucket
+// only holds bytes. Keys are content-version-scoped: every write allocates a
+// fresh key and the previous blob is removed after the row flips, so a
+// half-finished upload can never be served under a live path.
+
+export function generateWorkspaceKey(): string {
+  return randomUUID();
+}
+
+export async function writeWorkspaceBlob(
+  key: string,
+  data: Buffer,
+  mimeType: string,
+): Promise<void> {
+  await writeBlob(WORKSPACE_BUCKET, key, data, mimeType);
+}
+
+export async function readWorkspaceBlob(
+  key: string,
+): Promise<{ data: Buffer; mimeType: string } | null> {
+  return readBlob(WORKSPACE_BUCKET, key, "application/octet-stream");
+}
+
+export async function removeWorkspaceBlob(key: string): Promise<void> {
+  await removeBlob(WORKSPACE_BUCKET, key);
+}
+
+export async function removeWorkspaceBlobs(keys: string[]): Promise<void> {
+  await removeBlobs(WORKSPACE_BUCKET, keys);
 }

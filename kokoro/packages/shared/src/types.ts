@@ -10,6 +10,15 @@ export interface IncomingMessage {
   audioBuffer?: Buffer;
   audioMimeType?: string;
   /**
+   * Raw bytes of an inbound document attachment (anything that isn't an
+   * image or audio: PDFs, CSVs, archives, …). The message handler saves it
+   * to the persistent workspace under inbox/.
+   */
+  documentBuffer?: Buffer;
+  documentMimeType?: string;
+  /** Original filename of the document attachment, when the platform provides one. */
+  documentFileName?: string;
+  /**
    * Audio duration in integer seconds when known. Telegram surfaces this
    * directly on Voice/Audio; iMessage doesn't, so it may be undefined and
    * the STT API response duration will be used instead.
@@ -57,6 +66,19 @@ export interface PlatformAdapter {
   ): Promise<string | undefined>; // returns file_id if available
   sendPhotoBuffer(chatId: string, buffer: Buffer, caption?: string): Promise<string | undefined>;
   sendVoiceBuffer(chatId: string, buffer: Buffer, duration?: number): Promise<void>;
+  /**
+   * Send an arbitrary file as a document attachment. `fileName` is the
+   * display name the recipient sees; `mimeType` is a hint for platforms
+   * that carry one (BlueBubbles), ignored where the platform sniffs for
+   * itself (Telegram).
+   */
+  sendFileBuffer(
+    chatId: string,
+    buffer: Buffer,
+    fileName: string,
+    mimeType?: string,
+    caption?: string,
+  ): Promise<void>;
   /**
    * Send a message with [Approve][Deny] buttons attached. Returns the
    * platform-native message id so the caller can later edit the bubble in

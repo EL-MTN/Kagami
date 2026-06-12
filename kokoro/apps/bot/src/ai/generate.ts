@@ -13,6 +13,7 @@ import {
 import type { IncomingMessage, PlatformAdapter } from "@kokoro/shared";
 import { logger } from "@kokoro/shared";
 import { transcribeAudio } from "../stt/transcriber";
+import { WorkspaceError, humanBytes, saveInboundDocument } from "../services/workspace";
 import {
   extractResponseText,
   collectToolCalls,
@@ -119,6 +120,38 @@ async function runTurn(
       }
       // outcome.reason === "disabled": leave the adapter's "[voice note]" placeholder
     }
+  }
+
+  // Inbound document attachments land in the workspace inbox. The marker
+  // tells the model (and the transcript) what happened to the file — saved
+  // where, or refused why. Adapters already enforce platform download caps;
+  // the workspace enforces its own quotas here.
+  //
+  // Deliberately unlike images/audio (which get a GridFS `imageRef`/`audioRef`
+  // on the conversation message so a future multimodal turn can re-feed the
+  // raw bytes): a document's home is the persistent workspace, referenced by
+  // the inbox path in the marker. The conversation row keeps only that text
+  // marker. Tradeoff: if the file is later deleted from the workspace, history
+  // can't re-materialize it — acceptable because documents are durable
+  // artifacts the model reads via the workspace tools, not turn-scoped model
+  // inputs.
+  if (incoming.documentBuffer) {
+    const displayName = incoming.documentFileName ?? "attachment";
+    let note: string;
+    try {
+      const saved = await saveInboundDocument({
+        fileName: incoming.documentFileName,
+        data: incoming.documentBuffer,
+        mimeType: incoming.documentMimeType,
+        sourceChatId: incoming.chatId,
+      });
+      note = `[file saved to workspace: ${saved.path} (${humanBytes(saved.size)})]`;
+    } catch (error) {
+      const reason = error instanceof WorkspaceError ? error.message : "save failed";
+      logger.error({ error: error, fileName: displayName }, "Inbound document save failed");
+      note = `[received file "${displayName}" but couldn't save it: ${reason}]`;
+    }
+    messageText = messageText ? `${messageText}\n${note}` : note;
   }
 
   await appendMessage(convo, {
