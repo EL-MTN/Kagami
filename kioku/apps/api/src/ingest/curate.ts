@@ -108,11 +108,24 @@ export interface CurationApplyResult {
   entitiesRemoved: number;
 }
 
-let cachedSystemPrompt: string | null = null;
-async function getSystemPrompt(): Promise<string> {
-  if (cachedSystemPrompt) return cachedSystemPrompt;
-  cachedSystemPrompt = await fs.readFile(`${paths.prompts}/curate.md`, "utf8");
-  return cachedSystemPrompt;
+// Review policy → prompt file. "curate" is the conservative default-keep
+// editor; "consolidate" applies the durability test and drops episodic
+// chat-exhaust outright (durable-facts-only). Both share the keep/drop/
+// merge action schema, so the verdict validation and apply path are
+// policy-agnostic.
+export type CurationPolicy = "curate" | "consolidate";
+const POLICY_PROMPT: Record<CurationPolicy, string> = {
+  curate: "curate.md",
+  consolidate: "consolidate.md",
+};
+
+const promptCache = new Map<string, string>();
+async function getSystemPrompt(file: string): Promise<string> {
+  const cached = promptCache.get(file);
+  if (cached !== undefined) return cached;
+  const text = await fs.readFile(`${paths.prompts}/${file}`, "utf8");
+  promptCache.set(file, text);
+  return text;
 }
 
 export interface CurationGroup {
@@ -305,7 +318,7 @@ export type GroupingStrategy = "cosine" | "entity";
 
 export async function planCuration(
   scope: CurationScope = {},
-  opts: { grouping?: GroupingStrategy } = {},
+  opts: { grouping?: GroupingStrategy; policy?: CurationPolicy } = {},
 ): Promise<CurationPlan> {
   const facts = await readFactsInScope({
     user_id: scope.user_id ?? "default",
@@ -330,7 +343,7 @@ export async function planCuration(
       ? groupByEntity(facts, await readEntityLinks())
       : clusterFacts(facts);
   plan.groups = groups.length;
-  const systemPrompt = await getSystemPrompt();
+  const systemPrompt = await getSystemPrompt(POLICY_PROMPT[opts.policy ?? "curate"]);
 
   for (const group of groups) {
     let actions: VerdictAction[];
