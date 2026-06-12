@@ -95,6 +95,71 @@ describe("clusterFacts", () => {
   });
 });
 
+describe("groupByEntity", () => {
+  it("groups facts sharing an entity and batches the rest as singletons", async () => {
+    const { groupByEntity } = await import("../src/ingest/curate.ts");
+    const facts = [
+      fact("a", "email to Mark requested", E_A),
+      fact("b", "email to Mark approved", E_A),
+      fact("c", "email to Mark sent", E_A),
+      fact("d", "user's birthday is April 11", E_C),
+    ] as never[];
+    const entities = [
+      { text: "Mark", linked_memory_ids: ["a", "b", "c"] },
+      { text: "April", linked_memory_ids: ["d"] }, // <2 in-scope links → not a group
+    ];
+    const groups = groupByEntity(facts, entities);
+    const cluster = groups.find((g) => g.clustered);
+    const batch = groups.find((g) => !g.clustered);
+    expect(cluster!.members.map((f) => f.id).sort()).toEqual(["a", "b", "c"]);
+    expect(batch!.members.map((f) => f.id)).toEqual(["d"]);
+  });
+
+  it("assigns each fact once — greedy claims the larger entity first", async () => {
+    const { groupByEntity } = await import("../src/ingest/curate.ts");
+    const facts = [
+      fact("a", "a", E_A),
+      fact("b", "b", E_A),
+      fact("c", "c", E_A),
+      fact("d", "d", E_A),
+    ] as never[];
+    // "Big" covers a,b,c,d; "Small" covers a,b. Greedy takes Big first,
+    // leaving Small <2 unassigned, so a/b are never grouped twice.
+    const entities = [
+      { text: "Small", linked_memory_ids: ["a", "b"] },
+      { text: "Big", linked_memory_ids: ["a", "b", "c", "d"] },
+    ];
+    const groups = groupByEntity(facts, entities);
+    const clustered = groups.filter((g) => g.clustered);
+    expect(clustered).toHaveLength(1);
+    expect(clustered[0]!.members.map((f) => f.id).sort()).toEqual(["a", "b", "c", "d"]);
+    expect(groups.flatMap((g) => g.members.map((f) => f.id)).sort()).toEqual(["a", "b", "c", "d"]); // each fact exactly once across all groups
+  });
+
+  it("never groups across (user, run, agent) scope boundaries", async () => {
+    const { groupByEntity } = await import("../src/ingest/curate.ts");
+    // One entity links both facts, but they're in different run scopes —
+    // a cross-scope merge would collapse two run scopes, so each falls to
+    // a singleton batch instead of a shared cluster.
+    const facts = [fact("a", "a", E_A), fact("b", "b", E_A, { run_id: "r2" })] as never[];
+    const entities = [{ text: "Shared", linked_memory_ids: ["a", "b"] }];
+    const groups = groupByEntity(facts, entities);
+    expect(groups.every((g) => !g.clustered)).toBe(true);
+    expect(groups.flatMap((g) => g.members.map((f) => f.id)).sort()).toEqual(["a", "b"]);
+  });
+
+  it("tolerates stale entity links to facts that were curated away", async () => {
+    const { groupByEntity } = await import("../src/ingest/curate.ts");
+    const facts = [fact("a", "a", E_A), fact("b", "b", E_A)] as never[];
+    // "ghost" was deleted by a prior pass; its link survives in the store.
+    const entities = [{ text: "E", linked_memory_ids: ["a", "b", "ghost"] }];
+    const groups = groupByEntity(facts, entities);
+    const cluster = groups.find((g) => g.clustered);
+    expect(cluster!.members.map((f) => f.id).sort()).toEqual(["a", "b"]);
+    expect(groups.flatMap((g) => g.members.map((f) => f.id))).not.toContain("ghost");
+  });
+});
+
 describe("planCuration fail-open", () => {
   it("keeps a group untouched when the verdict misses ids", async () => {
     const { appendFacts } = await import("../src/storage/facts.ts");

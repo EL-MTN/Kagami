@@ -27,6 +27,25 @@ async function entitiesCol(): Promise<Collection<EntityDoc>> {
   return db.collection<EntityDoc>("entities");
 }
 
+// Entity display text + its linked fact ids, no embeddings. Read by the
+// entity-grouped consolidation pass (ingest/curate.ts → groupByEntity)
+// to assemble per-entity review groups. Stale links to facts since
+// curated away are tolerated: the caller intersects against the live
+// in-scope fact set before grouping.
+export interface EntityLink {
+  text: string;
+  linked_memory_ids: string[];
+}
+
+export async function readEntityLinks(): Promise<EntityLink[]> {
+  const col = await entitiesCol();
+  const docs = await col
+    .find({})
+    .project<{ text: string; linked_memory_ids?: string[] }>({ text: 1, linked_memory_ids: 1 })
+    .toArray();
+  return docs.map((d) => ({ text: d.text, linked_memory_ids: d.linked_memory_ids ?? [] }));
+}
+
 // For each fact, extract entities and either link the fact_id to an
 // existing entity (case-insensitive text match) or create a new one.
 // Embeds new entities in a single batched call to amortize the API

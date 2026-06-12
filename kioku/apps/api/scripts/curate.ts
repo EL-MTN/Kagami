@@ -2,6 +2,10 @@
 //
 //   npx tsx scripts/curate.ts                 # dry run on the default vault
 //   npx tsx scripts/curate.ts --apply         # apply the plan
+//   npx tsx scripts/curate.ts --mode entity   # group review by shared
+//                                             # entity instead of cosine
+//                                             # (collapses fragmented
+//                                             #  episodes; default cosine)
 //   npx tsx scripts/curate.ts --user u1 --run r1 --agent a1
 //   npx tsx scripts/curate.ts --json          # machine-readable plan
 //   npx tsx scripts/curate.ts --relink        # repair entity links only
@@ -14,7 +18,12 @@
 // pass first.
 
 import "dotenv/config";
-import { planCuration, applyCuration, type CurationPlan } from "../src/ingest/curate.js";
+import {
+  planCuration,
+  applyCuration,
+  type CurationPlan,
+  type GroupingStrategy,
+} from "../src/ingest/curate.js";
 import { relinkAllEntities } from "../src/storage/entities.js";
 import { closeMongo } from "../src/storage/mongo.js";
 
@@ -22,19 +31,27 @@ interface Args {
   apply: boolean;
   json: boolean;
   relink: boolean;
+  mode: GroupingStrategy;
   user?: string;
   run?: string;
   agent?: string;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { apply: false, json: false, relink: false };
+  const args: Args = { apply: false, json: false, relink: false, mode: "cosine" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--apply") args.apply = true;
     else if (a === "--json") args.json = true;
     else if (a === "--relink") args.relink = true;
-    else if (a === "--user" || a === "--run" || a === "--agent") {
+    else if (a === "--mode") {
+      const v = argv[++i];
+      if (v !== "cosine" && v !== "entity") {
+        console.error("--mode must be 'cosine' or 'entity'");
+        process.exit(2);
+      }
+      args.mode = v;
+    } else if (a === "--user" || a === "--run" || a === "--agent") {
       // A scope flag without a value must fail fast — silently treating
       // `--apply --user` as an empty scope would curate the default
       // vault (destructively) instead of the intended one.
@@ -54,11 +71,15 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-function printPlan(plan: CurationPlan): void {
+function printPlan(plan: CurationPlan, mode: GroupingStrategy): void {
+  // Each surviving fact is either a keep or a merge result (multi-id
+  // merges collapse n→1, single-id merges rewrite 1→1); drops vanish.
+  const projected = plan.keep.length + plan.merges.length;
   console.log(
-    `\n${plan.total} facts · ${plan.groups} review groups` +
+    `\n[${mode} grouping] ${plan.total} facts · ${plan.groups} review groups` +
       (plan.failedGroups > 0 ? ` · ${plan.failedGroups} groups failed open (kept)` : ""),
   );
+  console.log(`Projected after apply: ${projected} facts (−${plan.total - projected})`);
   console.log(`\nKEEP   ${plan.keep.length}`);
 
   console.log(`DROP   ${plan.drops.length}`);
@@ -96,12 +117,12 @@ async function main(): Promise<void> {
     return;
   }
 
-  const plan = await planCuration(scope);
+  const plan = await planCuration(scope, { grouping: args.mode });
 
   if (args.json) {
     console.log(JSON.stringify(plan, null, 2));
   } else {
-    printPlan(plan);
+    printPlan(plan, args.mode);
   }
 
   if (!args.apply) {

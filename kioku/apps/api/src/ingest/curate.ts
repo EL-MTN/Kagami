@@ -12,7 +12,13 @@ import {
   rewriteFact,
   type Fact,
 } from "../storage/facts.js";
-import { pruneFactLinks, removeFactLinks, upsertEntitiesFromFacts } from "../storage/entities.js";
+import {
+  pruneFactLinks,
+  readEntityLinks,
+  removeFactLinks,
+  upsertEntitiesFromFacts,
+  type EntityLink,
+} from "../storage/entities.js";
 import { logger } from "../logger.js";
 
 // Kioku's LLM curation pass — the on-demand counterpart to ingest.
@@ -184,6 +190,73 @@ export function clusterFacts(facts: Fact[], threshold: number = CLUSTER_COSINE):
   return groups;
 }
 
+// Entity-based grouping — the alternative to clusterFacts() for the
+// consolidation pass. Cosine union-find FRAGMENTS a single episode whose
+// paraphrases drift below the threshold: an email-send narrative spreads
+// across 0.80–0.94 cosine, so its facts land in different review calls
+// and the request→fulfillment→confirmation collapse the prompt already
+// knows never fires. Grouping by a SHARED ENTITY instead gathers the
+// whole episode about "Wang Haoqi" or "Tech Weekly Meeting" into one
+// call. Like clusterFacts, this is mechanical context-assembly only —
+// every keep/drop/merge verdict stays the model's.
+//
+// Greedy max-coverage: repeatedly claim the entity with the most
+// still-unassigned in-scope facts (>=2) as one group, so each fact lands
+// in its largest co-occurring entity's group. Facts with no entity, or
+// whose every co-entity is already claimed, fall to singleton review
+// batches exactly like clusterFacts.
+export function groupByEntity(facts: Fact[], entities: EntityLink[]): CurationGroup[] {
+  // Same scope partitioning as clusterFacts: a multi-id merge must never
+  // cross (user_id, run_id, agent_id), since the replacement fact carries
+  // one scope tuple and scope fields gate retrieval filters.
+  const partitions = new Map<string, Fact[]>();
+  for (const f of facts) {
+    const key = JSON.stringify([f.user_id, f.run_id ?? null, f.agent_id ?? null]);
+    const p = partitions.get(key);
+    if (p) p.push(f);
+    else partitions.set(key, [f]);
+  }
+
+  const groups: CurationGroup[] = [];
+  const singletons: Fact[] = [];
+
+  for (const part of partitions.values()) {
+    const byId = new Map(part.map((f) => [f.id, f]));
+    const assigned = new Set<string>();
+
+    // Candidate entity → in-partition fact ids (deduped). Links to facts
+    // outside this partition or already curated away are dropped here.
+    const candidates: Array<{ ids: string[] }> = [];
+    for (const e of entities) {
+      const ids = [...new Set(e.linked_memory_ids)].filter((id) => byId.has(id));
+      if (ids.length >= 2) candidates.push({ ids });
+    }
+
+    // Greedy: claim the largest still-open cluster each round, recomputing
+    // open membership against `assigned` so a fact is grouped exactly once.
+    for (;;) {
+      let best: string[] | null = null;
+      for (const c of candidates) {
+        const open = c.ids.filter((id) => !assigned.has(id));
+        if (open.length >= 2 && (best === null || open.length > best.length)) best = open;
+      }
+      if (best === null) break;
+      for (const id of best) assigned.add(id);
+      const members = best.map((id) => byId.get(id)!);
+      for (let i = 0; i < members.length; i += MAX_GROUP) {
+        groups.push({ members: members.slice(i, i + MAX_GROUP), clustered: true });
+      }
+    }
+
+    for (const f of part) if (!assigned.has(f.id)) singletons.push(f);
+  }
+
+  for (let i = 0; i < singletons.length; i += SINGLETON_BATCH) {
+    groups.push({ members: singletons.slice(i, i + SINGLETON_BATCH), clustered: false });
+  }
+  return groups;
+}
+
 function renderGroup(group: CurationGroup): string {
   const rows = group.members.map((f) => ({
     id: f.id,
@@ -225,7 +298,15 @@ function validateVerdict(group: CurationGroup, actions: VerdictAction[]): string
   return null;
 }
 
-export async function planCuration(scope: CurationScope = {}): Promise<CurationPlan> {
+// Grouping strategy for the review pass. "cosine" (default) is the
+// original pairwise union-find; "entity" groups by shared entity so a
+// fragmented episode is reviewed as one unit (see groupByEntity).
+export type GroupingStrategy = "cosine" | "entity";
+
+export async function planCuration(
+  scope: CurationScope = {},
+  opts: { grouping?: GroupingStrategy } = {},
+): Promise<CurationPlan> {
   const facts = await readFactsInScope({
     user_id: scope.user_id ?? "default",
     run_id: scope.run_id,
@@ -244,7 +325,10 @@ export async function planCuration(scope: CurationScope = {}): Promise<CurationP
   if (facts.length === 0) return plan;
 
   const byId = new Map(facts.map((f) => [f.id, f]));
-  const groups = clusterFacts(facts);
+  const groups =
+    opts.grouping === "entity"
+      ? groupByEntity(facts, await readEntityLinks())
+      : clusterFacts(facts);
   plan.groups = groups.length;
   const systemPrompt = await getSystemPrompt();
 
