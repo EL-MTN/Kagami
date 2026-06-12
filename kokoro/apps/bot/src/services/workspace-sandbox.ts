@@ -140,6 +140,15 @@ export async function syncBackWorkspace(
     return delta;
   }
 
+  // Pass 1 — enumerate: classify every surviving file and size-gate it
+  // WITHOUT reading it. An approved run can write (or sparsely truncate) a
+  // multi-GB file; reading it just to have writeWorkspaceFile reject it
+  // later would buffer the whole thing in the bot process. `seen` is marked
+  // before the gate, so a skipped-oversized file never soft-deletes its
+  // original. Stat failures (file vanished mid-sync) also skip the file,
+  // never the delta.
+  const maxFileBytes = config.WORKSPACE_MAX_FILE_MB * 1024 * 1024;
+  const pendingWrites: Array<{ path: string; hostPath: string; previous: string | undefined }> = [];
   for (const entry of entries) {
     if (entry.isDirectory()) continue;
     const hostPath = nodePath.join(entry.parentPath, entry.name);
@@ -159,13 +168,6 @@ export async function syncBackWorkspace(
     }
     seen.add(path);
 
-    // Size-gate BEFORE reading: an approved run can write (or sparsely
-    // truncate) a multi-GB file, and reading it just to have
-    // writeWorkspaceFile reject it later would buffer the whole thing in
-    // the bot process. `seen` is already marked, so skipping here never
-    // soft-deletes the original. Stat failures (file vanished mid-sync)
-    // also skip rather than throw away the rest of the delta.
-    const maxFileBytes = config.WORKSPACE_MAX_FILE_MB * 1024 * 1024;
     let size: number;
     try {
       size = (await stat(hostPath)).size;
@@ -181,8 +183,35 @@ export async function syncBackWorkspace(
       continue;
     }
 
-    const data = await readFile(hostPath);
-    const previous = manifest.get(path);
+    pendingWrites.push({ path, hostPath, previous: manifest.get(path) });
+  }
+
+  // Pass 2 — deletions FIRST: anything materialized but absent after the
+  // run was deleted by the code. Soft delete — the workspace trash keeps
+  // the previous generation 30 days. Running deletions before the writes
+  // matters for quota: a run that deletes a large input to make room for
+  // its output must have that room actually freed before the output is
+  // checked against WORKSPACE_MAX_TOTAL_MB / WORKSPACE_MAX_FILES.
+  for (const path of manifest.keys()) {
+    if (seen.has(path)) continue;
+    try {
+      await deleteWorkspaceFile(path);
+      delta.deleted.push(path);
+    } catch (error) {
+      logger.warn({ error, path }, "Workspace sync-back: delete failed");
+      delta.skipped.push({ path, reason: "delete failed" });
+    }
+  }
+
+  // Pass 3 — writes, through the canonical quota-enforcing path.
+  for (const { path, hostPath, previous } of pendingWrites) {
+    let data: Buffer;
+    try {
+      data = await readFile(hostPath);
+    } catch {
+      delta.skipped.push({ path, reason: "unreadable after the run" });
+      continue;
+    }
     if (previous && previous === sha256(data)) continue; // unchanged
 
     try {
@@ -202,19 +231,6 @@ export async function syncBackWorkspace(
       const reason = error instanceof WorkspaceError ? error.message : "write failed";
       logger.warn({ error, path }, "Workspace sync-back: file skipped");
       delta.skipped.push({ path, reason });
-    }
-  }
-
-  // Anything materialized but absent after the run was deleted by the code.
-  // Soft delete — the workspace trash keeps the previous generation 30 days.
-  for (const path of manifest.keys()) {
-    if (seen.has(path)) continue;
-    try {
-      await deleteWorkspaceFile(path);
-      delta.deleted.push(path);
-    } catch (error) {
-      logger.warn({ error, path }, "Workspace sync-back: delete failed");
-      delta.skipped.push({ path, reason: "delete failed" });
     }
   }
 

@@ -183,6 +183,34 @@ describe("syncBackWorkspace", () => {
     expect(delta.skipped[0].path).toBe("huge.bin");
     expect(delta.skipped[0].reason).toContain("per-file cap");
   });
+
+  it("frees quota via deletions before writing new files", async () => {
+    mockListFiles.mockResolvedValue([row("big-input.bin")]);
+    mockReadBlob.mockResolvedValue({
+      data: Buffer.alloc(1024, 1),
+      mimeType: "application/octet-stream",
+    });
+    const m = await materialized();
+    // The approved run replaces a large input with a small output.
+    await rm(nodePath.join(m.dir, "big-input.bin"));
+    await writeFile(nodePath.join(m.dir, "out.txt"), "result");
+
+    // Totals reflect the soft-delete: at the 64 MB cap until the deletion
+    // lands, then empty. Under write-before-delete ordering the new file
+    // would be rejected as over quota and the workspace would end up
+    // missing the run's output entirely.
+    mockGetTotals.mockImplementation(() =>
+      mockSoftDelete.mock.calls.length > 0
+        ? Promise.resolve({ count: 0, totalBytes: 0 })
+        : Promise.resolve({ count: 1, totalBytes: 64 * MB }),
+    );
+
+    const delta = await syncBackWorkspace(m);
+
+    expect(delta.deleted).toEqual(["big-input.bin"]);
+    expect(delta.added.map((f) => f.path)).toEqual(["out.txt"]);
+    expect(delta.skipped).toEqual([]);
+  });
 });
 
 describe("withWorkspaceSandboxLock", () => {

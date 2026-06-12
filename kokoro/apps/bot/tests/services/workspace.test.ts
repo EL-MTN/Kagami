@@ -159,14 +159,19 @@ describe("writeWorkspaceFile", () => {
 
     expect(order).toEqual(["blob", "row"]);
     expect(mockWriteBlob).toHaveBeenCalledWith("fresh-key", base.data, "text/plain");
-    expect(mockUpsert).toHaveBeenCalledWith({
-      path: "out.txt",
-      gridfsKey: "fresh-key",
-      size: 5,
-      mimeType: "text/plain",
-      source: "agent",
-      sourceChatId: "chat-1",
-    });
+    expect(mockUpsert).toHaveBeenCalledWith(
+      {
+        path: "out.txt",
+        gridfsKey: "fresh-key",
+        size: 5,
+        mimeType: "text/plain",
+        source: "agent",
+        sourceChatId: "chat-1",
+      },
+      // Fresh non-overwrite write → insert-only, so a cross-process race
+      // surfaces as duplicate-key instead of clobbering the other row.
+      { mustCreate: true },
+    );
     expect(result).toEqual({
       path: "out.txt",
       size: 5,
@@ -351,6 +356,7 @@ describe("saveInboundDocument", () => {
         source: "chat-upload",
         sourceChatId: "chat-9",
       }),
+      { mustCreate: true },
     );
   });
 

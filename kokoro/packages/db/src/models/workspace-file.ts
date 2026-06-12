@@ -64,10 +64,28 @@ export interface WorkspaceFileInput {
  * generation's GridFS key (null on a fresh create) so the caller can remove
  * the orphaned blob AFTER the row points at the new one — ordering that keeps
  * a crash window from ever leaving a live path with no bytes behind it.
+ *
+ * `mustCreate` makes the write insert-only: the caller verified no live row
+ * exists and did NOT ask to overwrite, so a concurrent same-path create in
+ * another process must surface as the partial-unique index's duplicate-key
+ * error — the upsert form would silently match-and-clobber the other
+ * writer's row instead.
  */
 export async function upsertWorkspaceFile(
   input: WorkspaceFileInput,
+  opts: { mustCreate?: boolean } = {},
 ): Promise<{ previousGridfsKey: string | null }> {
+  if (opts.mustCreate) {
+    await WorkspaceFile.create({
+      path: input.path,
+      gridfsKey: input.gridfsKey,
+      size: input.size,
+      mimeType: input.mimeType,
+      source: input.source,
+      sourceChatId: input.sourceChatId ?? null,
+    });
+    return { previousGridfsKey: null };
+  }
   const previous = await WorkspaceFile.findOneAndUpdate(
     { path: input.path, deletedAt: null },
     {

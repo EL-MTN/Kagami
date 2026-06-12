@@ -237,14 +237,20 @@ export async function writeWorkspaceFile(
     await writeWorkspaceBlob(gridfsKey, input.data, mimeType);
     let previousGridfsKey: string | null;
     try {
-      ({ previousGridfsKey } = await upsertWorkspaceFile({
-        path,
-        gridfsKey,
-        size,
-        mimeType,
-        source: input.source,
-        sourceChatId: input.sourceChatId ?? null,
-      }));
+      ({ previousGridfsKey } = await upsertWorkspaceFile(
+        {
+          path,
+          gridfsKey,
+          size,
+          mimeType,
+          source: input.source,
+          sourceChatId: input.sourceChatId ?? null,
+        },
+        // No-overwrite creates are insert-only so a cross-process race
+        // surfaces as E11000 below instead of silently clobbering the
+        // other writer's row (the upsert form matches-and-updates it).
+        { mustCreate: !existing && !input.overwrite },
+      ));
     } catch (error) {
       // The lock makes a same-path race impossible from within this process,
       // but the partial-unique index is the real arbiter (another process, or

@@ -27,6 +27,21 @@ function input(path: string, overrides: Partial<Parameters<typeof upsertWorkspac
 }
 
 describe("upsertWorkspaceFile", () => {
+  it("mustCreate is insert-only: a concurrent same-path row raises duplicate-key instead of being clobbered", async () => {
+    await upsertWorkspaceFile(input("race.txt", { gridfsKey: "first-writer" }));
+
+    // A second writer that checked existence before the first landed must
+    // NOT silently match-and-update the row via the upsert form.
+    await expect(
+      upsertWorkspaceFile(input("race.txt", { gridfsKey: "second-writer" }), {
+        mustCreate: true,
+      }),
+    ).rejects.toMatchObject({ code: 11000 });
+
+    const row = await getWorkspaceFileByPath("race.txt");
+    expect(row!.gridfsKey).toBe("first-writer");
+  });
+
   it("creates a fresh file and reports no previous generation", async () => {
     const { previousGridfsKey } = await upsertWorkspaceFile(input("notes.md"));
     expect(previousGridfsKey).toBeNull();
