@@ -148,7 +148,11 @@ async function main() {
   const t0 = Date.now();
 
   const answererModel = process.env.MODEL ?? "(unset)";
-  const judgeModelId = args.judgeModel ?? answererModel;
+  // JUDGE_MODEL (+ optional JUDGE_BASE_URL/JUDGE_API_KEY) pins a
+  // provider-independent judge so a cross-provider answerer run (e.g. a
+  // DeepSeek answerer on OpenRouter) is graded by the same model as the
+  // OpenAI baseline. Unset → unchanged (judge defaults to the answerer).
+  const judgeModelId = process.env.JUDGE_MODEL ?? args.judgeModel ?? answererModel;
 
   console.log(`# LongMemEval`);
   console.log(`Answerer: ${answererModel}`);
@@ -387,14 +391,17 @@ type Judge = (p: WorkerResult) => Promise<{ verdict: boolean; raw: string }>;
 
 function buildJudge(judgeModelId: string): Judge {
   // If the judge model differs from the default, build a fresh provider so
-  // we don't accidentally reuse the answerer model.
-  const useDefault = judgeModelId === (process.env.MODEL ?? "");
+  // we don't accidentally reuse the answerer model. JUDGE_BASE_URL/
+  // JUDGE_API_KEY (when set) point the judge at a different provider than
+  // the answerer — e.g. keep an OpenAI gpt-4o-mini judge while the answerer
+  // runs on OpenRouter — so cross-provider runs share one grader.
+  const useDefault = !process.env.JUDGE_MODEL && judgeModelId === (process.env.MODEL ?? "");
   const judgeModel = useDefault
     ? defaultModel
     : createOpenAICompatible({
         name: "llm",
-        baseURL: llmEndpoint.baseURL,
-        apiKey: llmEndpoint.apiKey,
+        baseURL: process.env.JUDGE_BASE_URL ?? llmEndpoint.baseURL,
+        apiKey: process.env.JUDGE_API_KEY ?? llmEndpoint.apiKey,
         supportsStructuredOutputs: true,
       })(judgeModelId);
 
