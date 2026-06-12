@@ -28,10 +28,13 @@ import type { BlueBubblesClient } from "./client";
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 15;
 const DEDUPE_LRU_CAP = 200;
-// Largest webhook body we'll accept. BlueBubbles inlines image attachments
-// as base64; a 10 MB image becomes ~13 MB in JSON, plus envelope. 25 MB
-// covers realistic attachments while keeping a hard ceiling on RAM.
-const MAX_WEBHOOK_BODY_BYTES = 25 * 1024 * 1024;
+// Largest webhook body we'll accept. BlueBubbles inlines attachments as
+// base64 (4/3 inflation), so the advertised IMESSAGE_MAX_ATTACHMENT_BYTES
+// (25 MB raw) arrives as ~33.4 MB of JSON plus envelope — the body limit
+// must cover that or inline attachments above ~18 MB raw get an opaque 413
+// instead of reaching the attachment-size check. 35 MB honors the cap while
+// keeping a hard ceiling on RAM.
+const MAX_WEBHOOK_BODY_BYTES = 35 * 1024 * 1024;
 
 // Strict standalone match — must be the entire reply (with optional
 // trailing punctuation/whitespace). Conversational phrases like

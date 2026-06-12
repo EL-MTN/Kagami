@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import os from "node:os";
 import nodePath from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -226,6 +226,20 @@ describe("formatWorkspaceDelta", () => {
       "wrote out.csv (12.0 KB); modified data.json; deleted old.txt; skipped huge.bin (per-file cap)",
     );
   });
+
+  it("caps each category at five paths and reports the remainder", () => {
+    const added = Array.from({ length: 8 }, (_, i) => ({ path: `out/f${i}.txt`, size: 10 }));
+    const deleted = Array.from({ length: 7 }, (_, i) => `gone/g${i}.txt`);
+    const line = formatWorkspaceDelta({ added, modified: [], deleted, skipped: [] })!;
+    // First five of each category appear; the rest collapse to a count —
+    // the summary feeds a chat message edit AND the next LLM context.
+    expect(line).toContain("out/f4.txt");
+    expect(line).not.toContain("out/f5.txt");
+    expect(line).toContain("+3 more");
+    expect(line).toContain("gone/g4.txt");
+    expect(line).not.toContain("gone/g5.txt");
+    expect(line).toContain("+2 more");
+  });
 });
 
 describe("cleanupWorkspaceDir", () => {
@@ -263,22 +277,54 @@ describe("syncBackWorkspace — robustness", () => {
     expect(mockSoftDelete).not.toHaveBeenCalled();
   });
 
-  it("refuses to mass-delete when the run dir reads back empty but files were materialized", async () => {
+  it("syncs a legitimate delete-all: empty but readable run dir deletes every file", async () => {
     mockListFiles.mockResolvedValue([row("a.txt"), row("b.txt")]);
     mockReadBlob.mockResolvedValue({ data: Buffer.from("x"), mimeType: "text/plain" });
     const m = await materialized();
 
-    // Simulate the dir vanishing / mount fault: empty it before sync-back.
+    // The user-approved code removed everything (rm -rf /workspace/*). An
+    // empty-but-traversable dir is a real deletion, not a mount fault.
     await rm(nodePath.join(m.dir, "a.txt"));
     await rm(nodePath.join(m.dir, "b.txt"));
 
     const delta = await syncBackWorkspace(m);
 
-    // The safety valve fires: nothing deleted, an "(all)" skip recorded.
+    expect([...delta.deleted].sort()).toEqual(["a.txt", "b.txt"]);
+    expect(mockSoftDelete).toHaveBeenCalledTimes(2);
+    expect(delta.skipped).toEqual([]);
+  });
+
+  it("refuses to mass-delete when the run dir itself is unreadable", async () => {
+    mockListFiles.mockResolvedValue([row("a.txt"), row("b.txt")]);
+    mockReadBlob.mockResolvedValue({ data: Buffer.from("x"), mimeType: "text/plain" });
+    const m = await materialized();
+
+    // The fault signal: the directory is GONE (vanished tmpdir, disk
+    // fault) — readdir throws, and the sync is skipped wholesale.
+    await rm(m.dir, { recursive: true, force: true });
+
+    const delta = await syncBackWorkspace(m);
+
     expect(mockSoftDelete).not.toHaveBeenCalled();
     expect(delta.deleted).toEqual([]);
     expect(delta.skipped).toEqual([
       { path: "(all)", reason: "run directory unreadable; sync skipped" },
     ]);
+  });
+
+  it("size-gates via stat before reading — a sparse multi-GB file is skipped cheaply", async () => {
+    const m = await materialized();
+    const sparse = nodePath.join(m.dir, "sparse.bin");
+    await writeFile(sparse, "");
+    // Logical size far over the per-file cap with no disk allocation —
+    // the stat gate must skip it without buffering it into memory.
+    await truncate(sparse, 100 * MB);
+
+    const delta = await syncBackWorkspace(m);
+
+    expect(delta.added).toEqual([]);
+    expect(delta.skipped).toHaveLength(1);
+    expect(delta.skipped[0].path).toBe("sparse.bin");
+    expect(delta.skipped[0].reason).toContain("per-file cap");
   });
 });

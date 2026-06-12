@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import nodePath from "node:path";
-import { logger } from "@kokoro/shared";
+import { config, logger } from "@kokoro/shared";
 import { listWorkspaceFiles, readWorkspaceBlob } from "@kokoro/db";
 import {
   WorkspaceError,
@@ -121,19 +122,19 @@ export async function syncBackWorkspace(
   const delta: WorkspaceSyncDelta = { added: [], modified: [], deleted: [], skipped: [] };
   const seen = new Set<string>();
 
-  const entries = await readdir(dir, { withFileTypes: true, recursive: true });
-
-  // Safety valve: the deletion pass below soft-deletes every manifest path the
-  // run didn't leave behind. If the materialized directory reads back as empty
-  // while we know we wrote files into it, the run dir itself is suspect (a
-  // vanished mount, a disk fault) — NOT a legitimate "the code deleted
-  // everything". Refuse to mass-delete on that signal; a genuine clear-the-
-  // workspace run still leaves the directory traversable with zero files,
-  // which is distinct from readdir returning nothing at all.
-  if (entries.length === 0 && manifest.size > 0) {
+  // Safety valve: the deletion pass below soft-deletes every manifest path
+  // the run didn't leave behind. The fault signal for "the run dir itself is
+  // suspect" (vanished tmpdir, disk fault) is readdir THROWING — an empty
+  // but traversable directory is a legitimate, user-approved delete-all
+  // (e.g. `rm -rf /workspace/*`) and must sync as deletions, not be
+  // discarded.
+  let entries: Dirent[];
+  try {
+    entries = await readdir(dir, { withFileTypes: true, recursive: true });
+  } catch (error) {
     logger.error(
-      { dir, manifestSize: manifest.size },
-      "Workspace sync-back: run dir read back empty but files were materialized; skipping to avoid mass-delete",
+      { error, dir, manifestSize: manifest.size },
+      "Workspace sync-back: run dir unreadable; skipping to avoid mass-delete",
     );
     delta.skipped.push({ path: "(all)", reason: "run directory unreadable; sync skipped" });
     return delta;
@@ -157,6 +158,28 @@ export async function syncBackWorkspace(
       continue;
     }
     seen.add(path);
+
+    // Size-gate BEFORE reading: an approved run can write (or sparsely
+    // truncate) a multi-GB file, and reading it just to have
+    // writeWorkspaceFile reject it later would buffer the whole thing in
+    // the bot process. `seen` is already marked, so skipping here never
+    // soft-deletes the original. Stat failures (file vanished mid-sync)
+    // also skip rather than throw away the rest of the delta.
+    const maxFileBytes = config.WORKSPACE_MAX_FILE_MB * 1024 * 1024;
+    let size: number;
+    try {
+      size = (await stat(hostPath)).size;
+    } catch {
+      delta.skipped.push({ path, reason: "unreadable after the run" });
+      continue;
+    }
+    if (size > maxFileBytes) {
+      delta.skipped.push({
+        path,
+        reason: `file is ${humanBytes(size)} — exceeds the ${config.WORKSPACE_MAX_FILE_MB} MB per-file cap`,
+      });
+      continue;
+    }
 
     const data = await readFile(hostPath);
     const previous = manifest.get(path);
@@ -216,23 +239,36 @@ export async function cleanupWorkspaceDir(dir: string): Promise<void> {
   }
 }
 
+// Cap per delta category in the human summary. The summary lands in the
+// edited approval bubble AND (via appendConfirmationResolution) in the next
+// LLM context — a run touching hundreds of long paths must not produce a
+// platform-rejected message or a context bomb.
+const DELTA_SUMMARY_CAP = 5;
+
+function capped(items: string[]): string {
+  const shown = items.slice(0, DELTA_SUMMARY_CAP);
+  const more = items.length - shown.length;
+  return more > 0 ? `${shown.join(", ")}, +${more} more` : shown.join(", ");
+}
+
 /**
  * One-line human summary of a sync delta for the approval bubble and the
- * conversation resolution event. Null when the run changed nothing.
+ * conversation resolution event. Null when the run changed nothing. Each
+ * category shows at most DELTA_SUMMARY_CAP paths plus a remainder count.
  */
 export function formatWorkspaceDelta(delta: WorkspaceSyncDelta): string | null {
   const parts: string[] = [];
   if (delta.added.length > 0) {
-    parts.push(`wrote ${delta.added.map((f) => `${f.path} (${humanBytes(f.size)})`).join(", ")}`);
+    parts.push(`wrote ${capped(delta.added.map((f) => `${f.path} (${humanBytes(f.size)})`))}`);
   }
   if (delta.modified.length > 0) {
-    parts.push(`modified ${delta.modified.map((f) => f.path).join(", ")}`);
+    parts.push(`modified ${capped(delta.modified.map((f) => f.path))}`);
   }
   if (delta.deleted.length > 0) {
-    parts.push(`deleted ${delta.deleted.join(", ")}`);
+    parts.push(`deleted ${capped(delta.deleted)}`);
   }
   if (delta.skipped.length > 0) {
-    parts.push(`skipped ${delta.skipped.map((f) => `${f.path} (${f.reason})`).join(", ")}`);
+    parts.push(`skipped ${capped(delta.skipped.map((f) => `${f.path} (${f.reason})`))}`);
   }
   return parts.length > 0 ? parts.join("; ") : null;
 }
