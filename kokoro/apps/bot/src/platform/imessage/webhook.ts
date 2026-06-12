@@ -17,7 +17,12 @@ import {
 import { appendConfirmationResolution } from "../../services/confirmation-events";
 import { generateAcknowledgment } from "../../ai/acknowledge";
 import { resetTimer } from "../../scheduler/proactive";
-import { BlueBubblesAdapter, normalizeWebhookEvent, type BlueBubblesMessageEvent } from "./adapter";
+import {
+  BlueBubblesAdapter,
+  IMESSAGE_MAX_ATTACHMENT_BYTES,
+  normalizeWebhookEvent,
+  type BlueBubblesMessageEvent,
+} from "./adapter";
 import type { BlueBubblesClient } from "./client";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -302,13 +307,15 @@ export function startBlueBubblesWebhook(opts: StartWebhookOptions): () => void {
 
         // Document attachment whose bytes weren't inlined: fetch by GUID
         // before the AI pipeline runs. Failure degrades to an honest marker
-        // rather than a silent drop; whether the bytes are kept (workspace)
-        // or placeholdered (workspace disabled) is handleMessage's decision.
+        // rather than a silent drop; handleMessage saves the fetched bytes to
+        // the workspace inbox.
         if (normalized.pendingDocument) {
           const { guid, mimeType, fileName } = normalized.pendingDocument;
-          const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
           try {
-            message.documentBuffer = await opts.client.downloadAttachment(guid, MAX_DOCUMENT_BYTES);
+            message.documentBuffer = await opts.client.downloadAttachment(
+              guid,
+              IMESSAGE_MAX_ATTACHMENT_BYTES,
+            );
             message.documentMimeType = mimeType;
             message.documentFileName = fileName;
           } catch (error) {

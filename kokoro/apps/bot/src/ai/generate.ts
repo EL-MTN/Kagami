@@ -126,6 +126,15 @@ async function runTurn(
   // tells the model (and the transcript) what happened to the file — saved
   // where, or refused why. Adapters already enforce platform download caps;
   // the workspace enforces its own quotas here.
+  //
+  // Deliberately unlike images/audio (which get a GridFS `imageRef`/`audioRef`
+  // on the conversation message so a future multimodal turn can re-feed the
+  // raw bytes): a document's home is the persistent workspace, referenced by
+  // the inbox path in the marker. The conversation row keeps only that text
+  // marker. Tradeoff: if the file is later deleted from the workspace, history
+  // can't re-materialize it — acceptable because documents are durable
+  // artifacts the model reads via the workspace tools, not turn-scoped model
+  // inputs.
   if (incoming.documentBuffer) {
     const displayName = incoming.documentFileName ?? "attachment";
     let note: string;

@@ -220,6 +220,18 @@ export async function runCode(opts: RunCodeOptions): Promise<RunCodeResult> {
     opts.language === "python" ? config.EXECUTE_CODE_PYTHON_IMAGE : config.EXECUTE_CODE_NODE_IMAGE;
   const name = `${BOOT_NAME_PREFIX}${randomUUID()}`;
 
+  // `docker run --volume` splits the spec on `:` (and `,` delimits volume
+  // options). A workspace dir containing either — e.g. a colon in TMPDIR —
+  // would silently mis-parse into the wrong host path or container target.
+  // Refuse rather than mount somewhere unintended; the caller's sync-back
+  // would otherwise diff against a directory the container never wrote to.
+  if (opts.workspaceDir && /[:,]/.test(opts.workspaceDir)) {
+    throw new CodeSandboxError(
+      "internal",
+      `workspace mount path contains an unsupported character (: or ,): ${opts.workspaceDir}`,
+    );
+  }
+
   // Args array, never a shell — the code body only ever travels via stdin.
   const args = [
     "run",

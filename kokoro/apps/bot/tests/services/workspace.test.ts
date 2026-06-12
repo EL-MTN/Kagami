@@ -45,6 +45,8 @@ vi.mock("@kokoro/db", () => ({
   generateWorkspaceKey: () => "fresh-key",
   getWorkspaceFileByPath: mockGetByPath,
   getWorkspaceTotals: mockGetTotals,
+  isDuplicateKeyError: (e: unknown) =>
+    e instanceof Error && "code" in e && (e as { code?: unknown }).code === 11000,
   listWorkspaceFiles: mockListFiles,
   readWorkspaceBlob: mockReadBlob,
   removeWorkspaceBlob: mockRemoveBlob,
@@ -368,5 +370,83 @@ describe("saveInboundDocument", () => {
     });
 
     expect(result.path).toBe("inbox/lease-3.pdf");
+  });
+});
+
+describe("writeWorkspaceFile — concurrency hardening", () => {
+  const base = { path: "out.txt", data: Buffer.from("hello"), source: "agent" as const };
+
+  it("translates a duplicate-key (E11000) upsert into a WorkspaceExistsError and drops the orphan blob", async () => {
+    const { WorkspaceExistsError } = await import("../../src/services/workspace");
+    mockUpsert.mockRejectedValueOnce(Object.assign(new Error("E11000 dup"), { code: 11000 }));
+
+    await expect(writeWorkspaceFile(base)).rejects.toBeInstanceOf(WorkspaceExistsError);
+    // The blob written before the failed row upsert is cleaned up.
+    expect(mockRemoveBlob).toHaveBeenCalledWith("fresh-key");
+  });
+
+  it("propagates a non-duplicate upsert error unchanged (not as exists)", async () => {
+    const { WorkspaceExistsError } = await import("../../src/services/workspace");
+    mockUpsert.mockRejectedValueOnce(new Error("mongo down"));
+
+    const err = await writeWorkspaceFile(base).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(WorkspaceExistsError);
+    expect((err as Error).message).toBe("mongo down");
+  });
+
+  it("the occupied-path refusal is a WorkspaceExistsError (recoverable by callers)", async () => {
+    const { WorkspaceExistsError } = await import("../../src/services/workspace");
+    mockGetByPath.mockResolvedValue(row("out.txt"));
+    await expect(writeWorkspaceFile(base)).rejects.toBeInstanceOf(WorkspaceExistsError);
+  });
+
+  it("serializes overlapping writes so a concurrent pair can't both pass the quota check", async () => {
+    // Start one file below the 3-file cap (pinned in the mock). Two concurrent
+    // new-file writes each fit only if the other hasn't committed. With the
+    // write lock the first commits (count 2→3) and the second sees count 3 and
+    // fails the cap; without it both read count 2, both pass, and both commit
+    // (the TOCTOU — workspace ends at 4 files over a 3 cap).
+    let committed = 0;
+    mockGetTotals.mockImplementation(() =>
+      Promise.resolve({ count: 2 + committed, totalBytes: 0 }),
+    );
+    mockUpsert.mockImplementation(() => {
+      committed += 1;
+      return Promise.resolve({ previousGridfsKey: null });
+    });
+
+    const results = await Promise.allSettled([
+      writeWorkspaceFile({ path: "a.txt", data: Buffer.from("x"), source: "agent" }),
+      writeWorkspaceFile({ path: "b.txt", data: Buffer.from("y"), source: "agent" }),
+    ]);
+
+    const ok = results.filter((r) => r.status === "fulfilled").length;
+    const capped = results.filter(
+      (r) => r.status === "rejected" && /file cap/.test(String(r.reason)),
+    ).length;
+    expect(ok).toBe(1);
+    expect(capped).toBe(1);
+    expect(committed).toBe(1);
+  });
+});
+
+describe("saveInboundDocument — dedupe via write-retry", () => {
+  it("advances the suffix when writeWorkspaceFile reports the name is taken", async () => {
+    const { saveInboundDocument } = await import("../../src/services/workspace");
+    // inbox/report.pdf and inbox/report-2.pdf are occupied; report-3 is free.
+    mockGetByPath.mockImplementation((path: string) =>
+      Promise.resolve(
+        path === "inbox/report.pdf" || path === "inbox/report-2.pdf" ? row(path) : null,
+      ),
+    );
+
+    const result = await saveInboundDocument({
+      fileName: "report.pdf",
+      data: Buffer.from("pdf"),
+      sourceChatId: "chat-1",
+    });
+
+    expect(result.path).toBe("inbox/report-3.pdf");
   });
 });

@@ -70,6 +70,10 @@ export async function materializeWorkspace(): Promise<WorkspaceMaterialization> 
   const dir = await mkdtemp(nodePath.join(os.tmpdir(), "kokoro-ws-"));
   await chmod(dir, 0o777);
   const manifest = new Map<string, string>();
+  // Directories already created and chmod'd this run. Files in the same
+  // subtree share ancestors, so without this every file would re-chmod the
+  // same parents — O(files × depth) syscalls instead of O(distinct dirs).
+  const chmodded = new Set<string>([dir]);
 
   const rows = await listWorkspaceFiles();
   for (const row of rows) {
@@ -82,17 +86,22 @@ export async function materializeWorkspace(): Promise<WorkspaceMaterialization> 
     // so joining under the temp dir cannot escape it.
     const hostPath = nodePath.join(dir, row.path);
     const parent = nodePath.dirname(hostPath);
-    if (parent !== dir) {
+    if (parent !== dir && !chmodded.has(parent)) {
       await mkdir(parent, { recursive: true, mode: 0o777 });
       // mkdir's mode is masked by the process umask — re-chmod so foreign-uid
-      // writers (Linux hosts) can create files in nested directories too.
-      for (let p = parent; p.length > dir.length && p.startsWith(dir); p = nodePath.dirname(p)) {
+      // writers (Linux hosts) can create files in nested directories too. Walk
+      // up to the first already-handled ancestor, marking each so a sibling
+      // file doesn't repeat the walk.
+      for (let p = parent; !chmodded.has(p); p = nodePath.dirname(p)) {
         await chmod(p, 0o777);
+        chmodded.add(p);
       }
     }
     await writeFile(hostPath, blob.data, { mode: 0o666 });
     await chmod(hostPath, 0o666);
-    manifest.set(row.path, sha256(blob.data));
+    // Key by the NFC form so the post-run readback (which normalizeWorkspacePath
+    // also NFC-folds) matches even when the mount returns NFD.
+    manifest.set(row.path.normalize("NFC"), sha256(blob.data));
   }
 
   logger.debug({ dir, files: manifest.size }, "Workspace materialized for sandbox run");
@@ -113,6 +122,23 @@ export async function syncBackWorkspace(
   const seen = new Set<string>();
 
   const entries = await readdir(dir, { withFileTypes: true, recursive: true });
+
+  // Safety valve: the deletion pass below soft-deletes every manifest path the
+  // run didn't leave behind. If the materialized directory reads back as empty
+  // while we know we wrote files into it, the run dir itself is suspect (a
+  // vanished mount, a disk fault) — NOT a legitimate "the code deleted
+  // everything". Refuse to mass-delete on that signal; a genuine clear-the-
+  // workspace run still leaves the directory traversable with zero files,
+  // which is distinct from readdir returning nothing at all.
+  if (entries.length === 0 && manifest.size > 0) {
+    logger.error(
+      { dir, manifestSize: manifest.size },
+      "Workspace sync-back: run dir read back empty but files were materialized; skipping to avoid mass-delete",
+    );
+    delta.skipped.push({ path: "(all)", reason: "run directory unreadable; sync skipped" });
+    return delta;
+  }
+
   for (const entry of entries) {
     if (entry.isDirectory()) continue;
     const hostPath = nodePath.join(entry.parentPath, entry.name);

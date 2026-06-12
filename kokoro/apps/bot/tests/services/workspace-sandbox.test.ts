@@ -47,6 +47,8 @@ vi.mock("@kokoro/db", () => ({
   generateWorkspaceKey: () => "fresh-key",
   getWorkspaceFileByPath: mockGetByPath,
   getWorkspaceTotals: mockGetTotals,
+  isDuplicateKeyError: (e: unknown) =>
+    e instanceof Error && "code" in e && (e as { code?: unknown }).code === 11000,
   listWorkspaceFiles: mockListFiles,
   readWorkspaceBlob: mockReadBlob,
   removeWorkspaceBlob: mockRemoveBlob,
@@ -235,5 +237,48 @@ describe("cleanupWorkspaceDir", () => {
     await cleanupWorkspaceDir(dir); // force:true → no throw on missing
 
     await expect(readFile(nodePath.join(dir, "f.txt"))).rejects.toThrow();
+  });
+});
+
+describe("syncBackWorkspace — robustness", () => {
+  it("matches a manifest key across NFC/NFD normalization (mount returns NFD)", async () => {
+    // Materialize keys by NFC; simulate a mount that hands the name back in NFD.
+    const nfc = "café.txt".normalize("NFC");
+    mockListFiles.mockResolvedValue([row(nfc)]);
+    mockReadBlob.mockResolvedValue({ data: Buffer.from("body"), mimeType: "text/plain" });
+    const m = await materialized();
+
+    // Rewrite the file under the NFD name (what a VirtioFS readback can yield),
+    // removing the NFC original so only the NFD form is on disk.
+    const nfd = "café.txt".normalize("NFD");
+    await rm(nodePath.join(m.dir, nfc));
+    await writeFile(nodePath.join(m.dir, nfd), "body");
+
+    const delta = await syncBackWorkspace(m);
+
+    // Same bytes + NFC-folded key → recognized as unchanged, NOT deleted+re-added.
+    expect(delta.added).toEqual([]);
+    expect(delta.modified).toEqual([]);
+    expect(delta.deleted).toEqual([]);
+    expect(mockSoftDelete).not.toHaveBeenCalled();
+  });
+
+  it("refuses to mass-delete when the run dir reads back empty but files were materialized", async () => {
+    mockListFiles.mockResolvedValue([row("a.txt"), row("b.txt")]);
+    mockReadBlob.mockResolvedValue({ data: Buffer.from("x"), mimeType: "text/plain" });
+    const m = await materialized();
+
+    // Simulate the dir vanishing / mount fault: empty it before sync-back.
+    await rm(nodePath.join(m.dir, "a.txt"));
+    await rm(nodePath.join(m.dir, "b.txt"));
+
+    const delta = await syncBackWorkspace(m);
+
+    // The safety valve fires: nothing deleted, an "(all)" skip recorded.
+    expect(mockSoftDelete).not.toHaveBeenCalled();
+    expect(delta.deleted).toEqual([]);
+    expect(delta.skipped).toEqual([
+      { path: "(all)", reason: "run directory unreadable; sync skipped" },
+    ]);
   });
 });

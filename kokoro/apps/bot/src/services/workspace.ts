@@ -3,6 +3,7 @@ import {
   generateWorkspaceKey,
   getWorkspaceFileByPath,
   getWorkspaceTotals,
+  isDuplicateKeyError,
   listWorkspaceFiles,
   readWorkspaceBlob,
   removeWorkspaceBlob,
@@ -30,9 +31,43 @@ export class WorkspaceError extends Error {
   }
 }
 
+/**
+ * A write lost the race for an occupied path: the file existed (or another
+ * write created it concurrently) and `overwrite` wasn't set. A subclass so
+ * callers that can recover — `saveInboundDocument` deduping to the next
+ * numbered name — can catch *only* this, not a quota breach or a bad path.
+ */
+export class WorkspaceExistsError extends WorkspaceError {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkspaceExistsError";
+  }
+}
+
 const MB = 1024 * 1024;
 const MAX_PATH_CHARS = 512;
 const MAX_PATH_DEPTH = 8;
+
+/**
+ * Serializes the read-check-then-commit body of every workspace write. Writes
+ * can originate concurrently — un-serialized Telegram/iMessage webhook
+ * handlers, conversational tool turns, and sandbox sync-back — and the
+ * quota/occupancy checks are check-then-act: without this lock two writers
+ * read the same pre-write totals, both pass the cap, and both commit
+ * (breaching the quota), or both miss the existence check for one new path and
+ * the second hits the partial-unique index's E11000. The whole critical
+ * section (existence + quota reads through the blob write and row upsert) runs
+ * under the lock so those reads stay authoritative through the commit. Single
+ * writer at a time is fine at this workload; the blob write it covers is the
+ * same one the sandbox sync-back already issues sequentially.
+ */
+let workspaceWriteChain: Promise<unknown> = Promise.resolve();
+
+function withWorkspaceWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = workspaceWriteChain.then(fn, fn);
+  workspaceWriteChain = next.catch(() => {});
+  return next;
+}
 
 // eslint-disable-next-line no-control-regex
 const FORBIDDEN_CHARS = /[\u0000-\u001f\u007f\\]/;
@@ -70,7 +105,13 @@ export function normalizeWorkspacePath(raw: string): string {
       throw new WorkspaceError("path segments must not start or end with whitespace");
     }
   }
-  return segments.join("/");
+  // Canonicalize to NFC so the same name in different Unicode normal forms maps
+  // to one file. This is the single chokepoint every workspace path passes
+  // through, so storage keys, the sandbox materialize manifest, and post-run
+  // readback all agree — without it, a filesystem that returns NFD (Docker
+  // Desktop's VirtioFS mount) would make an unchanged "café.txt" miss its
+  // manifest key on sync-back and get soft-deleted.
+  return segments.join("/").normalize("NFC");
 }
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -159,55 +200,76 @@ export async function writeWorkspaceFile(
   const path = normalizeWorkspacePath(input.path);
   const size = input.data.length;
   const maxFileBytes = config.WORKSPACE_MAX_FILE_MB * MB;
+  // Per-file cap is independent of workspace state, so it's checked outside
+  // the lock — no point serializing a write that can't fit on its own.
   if (size > maxFileBytes) {
     throw new WorkspaceError(
       `file is ${humanBytes(size)} — exceeds the ${config.WORKSPACE_MAX_FILE_MB} MB per-file cap`,
     );
   }
 
-  const existing = await getWorkspaceFileByPath(path);
-  if (existing && !input.overwrite) {
-    throw new WorkspaceError(
-      `a file already exists at "${path}" (${humanBytes(existing.size)}) — pass overwrite to replace it`,
-    );
-  }
-
-  const totals = await getWorkspaceTotals();
-  const projectedBytes = totals.totalBytes - (existing?.size ?? 0) + size;
-  const maxTotalBytes = config.WORKSPACE_MAX_TOTAL_MB * MB;
-  if (projectedBytes > maxTotalBytes) {
-    throw new WorkspaceError(
-      `workspace is full — ${humanBytes(totals.totalBytes)} of ${config.WORKSPACE_MAX_TOTAL_MB} MB used; delete files to make room`,
-    );
-  }
-  if (!existing && totals.count + 1 > config.WORKSPACE_MAX_FILES) {
-    throw new WorkspaceError(
-      `workspace holds ${totals.count} files — the ${config.WORKSPACE_MAX_FILES}-file cap is reached; delete files to make room`,
-    );
-  }
-
-  const mimeType = input.mimeType ?? guessMimeType(path);
-  const gridfsKey = generateWorkspaceKey();
-  await writeWorkspaceBlob(gridfsKey, input.data, mimeType);
-  const { previousGridfsKey } = await upsertWorkspaceFile({
-    path,
-    gridfsKey,
-    size,
-    mimeType,
-    source: input.source,
-    sourceChatId: input.sourceChatId ?? null,
-  });
-  if (previousGridfsKey) {
-    // Best-effort: an orphaned blob is invisible (no row points at it) and
-    // costs only storage; failing the write over it would be backwards.
-    try {
-      await removeWorkspaceBlob(previousGridfsKey);
-    } catch (error) {
-      logger.warn({ error, path, previousGridfsKey }, "Workspace: stale blob removal failed");
+  // Existence + quota reads through the commit run under one lock so a
+  // concurrent write can't invalidate them between check and act.
+  return withWorkspaceWriteLock(async () => {
+    const existing = await getWorkspaceFileByPath(path);
+    if (existing && !input.overwrite) {
+      throw new WorkspaceExistsError(
+        `a file already exists at "${path}" (${humanBytes(existing.size)}) — pass overwrite to replace it`,
+      );
     }
-  }
-  logger.info({ path, size, mimeType, source: input.source }, "Workspace: file written");
-  return { path, size, mimeType, overwritten: existing !== null };
+
+    const totals = await getWorkspaceTotals();
+    const projectedBytes = totals.totalBytes - (existing?.size ?? 0) + size;
+    const maxTotalBytes = config.WORKSPACE_MAX_TOTAL_MB * MB;
+    if (projectedBytes > maxTotalBytes) {
+      throw new WorkspaceError(
+        `workspace is full — ${humanBytes(totals.totalBytes)} of ${config.WORKSPACE_MAX_TOTAL_MB} MB used; delete files to make room`,
+      );
+    }
+    if (!existing && totals.count + 1 > config.WORKSPACE_MAX_FILES) {
+      throw new WorkspaceError(
+        `workspace holds ${totals.count} files — the ${config.WORKSPACE_MAX_FILES}-file cap is reached; delete files to make room`,
+      );
+    }
+
+    const mimeType = input.mimeType ?? guessMimeType(path);
+    const gridfsKey = generateWorkspaceKey();
+    await writeWorkspaceBlob(gridfsKey, input.data, mimeType);
+    let previousGridfsKey: string | null;
+    try {
+      ({ previousGridfsKey } = await upsertWorkspaceFile({
+        path,
+        gridfsKey,
+        size,
+        mimeType,
+        source: input.source,
+        sourceChatId: input.sourceChatId ?? null,
+      }));
+    } catch (error) {
+      // The lock makes a same-path race impossible from within this process,
+      // but the partial-unique index is the real arbiter (another process, or
+      // a soft-deleted row reactivating). Translate its E11000 into the
+      // typed exists-error so it reads as policy, not an infra "degraded"
+      // fault — and so saveInboundDocument's dedupe can recover. Drop the
+      // now-orphaned blob we just wrote.
+      if (isDuplicateKeyError(error)) {
+        await removeWorkspaceBlob(gridfsKey).catch(() => {});
+        throw new WorkspaceExistsError(`a file already exists at "${path}"`);
+      }
+      throw error;
+    }
+    if (previousGridfsKey) {
+      // Best-effort: an orphaned blob is invisible (no row points at it) and
+      // costs only storage; failing the write over it would be backwards.
+      try {
+        await removeWorkspaceBlob(previousGridfsKey);
+      } catch (error) {
+        logger.warn({ error, path, previousGridfsKey }, "Workspace: stale blob removal failed");
+      }
+    }
+    logger.info({ path, size, mimeType, source: input.source }, "Workspace: file written");
+    return { path, size, mimeType, overwritten: existing !== null };
+  });
 }
 
 export interface WorkspaceReadResult {
@@ -326,23 +388,36 @@ export async function saveInboundDocument(
   const dot = name.lastIndexOf(".");
   const stem = dot > 0 ? name.slice(0, dot) : name;
   const ext = dot > 0 ? name.slice(dot) : "";
+  const mimeType = input.mimeType ?? guessMimeType(name);
 
-  let candidate = `inbox/${name}`;
-  for (let i = 2; await getWorkspaceFileByPath(candidate); i++) {
-    if (i > 100) {
-      candidate = `inbox/${stem}-${generateWorkspaceKey().slice(0, 8)}${ext}`;
-      break;
+  // Try to claim a name, advancing the suffix on collision. Each attempt is an
+  // atomic write (overwrite:false) — letting writeWorkspaceFile's lock + unique
+  // index be the arbiter rather than a separate "is this name free?" query that
+  // a concurrent upload could invalidate before we write (the check-then-write
+  // race). WorkspaceExistsError is the only recoverable failure; a quota breach
+  // or bad path propagates immediately.
+  for (let i = 1; ; i++) {
+    const candidate =
+      i === 1
+        ? `inbox/${name}`
+        : i > 100
+          ? `inbox/${stem}-${generateWorkspaceKey().slice(0, 8)}${ext}`
+          : `inbox/${stem}-${i}${ext}`;
+    try {
+      return await writeWorkspaceFile({
+        path: candidate,
+        data: input.data,
+        mimeType,
+        source: "chat-upload",
+        sourceChatId: input.sourceChatId,
+      });
+    } catch (error) {
+      // The random-suffix fallback (i > 100) collides with negligible
+      // probability; if even that loses the race, give up rather than spin.
+      if (error instanceof WorkspaceExistsError && i <= 100) continue;
+      throw error;
     }
-    candidate = `inbox/${stem}-${i}${ext}`;
   }
-
-  return writeWorkspaceFile({
-    path: candidate,
-    data: input.data,
-    mimeType: input.mimeType ?? guessMimeType(name),
-    source: "chat-upload",
-    sourceChatId: input.sourceChatId,
-  });
 }
 
 const SUMMARY_MAX_PATHS = 8;

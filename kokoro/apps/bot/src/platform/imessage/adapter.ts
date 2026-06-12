@@ -4,6 +4,15 @@ import { BlueBubblesClient } from "./client";
 import { imessageChatId } from "../registry";
 
 /**
+ * Byte cap for a single inbound iMessage attachment (audio or document),
+ * whether it arrives inline in the webhook or is fetched by GUID. One source
+ * of truth so the inline path and the fetch path can't drift to different
+ * limits. Mirrors the STT module's 25 MB transcription cap; the workspace
+ * re-enforces its own quota on top for documents.
+ */
+export const IMESSAGE_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+/**
  * Adapter for BlueBubbles (self-hosted iMessage relay running on a Mac).
  *
  * Two semantic differences from the Telegram adapter that callers should
@@ -215,10 +224,9 @@ export function normalizeWebhookEvent(
   // Voice notes / audio attachments. When BlueBubbles inlines `data`,
   // decode the base64 and route through the STT pipeline. iMessage's
   // attachment payload doesn't surface duration; the API response from
-  // Whisper provides it after transcription. The 25 MB cap mirrors the
-  // STT module's transcribeAudio cap — early reject so we don't write
-  // a doomed buffer to GridFS.
-  const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+  // Whisper provides it after transcription. The cap is the shared
+  // IMESSAGE_MAX_ATTACHMENT_BYTES — early reject so we don't write a doomed
+  // buffer to GridFS.
   const isVoice = attachment && attachment.mimeType?.startsWith("audio/");
   let audioBuffer: Buffer | undefined;
   let audioMimeType: string | undefined;
@@ -226,7 +234,7 @@ export function normalizeWebhookEvent(
   if (isVoice) {
     if (attachment.data) {
       const buf = Buffer.from(attachment.data, "base64");
-      if (buf.length <= MAX_AUDIO_BYTES) {
+      if (buf.length <= IMESSAGE_MAX_ATTACHMENT_BYTES) {
         audioBuffer = buf;
         audioMimeType = attachment.mimeType ?? "audio/mp4";
       } else {
@@ -259,7 +267,7 @@ export function normalizeWebhookEvent(
   if (isDocument) {
     if (attachment.data) {
       const buf = Buffer.from(attachment.data, "base64");
-      if (buf.length <= MAX_AUDIO_BYTES) {
+      if (buf.length <= IMESSAGE_MAX_ATTACHMENT_BYTES) {
         documentBuffer = buf;
       } else {
         documentDropNote = `[file "${documentFileName ?? "attachment"}" too large to receive — 25 MB cap]`;

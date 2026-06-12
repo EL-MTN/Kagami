@@ -217,6 +217,17 @@ describe("runCode — docker invocation", () => {
     expect(args).toContain("--network");
   });
 
+  it.each([
+    ["/tmp/has:colon", ":"],
+    ["/tmp/has,comma", ","],
+  ])("refuses a workspaceDir containing %s — docker --volume would mis-parse it", async (dir) => {
+    await expect(
+      runCode({ language: "python", code: "print(1)", workspaceDir: dir }),
+    ).rejects.toMatchObject({ name: "CodeSandboxError", kind: "internal" });
+    // Rejected before any docker invocation.
+    expect(promisifiedMock).not.toHaveBeenCalled();
+  });
+
   it("writes the code via stdin (never argv) and swallows EPIPE", async () => {
     const run = resolvedRun("ok");
     promisifiedMock.mockReturnValueOnce(run.promise);
