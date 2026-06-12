@@ -21,6 +21,11 @@
 // as DELETE/UPDATE/ADD rows, actor "curate") and entity links are
 // maintained. There is no undo beyond the history journal — run a dry
 // pass first.
+//
+// NOTE: --mode entity and --policy consolidate are dry-run-only for now.
+// --apply is refused for them until the apply path is hardened (category
+// normalization on merges + a cross-group dedup sweep); consolidate also
+// plans large destructive drops. Only the default cosine/curate path applies.
 
 import "dotenv/config";
 import {
@@ -149,6 +154,24 @@ async function main(): Promise<void> {
     // Keep --json output pure (pipeable) — the human trailer would break
     // a downstream parser.
     if (!args.json) console.log("\nDry run — nothing written. Re-run with --apply to execute.");
+    return;
+  }
+
+  // The entity grouping and the consolidate (durable-only) policy are
+  // dry-run-only until the apply path is hardened — its merge categories
+  // aren't normalized to the enum yet, and consolidate plans large
+  // destructive drops. Refuse to mutate the live store with either until
+  // those guardrails land; the default cosine/curate --apply is unaffected.
+  if (args.mode === "entity" || args.policy === "consolidate") {
+    const flags: string[] = [];
+    if (args.mode === "entity") flags.push("--mode entity");
+    if (args.policy === "consolidate") flags.push("--policy consolidate");
+    console.error(
+      `Refusing --apply with ${flags.join(" + ")}: these strategies are dry-run-only ` +
+        "until the apply path is hardened (merge-category normalization + cross-group " +
+        "dedup). Re-run without --apply to preview, or use the default cosine/curate for --apply.",
+    );
+    process.exitCode = 2;
     return;
   }
 
