@@ -32,32 +32,76 @@ async function main() {
   const { planCuration, applyCuration } = await import("../src/ingest/curate.js");
 
   const db = await getDb();
-  // Only consolidate a vault the baseline actually ingested. Transcripts
-  // persist even when consolidation later empties the facts, so they're the
-  // reliable "was ingested" signal — a 0-fact vault could otherwise be a
-  // never-run baseline item OR a real consolidation. Marking an
-  // uninitialized vault would make the gate rerun skip ingest and query an
-  // empty DB, reporting a false regression; fail loudly instead.
-  const ingested = (await db.collection("transcripts").countDocuments({})) > 0;
-  if (!ingested) {
-    process.stderr.write(
-      `[consolidate ${db.databaseName}] no transcripts — vault was not ingested by the ` +
-        "baseline; refusing to consolidate/mark an uninitialized vault\n",
-    );
+  const meta = db.collection("bench_meta");
+  const fail = async (msg: string): Promise<never> => {
+    process.stderr.write(`[consolidate ${db.databaseName}] ${msg}\n`);
     await closeMongo();
     process.exit(1);
+  };
+
+  // Idempotent: a `consolidate-all` retry after a transient failure must not
+  // run the destructive durable-only pass a SECOND time on vaults that already
+  // succeeded — that would drop/merge again and invalidate the A/B. Emit the
+  // prior outcome and stop (counts as a completed vault, not a failure).
+  if ((await meta.countDocuments({ kind: "consolidated" })) > 0) {
+    const facts = await db.collection("facts").countDocuments({});
+    await fs.writeFile(
+      resultPath,
+      JSON.stringify(
+        {
+          db: db.databaseName,
+          model: process.env.LLM_MODEL ?? "(unset)",
+          before: facts,
+          after: facts,
+          groups: 0,
+          failedGroups: 0,
+          plannedDrops: 0,
+          plannedMerges: 0,
+          applied: {},
+          skipped: "already-consolidated",
+        },
+        null,
+        2,
+      ),
+    );
+    process.stderr.write(`[consolidate ${db.databaseName}] already consolidated — skipping\n`);
+    await closeMongo();
+    return;
   }
+
+  // Require a SUCCESSFULLY-ingested vault — facts, not just transcripts. The
+  // baseline writes the transcript BEFORE extracting, so an LLM/embedding
+  // outage can leave transcripts populated with zero facts; marking that vault
+  // would make the gate rerun skip ingest and query an empty store.
   const before = await db.collection("facts").countDocuments({});
+  if (before === 0) {
+    await fail(
+      "zero facts — vault was not successfully ingested by the baseline; refusing to mark it",
+    );
+  }
 
   const plan = await planCuration({}, { grouping: "entity", policy: "consolidate" });
+
+  // If every review group failed open (e.g. the consolidation model is down),
+  // planCuration returns a keep-all plan and nothing was actually reviewed.
+  // Applying + marking it would make the gate compare against an
+  // unconsolidated store — treat it as a failed vault instead.
+  if (plan.groups > 0 && plan.failedGroups === plan.groups) {
+    await fail(
+      `all ${plan.groups} review groups failed open (model down?) — consolidation did not run; refusing to mark it`,
+    );
+  }
+
   const applied = await applyCuration(plan);
 
-  // Mark the (ingested) vault consolidated so a `longmemeval.ts --keep-vaults`
+  // Mark the (ingested + reviewed) vault consolidated so a `--keep-vaults`
   // gate rerun skips ingest even when consolidation emptied the facts — a real
   // ingested vault can legitimately consolidate to zero durable facts.
-  await db
-    .collection("bench_meta")
-    .updateOne({ kind: "consolidated" }, { $set: { kind: "consolidated" } }, { upsert: true });
+  await meta.updateOne(
+    { kind: "consolidated" },
+    { $set: { kind: "consolidated" } },
+    { upsert: true },
+  );
 
   const after = await db.collection("facts").countDocuments({});
 
