@@ -32,15 +32,29 @@ async function main() {
   const { planCuration, applyCuration } = await import("../src/ingest/curate.js");
 
   const db = await getDb();
+  // Only consolidate a vault the baseline actually ingested. Transcripts
+  // persist even when consolidation later empties the facts, so they're the
+  // reliable "was ingested" signal — a 0-fact vault could otherwise be a
+  // never-run baseline item OR a real consolidation. Marking an
+  // uninitialized vault would make the gate rerun skip ingest and query an
+  // empty DB, reporting a false regression; fail loudly instead.
+  const ingested = (await db.collection("transcripts").countDocuments({})) > 0;
+  if (!ingested) {
+    process.stderr.write(
+      `[consolidate ${db.databaseName}] no transcripts — vault was not ingested by the ` +
+        "baseline; refusing to consolidate/mark an uninitialized vault\n",
+    );
+    await closeMongo();
+    process.exit(1);
+  }
   const before = await db.collection("facts").countDocuments({});
 
   const plan = await planCuration({}, { grouping: "entity", policy: "consolidate" });
   const applied = await applyCuration(plan);
 
-  // Mark the vault consolidated so a `longmemeval.ts --keep-vaults` gate rerun
-  // skips ingest even when consolidation emptied the facts collection
-  // (factsCount alone can't tell "consolidated to nothing" from "never
-  // ingested", and re-ingesting would corrupt that item's gate result).
+  // Mark the (ingested) vault consolidated so a `longmemeval.ts --keep-vaults`
+  // gate rerun skips ingest even when consolidation emptied the facts — a real
+  // ingested vault can legitimately consolidate to zero durable facts.
   await db
     .collection("bench_meta")
     .updateOne({ kind: "consolidated" }, { $set: { kind: "consolidated" } }, { upsert: true });
