@@ -351,6 +351,119 @@ describe("applyCuration", () => {
   });
 });
 
+describe("planCuration category normalization", () => {
+  it("clamps an off-enum merge category to misc", async () => {
+    const { appendFacts } = await import("../src/storage/facts.ts");
+    await appendFacts([fact("a", "Fact A", E_A), fact("b", "Fact B", E_B)] as never[]);
+    // a+b cluster (identical embeddings) → multi-id merge is legal. The model
+    // invents an off-enum category; planCuration must clamp it to the enum so
+    // category-filtered recall never silently unmatches the curated fact.
+    verdictQueue.push({
+      actions: [
+        {
+          kind: "merge",
+          ids: ["a", "b"],
+          text: "Merged fact",
+          event_date: "",
+          category: "correspondence",
+          reason: "dedup",
+        },
+      ],
+    });
+    const { planCuration } = await import("../src/ingest/curate.ts");
+    const plan = await planCuration();
+    expect(plan.merges).toHaveLength(1);
+    expect(plan.merges[0]!.category).toBe("misc");
+  });
+
+  it("lowercases a valid category and leaves an empty one to the member fallback", async () => {
+    const { appendFacts } = await import("../src/storage/facts.ts");
+    await appendFacts([
+      fact("a", "Fact A", E_A),
+      fact("b", "Fact B", E_B),
+      fact("c", "Fact C", E_A),
+      fact("d", "Fact D", E_B),
+    ] as never[]);
+    verdictQueue.push({
+      actions: [
+        // Valid-but-uppercase category → normalized to the enum's lowercase.
+        {
+          kind: "merge",
+          ids: ["a", "b"],
+          text: "Merged AB",
+          event_date: "",
+          category: "Family",
+          reason: "dedup",
+        },
+        // Empty category → omitted, so apply falls back to the member category.
+        {
+          kind: "merge",
+          ids: ["c", "d"],
+          text: "Merged CD",
+          event_date: "",
+          category: "",
+          reason: "dedup",
+        },
+      ],
+    });
+    const { planCuration } = await import("../src/ingest/curate.ts");
+    const plan = await planCuration();
+    const ab = plan.merges.find((m) => m.text === "Merged AB");
+    const cd = plan.merges.find((m) => m.text === "Merged CD");
+    expect(ab!.category).toBe("family");
+    expect(cd!.category).toBeUndefined();
+  });
+});
+
+describe("consolidateToConvergence", () => {
+  it("applies, re-plans, and stops at a fixpoint — aggregating totals", async () => {
+    const { appendFacts } = await import("../src/storage/facts.ts");
+    await appendFacts([fact("a", "A", E_A), fact("b", "B", E_A), fact("c", "C", E_A)] as never[]);
+    // Round 1: merge all three into one. Round 2 re-plans over the single
+    // survivor; with nothing enqueued the verdict fails open (keep-all), so
+    // the loop sees a no-change plan and converges without a second apply.
+    verdictQueue.push({
+      actions: [
+        {
+          kind: "merge",
+          ids: ["a", "b", "c"],
+          text: "Merged ABC",
+          event_date: "",
+          category: "",
+          reason: "dedup",
+        },
+      ],
+    });
+    const { consolidateToConvergence } = await import("../src/ingest/curate.ts");
+    const r = await consolidateToConvergence();
+    expect(r.before).toBe(3);
+    expect(r.after).toBe(1);
+    expect(r.rounds).toBe(1);
+    expect(r.converged).toBe(true);
+    expect(r.totals.merged).toBe(1);
+    expect(r.totals.mergedAway).toBe(3);
+    expect(r.firstGroups).toBe(1);
+    expect(r.firstFailedGroups).toBe(0);
+  });
+
+  it("runs zero apply rounds when the first plan is already a fixpoint", async () => {
+    const { appendFacts } = await import("../src/storage/facts.ts");
+    await appendFacts([fact("a", "A", E_A)] as never[]);
+    verdictQueue.push({
+      actions: [{ kind: "keep", ids: ["a"], text: "", event_date: "", category: "", reason: "" }],
+    });
+    const { consolidateToConvergence } = await import("../src/ingest/curate.ts");
+    const r = await consolidateToConvergence();
+    expect(r.rounds).toBe(0);
+    expect(r.converged).toBe(true);
+    expect(r.before).toBe(1);
+    expect(r.after).toBe(1);
+    expect(r.firstGroups).toBe(1);
+    expect(r.firstFailedGroups).toBe(0);
+    expect(r.totals.merged).toBe(0);
+  });
+});
+
 it("skips a merge when a member fact vanished between plan and apply", async () => {
   const { appendFacts, deleteFacts } = await import("../src/storage/facts.ts");
   await appendFacts([

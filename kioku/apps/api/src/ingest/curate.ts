@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import { z } from "zod";
-import { cosineSimilarity, generateObject } from "ai";
+import { cosineSimilarity, generateObject, type LanguageModel } from "ai";
 import { embedTexts, model } from "../llm.js";
+import { normalizeCategory } from "./categories.js";
 import { paths } from "../paths.js";
 import { extractEntities, lemmatizeForBm25 } from "../retrieval/text.js";
 import {
@@ -329,7 +330,7 @@ export type GroupingStrategy = "cosine" | "entity";
 
 export async function planCuration(
   scope: CurationScope = {},
-  opts: { grouping?: GroupingStrategy; policy?: CurationPolicy } = {},
+  opts: { grouping?: GroupingStrategy; policy?: CurationPolicy; model?: LanguageModel } = {},
 ): Promise<CurationPlan> {
   const facts = await readFactsInScope({
     user_id: scope.user_id ?? "default",
@@ -360,7 +361,7 @@ export async function planCuration(
     let actions: VerdictAction[];
     try {
       const { object } = await generateObject({
-        model,
+        model: opts.model ?? model,
         schema: CurationVerdict,
         system: systemPrompt,
         prompt: renderGroup(group),
@@ -402,7 +403,14 @@ export async function planCuration(
           memberTexts: a.ids.map((id) => byId.get(id)!.text),
           text: a.text.trim(),
           ...(DATE_RE.test(a.event_date) ? { event_date: a.event_date } : {}),
-          ...(a.category.trim() ? { category: a.category.trim() } : {}),
+          // Clamp the model's category to the fixed enum here, at plan time,
+          // so the dry-run preview shows exactly what apply will write. The
+          // consolidate/curate prompts ask the model to fix the category on
+          // merge, and it readily invents off-enum tags ("correspondence",
+          // "contacts") that would silently unmatch category-filtered recall.
+          // An empty category is left unset so the apply path's
+          // fallback-to-member-category still applies (don't force "misc").
+          ...(a.category.trim() ? { category: normalizeCategory(a.category) } : {}),
           reason: a.reason,
         });
       }
@@ -587,4 +595,130 @@ export async function applyCuration(
   }
 
   return result;
+}
+
+export interface ConvergenceResult {
+  // Apply rounds actually executed (a plan with no work runs zero applies).
+  rounds: number;
+  // True when the store reached a fixpoint; false when maxRounds was hit
+  // with work still pending (the store may still hold residual duplicates —
+  // re-run or raise maxRounds).
+  converged: boolean;
+  before: number;
+  after: number;
+  // Review-group stats from the FIRST planning round. Lets a caller (the
+  // bench gate) distinguish a TOTAL fail-open — model down, every group kept,
+  // firstFailedGroups === firstGroups — from a genuine no-op where there was
+  // simply nothing to consolidate. Both otherwise present as rounds=0.
+  firstGroups: number;
+  firstFailedGroups: number;
+  // Per-round apply results and their sum across all rounds.
+  perRound: CurationApplyResult[];
+  totals: CurationApplyResult;
+}
+
+function emptyApplyResult(): CurationApplyResult {
+  return {
+    dropped: 0,
+    rewritten: 0,
+    merged: 0,
+    mergedAway: 0,
+    staleSkipped: 0,
+    entitiesUnlinked: 0,
+    entitiesRemoved: 0,
+  };
+}
+
+// Run the curation/consolidation pass repeatedly until the store reaches a
+// fixpoint. A single entity-grouped pass can leave CROSS-GROUP duplicates: a
+// subject mentioning several high-frequency entities (a routine that names a
+// ticker, a brand, and a person) is split across those entities' groups by
+// groupByEntity's greedy max-coverage, so two near-identical facts survive the
+// first pass in different review calls. Re-running over the now-smaller store
+// regroups those survivors together — they become each other's largest
+// remaining co-entity cluster — and merges them. Fact count is monotonically
+// non-increasing across rounds, so this terminates; maxRounds is a backstop
+// against no-op-rewrite churn (a model restating text round to round).
+//
+// Each round re-reads the store inside planCuration/applyCuration, so every
+// pass operates on real persisted embeddings — no hypothetical merge-result
+// vectors. This is the sanctioned --apply path for the entity / consolidate
+// strategies (the single-pass apply leaves the cross-group residue above).
+export async function consolidateToConvergence(
+  scope: CurationScope = {},
+  opts: {
+    grouping?: GroupingStrategy;
+    policy?: CurationPolicy;
+    model?: LanguageModel;
+    maxRounds?: number;
+    actor?: string;
+  } = {},
+): Promise<ConvergenceResult> {
+  const maxRounds = Math.max(1, opts.maxRounds ?? 4);
+  const actor = opts.actor ?? "curate";
+  const planOpts = {
+    ...(opts.grouping !== undefined ? { grouping: opts.grouping } : {}),
+    ...(opts.policy !== undefined ? { policy: opts.policy } : {}),
+    ...(opts.model !== undefined ? { model: opts.model } : {}),
+  };
+
+  const countInScope = async (): Promise<number> =>
+    (
+      await readFactsInScope({
+        user_id: scope.user_id ?? "default",
+        run_id: scope.run_id,
+        agent_id: scope.agent_id,
+      })
+    ).length;
+
+  const before = await countInScope();
+  const perRound: CurationApplyResult[] = [];
+  let converged = false;
+  let firstGroups = 0;
+  let firstFailedGroups = 0;
+
+  for (let round = 0; round < maxRounds; round++) {
+    const plan = await planCuration(scope, planOpts);
+    if (round === 0) {
+      firstGroups = plan.groups;
+      firstFailedGroups = plan.failedGroups;
+    }
+    // Nothing to do — the store is already a fixpoint for this policy.
+    if (plan.drops.length === 0 && plan.merges.length === 0) {
+      converged = true;
+      break;
+    }
+    const result = await applyCuration(plan, actor);
+    perRound.push(result);
+    // The plan had work but the store didn't change (every action
+    // stale-skipped, or only no-op rewrites). Applying again would spin —
+    // treat it as the fixpoint.
+    if (result.dropped === 0 && result.merged === 0 && result.rewritten === 0) {
+      converged = true;
+      break;
+    }
+  }
+
+  const after = await countInScope();
+  const totals = perRound.reduce((acc, r) => {
+    acc.dropped += r.dropped;
+    acc.rewritten += r.rewritten;
+    acc.merged += r.merged;
+    acc.mergedAway += r.mergedAway;
+    acc.staleSkipped += r.staleSkipped;
+    acc.entitiesUnlinked += r.entitiesUnlinked;
+    acc.entitiesRemoved += r.entitiesRemoved;
+    return acc;
+  }, emptyApplyResult());
+
+  return {
+    rounds: perRound.length,
+    converged,
+    before,
+    after,
+    firstGroups,
+    firstFailedGroups,
+    perRound,
+    totals,
+  };
 }

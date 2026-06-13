@@ -19,6 +19,14 @@ const emb = { baseURL: env.EMBEDDING_BASE_URL ?? "", apiKey: env.EMBEDDING_API_K
 const modelName = env.LLM_MODEL ?? "";
 export const embeddingModelName = env.EMBEDDING_MODEL;
 
+// The periodic consolidation cron wants a stronger editor than the answerer
+// (gpt-4.1 vs gpt-4o-mini — a small model breaks merge atomicity). When
+// KIOKU_CONSOLIDATE_MODEL is set we register it as a same-provider alias so
+// the gateway builds it from the same endpoint/key, without changing the
+// default answerer model.
+const consolidationModelName = env.KIOKU_CONSOLIDATE_MODEL;
+const CONSOLIDATION_ALIAS = "consolidation";
+
 if (!modelName) {
   logger.warn("LLM_MODEL is unset. Set it in .env to whatever your provider exposes.");
 }
@@ -48,6 +56,9 @@ const inference = createInference({
     baseURL: llm.baseURL,
     apiKey: llm.apiKey,
     model: modelName,
+    ...(consolidationModelName
+      ? { models: { [CONSOLIDATION_ALIAS]: consolidationModelName } }
+      : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   },
   embedding: {
@@ -68,6 +79,13 @@ export const llmEndpoint = llm;
 export const embeddingEndpoint = emb;
 
 export const model = inference.model();
+
+// Editor model for the consolidation cron. Falls back to the default chat
+// model when KIOKU_CONSOLIDATE_MODEL is unset (so an operator who hasn't set
+// it still gets a working — if weaker — pass rather than a hard failure).
+export const consolidationModel = consolidationModelName
+  ? inference.model(CONSOLIDATION_ALIAS)
+  : model;
 
 export function getEmbeddingModel() {
   return inference.embeddings();

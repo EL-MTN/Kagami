@@ -68,6 +68,8 @@ A group often narrates ONE interaction across many memories: sending an email (r
 
 **One fact per durable subject.** If several memories in the group describe the SAME durable thing — the same routine, the same person, the same recurring meeting — merge them ALL into a single fact. Never leave two facts in the store about one subject; pick every id that describes it and fold them into one.
 
+**Preserve countable recurrences.** Distinct OCCURRENCES of the same kind of durable event are not duplicates — they are the evidence behind "how many" and "how often". Several weddings attended, multiple trips taken, repeated purchases, a workout done on specific days: do NOT collapse these into one vague fact ("User attended several weddings") that destroys the count. Either keep each occurrence as its own fact with its own `event_date`, or, if you merge them, ENUMERATE every occurrence with its date so counting stays answerable ("User attended weddings on 2024-03-15, 2024-06-20, and 2024-09-01"). This is the one place "one fact per subject" does not apply: the recurrence — its instances and dates — is itself the durable fact. The durability test is per-occurrence — a real event that happened is durable even when similar events recur.
+
 # QUALITY BAR FOR MERGED TEXT
 
 - Atomic: one durable fact, self-contained, pronouns replaced with names or "User".
