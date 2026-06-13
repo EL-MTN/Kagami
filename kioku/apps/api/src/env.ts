@@ -116,7 +116,7 @@ export const envSpec = defineEnv({
       .default("false")
       .transform((s) => s === "true")
       .meta({
-        doc: 'Enable the in-process periodic consolidation cron: a durable-only\nentity-grouped curation pass (DROPS episodic chat-exhaust, MERGES\nfragmented episodes — see prompts/consolidate.md) that runs to convergence\nover the default scope on a timer. Mutations are journaled in `history`\n(actor "consolidate-cron"); there is no undo beyond that journal. Only the\nliteral "true" enables — "false", empty, and unset all leave it OFF (the\noff switch works without deleting the var). When enabled, also serves a\nguarded POST /consolidate for a manual run.',
+        doc: 'Enable the in-process periodic consolidation cron: a single durable-only\nentity-grouped curation pass (DROPS episodic chat-exhaust, MERGES\nfragmented episodes — see prompts/consolidate.md) over the default scope on\na timer. Mutations are journaled in `history` (actor "consolidate-cron");\nthere is no undo beyond that journal. Only the literal "true" enables —\n"false", empty, and unset all leave it OFF (the off switch works without\ndeleting the var). When enabled, also serves a guarded POST /consolidate\nfor a manual run.',
         group: "Consolidation (maintenance cron)",
       }),
     KIOKU_CONSOLIDATE_INTERVAL_HOURS: z.coerce.number().finite().positive().default(24).meta({

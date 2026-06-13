@@ -22,17 +22,17 @@
 // maintained. There is no undo beyond the history journal — run a dry
 // pass first.
 //
-// --apply with --mode entity or --policy consolidate runs the hardened
-// converging apply (consolidateToConvergence): merge categories are clamped
-// to the fixed enum, and the pass repeats until the store stops changing so
-// cross-group duplicates the first entity pass leaves behind get merged. The
-// default cosine/curate --apply stays a single pass.
+// --apply with --mode entity or --policy consolidate is allowed (the former
+// dry-run-only guard is gone): merge categories are clamped to the fixed enum
+// on apply. It is a SINGLE pass — a converging multi-round re-review was tried
+// to also clean up the benign cross-group duplicates one entity pass leaves,
+// but the LongMemEval gate showed it over-consolidates (55% dropped vs 42%,
+// 77%→66% recall), so it was dropped. Single-pass is the gate-neutral path.
 
 import "dotenv/config";
 import {
   planCuration,
   applyCuration,
-  consolidateToConvergence,
   type CurationPlan,
   type CurationPolicy,
   type GroupingStrategy,
@@ -144,42 +144,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Entity grouping or the consolidate (durable-only) policy go through the
-  // converging apply: a single entity pass leaves cross-group duplicates, so
-  // repeat plan→apply until the store stops changing. The default cosine/curate
-  // --apply stays a single pass (it has no cross-group residue to clean up).
-  const useConvergence = args.mode === "entity" || args.policy === "consolidate";
-
-  if (args.apply && useConvergence) {
-    const r = await consolidateToConvergence(scope, { grouping: args.mode, policy: args.policy });
-    if (args.json) {
-      console.log(JSON.stringify(r, null, 2));
-      return;
-    }
-    const t = r.totals;
-    console.log(
-      `\n[${args.mode} grouping · ${args.policy} policy] converged=${r.converged} rounds=${r.rounds}`,
-    );
-    console.log(`Facts: ${r.before} → ${r.after} (−${r.before - r.after})`);
-    r.perRound.forEach((p, i) =>
-      console.log(
-        `  round ${i + 1}: dropped=${p.dropped} merged=${p.merged} (replacing ${p.mergedAway}) ` +
-          `rewritten=${p.rewritten} staleSkipped=${p.staleSkipped}`,
-      ),
-    );
-    console.log(
-      `Totals: dropped=${t.dropped} rewritten=${t.rewritten} merged=${t.merged} ` +
-        `(replacing ${t.mergedAway}) staleSkipped=${t.staleSkipped} ` +
-        `entityLinksRemoved=${t.entitiesUnlinked} entitiesRemoved=${t.entitiesRemoved}`,
-    );
-    if (!r.converged) {
-      console.log(
-        `\n⚠ Did not converge in ${r.rounds} rounds — residual duplicates may remain. Re-run to continue.`,
-      );
-    }
-    return;
-  }
-
   const plan = await planCuration(scope, { grouping: args.mode, policy: args.policy });
 
   if (args.json) {
@@ -191,15 +155,7 @@ async function main(): Promise<void> {
   if (!args.apply) {
     // Keep --json output pure (pipeable) — the human trailer would break
     // a downstream parser.
-    if (!args.json) {
-      console.log("\nDry run — nothing written. Re-run with --apply to execute.");
-      if (useConvergence) {
-        console.log(
-          "Note: --apply runs to convergence (repeats until the store is stable), so it will " +
-            "likely drop/merge MORE than this single-pass preview shows.",
-        );
-      }
-    }
+    if (!args.json) console.log("\nDry run — nothing written. Re-run with --apply to execute.");
     return;
   }
 

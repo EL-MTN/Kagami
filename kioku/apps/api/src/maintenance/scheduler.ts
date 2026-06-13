@@ -1,9 +1,9 @@
 // In-process periodic consolidation — Kioku's self-contained maintenance
-// timer. It runs the durable-only entity-grouped curation pass
-// (prompts/consolidate.md) to convergence over the default scope, dropping
-// episodic chat-exhaust and folding fragmented episodes into one durable
-// fact. This does NOT violate Kioku's pull-only posture: it is internal
-// maintenance over the local store, never an outbound call to a sibling.
+// timer. It runs a single durable-only entity-grouped curation pass
+// (prompts/consolidate.md) over the default scope, dropping episodic
+// chat-exhaust and folding fragmented episodes into one durable fact. This
+// does NOT violate Kioku's pull-only posture: it is internal maintenance over
+// the local store, never an outbound call to a sibling.
 //
 // Disabled by default (KIOKU_CONSOLIDATE_ENABLED). When enabled, the timer
 // fires every KIOKU_CONSOLIDATE_INTERVAL_HOURS — one interval after boot,
@@ -13,7 +13,7 @@
 
 import { loadEnv } from "../config.js";
 import { consolidationModel } from "../llm.js";
-import { consolidateToConvergence, type ConvergenceResult } from "../ingest/curate.js";
+import { planCuration, applyCuration, type CurationApplyResult } from "../ingest/curate.js";
 import { logger } from "../logger.js";
 
 // Process-wide lock: the interval tick and a manual POST /consolidate must
@@ -29,14 +29,16 @@ export function isConsolidationRunning(): boolean {
 
 export interface ConsolidationRunOutcome {
   status: "ok" | "busy" | "error";
-  result?: ConvergenceResult;
+  result?: CurationApplyResult;
   error?: string;
 }
 
 // Run one durable-only consolidation pass over the default scope, serialized.
-// Returns "busy" if a pass is already in flight (the caller decides whether
-// that's a benign skip or a 409). Never throws — a maintenance failure must
-// not crash the timer or wedge a request handler.
+// A SINGLE entity-grouped pass — the LongMemEval-gated config (a converging
+// multi-round re-review was tried and over-consolidated, regressing recall, so
+// it was dropped). Returns "busy" if a pass is already in flight (the caller
+// decides whether that's a benign skip or a 409). Never throws — a maintenance
+// failure must not crash the timer or wedge a request handler.
 export async function runConsolidationOnce(): Promise<ConsolidationRunOutcome> {
   if (running) {
     logger.info("consolidation pass skipped — a run is already in flight");
@@ -45,34 +47,24 @@ export async function runConsolidationOnce(): Promise<ConsolidationRunOutcome> {
   running = true;
   const startedAt = Date.now();
   try {
-    const result = await consolidateToConvergence(
+    const plan = await planCuration(
       {},
-      {
-        grouping: "entity",
-        policy: "consolidate",
-        model: consolidationModel,
-        actor: "consolidate-cron",
-      },
+      { grouping: "entity", policy: "consolidate", model: consolidationModel },
     );
+    const result = await applyCuration(plan, "consolidate-cron");
     logger.info(
       {
-        rounds: result.rounds,
-        converged: result.converged,
-        before: result.before,
-        after: result.after,
-        dropped: result.totals.dropped,
-        merged: result.totals.merged,
-        rewritten: result.totals.rewritten,
+        groups: plan.groups,
+        failedGroups: plan.failedGroups,
+        plannedDrops: plan.drops.length,
+        plannedMerges: plan.merges.length,
+        dropped: result.dropped,
+        merged: result.merged,
+        rewritten: result.rewritten,
         durationMs: Date.now() - startedAt,
       },
       "consolidation pass complete",
     );
-    if (!result.converged) {
-      logger.warn(
-        { rounds: result.rounds },
-        "consolidation did not converge — residual duplicates may remain; next pass continues",
-      );
-    }
     return { status: "ok", result };
   } catch (error) {
     logger.error({ error }, "consolidation pass failed");

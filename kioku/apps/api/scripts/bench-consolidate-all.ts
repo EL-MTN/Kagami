@@ -35,14 +35,11 @@ interface VaultResult {
   model: string;
   before: number;
   after: number;
-  rounds: number;
-  converged: boolean;
   groups: number;
   failedGroups: number;
-  dropped: number;
-  merged: number;
-  rewritten: number;
-  mergedAway: number;
+  plannedDrops: number;
+  plannedMerges: number;
+  applied: Record<string, number>;
 }
 
 // Identical to longmemeval.ts dbNameFor — keep in sync so the gate run reuses
@@ -127,7 +124,7 @@ async function main() {
       results.push(r);
       console.log(
         `[${(done += 1)}/${items.length}] ${db}  ${r.before}→${r.after}  ` +
-          `(rounds=${r.rounds} dropped=${r.dropped} merged=${r.merged} failed=${r.failedGroups})`,
+          `(drops=${r.plannedDrops} merges=${r.plannedMerges} failed=${r.failedGroups})`,
       );
     } catch (err) {
       console.log(`[${(done += 1)}/${items.length}] ${db}  ERROR: ${(err as Error).message}`);
@@ -138,19 +135,15 @@ async function main() {
 
   const before = results.reduce((s, r) => s + r.before, 0);
   const after = results.reduce((s, r) => s + r.after, 0);
-  const drops = results.reduce((s, r) => s + r.dropped, 0);
-  const merges = results.reduce((s, r) => s + r.merged, 0);
+  const drops = results.reduce((s, r) => s + r.plannedDrops, 0);
+  const merges = results.reduce((s, r) => s + r.plannedMerges, 0);
   const failed = results.reduce((s, r) => s + r.failedGroups, 0);
-  const unconverged = results.filter((r) => !r.converged).length;
   console.log("\n## Summary");
   console.log(`vaults consolidated: ${results.length}/${items.length}`);
   console.log(
     `facts:  ${before} → ${after}  (−${before - after}, ${((1 - after / before) * 100).toFixed(1)}%)`,
   );
-  console.log(`applied drops=${drops} merges=${merges} failedGroups=${failed}`);
-  if (unconverged > 0) {
-    console.log(`⚠ ${unconverged} vault(s) did not converge within maxRounds (residue may remain)`);
-  }
+  console.log(`planned drops=${drops} merges=${merges} failedGroups=${failed}`);
 
   const outPath = path.join(tmpRoot, "consolidate-summary.json");
   await fs.writeFile(

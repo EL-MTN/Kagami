@@ -29,7 +29,7 @@ async function main() {
 
   // Lazy-import after env is set so mongo.ts / llm.ts read MONGODB_URI + LLM_MODEL.
   const { getDb, closeMongo } = await import("../src/storage/mongo.js");
-  const { consolidateToConvergence } = await import("../src/ingest/curate.js");
+  const { planCuration, applyCuration } = await import("../src/ingest/curate.js");
 
   const db = await getDb();
   const meta = db.collection("bench_meta");
@@ -54,14 +54,11 @@ async function main() {
         model: process.env.LLM_MODEL ?? "(unset)",
         before: facts,
         after: facts,
-        rounds: 0,
-        converged: true,
         groups: 0,
         failedGroups: 0,
-        dropped: 0,
-        merged: 0,
-        rewritten: 0,
-        mergedAway: 0,
+        plannedDrops: 0,
+        plannedMerges: 0,
+        applied: {},
       };
     }
     await fs.writeFile(
@@ -86,25 +83,19 @@ async function main() {
     );
   }
 
-  // Converging apply — the same hardened path scripts/curate.ts --apply and the
-  // cron use: repeat the entity-grouped durable-only pass until the store stops
-  // changing, so cross-group duplicates the first entity pass leaves get merged.
-  const convergence = await consolidateToConvergence(
-    {},
-    { grouping: "entity", policy: "consolidate" },
-  );
+  const plan = await planCuration({}, { grouping: "entity", policy: "consolidate" });
 
-  // If EVERY review group in the first round failed open (e.g. the consolidation
-  // model is down), the pass kept everything and nothing was actually reviewed.
-  // Marking it would make the gate compare against an unconsolidated store — and
-  // because a total fail-open leaves zero drops/merges, the convergence loop made
-  // no mutation, so failing here is safe. Treat it as a failed vault instead.
-  if (convergence.firstGroups > 0 && convergence.firstFailedGroups === convergence.firstGroups) {
+  // If every review group failed open (e.g. the consolidation model is down),
+  // planCuration returns a keep-all plan and nothing was actually reviewed.
+  // Applying + marking it would make the gate compare against an
+  // unconsolidated store — treat it as a failed vault instead.
+  if (plan.groups > 0 && plan.failedGroups === plan.groups) {
     await fail(
-      `all ${convergence.firstGroups} review groups failed open (model down?) — consolidation did not run; refusing to mark it`,
+      `all ${plan.groups} review groups failed open (model down?) — consolidation did not run; refusing to mark it`,
     );
   }
 
+  const applied = await applyCuration(plan);
   const after = await db.collection("facts").countDocuments({});
 
   const result = {
@@ -112,14 +103,11 @@ async function main() {
     model: process.env.LLM_MODEL ?? "(unset)",
     before,
     after,
-    rounds: convergence.rounds,
-    converged: convergence.converged,
-    groups: convergence.firstGroups,
-    failedGroups: convergence.firstFailedGroups,
-    dropped: convergence.totals.dropped,
-    merged: convergence.totals.merged,
-    rewritten: convergence.totals.rewritten,
-    mergedAway: convergence.totals.mergedAway,
+    groups: plan.groups,
+    failedGroups: plan.failedGroups,
+    plannedDrops: plan.drops.length,
+    plannedMerges: plan.merges.length,
+    applied,
   };
 
   // Mark the (ingested + reviewed) vault consolidated AND store the result, so
@@ -135,8 +123,7 @@ async function main() {
   await closeMongo();
   process.stderr.write(
     `[consolidate ${result.db}] ${before}→${after} ` +
-      `(rounds=${convergence.rounds} dropped=${convergence.totals.dropped} ` +
-      `merged=${convergence.totals.merged} failed=${convergence.firstFailedGroups})\n`,
+      `(drops=${plan.drops.length} merges=${plan.merges.length} failed=${plan.failedGroups})\n`,
   );
 }
 

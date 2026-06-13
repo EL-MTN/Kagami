@@ -415,55 +415,6 @@ describe("planCuration category normalization", () => {
   });
 });
 
-describe("consolidateToConvergence", () => {
-  it("applies, re-plans, and stops at a fixpoint — aggregating totals", async () => {
-    const { appendFacts } = await import("../src/storage/facts.ts");
-    await appendFacts([fact("a", "A", E_A), fact("b", "B", E_A), fact("c", "C", E_A)] as never[]);
-    // Round 1: merge all three into one. Round 2 re-plans over the single
-    // survivor; with nothing enqueued the verdict fails open (keep-all), so
-    // the loop sees a no-change plan and converges without a second apply.
-    verdictQueue.push({
-      actions: [
-        {
-          kind: "merge",
-          ids: ["a", "b", "c"],
-          text: "Merged ABC",
-          event_date: "",
-          category: "",
-          reason: "dedup",
-        },
-      ],
-    });
-    const { consolidateToConvergence } = await import("../src/ingest/curate.ts");
-    const r = await consolidateToConvergence();
-    expect(r.before).toBe(3);
-    expect(r.after).toBe(1);
-    expect(r.rounds).toBe(1);
-    expect(r.converged).toBe(true);
-    expect(r.totals.merged).toBe(1);
-    expect(r.totals.mergedAway).toBe(3);
-    expect(r.firstGroups).toBe(1);
-    expect(r.firstFailedGroups).toBe(0);
-  });
-
-  it("runs zero apply rounds when the first plan is already a fixpoint", async () => {
-    const { appendFacts } = await import("../src/storage/facts.ts");
-    await appendFacts([fact("a", "A", E_A)] as never[]);
-    verdictQueue.push({
-      actions: [{ kind: "keep", ids: ["a"], text: "", event_date: "", category: "", reason: "" }],
-    });
-    const { consolidateToConvergence } = await import("../src/ingest/curate.ts");
-    const r = await consolidateToConvergence();
-    expect(r.rounds).toBe(0);
-    expect(r.converged).toBe(true);
-    expect(r.before).toBe(1);
-    expect(r.after).toBe(1);
-    expect(r.firstGroups).toBe(1);
-    expect(r.firstFailedGroups).toBe(0);
-    expect(r.totals.merged).toBe(0);
-  });
-});
-
 it("skips a merge when a member fact vanished between plan and apply", async () => {
   const { appendFacts, deleteFacts } = await import("../src/storage/facts.ts");
   await appendFacts([
