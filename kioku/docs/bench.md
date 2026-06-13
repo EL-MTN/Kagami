@@ -9,6 +9,31 @@ Kioku ships with a [LongMemEval](https://github.com/xiaowu0162/LongMemEval) (Wu 
 - **Earlier baselines (pre-changes):** 78% on a 100-item Oracle subset (gpt-4o-mini, lmstudio nomic embeddings); +2pp gain over a JSONL-era 76% from whole-corpus BM25 closing the recall ceiling on multi-session questions.
 - **Head-to-head vs. mem0 OSS** (JSONL-era numbers, pre-Mongo): 76% / 76% on the same 100 question_ids, same models, mem0's v3 pipeline running its native top_k=200 vs. Kioku's top_k=50. mem0's widely-cited "91% OSS" headline uses gpt-5 + the full 500 questions; that operating point hasn't been run here.
 
+## Durable-only consolidation gate
+
+Measures whether the durable-only consolidation pass (entity-grouped review under
+`prompts/consolidate.md`, which DROPS episodic chat-exhaust rather than merging it)
+eats evidence facts. The bench's ingest path never invokes curation, so the gate is
+an explicit A/B over the **same** vaults: run a `--keep-vaults` baseline, apply the
+consolidation pass to every vault (`scripts/bench-consolidate-all.ts`, fixed editor
+model gpt-4.1), then re-run `--keep-vaults` so the gate queries the reduced store
+(ingest auto-skips). Answerer + judge stay gpt-4o-mini on OpenAI for comparability.
+
+- **73.0% → 72.0%** (Oracle/100) while **dropping 42% of facts** (4548 → 2618;
+  871 drops, 536 merges, 14 fail-open kept-groups). Net −1pp is **within noise**:
+  per-item it's **14 lost / 13 gained** — borderline items reshuffle as the
+  retrieved context changes, not systematic destruction.
+- By type: temporal-reasoning **78.3% → 81.7%** (+2 items — a tighter, de-noised
+  context helps date-math) but multi-session **65.0% → 57.5%** (−3 items).
+- The multi-session loss is the **same session-presence-marker weakness** noted
+  above: durable-only merges away the per-session signal cross-session _counting_
+  questions lean on. A counting carve-out (preserve session presence) is the
+  open follow-up before any `--apply`/cron.
+- **Caveat:** Oracle is clean factual Q&A; the chat-exhaust durable-only is built
+  to drop barely exists here. So this confirms the **safety** direction
+  (durable-only doesn't gut evidence-bearing recall) far more than the cleanup
+  **benefit**, which only shows on real Kokoro companion data.
+
 ## Layout
 
 ```
@@ -19,9 +44,11 @@ apps/api/bench/longmemeval/
 └── vaults/      # per-item kept facts (when --keep-vaults is used)
 
 apps/api/scripts/
-├── longmemeval.ts          # orchestrator — iterates items, spawns workers, runs judge
-├── longmemeval-worker.ts   # single-item worker — ingest + query in an isolated Mongo DB
-└── probe-bm25-scores.ts    # one-shot diagnostic — refit getBm25Params after corpus shifts
+├── longmemeval.ts            # orchestrator — iterates items, spawns workers, runs judge
+├── longmemeval-worker.ts     # single-item worker — ingest + query in an isolated Mongo DB
+├── bench-consolidate-vault.ts # durable-only consolidation over one bench vault
+├── bench-consolidate-all.ts  # fan the consolidation pass across all vaults (the gate's middle step)
+└── probe-bm25-scores.ts      # one-shot diagnostic — refit getBm25Params after corpus shifts
 ```
 
 ## One-time setup
@@ -41,6 +68,8 @@ The full S subset (`longmemeval_s_cleaned.json`, 277 MB) and M subset (`longmeme
 From `apps/api/`:
 
 > **Set `MODEL` as well as `LLM_MODEL`.** The orchestrator and judge read `MODEL` (the answerer model id), not `LLM_MODEL`. The answerer itself still resolves from `LLM_MODEL` when `MODEL` is unset, but the judge default then resolves to the literal `(unset)` and the judge fails — so export `MODEL` (or always pass `--judge-model`). The examples below set both.
+
+> **Cross-provider answerer? Pin the judge.** `JUDGE_MODEL` (+ optional `JUDGE_BASE_URL` / `JUDGE_API_KEY`) forces a provider-independent judge, so an answerer on one provider (e.g. an open model via OpenRouter) is graded by the same model as an OpenAI baseline. Unset → unchanged (judge follows the answerer). Used by the answerer-swap comparisons to keep an OpenAI gpt-4o-mini judge across all candidates.
 
 ```sh
 # All-local LM Studio + GLM-4.7-flash

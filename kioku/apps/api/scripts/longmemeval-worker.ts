@@ -87,9 +87,15 @@ async function main() {
   const ingestStart = Date.now();
   // Skip ingest entirely when the per-item DB already has facts. Lets
   // bench reruns with --keep-vaults isolate query/judge changes without
-  // paying for re-extraction.
-  const factsCount = await (await getDb()).collection("facts").countDocuments({});
-  const skipIngest = factsCount > 0;
+  // paying for re-extraction. A vault that consolidation emptied is also
+  // skipped via the bench_meta marker — factsCount alone can't tell
+  // "consolidated to nothing" from "never ingested", and re-ingesting it
+  // would corrupt that item's gate result.
+  const db = await getDb();
+  const factsCount = await db.collection("facts").countDocuments({});
+  const consolidated =
+    (await db.collection("bench_meta").countDocuments({ kind: "consolidated" })) > 0;
+  const skipIngest = factsCount > 0 || consolidated;
   if (!skipIngest) {
     for (let i = 0; i < sessions.length; i++) {
       const sid = sessionIds[i]!;

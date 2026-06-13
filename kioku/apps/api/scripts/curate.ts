@@ -2,6 +2,15 @@
 //
 //   npx tsx scripts/curate.ts                 # dry run on the default vault
 //   npx tsx scripts/curate.ts --apply         # apply the plan
+//   npx tsx scripts/curate.ts --mode entity   # group review by shared
+//                                             # entity instead of cosine
+//                                             # (collapses fragmented
+//                                             #  episodes; default cosine)
+//   npx tsx scripts/curate.ts --policy consolidate
+//                                             # durable-facts-only prompt:
+//                                             # drops episodic chat-exhaust
+//                                             # outright (default: curate,
+//                                             # the conservative editor)
 //   npx tsx scripts/curate.ts --user u1 --run r1 --agent a1
 //   npx tsx scripts/curate.ts --json          # machine-readable plan
 //   npx tsx scripts/curate.ts --relink        # repair entity links only
@@ -12,9 +21,20 @@
 // as DELETE/UPDATE/ADD rows, actor "curate") and entity links are
 // maintained. There is no undo beyond the history journal — run a dry
 // pass first.
+//
+// NOTE: --mode entity and --policy consolidate are dry-run-only for now.
+// --apply is refused for them until the apply path is hardened (category
+// normalization on merges + a cross-group dedup sweep); consolidate also
+// plans large destructive drops. Only the default cosine/curate path applies.
 
 import "dotenv/config";
-import { planCuration, applyCuration, type CurationPlan } from "../src/ingest/curate.js";
+import {
+  planCuration,
+  applyCuration,
+  type CurationPlan,
+  type CurationPolicy,
+  type GroupingStrategy,
+} from "../src/ingest/curate.js";
 import { relinkAllEntities } from "../src/storage/entities.js";
 import { closeMongo } from "../src/storage/mongo.js";
 
@@ -22,19 +42,41 @@ interface Args {
   apply: boolean;
   json: boolean;
   relink: boolean;
+  mode: GroupingStrategy;
+  policy: CurationPolicy;
   user?: string;
   run?: string;
   agent?: string;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { apply: false, json: false, relink: false };
+  const args: Args = {
+    apply: false,
+    json: false,
+    relink: false,
+    mode: "cosine",
+    policy: "curate",
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--apply") args.apply = true;
     else if (a === "--json") args.json = true;
     else if (a === "--relink") args.relink = true;
-    else if (a === "--user" || a === "--run" || a === "--agent") {
+    else if (a === "--mode") {
+      const v = argv[++i];
+      if (v !== "cosine" && v !== "entity") {
+        console.error("--mode must be 'cosine' or 'entity'");
+        process.exit(2);
+      }
+      args.mode = v;
+    } else if (a === "--policy") {
+      const v = argv[++i];
+      if (v !== "curate" && v !== "consolidate") {
+        console.error("--policy must be 'curate' or 'consolidate'");
+        process.exit(2);
+      }
+      args.policy = v;
+    } else if (a === "--user" || a === "--run" || a === "--agent") {
       // A scope flag without a value must fail fast — silently treating
       // `--apply --user` as an empty scope would curate the default
       // vault (destructively) instead of the intended one.
@@ -54,11 +96,15 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-function printPlan(plan: CurationPlan): void {
+function printPlan(plan: CurationPlan, mode: GroupingStrategy, policy: CurationPolicy): void {
+  // Each surviving fact is either a keep or a merge result (multi-id
+  // merges collapse n→1, single-id merges rewrite 1→1); drops vanish.
+  const projected = plan.keep.length + plan.merges.length;
   console.log(
-    `\n${plan.total} facts · ${plan.groups} review groups` +
+    `\n[${mode} grouping · ${policy} policy] ${plan.total} facts · ${plan.groups} review groups` +
       (plan.failedGroups > 0 ? ` · ${plan.failedGroups} groups failed open (kept)` : ""),
   );
+  console.log(`Projected after apply: ${projected} facts (−${plan.total - projected})`);
   console.log(`\nKEEP   ${plan.keep.length}`);
 
   console.log(`DROP   ${plan.drops.length}`);
@@ -96,16 +142,37 @@ async function main(): Promise<void> {
     return;
   }
 
-  const plan = await planCuration(scope);
+  // The entity grouping and the consolidate (durable-only) policy are
+  // dry-run-only until the apply path is hardened — merge categories aren't
+  // normalized to the enum yet, and consolidate plans large destructive
+  // drops. Refuse --apply for them BEFORE planning, so a mistaken run doesn't
+  // first burn LLM review calls over the live store. The default
+  // cosine/curate --apply (the sanctioned mutation path) is unaffected.
+  if (args.apply && (args.mode === "entity" || args.policy === "consolidate")) {
+    const flags: string[] = [];
+    if (args.mode === "entity") flags.push("--mode entity");
+    if (args.policy === "consolidate") flags.push("--policy consolidate");
+    console.error(
+      `Refusing --apply with ${flags.join(" + ")}: these strategies are dry-run-only ` +
+        "until the apply path is hardened (merge-category normalization + cross-group " +
+        "dedup). Re-run without --apply to preview, or use the default cosine/curate for --apply.",
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  const plan = await planCuration(scope, { grouping: args.mode, policy: args.policy });
 
   if (args.json) {
     console.log(JSON.stringify(plan, null, 2));
   } else {
-    printPlan(plan);
+    printPlan(plan, args.mode, args.policy);
   }
 
   if (!args.apply) {
-    console.log("\nDry run — nothing written. Re-run with --apply to execute.");
+    // Keep --json output pure (pipeable) — the human trailer would break
+    // a downstream parser.
+    if (!args.json) console.log("\nDry run — nothing written. Re-run with --apply to execute.");
     return;
   }
 
