@@ -148,11 +148,13 @@ async function main() {
   const t0 = Date.now();
 
   const answererModel = process.env.MODEL ?? "(unset)";
-  // JUDGE_MODEL (+ optional JUDGE_BASE_URL/JUDGE_API_KEY) pins a
-  // provider-independent judge so a cross-provider answerer run (e.g. a
-  // DeepSeek answerer on OpenRouter) is graded by the same model as the
-  // OpenAI baseline. Unset → unchanged (judge defaults to the answerer).
-  const judgeModelId = process.env.JUDGE_MODEL ?? args.judgeModel ?? answererModel;
+  // Judge model precedence: an explicit --judge-model wins over the
+  // JUDGE_MODEL env (a per-run flag must not be silently overridden by an
+  // exported default), which in turn overrides the answerer. JUDGE_MODEL
+  // (+ optional JUDGE_BASE_URL/JUDGE_API_KEY) pins a provider-independent
+  // judge so a cross-provider answerer (e.g. DeepSeek on OpenRouter) is
+  // graded by the same model as the OpenAI baseline.
+  const judgeModelId = args.judgeModel ?? process.env.JUDGE_MODEL ?? answererModel;
 
   console.log(`# LongMemEval`);
   console.log(`Answerer: ${answererModel}`);
@@ -390,12 +392,14 @@ async function dropMongoDb(name: string): Promise<void> {
 type Judge = (p: WorkerResult) => Promise<{ verdict: boolean; raw: string }>;
 
 function buildJudge(judgeModelId: string): Judge {
-  // If the judge model differs from the default, build a fresh provider so
-  // we don't accidentally reuse the answerer model. JUDGE_BASE_URL/
-  // JUDGE_API_KEY (when set) point the judge at a different provider than
-  // the answerer — e.g. keep an OpenAI gpt-4o-mini judge while the answerer
-  // runs on OpenRouter — so cross-provider runs share one grader.
-  const useDefault = !process.env.JUDGE_MODEL && judgeModelId === (process.env.MODEL ?? "");
+  // Reuse the answerer's built model only when the judge resolves to the
+  // same model AND no separate judge endpoint was requested. A custom
+  // JUDGE_BASE_URL/JUDGE_API_KEY (e.g. an OpenAI gpt-4o-mini judge while the
+  // answerer runs on OpenRouter) always builds a fresh provider so the judge
+  // actually hits that endpoint — keeping cross-provider runs on one grader.
+  const customJudgeEndpoint =
+    process.env.JUDGE_BASE_URL !== undefined || process.env.JUDGE_API_KEY !== undefined;
+  const useDefault = !customJudgeEndpoint && judgeModelId === (process.env.MODEL ?? "");
   const judgeModel = useDefault
     ? defaultModel
     : createOpenAICompatible({

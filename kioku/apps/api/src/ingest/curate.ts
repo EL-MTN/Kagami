@@ -239,23 +239,34 @@ export function groupByEntity(facts: Fact[], entities: EntityLink[]): CurationGr
 
     // Candidate entity → in-partition fact ids (deduped). Links to facts
     // outside this partition or already curated away are dropped here.
-    const candidates: Array<{ ids: string[] }> = [];
+    // `key` is a stable tie-break so equal-size clusters don't resolve by
+    // Mongo's unsorted entity order (which would make grouping — and the
+    // resulting merges — nondeterministic run to run).
+    const candidates: Array<{ ids: string[]; key: string }> = [];
     for (const e of entities) {
       const ids = [...new Set(e.linked_memory_ids)].filter((id) => byId.has(id));
-      if (ids.length >= 2) candidates.push({ ids });
+      if (ids.length >= 2) candidates.push({ ids, key: [...ids].sort().join(",") });
     }
 
     // Greedy: claim the largest still-open cluster each round, recomputing
     // open membership against `assigned` so a fact is grouped exactly once.
+    // Ties on open size break by the stable key for deterministic output.
     for (;;) {
-      let best: string[] | null = null;
+      let best: { open: string[]; key: string } | null = null;
       for (const c of candidates) {
         const open = c.ids.filter((id) => !assigned.has(id));
-        if (open.length >= 2 && (best === null || open.length > best.length)) best = open;
+        if (open.length < 2) continue;
+        if (
+          best === null ||
+          open.length > best.open.length ||
+          (open.length === best.open.length && c.key < best.key)
+        ) {
+          best = { open, key: c.key };
+        }
       }
       if (best === null) break;
-      for (const id of best) assigned.add(id);
-      const members = best.map((id) => byId.get(id)!);
+      for (const id of best.open) assigned.add(id);
+      const members = best.open.map((id) => byId.get(id)!);
       for (let i = 0; i < members.length; i += MAX_GROUP) {
         groups.push({ members: members.slice(i, i + MAX_GROUP), clustered: true });
       }

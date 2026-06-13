@@ -164,6 +164,18 @@ async function main() {
     ),
   );
   console.log(`\nWrote ${outPath}`);
+
+  // A gate that silently tolerates failed vaults would compare a PARTIAL
+  // consolidation against the full baseline and draw a wrong conclusion.
+  // Fail loudly so the run isn't mistaken for complete.
+  const failedVaults = items.length - results.length;
+  if (failedVaults > 0) {
+    console.error(
+      `\nFAILED: ${failedVaults}/${items.length} vault(s) did not consolidate — the gate is ` +
+        "INCOMPLETE. Do not compare this partial run against the baseline; re-run the failed items.",
+    );
+    process.exitCode = 1;
+  }
 }
 
 main().catch((e) => {

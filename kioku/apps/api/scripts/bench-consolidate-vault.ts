@@ -37,6 +37,14 @@ async function main() {
   const plan = await planCuration({}, { grouping: "entity", policy: "consolidate" });
   const applied = await applyCuration(plan);
 
+  // Mark the vault consolidated so a `longmemeval.ts --keep-vaults` gate rerun
+  // skips ingest even when consolidation emptied the facts collection
+  // (factsCount alone can't tell "consolidated to nothing" from "never
+  // ingested", and re-ingesting would corrupt that item's gate result).
+  await db
+    .collection("bench_meta")
+    .updateOne({ kind: "consolidated" }, { $set: { kind: "consolidated" } }, { upsert: true });
+
   const after = await db.collection("facts").countDocuments({});
 
   const result = {

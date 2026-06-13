@@ -142,6 +142,25 @@ async function main(): Promise<void> {
     return;
   }
 
+  // The entity grouping and the consolidate (durable-only) policy are
+  // dry-run-only until the apply path is hardened — merge categories aren't
+  // normalized to the enum yet, and consolidate plans large destructive
+  // drops. Refuse --apply for them BEFORE planning, so a mistaken run doesn't
+  // first burn LLM review calls over the live store. The default
+  // cosine/curate --apply (the sanctioned mutation path) is unaffected.
+  if (args.apply && (args.mode === "entity" || args.policy === "consolidate")) {
+    const flags: string[] = [];
+    if (args.mode === "entity") flags.push("--mode entity");
+    if (args.policy === "consolidate") flags.push("--policy consolidate");
+    console.error(
+      `Refusing --apply with ${flags.join(" + ")}: these strategies are dry-run-only ` +
+        "until the apply path is hardened (merge-category normalization + cross-group " +
+        "dedup). Re-run without --apply to preview, or use the default cosine/curate for --apply.",
+    );
+    process.exitCode = 2;
+    return;
+  }
+
   const plan = await planCuration(scope, { grouping: args.mode, policy: args.policy });
 
   if (args.json) {
@@ -154,24 +173,6 @@ async function main(): Promise<void> {
     // Keep --json output pure (pipeable) — the human trailer would break
     // a downstream parser.
     if (!args.json) console.log("\nDry run — nothing written. Re-run with --apply to execute.");
-    return;
-  }
-
-  // The entity grouping and the consolidate (durable-only) policy are
-  // dry-run-only until the apply path is hardened — its merge categories
-  // aren't normalized to the enum yet, and consolidate plans large
-  // destructive drops. Refuse to mutate the live store with either until
-  // those guardrails land; the default cosine/curate --apply is unaffected.
-  if (args.mode === "entity" || args.policy === "consolidate") {
-    const flags: string[] = [];
-    if (args.mode === "entity") flags.push("--mode entity");
-    if (args.policy === "consolidate") flags.push("--policy consolidate");
-    console.error(
-      `Refusing --apply with ${flags.join(" + ")}: these strategies are dry-run-only ` +
-        "until the apply path is hardened (merge-category normalization + cross-group " +
-        "dedup). Re-run without --apply to preview, or use the default cosine/curate for --apply.",
-    );
-    process.exitCode = 2;
     return;
   }
 
