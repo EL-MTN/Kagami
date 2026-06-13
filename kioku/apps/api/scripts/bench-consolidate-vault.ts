@@ -41,30 +41,33 @@ async function main() {
 
   // Idempotent: a `consolidate-all` retry after a transient failure must not
   // run the destructive durable-only pass a SECOND time on vaults that already
-  // succeeded — that would drop/merge again and invalidate the A/B. Emit the
-  // prior outcome and stop (counts as a completed vault, not a failure).
-  if ((await meta.countDocuments({ kind: "consolidated" })) > 0) {
-    const facts = await db.collection("facts").countDocuments({});
+  // succeeded — that would drop/merge again and invalidate the A/B. Replay the
+  // ORIGINAL stored result so the aggregate stays comparable to the baseline (a
+  // fabricated zero-delta result would underreport the real drops/merges).
+  const prior = await meta.findOne({ kind: "consolidated" });
+  if (prior) {
+    let payload = prior.result as Record<string, unknown> | undefined;
+    if (!payload) {
+      const facts = await db.collection("facts").countDocuments({});
+      payload = {
+        db: db.databaseName,
+        model: process.env.LLM_MODEL ?? "(unset)",
+        before: facts,
+        after: facts,
+        groups: 0,
+        failedGroups: 0,
+        plannedDrops: 0,
+        plannedMerges: 0,
+        applied: {},
+      };
+    }
     await fs.writeFile(
       resultPath,
-      JSON.stringify(
-        {
-          db: db.databaseName,
-          model: process.env.LLM_MODEL ?? "(unset)",
-          before: facts,
-          after: facts,
-          groups: 0,
-          failedGroups: 0,
-          plannedDrops: 0,
-          plannedMerges: 0,
-          applied: {},
-          skipped: "already-consolidated",
-        },
-        null,
-        2,
-      ),
+      JSON.stringify({ ...payload, skipped: "already-consolidated" }, null, 2),
     );
-    process.stderr.write(`[consolidate ${db.databaseName}] already consolidated — skipping\n`);
+    process.stderr.write(
+      `[consolidate ${db.databaseName}] already consolidated — replaying result\n`,
+    );
     await closeMongo();
     return;
   }
@@ -93,16 +96,6 @@ async function main() {
   }
 
   const applied = await applyCuration(plan);
-
-  // Mark the (ingested + reviewed) vault consolidated so a `--keep-vaults`
-  // gate rerun skips ingest even when consolidation emptied the facts — a real
-  // ingested vault can legitimately consolidate to zero durable facts.
-  await meta.updateOne(
-    { kind: "consolidated" },
-    { $set: { kind: "consolidated" } },
-    { upsert: true },
-  );
-
   const after = await db.collection("facts").countDocuments({});
 
   const result = {
@@ -116,6 +109,16 @@ async function main() {
     plannedMerges: plan.merges.length,
     applied,
   };
+
+  // Mark the (ingested + reviewed) vault consolidated AND store the result, so
+  // a `--keep-vaults` gate rerun skips ingest, and an idempotent retry replays
+  // these ORIGINAL totals instead of a non-comparable zero-delta fabrication.
+  await meta.updateOne(
+    { kind: "consolidated" },
+    { $set: { kind: "consolidated", result } },
+    { upsert: true },
+  );
+
   await fs.writeFile(resultPath, JSON.stringify(result, null, 2));
   await closeMongo();
   process.stderr.write(
