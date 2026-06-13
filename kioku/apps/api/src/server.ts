@@ -10,11 +10,13 @@ import { factsRouter } from "./routes/facts.js";
 import { recallRouter } from "./routes/recall.js";
 import { queryRouter } from "./routes/query.js";
 import { sessionsRouter } from "./routes/sessions.js";
+import { consolidateRouter } from "./routes/consolidate.js";
 import { mcpRouter } from "./mcp.js";
 import { getBm25ParamConfig } from "./retrieval/scoring.js";
 import { loadEnv } from "./config.js";
 import { ensureIndexes } from "./storage/indexes.js";
 import { closeMongo } from "./storage/mongo.js";
+import { startConsolidationScheduler } from "./maintenance/scheduler.js";
 
 // `PORT` is injected by `portless run`; 7777 is the standalone fallback.
 const PORT = loadEnv().PORT;
@@ -64,6 +66,13 @@ app.use("/query", queryRouter);
 app.use("/sessions", sessionsRouter);
 app.use("/mcp", mcpRouter);
 
+// Manual consolidation trigger — mounted only when the cron is enabled, so it
+// shares that explicit opt-in (no unauthenticated destructive endpoint by
+// default; Kioku has no auth layer).
+if (loadEnv().KIOKU_CONSOLIDATE_ENABLED) {
+  app.use("/consolidate", consolidateRouter);
+}
+
 const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err instanceof ZodError) {
     res.status(400).json({ error: "validation_error", issues: err.issues });
@@ -93,8 +102,14 @@ async function main(): Promise<void> {
     logger.info({ host: HOST, port: PORT }, "kioku http server listening");
   });
 
+  // Self-contained periodic consolidation timer (no-op unless enabled).
+  const consolidationScheduler = startConsolidationScheduler();
+
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, "shutting down");
+    // Stop firing new consolidation passes; an in-flight pass finishes on its
+    // own (it holds no server resource the close below depends on).
+    consolidationScheduler.stop();
     // Await server.close — in-flight requests must finish draining before
     // we yank the Mongo connection out from under them.
     await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -351,6 +351,70 @@ describe("applyCuration", () => {
   });
 });
 
+describe("planCuration category normalization", () => {
+  it("clamps an off-enum merge category to misc", async () => {
+    const { appendFacts } = await import("../src/storage/facts.ts");
+    await appendFacts([fact("a", "Fact A", E_A), fact("b", "Fact B", E_B)] as never[]);
+    // a+b cluster (identical embeddings) → multi-id merge is legal. The model
+    // invents an off-enum category; planCuration must clamp it to the enum so
+    // category-filtered recall never silently unmatches the curated fact.
+    verdictQueue.push({
+      actions: [
+        {
+          kind: "merge",
+          ids: ["a", "b"],
+          text: "Merged fact",
+          event_date: "",
+          category: "correspondence",
+          reason: "dedup",
+        },
+      ],
+    });
+    const { planCuration } = await import("../src/ingest/curate.ts");
+    const plan = await planCuration();
+    expect(plan.merges).toHaveLength(1);
+    expect(plan.merges[0]!.category).toBe("misc");
+  });
+
+  it("lowercases a valid category and leaves an empty one to the member fallback", async () => {
+    const { appendFacts } = await import("../src/storage/facts.ts");
+    await appendFacts([
+      fact("a", "Fact A", E_A),
+      fact("b", "Fact B", E_B),
+      fact("c", "Fact C", E_A),
+      fact("d", "Fact D", E_B),
+    ] as never[]);
+    verdictQueue.push({
+      actions: [
+        // Valid-but-uppercase category → normalized to the enum's lowercase.
+        {
+          kind: "merge",
+          ids: ["a", "b"],
+          text: "Merged AB",
+          event_date: "",
+          category: "Family",
+          reason: "dedup",
+        },
+        // Empty category → omitted, so apply falls back to the member category.
+        {
+          kind: "merge",
+          ids: ["c", "d"],
+          text: "Merged CD",
+          event_date: "",
+          category: "",
+          reason: "dedup",
+        },
+      ],
+    });
+    const { planCuration } = await import("../src/ingest/curate.ts");
+    const plan = await planCuration();
+    const ab = plan.merges.find((m) => m.text === "Merged AB");
+    const cd = plan.merges.find((m) => m.text === "Merged CD");
+    expect(ab!.category).toBe("family");
+    expect(cd!.category).toBeUndefined();
+  });
+});
+
 it("skips a merge when a member fact vanished between plan and apply", async () => {
   const { appendFacts, deleteFacts } = await import("../src/storage/facts.ts");
   await appendFacts([

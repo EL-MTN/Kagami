@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import { z } from "zod";
-import { cosineSimilarity, generateObject } from "ai";
+import { cosineSimilarity, generateObject, type LanguageModel } from "ai";
 import { embedTexts, model } from "../llm.js";
+import { normalizeCategory } from "./categories.js";
 import { paths } from "../paths.js";
 import { extractEntities, lemmatizeForBm25 } from "../retrieval/text.js";
 import {
@@ -329,7 +330,7 @@ export type GroupingStrategy = "cosine" | "entity";
 
 export async function planCuration(
   scope: CurationScope = {},
-  opts: { grouping?: GroupingStrategy; policy?: CurationPolicy } = {},
+  opts: { grouping?: GroupingStrategy; policy?: CurationPolicy; model?: LanguageModel } = {},
 ): Promise<CurationPlan> {
   const facts = await readFactsInScope({
     user_id: scope.user_id ?? "default",
@@ -360,7 +361,7 @@ export async function planCuration(
     let actions: VerdictAction[];
     try {
       const { object } = await generateObject({
-        model,
+        model: opts.model ?? model,
         schema: CurationVerdict,
         system: systemPrompt,
         prompt: renderGroup(group),
@@ -402,7 +403,14 @@ export async function planCuration(
           memberTexts: a.ids.map((id) => byId.get(id)!.text),
           text: a.text.trim(),
           ...(DATE_RE.test(a.event_date) ? { event_date: a.event_date } : {}),
-          ...(a.category.trim() ? { category: a.category.trim() } : {}),
+          // Clamp the model's category to the fixed enum here, at plan time,
+          // so the dry-run preview shows exactly what apply will write. The
+          // consolidate/curate prompts ask the model to fix the category on
+          // merge, and it readily invents off-enum tags ("correspondence",
+          // "contacts") that would silently unmatch category-filtered recall.
+          // An empty category is left unset so the apply path's
+          // fallback-to-member-category still applies (don't force "misc").
+          ...(a.category.trim() ? { category: normalizeCategory(a.category) } : {}),
           reason: a.reason,
         });
       }

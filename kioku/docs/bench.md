@@ -34,6 +34,32 @@ model gpt-4.1), then re-run `--keep-vaults` so the gate queries the reduced stor
   (durable-only doesn't gut evidence-bearing recall) far more than the cleanup
   **benefit**, which only shows on real Kokoro companion data.
 
+### 2026-06-13 re-gate — what shipped (single pass), what was rejected
+
+Closing the consolidation work meant unblocking `--apply`/cron. Two extra ideas
+were gated against the single pass above and **both were rejected by the gate**:
+
+- **Converge-on-apply (repeat plan→apply until stable, to clean up the benign
+  cross-group duplicates one entity pass leaves).** A fresh 100-item run:
+  baseline **77.0%** (conservative ingest; temporal 90.0%, multi-session 57.5%)
+  → converging gate **66.0%** (temporal **73.3%**, multi-session 55.0%) while
+  **dropping 55% of facts** (4483 → 2007) over up to 6 rounds. Multi-round
+  re-review **over-consolidates** — it re-drops/merges dated evidence facts each
+  round, gutting temporal-reasoning (−10 items). **Reverted to a single pass**
+  (the gate-neutral config above). The cross-group dups it chased are benign.
+- **Counting carve-out** (prompt rule to enumerate recurrences instead of
+  collapsing them, aimed at the multi-session weakness). It rode the converging
+  run and did not move multi-session (57.5% → 55.0%); unvalidated on its own, so
+  it was **reverted** rather than ship an un-gated prompt delta. Multi-session
+  remains the known weak spot.
+
+**Net:** `--apply` (entity/consolidate) and the cron run a **single** durable-only
+pass — exactly the gate-neutral config above — plus merge-category clamping to the
+fixed enum (cosmetic; only affects category-filtered recall, not measured here).
+A separate ingest-relevance tightening was also tried and reverted: it regressed
+this baseline (73% → 70%, multi-session 65% → 52.5%), confirming aggressive
+dropping belongs in the episode-aware consolidation pass, not per-candidate ingest.
+
 ## Layout
 
 ```

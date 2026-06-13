@@ -111,6 +111,25 @@ export const envSpec = defineEnv({
       group: "Ingest rate limits",
     }),
 
+    KIOKU_CONSOLIDATE_ENABLED: z
+      .string()
+      .default("false")
+      .transform((s) => s === "true")
+      .meta({
+        doc: 'Enable the in-process periodic consolidation cron: a single durable-only\nentity-grouped curation pass (DROPS episodic chat-exhaust, MERGES\nfragmented episodes — see prompts/consolidate.md) over the default scope on\na timer. Mutations are journaled in `history` (actor "consolidate-cron");\nthere is no undo beyond that journal. Only the literal "true" enables —\n"false", empty, and unset all leave it OFF (the off switch works without\ndeleting the var). When enabled, also serves a guarded POST /consolidate\nfor a manual run.',
+        group: "Consolidation (maintenance cron)",
+      }),
+    KIOKU_CONSOLIDATE_INTERVAL_HOURS: z.coerce.number().finite().positive().default(24).meta({
+      doc: "Hours between consolidation cron passes (fractional allowed for testing).\nThe first pass fires one interval after boot, never at startup. Ignored\nwhen KIOKU_CONSOLIDATE_ENABLED is off.",
+      onInvalid: "warn-default",
+      group: "Consolidation (maintenance cron)",
+    }),
+    KIOKU_CONSOLIDATE_MODEL: z.string().optional().meta({
+      doc: "Editor model for the consolidation cron, overriding LLM_MODEL for that\npass only (the answerer keeps LLM_MODEL). The durable-only merge/drop\njudgments need a strong editor — gpt-4.1 is the validated choice; a small\nmodel like gpt-4o-mini breaks merge atomicity. Unset ⇒ reuse LLM_MODEL.",
+      example: "gpt-4.1",
+      group: "Consolidation (maintenance cron)",
+    }),
+
     BM25_SIGMOID_MIDPOINT_3: bm25Midpoint.meta({
       doc: bm25Doc("midpoint", "≤3"),
       group: BM25_GROUP,

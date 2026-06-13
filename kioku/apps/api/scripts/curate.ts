@@ -22,10 +22,12 @@
 // maintained. There is no undo beyond the history journal — run a dry
 // pass first.
 //
-// NOTE: --mode entity and --policy consolidate are dry-run-only for now.
-// --apply is refused for them until the apply path is hardened (category
-// normalization on merges + a cross-group dedup sweep); consolidate also
-// plans large destructive drops. Only the default cosine/curate path applies.
+// --apply with --mode entity or --policy consolidate is allowed (the former
+// dry-run-only guard is gone): merge categories are clamped to the fixed enum
+// on apply. It is a SINGLE pass — a converging multi-round re-review was tried
+// to also clean up the benign cross-group duplicates one entity pass leaves,
+// but the LongMemEval gate showed it over-consolidates (55% dropped vs 42%,
+// 77%→66% recall), so it was dropped. Single-pass is the gate-neutral path.
 
 import "dotenv/config";
 import {
@@ -139,25 +141,6 @@ async function main(): Promise<void> {
     console.log(
       `Relinked entities: created=${r.created} linked=${r.linked} purgedEmpty=${r.purgedEmpty}`,
     );
-    return;
-  }
-
-  // The entity grouping and the consolidate (durable-only) policy are
-  // dry-run-only until the apply path is hardened — merge categories aren't
-  // normalized to the enum yet, and consolidate plans large destructive
-  // drops. Refuse --apply for them BEFORE planning, so a mistaken run doesn't
-  // first burn LLM review calls over the live store. The default
-  // cosine/curate --apply (the sanctioned mutation path) is unaffected.
-  if (args.apply && (args.mode === "entity" || args.policy === "consolidate")) {
-    const flags: string[] = [];
-    if (args.mode === "entity") flags.push("--mode entity");
-    if (args.policy === "consolidate") flags.push("--policy consolidate");
-    console.error(
-      `Refusing --apply with ${flags.join(" + ")}: these strategies are dry-run-only ` +
-        "until the apply path is hardened (merge-category normalization + cross-group " +
-        "dedup). Re-run without --apply to preview, or use the default cosine/curate for --apply.",
-    );
-    process.exitCode = 2;
     return;
   }
 
