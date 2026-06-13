@@ -654,7 +654,7 @@ export async function consolidateToConvergence(
     actor?: string;
   } = {},
 ): Promise<ConvergenceResult> {
-  const maxRounds = Math.max(1, opts.maxRounds ?? 4);
+  const maxRounds = Math.max(1, opts.maxRounds ?? 6);
   const actor = opts.actor ?? "curate";
   const planOpts = {
     ...(opts.grouping !== undefined ? { grouping: opts.grouping } : {}),
@@ -690,10 +690,15 @@ export async function consolidateToConvergence(
     }
     const result = await applyCuration(plan, actor);
     perRound.push(result);
-    // The plan had work but the store didn't change (every action
-    // stale-skipped, or only no-op rewrites). Applying again would spin —
-    // treat it as the fixpoint.
-    if (result.dropped === 0 && result.merged === 0 && result.rewritten === 0) {
+    // Converge on the count-REDUCING operations only. A single-id rewrite
+    // (1→1 text polish) doesn't reduce duplication, and a durable-only editor
+    // will happily keep re-polishing the same fact round after round —
+    // counting rewrites as "changed" spins the loop to maxRounds for no
+    // benefit. Cross-group dedup (the reason convergence exists) always shows
+    // up as a drop or a multi-id merge, so those still drive another round;
+    // when both hit zero the store has reached its de-duplicated fixpoint and
+    // any remaining rewrites are cosmetic.
+    if (result.dropped === 0 && result.merged === 0) {
       converged = true;
       break;
     }
