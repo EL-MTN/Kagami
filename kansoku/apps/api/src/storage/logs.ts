@@ -149,7 +149,11 @@ export async function listTraces(opts: ListTracesOptions = {}): Promise<TraceSum
   const coll = await getLogsCollection();
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
 
-  const since = opts.since ?? new Date(Date.now() - DEFAULT_TRACE_WINDOW_MS);
+  // Anchor the default window on `until` when given, so an until-only historical
+  // query gets a [until-7d, until] window instead of an empty [now-7d, until];
+  // otherwise anchor on now. An explicit `since` always wins.
+  const anchorEnd = opts.until ?? new Date();
+  const since = opts.since ?? new Date(anchorEnd.getTime() - DEFAULT_TRACE_WINDOW_MS);
   const tsFilter: { $gte: Date; $lte?: Date } = { $gte: since };
   if (opts.until) tsFilter.$lte = opts.until;
 

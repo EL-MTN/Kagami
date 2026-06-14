@@ -9,14 +9,16 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 // Window choices in hours. Defaults to 7d so the default list is bounded by the
-// time index rather than scanning the whole retained set; 30d is the full
-// log-retention ceiling ("everything retained").
+// time index rather than scanning the whole retained set; "all" reaches the
+// 365-day max retention ceiling (KANSOKU_LOGS_TTL_DAYS is capped at 365) so
+// operators who raise retention above 30d can still reach older traces.
 const WINDOW_OPTIONS: { hours: number; label: string }[] = [
   { hours: 1, label: "1h" },
   { hours: 6, label: "6h" },
   { hours: 24, label: "1d" },
   { hours: 24 * 7, label: "7d" },
   { hours: 24 * 30, label: "30d" },
+  { hours: 24 * 365, label: "all" },
 ];
 const DEFAULT_WINDOW_HOURS = 24 * 7;
 
