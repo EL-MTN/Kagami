@@ -40,6 +40,13 @@ export function TailClient({ apiBase, services }: TailClientProps) {
   const allLevelsSelected = levels.size === LEVEL_OPTIONS.length;
 
   useEffect(() => {
+    // A service/level change makes the current buffer stale — it was filled
+    // under the previous filter, so e.g. narrowing levels would otherwise
+    // leave already-rendered info lines on screen. Reset it on every (re)open
+    // so the view only ever holds logs that match the active filter; the new
+    // connection's replay repopulates it.
+    setLogs([]);
+
     // Deselecting every level is a deliberate "show nothing" signal — open
     // no stream and render the muted state. (Previously this silently
     // omitted the `level=` param, which the server interpreted as "all
