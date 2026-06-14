@@ -2,7 +2,11 @@ import { withTestDb } from "@kokoro/test-utils";
 import { Types } from "mongoose";
 import { describe, expect, it } from "vitest";
 
-import { createSkill, updateSkillIfVersionWithHistory } from "../../src/models/skill";
+import {
+  createSkill,
+  updateSkillIfVersion,
+  updateSkillIfVersionWithHistory,
+} from "../../src/models/skill";
 import {
   MAX_REVISIONS_PER_SKILL,
   deleteSkillRevisions,
@@ -175,6 +179,40 @@ describe("updateSkillIfVersionWithHistory", () => {
     const after = await listSkillRevisions(skill.id, "chat-1", 100);
     expect(after).toHaveLength(MAX_REVISIONS_PER_SKILL);
     expect(after[after.length - 1].version).toBe(1); // oldest rollback point still there
+  });
+
+  it("restores an archived skill's content with requireEnabled:false (and leaves it archived)", async () => {
+    const skill = await createSkill("chat-1", baseInput); // v1, enabled
+    await updateSkillIfVersion(skill.id, "chat-1", 1, { enabled: false }); // archive → v2
+
+    // The default (requireEnabled: true) refuses an archived skill — this is the
+    // 409 a dashboard restore would have hit before the fix.
+    const refused = await updateSkillIfVersionWithHistory(
+      skill.id,
+      "chat-1",
+      2,
+      { body: "x" },
+      { reason: "rollback", actor: "dashboard" },
+    );
+    expect(refused).toBeNull();
+    expect(await listSkillRevisions(skill.id, "chat-1")).toHaveLength(0);
+
+    // requireEnabled:false restores content and keeps the skill archived.
+    const restored = await updateSkillIfVersionWithHistory(
+      skill.id,
+      "chat-1",
+      2,
+      { body: "restored body" },
+      { reason: "rollback", actor: "dashboard", note: "Restored v1" },
+      { requireEnabled: false },
+    );
+    expect(restored?.enabled).toBe(false);
+    expect(restored?.version).toBe(3);
+    expect(restored?.body).toBe("restored body");
+
+    const revisions = await listSkillRevisions(skill.id, "chat-1");
+    expect(revisions.map((r) => r.version)).toEqual([2]);
+    expect(revisions[0].body).toBe(baseInput.body); // archive didn't change content
   });
 
   it("round-trips a rollback: restoring old content is itself recorded and reversible", async () => {

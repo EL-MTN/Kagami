@@ -189,15 +189,23 @@ export async function recordSkillUsed(skillId: string, chatId?: string): Promise
  * `lastReviewedAt`: the write produces a new version the curator has never
  * seen, so the previous verdict's cooldown must not shield it from the next
  * cycle.
+ *
+ * `requireEnabled` (default true) gates that `enabled: true` clause. The
+ * dashboard rollback passes `false`: restoring an archived skill's content is a
+ * legitimate direct operator action (no stale-bubble concern), and the restore
+ * leaves `enabled` untouched, so the skill stays archived.
  */
 export async function updateSkillIfVersion(
   skillId: string,
   chatId: string,
   expectedVersion: number,
   patch: Partial<Pick<ISkill, "description" | "body" | "triggers" | "tags" | "enabled">>,
+  opts: { requireEnabled?: boolean } = {},
 ): Promise<ISkill | null> {
+  const filter: Record<string, unknown> = { _id: skillId, chatId, version: expectedVersion };
+  if (opts.requireEnabled ?? true) filter.enabled = true;
   return Skill.findOneAndUpdate(
-    { _id: skillId, chatId, version: expectedVersion, enabled: true },
+    filter,
     { ...patch, version: expectedVersion + 1, lastReviewedAt: null },
     { returnDocument: "after" },
   );
@@ -220,7 +228,10 @@ const CONTENT_KEYS = ["description", "body", "triggers", "tags"] as const;
  * narrow window between the atomic CAS write and the snapshot, where a hard
  * crash drops one version's history (the chain self-heals on the next edit).
  * The CAS itself is unchanged, so a concurrent edit is still rejected, not
- * clobbered. Returns exactly what `updateSkillIfVersion` returns.
+ * clobbered. `requireEnabled` is forwarded to the CAS and the pre-edit read
+ * (default true; the dashboard rollback passes false to restore an archived
+ * skill's content while leaving it disabled). Returns exactly what
+ * `updateSkillIfVersion` returns.
  */
 export async function updateSkillIfVersionWithHistory(
   skillId: string,
@@ -228,17 +239,21 @@ export async function updateSkillIfVersionWithHistory(
   expectedVersion: number,
   patch: Partial<Pick<ISkill, "description" | "body" | "triggers" | "tags" | "enabled">>,
   supersededBy: { reason: SkillRevisionReason; actor: SkillRevisionActor; note?: string | null },
+  opts: { requireEnabled?: boolean } = {},
 ): Promise<ISkill | null> {
+  const requireEnabled = opts.requireEnabled ?? true;
   const isContentEdit = CONTENT_KEYS.some((key) => patch[key] !== undefined);
   // Read the pre-edit version up front (same filter as the CAS) purely to
   // supply the snapshot content. If the CAS then succeeds, the version was
   // still `expectedVersion` at write time, so nothing edited it in between and
   // this read is accurate.
-  const before = isContentEdit
-    ? await Skill.findOne({ _id: skillId, chatId, version: expectedVersion, enabled: true })
-    : null;
+  const beforeFilter: Record<string, unknown> = { _id: skillId, chatId, version: expectedVersion };
+  if (requireEnabled) beforeFilter.enabled = true;
+  const before = isContentEdit ? await Skill.findOne(beforeFilter) : null;
 
-  const updated = await updateSkillIfVersion(skillId, chatId, expectedVersion, patch);
+  const updated = await updateSkillIfVersion(skillId, chatId, expectedVersion, patch, {
+    requireEnabled,
+  });
 
   if (updated && before) {
     await snapshotSkillVersion(

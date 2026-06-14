@@ -16,7 +16,9 @@ function isValidObjectId(id: string): boolean {
  * rollback is itself undoable) and writes the old content as a new version
  * through the same history-aware compare-and-set the curator uses. Only the
  * content fields move — the name (stable handle) and enabled state are left as
- * they are. A direct operator action, so no approval bubble.
+ * they are, so an ARCHIVED skill's content can be rolled back while it stays
+ * archived (`requireEnabled: false`). A direct operator action, so no approval
+ * bubble.
  */
 export async function POST(_request: Request, { params }: RouteParams) {
   const { id, version } = await params;
@@ -51,13 +53,17 @@ export async function POST(_request: Request, { params }: RouteParams) {
       tags: revision.tags,
     },
     { reason: "rollback", actor: "dashboard", note: `Restored v${targetVersion}` },
+    // Operator action: allow restoring an archived skill's content (it stays
+    // archived). The CAS still guards on version, so a concurrent edit is
+    // rejected, not clobbered.
+    { requireEnabled: false },
   );
 
   if (!restored) {
-    // The CAS requires the skill still be at `live.version` and enabled — it
-    // changed or was archived between the read and the write.
+    // The CAS only guards on version now, so this means the skill changed
+    // (or was deleted) between loading the history and confirming the restore.
     return NextResponse.json(
-      { error: "Skill changed or is archived — reload and try again" },
+      { error: "Skill changed since the history was loaded — reload and try again" },
       { status: 409 },
     );
   }
