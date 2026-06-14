@@ -23,6 +23,7 @@ import {
   getSkillById,
   updateRoutineIfVersion,
   updateSkillIfVersion,
+  updateSkillIfVersionWithHistory,
   applyRoutineRefinement,
   isDuplicateKeyError,
   recordProposalDecision,
@@ -194,6 +195,9 @@ const updateSkillArgs = z
     newBody: z.string().min(1).max(6000).optional(),
     newTriggers: z.array(z.string().min(1).max(140)).max(20).optional(),
     newTags: z.array(z.string().min(1).max(140)).max(20).optional(),
+    // The curator's rationale, carried through so the overwritten version's
+    // history snapshot records WHY it was changed. Display/provenance only.
+    note: z.string().max(500).optional(),
   })
   .refine(
     (a) =>
@@ -235,6 +239,9 @@ const mergeSkillsArgs = z
     newDescription: z.string().min(1).max(500).optional(),
     newTriggers: z.array(z.string().min(1).max(140)).max(20).optional(),
     newTags: z.array(z.string().min(1).max(140)).max(20).optional(),
+    // The curator's rationale, recorded on the survivor's pre-merge history
+    // snapshot (see updateSkillArgs.note). Display/provenance only.
+    note: z.string().max(500).optional(),
   })
   .refine((a) => !a.absorbed.some((s) => s.skillId === a.skillId), {
     message: "a skill cannot absorb itself",
@@ -824,12 +831,18 @@ export async function dispatchGatedAction(
         // was raised against. No `accepted` decision is recorded — the signature
         // is version-scoped, and the version just bumped, so it could never
         // match a future proposal anyway.
-        const updated = await updateSkillIfVersion(args.skillId, ctx.chatId, args.baseVersion, {
-          ...(args.newDescription !== undefined ? { description: args.newDescription } : {}),
-          ...(args.newBody !== undefined ? { body: args.newBody } : {}),
-          ...(args.newTriggers !== undefined ? { triggers: args.newTriggers } : {}),
-          ...(args.newTags !== undefined ? { tags: args.newTags } : {}),
-        });
+        const updated = await updateSkillIfVersionWithHistory(
+          args.skillId,
+          ctx.chatId,
+          args.baseVersion,
+          {
+            ...(args.newDescription !== undefined ? { description: args.newDescription } : {}),
+            ...(args.newBody !== undefined ? { body: args.newBody } : {}),
+            ...(args.newTriggers !== undefined ? { triggers: args.newTriggers } : {}),
+            ...(args.newTags !== undefined ? { tags: args.newTags } : {}),
+          },
+          { reason: "refine", actor: "curator", note: args.note ?? null },
+        );
         if (updated) {
           return {
             success: true,
@@ -981,12 +994,18 @@ export async function dispatchGatedAction(
         // is archived. If the survivor CAS fails (raced edit / gone), abort with
         // NOTHING changed — never archive skills whose content didn't actually
         // get folded into the survivor.
-        const survivor = await updateSkillIfVersion(args.skillId, ctx.chatId, args.baseVersion, {
-          body: args.newBody,
-          ...(args.newDescription !== undefined ? { description: args.newDescription } : {}),
-          ...(args.newTriggers !== undefined ? { triggers: args.newTriggers } : {}),
-          ...(args.newTags !== undefined ? { tags: args.newTags } : {}),
-        });
+        const survivor = await updateSkillIfVersionWithHistory(
+          args.skillId,
+          ctx.chatId,
+          args.baseVersion,
+          {
+            body: args.newBody,
+            ...(args.newDescription !== undefined ? { description: args.newDescription } : {}),
+            ...(args.newTriggers !== undefined ? { triggers: args.newTriggers } : {}),
+            ...(args.newTags !== undefined ? { tags: args.newTags } : {}),
+          },
+          { reason: "merge", actor: "curator", note: args.note ?? null },
+        );
         if (!survivor) {
           const current = await getSkillById(args.skillId, ctx.chatId);
           if (!current) {

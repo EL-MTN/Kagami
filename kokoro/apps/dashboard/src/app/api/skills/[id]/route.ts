@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { getSkillById, updateSkill, deleteSkill, isDuplicateKeyError } from "@kokoro/db";
+import {
+  getSkillById,
+  updateSkill,
+  deleteSkill,
+  deleteSkillRevisions,
+  snapshotSkillVersion,
+  isDuplicateKeyError,
+} from "@kokoro/db";
 import { ensureDB } from "@/lib/db";
 import { getSkillDetail } from "@/lib/queries/skills";
 import { skillPatchSchema } from "@/lib/skill-schema";
@@ -15,6 +22,14 @@ function editsVersionedFields(patch: Record<string, unknown>): boolean {
   return ["name", "description", "body", "triggers", "tags", "source", "linkedRoutineIds"].some(
     (key) => patch[key] !== undefined,
   );
+}
+
+// A manual content edit overwrites the live skill in place — snapshot the
+// pre-edit version to history first so it stays recoverable, exactly as the
+// curator's gated edits do. Metadata-only changes (name / source / links) and
+// the enabled toggle change no content, so they are not recorded.
+function editsContentFields(patch: Record<string, unknown>): boolean {
+  return ["description", "body", "triggers", "tags"].some((key) => patch[key] !== undefined);
 }
 
 export async function GET(_request: Request, { params }: RouteParams) {
@@ -68,6 +83,22 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   if (data.linkedRoutineIds !== undefined) patch.linkedRoutineIds = data.linkedRoutineIds;
   if (editsVersionedFields(patch)) patch.version = existing.version + 1;
 
+  if (editsContentFields(patch)) {
+    await snapshotSkillVersion(
+      {
+        skillId: existing.id,
+        chatId: existing.chatId,
+        version: existing.version,
+        name: existing.name,
+        description: existing.description,
+        body: existing.body,
+        triggers: existing.triggers,
+        tags: existing.tags,
+      },
+      { reason: "manual-edit", actor: "dashboard" },
+    );
+  }
+
   try {
     const updated = await updateSkill(id, patch);
     if (!updated) {
@@ -96,6 +127,10 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
   if (!deleted) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+
+  // Hard delete is rare (archive is the norm and leaves history intact); when it
+  // happens, drop the orphaned revisions too.
+  await deleteSkillRevisions(id);
 
   return NextResponse.json({ ok: true });
 }

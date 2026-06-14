@@ -72,3 +72,24 @@ export interface SkillListItem {
   createdAt: string;
   updatedAt: string;
 }
+
+export const skillRevisionReasons = [
+  "refine",
+  "merge",
+  "manual-edit",
+  "rollback",
+  "import",
+] as const;
+
+export interface SkillRevisionItem {
+  version: number;
+  name: string;
+  description: string;
+  body: string;
+  triggers: string[];
+  tags: string[];
+  reason: (typeof skillRevisionReasons)[number];
+  actor: "curator" | "dashboard" | "system";
+  note: string | null;
+  takenAt: string;
+}

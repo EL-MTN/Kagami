@@ -52,6 +52,14 @@ A weekly curator pass reviews each chat's skill library and proposes **refine** 
 
 Scheduler in `apps/bot/src/scheduler/skill-review.ts` (weekly; first run ~15 min after boot, staggered after the routine self-review so routines get the one pending-proposal slot first — overlapping passes are serialized FIFO by the shared per-chat runner, so the stagger shapes ordering, not correctness). Full mechanics in [ai-layer.md](ai-layer.md#automated-skill-curation-pass-always-on).
 
+## Version History & Rollback
+
+Curation actions (refine / merge) and dashboard content edits **overwrite the live `Skill` doc in place**, so without history a bad approved edit — a refine that dropped something useful, or a merge that fused a survivor's body into mush — would be irrecoverable. (Archive is already safe: it disables, never deletes, and is re-enableable.) `SkillRevision` (`packages/db/src/models/skill-revision.ts`) records the content of every superseded version so any of them can be restored.
+
+- **What's recorded**: a content edit snapshots the about-to-be-overwritten version (name / description / body / triggers / tags) plus provenance — `reason` (`refine` / `merge` / `manual-edit` / `rollback`), `actor` (`curator` / `dashboard`), and the curator's rationale as `note`. **Enabled-only toggles are not recorded** — they change no content and are already recoverable — so the history stays a pure content log. The current version always lives on the `Skill` doc; the timeline is `revisions ∪ live`.
+- **The capture seam** is `updateSkillIfVersionWithHistory` (`packages/db/src/models/skill.ts`), which the gated `updateSkill`/`mergeSkills` dispatchers and the dashboard PATCH route call instead of `updateSkillIfVersion`. The pre-edit version is snapshotted **before** the compare-and-set (best-effort, idempotent on `(skillId, version)`): taking it before the CAS trades a rare advisory `reason` mislabel on a lost race for a guarantee that recoverability is never dropped by a crash in the gap. The CAS itself is unchanged, so a concurrent edit is still rejected, not clobbered. History is bounded to the newest `MAX_REVISIONS_PER_SKILL` (20) per skill; a hard delete cascades (`deleteSkillRevisions`), but archive leaves it intact.
+- **Rollback is just another content edit**: restoring version _N_ snapshots the now-current version first (under `reason: "rollback"`, so the rollback is itself reversible), then writes _N_'s content as a new version. Only content fields move — the name (stable handle) and enabled state are left as they are. It is **user-initiated** (skills have no run-grade, so a regression can't be auto-detected the way a routine's can), surfaced as a **Restore** button per version on `/skills/[id]` and served by `POST /api/skills/[id]/revisions/[version]`.
+
 ## Dashboard
 
 The Kokoro dashboard exposes `/skills` and `/skills/[id]`:
@@ -61,8 +69,9 @@ The Kokoro dashboard exposes `/skills` and `/skills/[id]`:
 - toggle enabled
 - edit body, triggers, tags, source, description, and name
 - delete skills
+- view version history and restore a prior version (see [Version History & Rollback](#version-history--rollback))
 
-API routes live under `apps/dashboard/src/app/api/skills`. Content edits bump `version` (which also clears `lastReviewedAt` — the edited skill re-enters curation); enabled-only toggles do neither. `linkedRoutineIds` must be Mongo ObjectId-shaped strings.
+API routes live under `apps/dashboard/src/app/api/skills`. Content edits bump `version` (which also clears `lastReviewedAt` — the edited skill re-enters curation) and snapshot the pre-edit version to history; enabled-only toggles do neither. `linkedRoutineIds` must be Mongo ObjectId-shaped strings.
 
 ## Package Import/Export
 

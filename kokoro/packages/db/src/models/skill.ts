@@ -1,4 +1,9 @@
 import mongoose, { Schema, Types, type Document } from "mongoose";
+import {
+  snapshotSkillVersion,
+  type SkillRevisionActor,
+  type SkillRevisionReason,
+} from "./skill-revision";
 
 export type SkillSource = "manual" | "distilled" | "imported";
 export type SkillSourceRefKind = "routine" | "conversation";
@@ -196,6 +201,59 @@ export async function updateSkillIfVersion(
     { ...patch, version: expectedVersion + 1, lastReviewedAt: null },
     { returnDocument: "after" },
   );
+}
+
+/** Content fields whose change makes an edit worth preserving in history.
+ * `enabled`-only patches (archive / re-enable) change no content and are
+ * already recoverable, so they are NOT snapshotted. */
+const CONTENT_KEYS = ["description", "body", "triggers", "tags"] as const;
+
+/**
+ * `updateSkillIfVersion` plus a pre-edit history snapshot: when the patch
+ * changes content, the about-to-be-overwritten version is recorded to
+ * `SkillRevision` BEFORE the compare-and-set, so a bad approved curation edit
+ * (or a regrettable merge) stays recoverable. The snapshot is best-effort and
+ * idempotent — it never blocks or fails the edit — and taking it before the CAS
+ * (rather than after) trades a rare advisory `reason` mislabel on a lost race
+ * for a guarantee that recoverability is never dropped by a crash in the gap.
+ * The CAS itself is unchanged, so a concurrent edit is still rejected, not
+ * clobbered. Returns exactly what `updateSkillIfVersion` returns.
+ */
+export async function updateSkillIfVersionWithHistory(
+  skillId: string,
+  chatId: string,
+  expectedVersion: number,
+  patch: Partial<Pick<ISkill, "description" | "body" | "triggers" | "tags" | "enabled">>,
+  supersededBy: { reason: SkillRevisionReason; actor: SkillRevisionActor; note?: string | null },
+): Promise<ISkill | null> {
+  const isContentEdit = CONTENT_KEYS.some((key) => patch[key] !== undefined);
+  if (isContentEdit) {
+    // Same filter as the CAS below so the snapshot reflects exactly the version
+    // the edit will supersede; a no-match (gone / raced / archived) snapshots
+    // nothing and the CAS then returns null for the caller to disambiguate.
+    const before = await Skill.findOne({
+      _id: skillId,
+      chatId,
+      version: expectedVersion,
+      enabled: true,
+    });
+    if (before) {
+      await snapshotSkillVersion(
+        {
+          skillId: before.id,
+          chatId: before.chatId,
+          version: before.version,
+          name: before.name,
+          description: before.description,
+          body: before.body,
+          triggers: before.triggers,
+          tags: before.tags,
+        },
+        supersededBy,
+      );
+    }
+  }
+  return updateSkillIfVersion(skillId, chatId, expectedVersion, patch);
 }
 
 // --- Skill-review (curation) pre-filter tuning. Facts only — the predicate
