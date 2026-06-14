@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,6 +63,7 @@ function isDirty(draft: Draft, saved: Draft): boolean {
 }
 
 export function SkillEditor({ skill }: SkillEditorProps) {
+  const router = useRouter();
   const [saved, setSaved] = useState<Draft>(() => skillToDraft(skill));
   const [draft, setDraft] = useState<Draft>(() => skillToDraft(skill));
   // Track the live version across saves so each PATCH CASes on the version this
@@ -72,8 +74,25 @@ export function SkillEditor({ skill }: SkillEditorProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [flash, setFlash] = useState<string | null>(null);
   const saveRef = useRef<() => void>(() => {});
+  // The version this editor's state was last seeded from. Used to adopt a newer
+  // version the server pushes from a SIBLING mutation (a restore in the history
+  // panel) without remounting — a key={version} remount would drop the "Saved"
+  // flash and the textarea's focus/scroll. Updated on our own saves too, so the
+  // refresh we trigger afterwards is recognized as ours and skipped here.
+  const syncedVersion = useRef(skill.version);
 
   const dirty = isDirty(draft, saved);
+
+  useEffect(() => {
+    if (skill.version === syncedVersion.current) return;
+    // The server has a newer version than we last seeded from (e.g. a restore) —
+    // adopt it so the editor never shows, or saves over, stale content.
+    syncedVersion.current = skill.version;
+    const next = skillToDraft(skill);
+    setSaved(next);
+    setDraft(next);
+    setVersion(skill.version);
+  }, [skill]);
 
   const update = useCallback((patch: Partial<Draft>) => {
     setDraft((current) => ({ ...current, ...patch }));
@@ -154,6 +173,11 @@ export function SkillEditor({ skill }: SkillEditorProps) {
       setSaved(newSaved);
       setDraft(newSaved);
       setVersion(data.skill!.version);
+      // Mark this version as ours so the sync effect ignores the refresh below,
+      // then refresh so the sibling history panel picks up the new revision and
+      // current version (otherwise its Restore would send a stale expectedVersion).
+      syncedVersion.current = data.skill!.version;
+      router.refresh();
       setFlash("Saved");
       setTimeout(() => setFlash(null), 2000);
     } catch {

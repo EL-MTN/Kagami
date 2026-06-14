@@ -33,11 +33,8 @@ export default async function SkillDetailPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      {/* Key by version so a restore (which bumps the version and refreshes the
-          server props) remounts the editor with the restored content instead of
-          leaving its useState-seeded draft showing the pre-rollback version. */}
       <div className="rounded-xl border border-border bg-card p-6">
-        <SkillEditor key={skill.version} skill={skill} />
+        <SkillEditor skill={skill} />
       </div>
 
       <SkillHistory skillId={skill.id} currentVersion={skill.version} revisions={revisions} />
