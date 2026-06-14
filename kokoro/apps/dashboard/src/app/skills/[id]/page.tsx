@@ -3,13 +3,16 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SkillEditor } from "@/components/skills/skill-editor";
-import { getSkillDetail } from "@/lib/queries/skills";
+import { SkillHistory } from "@/components/skills/skill-history";
+import { getSkillDetail, getSkillRevisions } from "@/lib/queries/skills";
 
 export default async function SkillDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const skill = await getSkillDetail(id);
 
   if (!skill) notFound();
+
+  const revisions = await getSkillRevisions(id);
 
   return (
     <div className="space-y-8">
@@ -33,6 +36,8 @@ export default async function SkillDetailPage({ params }: { params: Promise<{ id
       <div className="rounded-xl border border-border bg-card p-6">
         <SkillEditor skill={skill} />
       </div>
+
+      <SkillHistory skillId={skill.id} currentVersion={skill.version} revisions={revisions} />
     </div>
   );
 }

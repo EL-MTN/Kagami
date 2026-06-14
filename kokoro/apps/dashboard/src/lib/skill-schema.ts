@@ -53,6 +53,10 @@ export const skillPatchSchema = z.object({
   enabled: z.boolean().optional(),
   source: z.enum(skillSources).optional(),
   linkedRoutineIds: z.array(objectIdSchema).optional(),
+  // The version the editor loaded; the PATCH lands only if the skill is still
+  // there, so a stale or racing save returns 409 instead of clobbering an
+  // intervening edit (and losing its history snapshot).
+  expectedVersion: z.number().int().nonnegative().optional(),
 });
 
 export interface SkillListItem {
@@ -71,4 +75,25 @@ export interface SkillListItem {
   usageCount: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export const skillRevisionReasons = [
+  "refine",
+  "merge",
+  "manual-edit",
+  "rollback",
+  "import",
+] as const;
+
+export interface SkillRevisionItem {
+  version: number;
+  name: string;
+  description: string;
+  body: string;
+  triggers: string[];
+  tags: string[];
+  reason: (typeof skillRevisionReasons)[number];
+  actor: "curator" | "dashboard" | "system";
+  note: string | null;
+  takenAt: string;
 }

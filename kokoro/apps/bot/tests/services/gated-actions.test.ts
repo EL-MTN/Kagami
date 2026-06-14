@@ -73,6 +73,7 @@ vi.mock("@kokoro/db", () => ({
   getSkillById: vi.fn(),
   updateRoutineIfVersion: vi.fn(),
   updateSkillIfVersion: vi.fn(),
+  updateSkillIfVersionWithHistory: vi.fn(),
   applyRoutineRefinement: vi.fn(),
   isDuplicateKeyError: vi.fn(() => false),
   recordProposalDecision: vi.fn(),
@@ -98,6 +99,7 @@ import {
   getSkillById,
   updateRoutineIfVersion,
   updateSkillIfVersion,
+  updateSkillIfVersionWithHistory,
   applyRoutineRefinement,
   isDuplicateKeyError,
   recordProposalDecision,
@@ -128,6 +130,7 @@ beforeEach(() => {
   vi.mocked(getSkillById).mockReset();
   vi.mocked(updateRoutineIfVersion).mockReset();
   vi.mocked(updateSkillIfVersion).mockReset();
+  vi.mocked(updateSkillIfVersionWithHistory).mockReset();
   vi.mocked(applyRoutineRefinement).mockReset();
   // recordProposalDecision is async in production (callers chain .catch on it);
   // default the mock to a resolved promise so that chaining doesn't throw.
@@ -977,7 +980,7 @@ describe("dispatchGatedAction — updateSkill (dispatch-only)", () => {
   });
 
   it("applies the version-guarded content edit, records NO decision", async () => {
-    vi.mocked(updateSkillIfVersion).mockResolvedValue({
+    vi.mocked(updateSkillIfVersionWithHistory).mockResolvedValue({
       name: "meeting-followup-style",
       version: 2,
     } as never);
@@ -988,13 +991,18 @@ describe("dispatchGatedAction — updateSkill (dispatch-only)", () => {
     expect(result.summary).toBe('skill "meeting-followup-style" updated (v2)');
     expect(result.detail).toEqual({ skillId: SKILL_ID, version: 2 });
 
-    // Atomic compare-and-set against baseVersion; only the supplied content
-    // fields reach the patch.
-    expect(vi.mocked(updateSkillIfVersion)).toHaveBeenCalledWith(SKILL_ID, "chat-1", 1, {
-      body: draft.newBody,
-    });
+    // Atomic compare-and-set against baseVersion (history-aware: the overwritten
+    // version is snapshotted first); only the supplied content fields reach the
+    // patch, tagged with the curator provenance for the revision record.
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).toHaveBeenCalledWith(
+      SKILL_ID,
+      "chat-1",
+      1,
+      { body: draft.newBody },
+      { reason: "refine", actor: "curator", note: null },
+    );
     // Curation can never rename, re-enable, or re-source a skill.
-    const patch = vi.mocked(updateSkillIfVersion).mock.calls[0][3];
+    const patch = vi.mocked(updateSkillIfVersionWithHistory).mock.calls[0][3];
     expect(patch).not.toHaveProperty("name");
     expect(patch).not.toHaveProperty("enabled");
     expect(patch).not.toHaveProperty("source");
@@ -1004,7 +1012,10 @@ describe("dispatchGatedAction — updateSkill (dispatch-only)", () => {
   });
 
   it("forwards the optional metadata fields only when supplied", async () => {
-    vi.mocked(updateSkillIfVersion).mockResolvedValue({ name: "s", version: 2 } as never);
+    vi.mocked(updateSkillIfVersionWithHistory).mockResolvedValue({
+      name: "s",
+      version: 2,
+    } as never);
 
     await dispatchGatedAction(
       "updateSkill",
@@ -1012,10 +1023,36 @@ describe("dispatchGatedAction — updateSkill (dispatch-only)", () => {
       { chatId: "chat-1" },
     );
 
-    expect(vi.mocked(updateSkillIfVersion)).toHaveBeenCalledWith(SKILL_ID, "chat-1", 1, {
-      body: draft.newBody,
-      description: "Sharper one-liner",
-      triggers: ["after a meeting"],
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).toHaveBeenCalledWith(
+      SKILL_ID,
+      "chat-1",
+      1,
+      {
+        body: draft.newBody,
+        description: "Sharper one-liner",
+        triggers: ["after a meeting"],
+      },
+      { reason: "refine", actor: "curator", note: null },
+    );
+  });
+
+  it("carries the curator's rationale into the revision note", async () => {
+    vi.mocked(updateSkillIfVersionWithHistory).mockResolvedValue({
+      name: "s",
+      version: 2,
+    } as never);
+
+    await dispatchGatedAction(
+      "updateSkill",
+      { ...draft, note: "trimmed a stale 2025 reference" },
+      { chatId: "chat-1" },
+    );
+
+    const supersededBy = vi.mocked(updateSkillIfVersionWithHistory).mock.calls[0][4];
+    expect(supersededBy).toEqual({
+      reason: "refine",
+      actor: "curator",
+      note: "trimmed a stale 2025 reference",
     });
   });
 
@@ -1027,11 +1064,11 @@ describe("dispatchGatedAction — updateSkill (dispatch-only)", () => {
     );
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("invalid_args");
-    expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).not.toHaveBeenCalled();
   });
 
   it("reports version_conflict when the atomic update is rejected and the skill still exists", async () => {
-    vi.mocked(updateSkillIfVersion).mockResolvedValue(null);
+    vi.mocked(updateSkillIfVersionWithHistory).mockResolvedValue(null);
     vi.mocked(getSkillById).mockResolvedValue({
       name: "meeting-followup-style",
       version: 5,
@@ -1045,7 +1082,7 @@ describe("dispatchGatedAction — updateSkill (dispatch-only)", () => {
   });
 
   it("reports not_found when the atomic update is rejected and the skill is gone", async () => {
-    vi.mocked(updateSkillIfVersion).mockResolvedValue(null);
+    vi.mocked(updateSkillIfVersionWithHistory).mockResolvedValue(null);
     vi.mocked(getSkillById).mockResolvedValue(null);
 
     const result = await dispatchGatedAction("updateSkill", draft, { chatId: "chat-1" });
@@ -1055,7 +1092,7 @@ describe("dispatchGatedAction — updateSkill (dispatch-only)", () => {
   });
 
   it("reports state_conflict when the skill was archived after the proposal (version unchanged — toggles don't bump it)", async () => {
-    vi.mocked(updateSkillIfVersion).mockResolvedValue(null);
+    vi.mocked(updateSkillIfVersionWithHistory).mockResolvedValue(null);
     vi.mocked(getSkillById).mockResolvedValue({
       name: "meeting-followup-style",
       version: 1, // same version the bubble was raised against...
@@ -1073,7 +1110,7 @@ describe("dispatchGatedAction — updateSkill (dispatch-only)", () => {
     const result = await dispatchGatedAction("updateSkill", draft);
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("no_chat_context");
-    expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).not.toHaveBeenCalled();
   });
 });
 
@@ -1175,8 +1212,13 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
 
   it("updates the survivor first, then archives every absorbed skill (one approved action)", async () => {
     mockAbsorbeePreflightOk();
+    // Survivor content goes through the history-aware CAS (snapshots the
+    // pre-merge body); the absorbee archives are plain enabled-only CAS writes.
+    vi.mocked(updateSkillIfVersionWithHistory).mockResolvedValueOnce({
+      name: "survivor",
+      version: 2,
+    } as never);
     vi.mocked(updateSkillIfVersion)
-      .mockResolvedValueOnce({ name: "survivor", version: 2 } as never) // survivor content
       .mockResolvedValueOnce({ name: "dupe-a", version: 3 } as never) // absorb A
       .mockResolvedValueOnce({ name: "dupe-b", version: 2 } as never); // absorb B
 
@@ -1190,17 +1232,24 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
       archived: ["dupe-a", "dupe-b"],
     });
 
-    const calls = vi.mocked(updateSkillIfVersion).mock.calls;
-    expect(calls).toHaveLength(3);
-    // Survivor-first ordering, with the merged content.
-    expect(calls[0]).toEqual([SURVIVOR_ID, "chat-1", 1, { body: draft.newBody }]);
+    // Survivor-first ordering, with the merged content + merge provenance.
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).toHaveBeenCalledWith(
+      SURVIVOR_ID,
+      "chat-1",
+      1,
+      { body: draft.newBody },
+      { reason: "merge", actor: "curator", note: null },
+    );
     // Each absorbee is disabled against ITS OWN baseVersion.
-    expect(calls[1]).toEqual([ABSORBED_A, "chat-1", 2, { enabled: false }]);
-    expect(calls[2]).toEqual([ABSORBED_B, "chat-1", 1, { enabled: false }]);
+    const absorbCalls = vi.mocked(updateSkillIfVersion).mock.calls;
+    expect(absorbCalls).toHaveLength(2);
+    expect(absorbCalls[0]).toEqual([ABSORBED_A, "chat-1", 2, { enabled: false }]);
+    expect(absorbCalls[1]).toEqual([ABSORBED_B, "chat-1", 1, { enabled: false }]);
     // The absorbee preflight runs BEFORE the survivor write — a stale absorbee
     // must be caught while nothing has been mutated.
     const preflightOrder = vi.mocked(getSkillById).mock.invocationCallOrder;
-    const survivorWriteOrder = vi.mocked(updateSkillIfVersion).mock.invocationCallOrder[0];
+    const survivorWriteOrder = vi.mocked(updateSkillIfVersionWithHistory).mock
+      .invocationCallOrder[0];
     expect(Math.max(...preflightOrder)).toBeLessThan(survivorWriteOrder ?? 0);
     expect(vi.mocked(recordSkillProposalDecision)).not.toHaveBeenCalled();
   });
@@ -1223,6 +1272,7 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
       ],
     });
     // The survivor was never touched — the merged body did not land.
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).not.toHaveBeenCalled();
     expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
   });
 
@@ -1231,8 +1281,11 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
       .mockResolvedValueOnce({ name: "dupe-a", version: 2, enabled: false } as never) // archived, same version
       .mockResolvedValueOnce({ name: "dupe-b", version: 1, enabled: true } as never)
       .mockResolvedValueOnce({ name: "dupe-a", version: 2, enabled: false } as never); // absorb-loop re-read
+    vi.mocked(updateSkillIfVersionWithHistory).mockResolvedValueOnce({
+      name: "survivor",
+      version: 2,
+    } as never); // survivor ok
     vi.mocked(updateSkillIfVersion)
-      .mockResolvedValueOnce({ name: "survivor", version: 2 } as never) // survivor ok
       .mockResolvedValueOnce(null) // absorb A: CAS refused — already disabled
       .mockResolvedValueOnce({ name: "dupe-b", version: 2 } as never); // absorb B ok
 
@@ -1248,7 +1301,7 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
 
   it("aborts with NOTHING archived when the survivor CAS fails", async () => {
     mockAbsorbeePreflightOk();
-    vi.mocked(updateSkillIfVersion).mockResolvedValue(null);
+    vi.mocked(updateSkillIfVersionWithHistory).mockResolvedValue(null);
     vi.mocked(getSkillById).mockResolvedValueOnce({ name: "survivor", version: 4 } as never);
 
     const result = await dispatchGatedAction("mergeSkills", draft, { chatId: "chat-1" });
@@ -1256,12 +1309,13 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("version_conflict");
     // Only the survivor attempt ran — no absorbee was touched.
-    expect(vi.mocked(updateSkillIfVersion)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
   });
 
   it("cancels the merge with state_conflict when the survivor was archived after the proposal (same version)", async () => {
     mockAbsorbeePreflightOk();
-    vi.mocked(updateSkillIfVersion).mockResolvedValue(null);
+    vi.mocked(updateSkillIfVersionWithHistory).mockResolvedValue(null);
     vi.mocked(getSkillById).mockResolvedValueOnce({
       name: "survivor",
       version: 1, // unchanged — archived from the dashboard, which doesn't bump it
@@ -1274,13 +1328,17 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
     expect(result.detail.reason).toBe("state_conflict");
     expect(result.summary).toContain("merge cancelled");
     // Only the survivor attempt ran — no absorbee was touched.
-    expect(vi.mocked(updateSkillIfVersion)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
   });
 
   it("reports a partial merge as a failure when an absorbee CAS fails after preflight (residual race)", async () => {
     mockAbsorbeePreflightOk();
+    vi.mocked(updateSkillIfVersionWithHistory).mockResolvedValueOnce({
+      name: "survivor",
+      version: 2,
+    } as never); // survivor ok
     vi.mocked(updateSkillIfVersion)
-      .mockResolvedValueOnce({ name: "survivor", version: 2 } as never) // survivor ok
       .mockResolvedValueOnce(null) // absorb A raced between preflight and archive
       .mockResolvedValueOnce({ name: "dupe-b", version: 2 } as never); // absorb B ok
     vi.mocked(getSkillById).mockResolvedValueOnce({ name: "dupe-a", version: 9 } as never);
@@ -1294,7 +1352,8 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
       failed: [{ skillId: ABSORBED_A, reason: "version_conflict" }],
     });
     // One failed absorbee doesn't stop the others from archiving.
-    expect(vi.mocked(updateSkillIfVersion)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(updateSkillIfVersion)).toHaveBeenCalledTimes(2);
   });
 
   it("rejects a self-absorbing merge before touching the db", async () => {
@@ -1305,7 +1364,7 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
     );
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("invalid_args");
-    expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).not.toHaveBeenCalled();
   });
 
   it("rejects duplicate absorbees before touching the db (second copy would CAS-fail after the survivor write)", async () => {
@@ -1322,7 +1381,7 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
     );
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("invalid_args");
-    expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).not.toHaveBeenCalled();
     expect(vi.mocked(getSkillById)).not.toHaveBeenCalled();
   });
 
@@ -1340,14 +1399,14 @@ describe("dispatchGatedAction — mergeSkills (dispatch-only)", () => {
       { chatId: "chat-1" },
     );
     expect(noBody.detail.reason).toBe("invalid_args");
-    expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).not.toHaveBeenCalled();
   });
 
   it("fails cleanly when chat context is missing", async () => {
     const result = await dispatchGatedAction("mergeSkills", draft);
     expect(result.success).toBe(false);
     expect(result.detail.reason).toBe("no_chat_context");
-    expect(vi.mocked(updateSkillIfVersion)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateSkillIfVersionWithHistory)).not.toHaveBeenCalled();
   });
 });
 

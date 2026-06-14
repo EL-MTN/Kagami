@@ -156,6 +156,7 @@ export {
   resolveSkillRef,
   updateSkill,
   updateSkillIfVersion,
+  updateSkillIfVersionWithHistory,
   deleteSkill,
   recordSkillUsed,
   skillNeedsReview,
@@ -167,6 +168,19 @@ export {
   type SkillSource,
   type SkillSourceRefKind,
 } from "./models/skill";
+export {
+  SkillRevision,
+  snapshotSkillVersion,
+  listSkillRevisions,
+  getSkillRevision,
+  pruneSkillRevisions,
+  deleteSkillRevisions,
+  MAX_REVISIONS_PER_SKILL,
+  type ISkillRevision,
+  type SkillRevisionActor,
+  type SkillRevisionReason,
+  type SkillVersionSnapshot,
+} from "./models/skill-revision";
 export {
   SkillProposalDecision,
   recordSkillProposalDecision,

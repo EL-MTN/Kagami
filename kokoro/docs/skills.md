@@ -52,6 +52,14 @@ A weekly curator pass reviews each chat's skill library and proposes **refine** 
 
 Scheduler in `apps/bot/src/scheduler/skill-review.ts` (weekly; first run ~15 min after boot, staggered after the routine self-review so routines get the one pending-proposal slot first — overlapping passes are serialized FIFO by the shared per-chat runner, so the stagger shapes ordering, not correctness). Full mechanics in [ai-layer.md](ai-layer.md#automated-skill-curation-pass-always-on).
 
+## Version History & Rollback
+
+Curation actions (refine / merge) and dashboard content edits **overwrite the live `Skill` doc in place**, so without history a bad approved edit — a refine that dropped something useful, or a merge that fused a survivor's body into mush — would be irrecoverable. (Archive is already safe: it disables, never deletes, and is re-enableable.) `SkillRevision` (`packages/db/src/models/skill-revision.ts`) records the content of every superseded version so any of them can be restored.
+
+- **What's recorded**: a content edit snapshots the about-to-be-overwritten version (name / description / body / triggers / tags) plus provenance — `reason` (`refine` / `merge` / `manual-edit` / `rollback`), `actor` (`curator` / `dashboard`), and the curator's rationale as `note`. **Enabled-only toggles are not recorded** — they change no content and are already recoverable — so the history stays a pure content log. The current version always lives on the `Skill` doc; the timeline is `revisions ∪ live`.
+- **The capture seam**: the gated `updateSkill`/`mergeSkills` dispatchers write through `updateSkillIfVersionWithHistory` (`packages/db/src/models/skill.ts`); the dashboard PATCH route calls `snapshotSkillVersion` directly. Either way the pre-edit version is read up front but recorded to history **only after the write succeeds** (best-effort, idempotent on `(skillId, version)`): a rejected edit — a raced/archived CAS miss, or a rename hitting the unique `(chatId, name)` index — writes no revision, so it can neither pollute a version's provenance nor evict a real rollback point at the cap. The only exposure is the narrow window between the committed write and the snapshot, where a hard crash drops one version's history (self-healing on the next edit). The CAS itself is unchanged, so a concurrent edit is still rejected, not clobbered. History is bounded to the newest `MAX_REVISIONS_PER_SKILL` (20) per skill; a hard delete cascades (`deleteSkillRevisions`), but archive leaves it intact.
+- **Rollback is just another content edit**: restoring version _N_ snapshots the now-current version first (under `reason: "rollback"`, so the rollback is itself reversible), then writes _N_'s content as a new version. Only content fields move — the name (stable handle) and enabled state are left as they are, so an **archived** skill's content can be rolled back while it stays archived (the restore CAS guards on version only, `requireEnabled: false`). It is **user-initiated** (skills have no run-grade, so a regression can't be auto-detected the way a routine's can), surfaced as a **Restore** button per version on `/skills/[id]` and served by `POST /api/skills/[id]/revisions/[version]`.
+
 ## Dashboard
 
 The Kokoro dashboard exposes `/skills` and `/skills/[id]`:
@@ -61,8 +69,9 @@ The Kokoro dashboard exposes `/skills` and `/skills/[id]`:
 - toggle enabled
 - edit body, triggers, tags, source, description, and name
 - delete skills
+- view version history and restore a prior version (see [Version History & Rollback](#version-history--rollback))
 
-API routes live under `apps/dashboard/src/app/api/skills`. Content edits bump `version` (which also clears `lastReviewedAt` — the edited skill re-enters curation); enabled-only toggles do neither. `linkedRoutineIds` must be Mongo ObjectId-shaped strings.
+API routes live under `apps/dashboard/src/app/api/skills`. Content edits bump `version` (which also clears `lastReviewedAt` — the edited skill re-enters curation) and snapshot the pre-edit version to history; enabled-only toggles do neither. Both a content PATCH and a restore are version-guarded on the version the editor / history page loaded (`expectedVersion`), so a stale or racing write returns 409 instead of silently clobbering an intervening edit. `linkedRoutineIds` must be Mongo ObjectId-shaped strings.
 
 ## Package Import/Export
 

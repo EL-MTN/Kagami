@@ -1,4 +1,9 @@
 import mongoose, { Schema, Types, type Document } from "mongoose";
+import {
+  snapshotSkillVersion,
+  type SkillRevisionActor,
+  type SkillRevisionReason,
+} from "./skill-revision";
 
 export type SkillSource = "manual" | "distilled" | "imported";
 export type SkillSourceRefKind = "routine" | "conversation";
@@ -133,9 +138,15 @@ export async function updateSkill(
     >
   > & { linkedRoutineIds?: string[] },
   chatId?: string,
+  opts: { expectedVersion?: number } = {},
 ): Promise<ISkill | null> {
   const filter: Record<string, unknown> = { _id: skillId };
   if (chatId) filter.chatId = chatId;
+  // Optimistic-concurrency guard for the dashboard PATCH: when the caller passes
+  // the version it edited, the write lands only if the skill is still at that
+  // version, so two racing saves (or a save from a stale editor) get a null
+  // instead of silently clobbering each other and dropping a history snapshot.
+  if (opts.expectedVersion !== undefined) filter.version = opts.expectedVersion;
   const update: Record<string, unknown> = { ...patch };
   if (patch.linkedRoutineIds) {
     update.linkedRoutineIds = patch.linkedRoutineIds.map((id) => new Types.ObjectId(id));
@@ -184,18 +195,88 @@ export async function recordSkillUsed(skillId: string, chatId?: string): Promise
  * `lastReviewedAt`: the write produces a new version the curator has never
  * seen, so the previous verdict's cooldown must not shield it from the next
  * cycle.
+ *
+ * `requireEnabled` (default true) gates that `enabled: true` clause. The
+ * dashboard rollback passes `false`: restoring an archived skill's content is a
+ * legitimate direct operator action (no stale-bubble concern), and the restore
+ * leaves `enabled` untouched, so the skill stays archived.
  */
 export async function updateSkillIfVersion(
   skillId: string,
   chatId: string,
   expectedVersion: number,
   patch: Partial<Pick<ISkill, "description" | "body" | "triggers" | "tags" | "enabled">>,
+  opts: { requireEnabled?: boolean } = {},
 ): Promise<ISkill | null> {
+  const filter: Record<string, unknown> = { _id: skillId, chatId, version: expectedVersion };
+  if (opts.requireEnabled ?? true) filter.enabled = true;
   return Skill.findOneAndUpdate(
-    { _id: skillId, chatId, version: expectedVersion, enabled: true },
+    filter,
     { ...patch, version: expectedVersion + 1, lastReviewedAt: null },
     { returnDocument: "after" },
   );
+}
+
+/** Content fields whose change makes an edit worth preserving in history.
+ * `enabled`-only patches (archive / re-enable) change no content and are
+ * already recoverable, so they are NOT snapshotted. */
+const CONTENT_KEYS = ["description", "body", "triggers", "tags"] as const;
+
+/**
+ * `updateSkillIfVersion` plus a history snapshot of the version it overwrites,
+ * so a bad approved curation edit (or a regrettable merge) stays recoverable.
+ * When the patch changes content, the pre-edit version is read first (only to
+ * supply the snapshot content) and recorded to `SkillRevision` ONLY AFTER the
+ * compare-and-set SUCCEEDS — a rejected edit (raced, archived, or gone) writes
+ * no revision, so it can neither pollute that version's provenance nor evict a
+ * real rollback point at the retention cap. The snapshot is best-effort and
+ * idempotent, so it never blocks or fails the edit; the only exposure is the
+ * narrow window between the atomic CAS write and the snapshot, where a hard
+ * crash drops one version's history (the chain self-heals on the next edit).
+ * The CAS itself is unchanged, so a concurrent edit is still rejected, not
+ * clobbered. `requireEnabled` is forwarded to the CAS and the pre-edit read
+ * (default true; the dashboard rollback passes false to restore an archived
+ * skill's content while leaving it disabled). Returns exactly what
+ * `updateSkillIfVersion` returns.
+ */
+export async function updateSkillIfVersionWithHistory(
+  skillId: string,
+  chatId: string,
+  expectedVersion: number,
+  patch: Partial<Pick<ISkill, "description" | "body" | "triggers" | "tags" | "enabled">>,
+  supersededBy: { reason: SkillRevisionReason; actor: SkillRevisionActor; note?: string | null },
+  opts: { requireEnabled?: boolean } = {},
+): Promise<ISkill | null> {
+  const requireEnabled = opts.requireEnabled ?? true;
+  const isContentEdit = CONTENT_KEYS.some((key) => patch[key] !== undefined);
+  // Read the pre-edit version up front (same filter as the CAS) purely to
+  // supply the snapshot content. If the CAS then succeeds, the version was
+  // still `expectedVersion` at write time, so nothing edited it in between and
+  // this read is accurate.
+  const beforeFilter: Record<string, unknown> = { _id: skillId, chatId, version: expectedVersion };
+  if (requireEnabled) beforeFilter.enabled = true;
+  const before = isContentEdit ? await Skill.findOne(beforeFilter) : null;
+
+  const updated = await updateSkillIfVersion(skillId, chatId, expectedVersion, patch, {
+    requireEnabled,
+  });
+
+  if (updated && before) {
+    await snapshotSkillVersion(
+      {
+        skillId: before.id,
+        chatId: before.chatId,
+        version: before.version,
+        name: before.name,
+        description: before.description,
+        body: before.body,
+        triggers: before.triggers,
+        tags: before.tags,
+      },
+      supersededBy,
+    );
+  }
+  return updated;
 }
 
 // --- Skill-review (curation) pre-filter tuning. Facts only — the predicate
