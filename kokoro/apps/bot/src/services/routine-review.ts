@@ -1,4 +1,5 @@
 import { generateObject } from "ai";
+import { withCallOp } from "@kagami/llm";
 import { z } from "zod";
 import {
   clearRefineTracking,
@@ -132,14 +133,16 @@ async function reviewRoutine(
     ? `Runs since the prompt was last revised (newest first) — grade ONLY this current behavior:`
     : `Recent runs (newest first) — ${health.failedRuns} failed / ${health.emptyRuns} empty of last ${health.totalRuns}:`;
 
-  const result = await generateObject({
-    model: getModel(ModelTier.Smart),
-    schema: reviewSchema,
-    system: REVIEW_SYSTEM,
-    messages: [{ role: "user", content: buildReviewUser(routine, runsHeader, recentRuns) }],
-    temperature: 0.2,
-    abortSignal: AbortSignal.timeout(60_000),
-  });
+  const result = await withCallOp("routine_review", () =>
+    generateObject({
+      model: getModel(ModelTier.Smart),
+      schema: reviewSchema,
+      system: REVIEW_SYSTEM,
+      messages: [{ role: "user", content: buildReviewUser(routine, runsHeader, recentRuns) }],
+      temperature: 0.2,
+      abortSignal: AbortSignal.timeout(60_000),
+    }),
+  );
 
   trackUsage("routine-review", getModelName(ModelTier.Smart), result.usage, {
     chatId: routine.chatId,

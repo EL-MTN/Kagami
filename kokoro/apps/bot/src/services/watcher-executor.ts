@@ -1,4 +1,5 @@
 import { generateText, hasToolCall, stepCountIs, type StepResult, type ToolSet } from "ai";
+import { withCallOp } from "@kagami/llm";
 import { getModel, getModelName } from "../ai/provider";
 import { watcherTools, type ToolContext } from "../ai/tools/index";
 import {
@@ -141,21 +142,23 @@ export async function executeWatcher(
       callingContext: "watcher",
     };
 
-    const result = await generateText({
-      model: getModel(),
-      system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: "Run this check now and report the result.",
-        },
-      ],
-      tools: watcherTools(toolContext),
-      // Stop as soon as the watcher reports — saves wasted steps after termination.
-      stopWhen: [stepCountIs(MAX_STEPS), hasToolCall(REPORT_WATCHER_RESULT_TOOL_NAME)],
-      temperature: TEMPERATURE,
-      abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-    });
+    const result = await withCallOp("watcher", () =>
+      generateText({
+        model: getModel(),
+        system: systemPrompt,
+        messages: [
+          {
+            role: "user",
+            content: "Run this check now and report the result.",
+          },
+        ],
+        tools: watcherTools(toolContext),
+        // Stop as soon as the watcher reports — saves wasted steps after termination.
+        stopWhen: [stepCountIs(MAX_STEPS), hasToolCall(REPORT_WATCHER_RESULT_TOOL_NAME)],
+        temperature: TEMPERATURE,
+        abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+      }),
+    );
 
     trackUsage("watcher", getModelName(), result.usage, {
       chatId,

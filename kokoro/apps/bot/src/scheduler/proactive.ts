@@ -1,4 +1,5 @@
 import { generateText, stepCountIs } from "ai";
+import { withCallOp } from "@kagami/llm";
 import { getModel } from "../ai/provider";
 import { assembleProactiveSystemPrompt, assembleMessages } from "../ai/context-assembler";
 import { allTools, type ToolContext } from "../ai/tools/index";
@@ -171,15 +172,17 @@ async function generateProactiveMessage(
 
   const toolContext: ToolContext = { chatId, adapter, sessionId, userId };
 
-  const result = await generateText({
-    model: getModel(),
-    system: systemPrompt,
-    messages,
-    tools: allTools(toolContext),
-    stopWhen: stepCountIs(5),
-    temperature: 0.7,
-    abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-  });
+  const result = await withCallOp("proactive", () =>
+    generateText({
+      model: getModel(),
+      system: systemPrompt,
+      messages,
+      tools: allTools(toolContext),
+      stopWhen: stepCountIs(5),
+      temperature: 0.7,
+      abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    }),
+  );
 
   // Track token usage
   trackUsage("proactive", getModelName(), result.usage, {

@@ -1,4 +1,5 @@
 import { generateText, generateImage as aiGenerateImage } from "ai";
+import { withCallOp } from "@kagami/llm";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { config, logger } from "@kokoro/shared";
@@ -124,11 +125,12 @@ async function selectReference(
   const filenames = refs.map((r) => r.filename);
 
   try {
-    const { text, usage } = await generateText({
-      model: getModel(ModelTier.Fast),
-      temperature: 0,
-      abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
-      prompt: `You are selecting a ${category} reference image for AI image generation.
+    const { text, usage } = await withCallOp("image_selection", () =>
+      generateText({
+        model: getModel(ModelTier.Fast),
+        temperature: 0,
+        abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
+        prompt: `You are selecting a ${category} reference image for AI image generation.
 
 Scene to generate: "${sceneDescription}"
 
@@ -137,7 +139,8 @@ ${filenames.join("\n")}
 
 ${guidance} Say "none" if none of the references fit the scenario.
 Return ONLY the filename or "none", nothing else.`,
-    });
+      }),
+    );
 
     trackUsage("image-selection", getModelName(ModelTier.Fast), usage);
 
@@ -180,11 +183,12 @@ async function selectSetting(sceneDescription: string): Promise<SettingSelection
   const names = [...settingsMap.keys()];
 
   try {
-    const { text, usage } = await generateText({
-      model: getModel(ModelTier.Fast),
-      temperature: 0,
-      abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
-      prompt: `You are selecting a location/setting for AI image generation.
+    const { text, usage } = await withCallOp("image_prompt_gen", () =>
+      generateText({
+        model: getModel(ModelTier.Fast),
+        temperature: 0,
+        abortSignal: AbortSignal.timeout(FAST_LLM_TIMEOUT_MS),
+        prompt: `You are selecting a location/setting for AI image generation.
 
 Scene to generate: "${sceneDescription}"
 
@@ -193,7 +197,8 @@ ${names.join("\n")}
 
 Pick the single most appropriate setting for this scene, or "none" if the scene doesn't match any specific setting.
 Return ONLY the setting name, nothing else.`,
-    });
+      }),
+    );
 
     trackUsage("image-selection", getModelName(ModelTier.Fast), usage);
 

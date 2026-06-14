@@ -1,4 +1,5 @@
 import { generateText } from "ai";
+import { withCallOp } from "@kagami/llm";
 import { getModel, getModelName } from "./provider";
 import { assembleSystemPrompt, assembleMessages, readInstruction } from "./context-assembler";
 import { getOrCreateSession, appendMessage } from "@kokoro/db";
@@ -60,13 +61,15 @@ export async function generateAcknowledgment(
     // The bracketed event was just appended as a user-role message, so the
     // history already ends correctly for the model.
 
-    const result = await generateText({
-      model: getModel(),
-      system: systemPrompt,
-      messages,
-      temperature: 0.6,
-      abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-    });
+    const result = await withCallOp("acknowledgment", () =>
+      generateText({
+        model: getModel(),
+        system: systemPrompt,
+        messages,
+        temperature: 0.6,
+        abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+      }),
+    );
 
     trackUsage("conversation", getModelName(), result.usage, {
       chatId,

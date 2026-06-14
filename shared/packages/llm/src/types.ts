@@ -105,4 +105,10 @@ export interface UsageEvent {
    * makes the provider ambiguous.
    */
   attemptErrors?: string[];
+  /**
+   * Caller-supplied op label for this call (e.g. `"answer"`), recovered from
+   * the `withCallOp` AsyncLocalStorage seam. Absent when the caller did not
+   * wrap the generate call.
+   */
+  op?: string;
 }

@@ -74,6 +74,11 @@ export default async function OverviewPage() {
           description="Query the persisted log store by service, level, and time range."
         />
         <FeatureCard
+          href="/traces"
+          title="Traces"
+          description="Browse recent request traces; jump to any waterfall."
+        />
+        <FeatureCard
           href="/errors"
           title="Errors"
           description="Distinct error fingerprints with counts, first/last seen, and trace links."

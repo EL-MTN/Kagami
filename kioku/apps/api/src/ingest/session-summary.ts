@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { generateObject } from "ai";
+import { withCallOp } from "@kagami/llm";
 import { model } from "../llm.js";
 import { getDb } from "../storage/mongo.js";
 import { logger } from "../logger.js";
@@ -61,14 +62,16 @@ async function generateNarrativeSummary(
 ): Promise<string> {
   if (turns.length === 0) return "";
   try {
-    const { object } = await generateObject({
-      model,
-      schema: NarrativeSummarySchema,
-      system: NARRATIVE_SYSTEM,
-      prompt: buildSummaryUserPrompt(turns),
-      temperature: 0,
-      abortSignal: AbortSignal.timeout(60_000),
-    });
+    const { object } = await withCallOp("session_summary", () =>
+      generateObject({
+        model,
+        schema: NarrativeSummarySchema,
+        system: NARRATIVE_SYSTEM,
+        prompt: buildSummaryUserPrompt(turns),
+        temperature: 0,
+        abortSignal: AbortSignal.timeout(60_000),
+      }),
+    );
     return object.summary.trim();
   } catch (err) {
     logger.warn(

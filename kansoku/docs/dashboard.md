@@ -7,20 +7,26 @@ client-side island for the SSE live tail. Reads from `KANSOKU_API_URL`
 
 ## Pages
 
-| Path           | Type   | Backed by                                                           |
-| -------------- | ------ | ------------------------------------------------------------------- |
-| `/`            | server | `GET /health`, `GET /version` — overview cards + feature links      |
-| `/tail`        | client | SSE `GET /v1/tail` — per-service/level filters, pause/clear         |
-| `/search`      | server | `GET /v1/logs?service&level&since&until&limit` — newest-first table |
-| `/traces/[id]` | server | `GET /v1/traces/:id` — waterfall + flat log timeline                |
-| `/errors`      | server | `GET /v1/errors?service&limit` — fingerprinted groups               |
-| `/services`    | server | `GET /v1/services` + `GET /v1/services/:service/timeline` — cards   |
+| Path           | Type   | Backed by                                                                                                                 |
+| -------------- | ------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `/`            | server | `GET /health`, `GET /version` — overview cards + feature links                                                            |
+| `/tail`        | client | SSE `GET /v1/tail` — service picker + level chips, pause/clear                                                            |
+| `/search`      | server | `GET /v1/logs?service&level&since&until&limit` — service picker + multi-level chips; defaults to last 15m when unfiltered |
+| `/traces`      | server | `GET /v1/traces` — recent-traces browser (root msg, counts, duration, error flag)                                         |
+| `/traces/[id]` | server | `GET /v1/traces/:id` — waterfall (two-line labels, `op` headline, time axis) + flat log timeline                          |
+| `/errors`      | server | `GET /v1/errors?service&limit&sort&since` — fingerprinted groups; sort + time-window controls                             |
+| `/services`    | server | `GET /v1/services` + `GET /v1/services/:service/timeline` — cards                                                         |
 
 ## Design
 
 Mashiro Daylight palette ([globals.css](../apps/dashboard/src/app/globals.css)).
 Instrument Serif (display) + DM Sans + JetBrains Mono. shadcn-shaped components live under
-`src/components/`; per-page composition lives under `src/app/<route>/`.
+`src/components/`; per-page composition lives under `src/app/<route>/`. Shared
+filter primitives: `ServiceSelect` (a dual-mode `<select>` — uncontrolled in
+server GET forms via `name`/`defaultValue`, controlled in the client live tail
+via `value`/`onChange`) and `LevelChips` (controlled multi-select for live tail)
+plus `levelChipFormClassName()` (CSS `has-[:checked]` styling so the Search
+page's native-checkbox chips match the live-tail chips).
 
 ## Live-tail wire format
 
@@ -47,11 +53,18 @@ by `/tail`, `/search`, and the flat timeline on `/traces/[id]`. It is a
 
 - The collapsed row is one line (timestamp, level, service, message,
   trace link). When the log has a non-empty `fields` object a chevron +
-  `+N fields` affordance appears.
+  `+N fields` affordance appears, alongside a faint one-line **preview**
+  of the most useful field (prefers `responsePreview`/`query`/`text`/…,
+  else the first non-`pid`/`hostname` scalar, truncated).
+- The trace-link cell is a full-height click target with a hover
+  underline + tooltip, so pivoting from a log line to its trace waterfall
+  is a single obvious click.
 - Expanding renders `fields` as a pretty-printed block. String values
   keep their **real newlines** (a recursive renderer quotes but does not
   `\n`-escape them), so stack traces and multi-line `responsePreview`
-  read as actual lines instead of one `"...\n..."` blob.
+  read as actual lines instead of one `"...\n..."` blob. Infra noise
+  (`pid`, `hostname`) is rendered last in a faint style so meaningful
+  fields read first.
 - `showSpanId` prop: on `/traces/[id]` the per-row trace link is
   redundant, so the trace page passes `showSpanId` to render the span id
   in that column instead.
@@ -80,4 +93,8 @@ out N aggregations. The cache is bounded at 64 entries.
   `/services` uses `<nav aria-label="Window">` with `aria-current="page"`.
 - Live-tail level toggles carry `aria-pressed`; Pause / Clear buttons
   carry `aria-label`.
+- The Search page's level chips are native checkboxes (so the GET form
+  submits multi-level natively); their active state and focus ring are
+  CSS-driven (`has-[:checked]` / `has-[:focus-visible]`) for instant
+  feedback without a round-trip.
 - All status colors have non-color affordances (text, badge shape).

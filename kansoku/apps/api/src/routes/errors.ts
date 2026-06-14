@@ -7,6 +7,8 @@ export const errorsRouter = Router();
 const ListQuery = z.object({
   service: z.string().min(1).optional(),
   limit: z.coerce.number().int().positive().max(500).optional(),
+  sort: z.enum(["lastSeen", "firstSeen", "count"]).optional(),
+  since: z.coerce.date().optional(),
 });
 
 errorsRouter.get("/errors", async (req, res, next) => {

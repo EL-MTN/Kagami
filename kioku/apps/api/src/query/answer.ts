@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { generateText } from "ai";
+import { withCallOp } from "@kagami/llm";
 import { loadEnv } from "../config.js";
 import { localToday } from "../dates.js";
 import { model } from "../llm.js";
@@ -136,12 +137,14 @@ export async function query(question: string, deps: QueryDeps = {}): Promise<Que
   const citations = extractCitations(facts);
 
   try {
-    const result = await generateText({
-      model,
-      prompt,
-      temperature: 0,
-      abortSignal: AbortSignal.timeout(120_000),
-    });
+    const result = await withCallOp("answer", () =>
+      generateText({
+        model,
+        prompt,
+        temperature: 0,
+        abortSignal: AbortSignal.timeout(120_000),
+      }),
+    );
     return {
       answer: stripMemThinking(result.text) || "(empty answer)",
       citations,

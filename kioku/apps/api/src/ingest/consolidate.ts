@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { z } from "zod";
 import { embed, embedMany, cosineSimilarity, generateObject } from "ai";
+import { withCallOp } from "@kagami/llm";
 import type { Transcript } from "../types.js";
 import { localToday, sessionDateOf } from "../dates.js";
 import { getEmbeddingModel, model } from "../llm.js";
@@ -233,14 +234,16 @@ export async function consolidate(
 
     let extraction: z.infer<typeof ExtractionResult>;
     try {
-      const r = await generateObject({
-        model,
-        schema: ExtractionResult,
-        system: systemPrompt,
-        prompt: userPrompt,
-        temperature: 0,
-        abortSignal: AbortSignal.timeout(120_000),
-      });
+      const r = await withCallOp("extract", () =>
+        generateObject({
+          model,
+          schema: ExtractionResult,
+          system: systemPrompt,
+          prompt: userPrompt,
+          temperature: 0,
+          abortSignal: AbortSignal.timeout(120_000),
+        }),
+      );
       extraction = r.object;
     } catch (error) {
       logger.error(

@@ -1,4 +1,5 @@
 import { generateText, stepCountIs } from "ai";
+import { withCallOp } from "@kagami/llm";
 import { getModel } from "./provider";
 import { assembleSystemPrompt, assembleMessages } from "./context-assembler";
 import { allTools, type ToolContext } from "./tools/index";
@@ -212,19 +213,21 @@ async function runTurn(
   // tool covers fresh reads mid-task and other timezones. See docs/ai-layer.md.
   messages.push({ role: "system", content: currentTimeContext(new Date()) });
 
-  const result = await generateText({
-    model: getModel(),
-    system: systemPrompt,
-    messages,
-    tools: allTools(toolContext),
-    stopWhen: stepCountIs(5),
-    temperature: 0.7,
-    // The trailing time message above is the only system message in `messages`,
-    // and it's server-generated (not user input), so the SDK's prompt-injection
-    // warning for system-in-messages doesn't apply — opt in deliberately.
-    allowSystemInMessages: true,
-    abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-  });
+  const result = await withCallOp("conversation", () =>
+    generateText({
+      model: getModel(),
+      system: systemPrompt,
+      messages,
+      tools: allTools(toolContext),
+      stopWhen: stepCountIs(5),
+      temperature: 0.7,
+      // The trailing time message above is the only system message in `messages`,
+      // and it's server-generated (not user input), so the SDK's prompt-injection
+      // warning for system-in-messages doesn't apply — opt in deliberately.
+      allowSystemInMessages: true,
+      abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    }),
+  );
 
   // 6. Track token usage + debug log
   trackUsage("conversation", getModelName(), result.usage, {

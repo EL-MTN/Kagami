@@ -34,6 +34,7 @@ export function emitUsage(logger: Logger, ev: UsageEvent): void {
       service: ev.service,
       provider: ev.provider,
       model: ev.model,
+      ...(ev.op ? { op: ev.op } : {}),
       prompt_tokens: ev.promptTokens,
       completion_tokens: ev.completionTokens,
       fallback_used: ev.fallbackUsed,
