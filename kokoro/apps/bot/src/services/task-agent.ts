@@ -1,4 +1,5 @@
 import { generateText, stepCountIs, type LanguageModel, type ToolSet } from "ai";
+import { withCallOp } from "@kagami/llm";
 import { getModel } from "../ai/provider";
 import { extractResponseText } from "../ai/response";
 
@@ -31,15 +32,17 @@ export async function runTaskAgent(opts: {
   model?: LanguageModel;
   timeoutMs?: number;
 }): Promise<TaskAgentResult> {
-  const result = await generateText({
-    model: opts.model ?? getModel(),
-    system: opts.system,
-    messages: [{ role: "user", content: opts.prompt }],
-    tools: opts.tools,
-    stopWhen: stepCountIs(opts.maxSteps),
-    temperature: opts.temperature,
-    abortSignal: AbortSignal.timeout(opts.timeoutMs ?? TASK_AGENT_TIMEOUT_MS),
-  });
+  const result = await withCallOp("task_agent", () =>
+    generateText({
+      model: opts.model ?? getModel(),
+      system: opts.system,
+      messages: [{ role: "user", content: opts.prompt }],
+      tools: opts.tools,
+      stopWhen: stepCountIs(opts.maxSteps),
+      temperature: opts.temperature,
+      abortSignal: AbortSignal.timeout(opts.timeoutMs ?? TASK_AGENT_TIMEOUT_MS),
+    }),
+  );
 
   const text = result.text || extractResponseText(result.steps) || "";
   return { text, usage: result.usage, steps: result.steps.length };

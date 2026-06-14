@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, AlertTriangle, Layers, Radio, Search, type LucideIcon } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  Layers,
+  Radio,
+  Search,
+  Waypoints,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const iconMap = {
@@ -11,6 +19,7 @@ const iconMap = {
   Layers,
   Radio,
   Search,
+  Waypoints,
 } as const;
 
 export type IconName = keyof typeof iconMap;

@@ -14,6 +14,10 @@ interface Span {
   spanId: string;
   parentSpanId?: string;
   name?: string;
+  // @kagami/llm call-op label (e.g. "answer", "extract") — only on real spans
+  // that wrap a generate call. Disambiguates the otherwise-identical
+  // "llm.generate" name across the six per-message inference calls.
+  op?: string;
   startMs: number;
   endMs: number;
   service: string;
@@ -22,6 +26,11 @@ interface Span {
   worstLevel: string;
   children: Span[];
 }
+
+// Component values that carry no signal once we already show the service and a
+// concrete op — drop them from the faint sub-label so it doesn't read
+// "kioku-api · llm · answer" when "answer" already says everything.
+const NOISE_COMPONENTS = new Set(["llm", "inference", "provider", "default", ""]);
 
 const LEVEL_RANK: Record<string, number> = {
   trace: 10,
@@ -102,6 +111,7 @@ function buildSpansFromStored(spans: StoredSpan[]): Span[] {
       spanId: s.spanId,
       parentSpanId: s.parentSpanId,
       name: s.name,
+      op: s.op,
       startMs,
       endMs: startMs + s.durationMs,
       service: s.service,
@@ -133,6 +143,34 @@ function flatten(roots: Span[]): { span: Span; depth: number }[] {
   };
   for (const r of roots) walk(r, 0);
   return out;
+}
+
+// Evenly-spaced tick marks across the [0, totalMs] bar track for the time
+// axis. Returns {ms, pct} so the renderer can drop a faint gridline + label at
+// each. Five steps (0%, 25%, 50%, 75%, 100%) reads cleanly without crowding.
+function axisTicks(totalMs: number): { ms: number; pct: number }[] {
+  const STEPS = 4;
+  return Array.from({ length: STEPS + 1 }, (_, i) => {
+    const pct = (i / STEPS) * 100;
+    return { ms: Math.round((totalMs * i) / STEPS), pct };
+  });
+}
+
+// Primary label for a span row. Prefer the call-op (so the six identical
+// "llm.generate" spans become "answer", "extract", …); otherwise the span
+// name; otherwise the component. When both name and op exist and differ,
+// pair them as "llm.generate · answer" so the wrapped operation stays visible.
+function spanHeadline(span: Span): string {
+  if (span.op && span.name && span.op !== span.name) return `${span.name} · ${span.op}`;
+  return span.op ?? span.name ?? span.component;
+}
+
+// Faint "service · component" sub-label. The component segment is dropped when
+// an op already carries the signal and the component is a noise token, so the
+// sub-label stays a clean origin tag rather than echoing the headline.
+function spanSubLabel(span: Span): string {
+  const dropComponent = Boolean(span.op) && NOISE_COMPONENTS.has(span.component.toLowerCase());
+  return dropComponent || !span.component ? span.service : `${span.service} · ${span.component}`;
 }
 
 interface TracePageProps {
@@ -192,6 +230,7 @@ export default async function TracePage({ params }: TracePageProps) {
     Number.NEGATIVE_INFINITY,
   );
   const totalMs = Math.max(traceEndMs - traceStartMs, 1);
+  const ticks = axisTicks(totalMs);
 
   // Cap rendered rows so a pathological trace can't jank the page. The
   // remainder is summarized in a footer; users can drill into the time
@@ -245,35 +284,67 @@ export default async function TracePage({ params }: TracePageProps) {
           </span>
         </div>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
+          {/* Time axis: a baseline scale over the bar track so each span's
+              horizontal offset reads as a real elapsed-time position rather
+              than an arbitrary indent. Aligned to the same three-column grid
+              as every row so ticks sit exactly under the bars. */}
+          <div className="grid grid-cols-[minmax(260px,36%)_1fr_72px] items-end gap-3 border-b border-border bg-muted/20 px-3 pb-1 pt-2">
+            <span className="kicker self-end">Span</span>
+            <div className="relative h-4">
+              {ticks.map((t, i) => (
+                <span
+                  key={t.pct}
+                  className={cn(
+                    "absolute bottom-0 whitespace-nowrap font-mono text-[9px] tabular-nums text-faint",
+                    i === 0 ? "left-0" : i === ticks.length - 1 ? "right-0" : "-translate-x-1/2",
+                  )}
+                  style={i === 0 || i === ticks.length - 1 ? undefined : { left: `${t.pct}%` }}
+                >
+                  {t.ms.toLocaleString()}
+                </span>
+              ))}
+            </div>
+            <span className="text-right text-[9px] uppercase tracking-wide text-faint">ms</span>
+          </div>
           {flatWaterfall.map(({ span, depth }) => {
             const offsetPct = ((span.startMs - traceStartMs) / totalMs) * 100;
             const widthPct = Math.max(((span.endMs - span.startMs) / totalMs) * 100, 0.5);
             const duration = span.endMs - span.startMs;
+            const headline = spanHeadline(span);
+            const subLabel = spanSubLabel(span);
             return (
               <div
                 key={span.spanId}
-                className="grid grid-cols-[240px_1fr_70px] items-center gap-3 border-b border-border px-3 py-2 text-[12px] tabular-nums last:border-b-0"
+                className="grid grid-cols-[minmax(260px,36%)_1fr_72px] items-center gap-3 border-b border-border px-3 py-2 text-[12px] tabular-nums last:border-b-0"
               >
                 <div
-                  className="flex items-center gap-2 truncate"
+                  className="flex min-w-0 items-start gap-2"
                   style={{ paddingLeft: `${depth * 14}px` }}
                 >
-                  <LevelBadge level={span.worstLevel} />
-                  <span className="truncate text-foreground" title={span.service}>
-                    {span.service}
-                  </span>
-                  <span className="text-faint">·</span>
-                  <span className="truncate text-muted-foreground">{span.component}</span>
-                  {span.name && (
-                    <>
-                      <span className="text-faint">·</span>
-                      <span className="truncate font-mono text-foreground" title={span.name}>
-                        {span.name}
-                      </span>
-                    </>
-                  )}
+                  <LevelBadge level={span.worstLevel} className="mt-0.5 shrink-0" />
+                  <div className="min-w-0 leading-tight">
+                    <div
+                      className="truncate font-mono text-[12px] text-foreground"
+                      title={headline}
+                    >
+                      {headline}
+                    </div>
+                    <div className="truncate text-[10px] text-faint" title={subLabel}>
+                      {subLabel}
+                    </div>
+                  </div>
                 </div>
                 <div className="relative h-5 rounded-sm bg-muted">
+                  {/* Gridlines aligned with the axis ticks above — faint hairlines
+                      so a bar's start/end can be eyeballed against the scale. */}
+                  {ticks.map((t) => (
+                    <span
+                      key={t.pct}
+                      aria-hidden
+                      className="absolute top-0 bottom-0 w-px bg-border/60"
+                      style={{ left: `${t.pct}%` }}
+                    />
+                  ))}
                   <div
                     className={cn(
                       "absolute top-0 h-full rounded-sm",

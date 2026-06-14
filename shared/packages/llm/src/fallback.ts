@@ -7,6 +7,7 @@ import type {
   LanguageModelV3Usage,
 } from "@ai-sdk/provider";
 import type { Logger } from "@kagami/logger";
+import { getActiveCallOp } from "./context.js";
 import { emitUsage } from "./observability.js";
 import type { RetryOptions } from "./types.js";
 
@@ -127,6 +128,7 @@ export function composeFallback(
         status,
         attempts,
         attemptErrors,
+        op: getActiveCallOp(),
       });
     };
 

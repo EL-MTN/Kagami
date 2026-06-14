@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { generateObject } from "ai";
+import { withCallOp } from "@kagami/llm";
 import { model } from "../llm.js";
 import { logger } from "../logger.js";
 
@@ -62,14 +63,16 @@ export async function filterDurableFacts<T extends Candidate>(
 
   let dropIds: Set<string>;
   try {
-    const { object } = await generateObject({
-      model,
-      schema: RelevanceResult,
-      system: RELEVANCE_SYSTEM,
-      prompt: `Statements:\n${mems.map((m) => `[${m.id}] ${m.text}`).join("\n")}\n\nReturn the ids to drop.`,
-      temperature: 0,
-      abortSignal: AbortSignal.timeout(30_000),
-    });
+    const { object } = await withCallOp("relevance_filter", () =>
+      generateObject({
+        model,
+        schema: RelevanceResult,
+        system: RELEVANCE_SYSTEM,
+        prompt: `Statements:\n${mems.map((m) => `[${m.id}] ${m.text}`).join("\n")}\n\nReturn the ids to drop.`,
+        temperature: 0,
+        abortSignal: AbortSignal.timeout(30_000),
+      }),
+    );
     dropIds = new Set(object.drop);
   } catch (error) {
     logger.warn({ error }, "relevance classifier failed — keeping all candidates");

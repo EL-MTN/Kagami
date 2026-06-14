@@ -5,6 +5,7 @@ const links: { href: string; label: string; iconName: IconName }[] = [
   { href: "/", label: "Overview", iconName: "Activity" },
   { href: "/tail", label: "Live tail", iconName: "Radio" },
   { href: "/search", label: "Search", iconName: "Search" },
+  { href: "/traces", label: "Traces", iconName: "Waypoints" },
   { href: "/errors", label: "Errors", iconName: "AlertTriangle" },
   { href: "/services", label: "Services", iconName: "Layers" },
 ];

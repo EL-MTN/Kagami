@@ -1,14 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, Trash2 } from "lucide-react";
+import { LevelChips } from "@/components/level-chips";
 import { LogRow } from "@/components/log-row";
+import { ServiceSelect } from "@/components/service-select";
 import { EmptyState } from "@/components/shell";
 import { cn } from "@/lib/utils";
 import type { StoredLog } from "@/lib/api";
 
 interface TailClientProps {
   apiBase: string;
+  services: string[];
 }
 
 type ConnectionState = "connecting" | "open" | "closed" | "muted";
@@ -17,7 +20,7 @@ const LEVEL_OPTIONS = ["trace", "debug", "info", "warn", "error", "fatal"] as co
 const MAX_RENDERED = 1000;
 const REPLAY_ON_CONNECT = 100;
 
-export function TailClient({ apiBase }: TailClientProps) {
+export function TailClient({ apiBase, services }: TailClientProps) {
   const [service, setService] = useState("");
   const [levels, setLevels] = useState<Set<string>>(new Set(["info", "warn", "error", "fatal"]));
   const [paused, setPaused] = useState(false);
@@ -84,51 +87,22 @@ export function TailClient({ apiBase }: TailClientProps) {
     };
   }, [apiBase, service, levelKey, allLevelsSelected]);
 
-  const toggleLevel = useCallback((level: string) => {
-    setLevels((prev) => {
-      const next = new Set(prev);
-      if (next.has(level)) next.delete(level);
-      else next.add(level);
-      return next;
-    });
-  }, []);
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end gap-4 rounded-lg border border-border bg-card p-4">
         <label className="flex flex-col gap-1 text-[11px] tracking-wider text-faint uppercase">
           Service
-          <input
+          <ServiceSelect
             value={service}
-            onChange={(e) => setService(e.target.value)}
-            placeholder="all"
-            className="w-40 rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm text-foreground focus:border-primary focus:outline-none"
+            onChange={setService}
+            services={services}
+            className="w-40"
           />
         </label>
 
         <div className="flex flex-col gap-1 text-[11px] tracking-wider text-faint uppercase">
           Levels
-          <div className="flex flex-wrap gap-1">
-            {LEVEL_OPTIONS.map((lvl) => {
-              const on = levels.has(lvl);
-              return (
-                <button
-                  key={lvl}
-                  type="button"
-                  onClick={() => toggleLevel(lvl)}
-                  aria-pressed={on}
-                  className={cn(
-                    "rounded-md border px-2 py-1 font-mono text-[11px] transition-colors",
-                    on
-                      ? "border-primary/30 bg-primary/10 text-primary"
-                      : "border-border bg-background text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {lvl}
-                </button>
-              );
-            })}
-          </div>
+          <LevelChips value={levels} onChange={setLevels} />
         </div>
 
         <div className="ml-auto flex items-center gap-2">

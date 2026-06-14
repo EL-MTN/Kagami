@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { z } from "zod";
 import { cosineSimilarity, generateObject, type LanguageModel } from "ai";
+import { withCallOp } from "@kagami/llm";
 import { embedTexts, model } from "../llm.js";
 import { normalizeCategory } from "./categories.js";
 import { paths } from "../paths.js";
@@ -360,14 +361,16 @@ export async function planCuration(
   for (const group of groups) {
     let actions: VerdictAction[];
     try {
-      const { object } = await generateObject({
-        model: opts.model ?? model,
-        schema: CurationVerdict,
-        system: systemPrompt,
-        prompt: renderGroup(group),
-        temperature: 0,
-        abortSignal: AbortSignal.timeout(120_000),
-      });
+      const { object } = await withCallOp("curate", () =>
+        generateObject({
+          model: opts.model ?? model,
+          schema: CurationVerdict,
+          system: systemPrompt,
+          prompt: renderGroup(group),
+          temperature: 0,
+          abortSignal: AbortSignal.timeout(120_000),
+        }),
+      );
       actions = object.actions;
     } catch (error) {
       logger.warn(

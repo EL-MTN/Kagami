@@ -50,17 +50,22 @@ export async function getVersion(): Promise<{ name: string; version: string }> {
 
 interface SearchLogsParams {
   service?: string;
-  level?: string;
+  level?: string | string[];
   since?: string;
   until?: string;
   limit?: number;
 }
 
 export async function searchLogs(params: SearchLogsParams = {}): Promise<LogsResponse> {
+  const { level, ...rest } = params;
   const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
+  for (const [k, v] of Object.entries(rest)) {
     if (v !== undefined && v !== "") qs.set(k, String(v));
   }
+  // The API accepts a single comma-separated `level` param ($in match); fold an
+  // array into one value so a single string and a list share the same wire form.
+  const levelParam = Array.isArray(level) ? level.join(",") : level;
+  if (levelParam !== undefined && levelParam !== "") qs.set("level", levelParam);
   const suffix = qs.toString() ? `?${qs}` : "";
   return api(`/v1/logs${suffix}`);
 }
@@ -75,6 +80,7 @@ export interface StoredSpan {
   startedAt: string;
   durationMs: number;
   status: "ok" | "error";
+  op?: string;
 }
 
 interface TraceResponse {
@@ -87,6 +93,33 @@ interface TraceResponse {
 
 export async function getTrace(id: string): Promise<TraceResponse> {
   return api(`/v1/traces/${encodeURIComponent(id)}`);
+}
+
+export interface TraceSummary {
+  traceId: string;
+  startedAt: string;
+  services: string[];
+  rootService: string;
+  rootMsg: string;
+  logCount: number;
+  spanCount: number;
+  durationMs: number;
+  errorCount: number;
+}
+
+interface TraceSummaryResponse {
+  traces: TraceSummary[];
+}
+
+export async function listTraces(
+  params: { limit?: number; since?: string; until?: string; service?: string } = {},
+): Promise<TraceSummaryResponse> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "") qs.set(k, String(v));
+  }
+  const suffix = qs.toString() ? `?${qs}` : "";
+  return api(`/v1/traces${suffix}`);
 }
 
 export interface ErrorRecord {
@@ -108,7 +141,12 @@ interface ErrorsResponse {
 }
 
 export async function listErrors(
-  params: { service?: string; limit?: number } = {},
+  params: {
+    service?: string;
+    limit?: number;
+    sort?: "lastSeen" | "firstSeen" | "count";
+    since?: string;
+  } = {},
 ): Promise<ErrorsResponse> {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -141,6 +179,17 @@ export async function listServices(
   }
   const suffix = qs.toString() ? `?${qs}` : "";
   return api(`/v1/services${suffix}`);
+}
+
+// Distinct service names over a wide (7-day) window, for filter dropdowns.
+// Fail-soft to [] so a dead API doesn't break a page that only wants options.
+export async function listServiceNames(): Promise<string[]> {
+  try {
+    const { services } = await listServices({ windowHours: 168 });
+    return [...new Set(services.map((s) => s.service))].sort();
+  } catch {
+    return [];
+  }
 }
 
 export interface ServiceTimelineBucket {

@@ -20,6 +20,10 @@ interface StoredSpan {
   startedAt: Date;
   durationMs: number;
   status: "ok" | "error";
+  // @kagami/llm call-op label (e.g. "answer", "embed"), lifted from
+  // `fields.llm.op` when the span wraps an LLM generate call. Optional —
+  // non-LLM spans (HTTP requests, etc.) don't carry it.
+  op?: string;
 }
 
 async function getSpansCollection(): Promise<Collection<StoredSpan>> {
@@ -29,6 +33,7 @@ async function getSpansCollection(): Promise<Collection<StoredSpan>> {
 
 interface SpanEventFields {
   event?: { kind?: unknown; name?: unknown; duration_ms?: unknown; status?: unknown };
+  llm?: { op?: unknown };
 }
 
 /**
@@ -39,7 +44,8 @@ interface SpanEventFields {
  * along under `fields.event`.
  */
 export function extractSpan(doc: StoredLog): StoredSpan | undefined {
-  const ev = (doc.fields as SpanEventFields | undefined)?.event;
+  const fields = doc.fields as SpanEventFields | undefined;
+  const ev = fields?.event;
   if (!ev || ev.kind !== "span") return undefined;
   if (!doc.traceId || !doc.spanId) return undefined;
   if (typeof ev.name !== "string" || typeof ev.duration_ms !== "number") return undefined;
@@ -57,6 +63,8 @@ export function extractSpan(doc: StoredLog): StoredSpan | undefined {
     status,
   };
   if (doc.parentSpanId !== undefined) span.parentSpanId = doc.parentSpanId;
+  const op = fields?.llm?.op;
+  if (typeof op === "string" && op.length > 0) span.op = op;
   return span;
 }
 

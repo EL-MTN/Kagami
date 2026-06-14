@@ -302,9 +302,15 @@ async function evaluateSpike(
   } satisfies SpikePayload);
 }
 
+export type ErrorSortField = "lastSeen" | "firstSeen" | "count";
+
 interface ListErrorsOptions {
   service?: string;
   limit?: number;
+  /** Mongo sort field (always descending). Defaults to `lastSeen`. */
+  sort?: ErrorSortField;
+  /** Lower bound on `lastSeen` — drops fingerprints not seen since this time. */
+  since?: Date;
 }
 
 // Public-API shape — strips the spike-detection state fields so the
@@ -316,13 +322,15 @@ export async function listErrors(opts: ListErrorsOptions = {}): Promise<PublicEr
   const coll = await getErrorsCollection();
   const filter: Filter<ErrorRecord> = {};
   if (opts.service) filter.service = opts.service;
+  if (opts.since) filter.lastSeen = { $gte: opts.since };
+  const sortField: ErrorSortField = opts.sort ?? "lastSeen";
   // The projection drops the spike-state fields server-side; the return
   // type's `Omit` reflects that without needing a cast (ErrorRecord is
   // assignable to PublicErrorRecord since the omitted fields were already
   // optional).
   return coll
     .find(filter, { projection: { windowStart: 0, windowCount: 0, lastSpikeAlertAt: 0 } })
-    .sort({ lastSeen: -1 })
+    .sort({ [sortField]: -1 })
     .limit(Math.min(opts.limit ?? 100, 500))
     .toArray();
 }

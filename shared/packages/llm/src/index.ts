@@ -5,6 +5,8 @@ import { timeoutMiddleware } from "./middleware.js";
 import { buildEmbedding, buildLeaf, providerLabel, resolveModelId } from "./provider.js";
 import type { Inference, InferenceOptions, ProviderConfig } from "./types.js";
 
+export { withCallOp } from "./context.js";
+
 export type {
   Inference,
   InferenceOptions,
