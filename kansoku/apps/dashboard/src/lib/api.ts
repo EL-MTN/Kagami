@@ -181,11 +181,14 @@ export async function listServices(
   return api(`/v1/services${suffix}`);
 }
 
-// Distinct service names over a wide (7-day) window, for filter dropdowns.
+// Distinct service names for filter dropdowns. Use the full log-retention
+// window (30d) so services that are quiet now but still have retained logs
+// stay selectable; services aged past even that (errors retain 90d) are
+// covered by ServiceSelect injecting the active filter value as an option.
 // Fail-soft to [] so a dead API doesn't break a page that only wants options.
 export async function listServiceNames(): Promise<string[]> {
   try {
-    const { services } = await listServices({ windowHours: 168 });
+    const { services } = await listServices({ windowHours: 24 * 30 });
     return [...new Set(services.map((s) => s.service))].sort();
   } catch {
     return [];

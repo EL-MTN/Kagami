@@ -29,6 +29,16 @@ export function ServiceSelect({
   // `defaultValue` only in the uncontrolled case.
   const controlled = value !== undefined;
 
+  // Always keep the active filter value selectable, even if it isn't in
+  // `services` (e.g. a deep-linked service whose logs have aged past the
+  // name-list window) — otherwise the <select> would silently drop the current
+  // filter on next render.
+  const current = controlled ? value : defaultValue;
+  const options =
+    current && current.length > 0 && !services.includes(current)
+      ? [current, ...services]
+      : services;
+
   return (
     <select
       name={name}
@@ -40,7 +50,7 @@ export function ServiceSelect({
       )}
     >
       <option value="">any</option>
-      {services.map((service) => (
+      {options.map((service) => (
         <option key={service} value={service}>
           {service}
         </option>

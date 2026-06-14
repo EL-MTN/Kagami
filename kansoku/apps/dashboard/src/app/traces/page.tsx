@@ -1,24 +1,44 @@
 import Link from "next/link";
 import { ArrowRight, AlertTriangle } from "lucide-react";
 import { PageHeader, EmptyState } from "@/components/shell";
-import { listTraces, type TraceSummary } from "@/lib/api";
+import { ServiceSelect } from "@/components/service-select";
+import { listTraces, listServiceNames, type TraceSummary } from "@/lib/api";
 import { formatDateTime, formatRelative } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+// Window choices in hours. Defaults to 7d so the default list is bounded by the
+// time index rather than scanning the whole retained set; 30d is the full
+// log-retention ceiling ("everything retained").
+const WINDOW_OPTIONS: { hours: number; label: string }[] = [
+  { hours: 1, label: "1h" },
+  { hours: 6, label: "6h" },
+  { hours: 24, label: "1d" },
+  { hours: 24 * 7, label: "7d" },
+  { hours: 24 * 30, label: "30d" },
+];
+const DEFAULT_WINDOW_HOURS = 24 * 7;
+
 interface TracesPageProps {
-  searchParams: Promise<{ service?: string; limit?: string }>;
+  searchParams: Promise<{ service?: string; limit?: string; window?: string }>;
 }
 
 export default async function TracesPage({ searchParams }: TracesPageProps) {
   const params = await searchParams;
   const service = params.service ?? "";
   const limit = Math.min(Math.max(Number.parseInt(params.limit ?? "50", 10) || 50, 1), 200);
+  const windowHours = WINDOW_OPTIONS.some((w) => String(w.hours) === params.window)
+    ? Number.parseInt(params.window!, 10)
+    : DEFAULT_WINDOW_HOURS;
+  const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
+
+  const names = await listServiceNames();
 
   let traces: TraceSummary[] = [];
   let fetchError: string | undefined;
   try {
-    const res = await listTraces({ service: service || undefined, limit });
+    const res = await listTraces({ service: service || undefined, limit, since });
     traces = res.traces;
   } catch (err) {
     fetchError = (err as Error).message;
@@ -36,16 +56,11 @@ export default async function TracesPage({ searchParams }: TracesPageProps) {
         }
       />
 
-      <form method="get" className="rounded-lg border border-border bg-card p-4">
+      <form method="get" className="space-y-4 rounded-lg border border-border bg-card p-4">
         <div className="grid grid-cols-[1fr_120px_auto] gap-3">
           <label className="flex flex-col gap-1 text-[11px] tracking-wider text-faint uppercase">
             Service
-            <input
-              name="service"
-              defaultValue={service}
-              placeholder="any"
-              className="rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm text-foreground focus:border-primary focus:outline-none"
-            />
+            <ServiceSelect name="service" defaultValue={service} services={names} />
           </label>
           <label className="flex flex-col gap-1 text-[11px] tracking-wider text-faint uppercase">
             Limit
@@ -65,6 +80,33 @@ export default async function TracesPage({ searchParams }: TracesPageProps) {
             Filter
           </button>
         </div>
+
+        <fieldset className="flex items-center gap-2 text-[11px] tabular-nums text-faint">
+          <legend className="float-left mr-2 tracking-wider uppercase">Window</legend>
+          {WINDOW_OPTIONS.map((w) => {
+            const active = w.hours === windowHours;
+            return (
+              <label
+                key={w.hours}
+                className={cn(
+                  "cursor-pointer rounded-md border px-2 py-0.5 font-mono transition-colors",
+                  active
+                    ? "border-primary/30 bg-primary/10 text-primary"
+                    : "border-border bg-background text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <input
+                  type="radio"
+                  name="window"
+                  value={w.hours}
+                  defaultChecked={active}
+                  className="sr-only"
+                />
+                {w.label}
+              </label>
+            );
+          })}
+        </fieldset>
       </form>
 
       {fetchError && (

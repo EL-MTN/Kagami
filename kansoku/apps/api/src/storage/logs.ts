@@ -126,31 +126,61 @@ interface ListTracesOptions {
 // unbounded window can't fan out an arbitrarily large $group. At Kagami's
 // scale this comfortably covers the recent traces a dashboard list needs.
 const TRACE_SCAN_CAP = 50_000;
+// Default lookback when the caller gives no `since`, so a bare all-services
+// list is bounded by the time-series time index instead of sorting the whole
+// retained traced-log set. The dashboard always sends an explicit window.
+const DEFAULT_TRACE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Aggregate the `logs` time-series collection into one TraceSummary per
- * traceId over a window, newest-first by startedAt. Logs without a traceId
- * are excluded. The earliest log in each trace supplies rootService/rootMsg;
- * spanCount is the count of distinct spanIds; durationMs is max(ts)-min(ts);
- * errorCount counts error/fatal lines; services is the distinct set of
- * meta.service. The pre-$group $match (window + optional service) hits the
- * existing indexes, and the scan is bounded by TRACE_SCAN_CAP.
+ * traceId, newest-first by startedAt. Logs without a traceId are excluded.
+ * The earliest log in each trace supplies rootService/rootMsg; spanCount is
+ * the count of distinct spanIds; durationMs is max(ts)-min(ts); errorCount
+ * counts error/fatal lines; services is the distinct set of meta.service.
+ *
+ * The scan is bounded two ways: a time window ($match on ts, defaulting to the
+ * last 7d so the time index can satisfy the $sort before TRACE_SCAN_CAP). When
+ * a `service` is given we first resolve the traces that *involve* it, then
+ * aggregate the FULL traces — matching by service before the $group would
+ * compute each summary (root, errors, services, duration) from only that
+ * service's slice of a cross-service trace, disagreeing with the trace detail.
  */
 export async function listTraces(opts: ListTracesOptions = {}): Promise<TraceSummary[]> {
   const coll = await getLogsCollection();
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
 
-  // Exclude logs with no traceId. Post-Phase-3 every log carries one, but be
-  // defensive against absent / empty-string values so they don't aggregate
-  // into a phantom "" trace.
-  const match: Filter<StoredLog> = { traceId: { $exists: true, $ne: "" } };
-  if (opts.service) match["meta.service"] = opts.service;
-  if (opts.since || opts.until) {
-    const tsFilter: { $gte?: Date; $lte?: Date } = {};
-    if (opts.since) tsFilter.$gte = opts.since;
-    if (opts.until) tsFilter.$lte = opts.until;
-    match.ts = tsFilter;
+  const since = opts.since ?? new Date(Date.now() - DEFAULT_TRACE_WINDOW_MS);
+  const tsFilter: { $gte: Date; $lte?: Date } = { $gte: since };
+  if (opts.until) tsFilter.$lte = opts.until;
+
+  // Service filter: resolve the most-recent traces that involve this service in
+  // the window first, then (below) aggregate their full cross-service logs.
+  let traceScope: string[] | undefined;
+  if (opts.service) {
+    const ids = (await coll
+      .aggregate([
+        {
+          $match: {
+            "meta.service": opts.service,
+            traceId: { $exists: true, $ne: "" },
+            ts: tsFilter,
+          },
+        },
+        { $group: { _id: "$traceId", startedAt: { $min: "$ts" } } },
+        { $sort: { startedAt: -1 } },
+        { $limit: limit },
+      ])
+      .toArray()) as Array<{ _id: string }>;
+    traceScope = ids.map((d) => d._id);
+    if (traceScope.length === 0) return [];
   }
+
+  // Exclude logs with no traceId (defensive against absent/empty values so they
+  // don't aggregate into a phantom "" trace). With a service scope, match the
+  // resolved traces by id — full traces, no slice, no ts bound (already ≤ limit).
+  const match: Filter<StoredLog> = traceScope
+    ? { traceId: { $in: traceScope } }
+    : { traceId: { $exists: true, $ne: "" }, ts: tsFilter };
 
   const rows = (await coll
     .aggregate([
