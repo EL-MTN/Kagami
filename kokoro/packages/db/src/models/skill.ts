@@ -209,13 +209,16 @@ export async function updateSkillIfVersion(
 const CONTENT_KEYS = ["description", "body", "triggers", "tags"] as const;
 
 /**
- * `updateSkillIfVersion` plus a pre-edit history snapshot: when the patch
- * changes content, the about-to-be-overwritten version is recorded to
- * `SkillRevision` BEFORE the compare-and-set, so a bad approved curation edit
- * (or a regrettable merge) stays recoverable. The snapshot is best-effort and
- * idempotent — it never blocks or fails the edit — and taking it before the CAS
- * (rather than after) trades a rare advisory `reason` mislabel on a lost race
- * for a guarantee that recoverability is never dropped by a crash in the gap.
+ * `updateSkillIfVersion` plus a history snapshot of the version it overwrites,
+ * so a bad approved curation edit (or a regrettable merge) stays recoverable.
+ * When the patch changes content, the pre-edit version is read first (only to
+ * supply the snapshot content) and recorded to `SkillRevision` ONLY AFTER the
+ * compare-and-set SUCCEEDS — a rejected edit (raced, archived, or gone) writes
+ * no revision, so it can neither pollute that version's provenance nor evict a
+ * real rollback point at the retention cap. The snapshot is best-effort and
+ * idempotent, so it never blocks or fails the edit; the only exposure is the
+ * narrow window between the atomic CAS write and the snapshot, where a hard
+ * crash drops one version's history (the chain self-heals on the next edit).
  * The CAS itself is unchanged, so a concurrent edit is still rejected, not
  * clobbered. Returns exactly what `updateSkillIfVersion` returns.
  */
@@ -227,33 +230,32 @@ export async function updateSkillIfVersionWithHistory(
   supersededBy: { reason: SkillRevisionReason; actor: SkillRevisionActor; note?: string | null },
 ): Promise<ISkill | null> {
   const isContentEdit = CONTENT_KEYS.some((key) => patch[key] !== undefined);
-  if (isContentEdit) {
-    // Same filter as the CAS below so the snapshot reflects exactly the version
-    // the edit will supersede; a no-match (gone / raced / archived) snapshots
-    // nothing and the CAS then returns null for the caller to disambiguate.
-    const before = await Skill.findOne({
-      _id: skillId,
-      chatId,
-      version: expectedVersion,
-      enabled: true,
-    });
-    if (before) {
-      await snapshotSkillVersion(
-        {
-          skillId: before.id,
-          chatId: before.chatId,
-          version: before.version,
-          name: before.name,
-          description: before.description,
-          body: before.body,
-          triggers: before.triggers,
-          tags: before.tags,
-        },
-        supersededBy,
-      );
-    }
+  // Read the pre-edit version up front (same filter as the CAS) purely to
+  // supply the snapshot content. If the CAS then succeeds, the version was
+  // still `expectedVersion` at write time, so nothing edited it in between and
+  // this read is accurate.
+  const before = isContentEdit
+    ? await Skill.findOne({ _id: skillId, chatId, version: expectedVersion, enabled: true })
+    : null;
+
+  const updated = await updateSkillIfVersion(skillId, chatId, expectedVersion, patch);
+
+  if (updated && before) {
+    await snapshotSkillVersion(
+      {
+        skillId: before.id,
+        chatId: before.chatId,
+        version: before.version,
+        name: before.name,
+        description: before.description,
+        body: before.body,
+        triggers: before.triggers,
+        tags: before.tags,
+      },
+      supersededBy,
+    );
   }
-  return updateSkillIfVersion(skillId, chatId, expectedVersion, patch);
+  return updated;
 }
 
 // --- Skill-review (curation) pre-filter tuning. Facts only — the predicate

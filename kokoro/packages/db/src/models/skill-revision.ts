@@ -5,9 +5,9 @@ import { logger } from "@kokoro/shared";
  * Per-version content history for skills. A skill's curation actions (refine /
  * merge) and dashboard content edits OVERWRITE the live `Skill` doc in place,
  * so without this collection a bad approved edit is irrecoverable. Each row is
- * an immutable snapshot of one version's content, written the moment that
- * version is about to be superseded by a content edit — the current version
- * always lives on the `Skill` doc, so the full timeline is `revisions ∪ live`.
+ * an immutable snapshot of one version's content, written right after that
+ * version is superseded by a content edit — the current version always lives on
+ * the `Skill` doc, so the full timeline is `revisions ∪ live`.
  *
  * This is the skill counterpart of the routine loop-closure snapshot
  * (`priorPrompt`/`priorParameters` on the routine doc), generalized from one
@@ -88,12 +88,14 @@ export interface SkillVersionSnapshot {
 }
 
 /**
- * Record a skill version's content before it is overwritten. Idempotent on
- * `(skillId, version)` via `$setOnInsert` — the first writer wins and the
- * content of a version is never rewritten, so a retried dispatch or a raced
- * edit can't corrupt or duplicate a row. Best-effort: a snapshot failure is
- * logged and swallowed so it can never wedge the edit it precedes (the caller
- * still applies the edit). Prunes the oldest rows past `MAX_REVISIONS_PER_SKILL`.
+ * Record a superseded skill version's content — called AFTER the superseding
+ * edit has landed, so a rejected edit never leaves a stray revision. Idempotent
+ * on `(skillId, version)` via `$setOnInsert` — the first writer wins and the
+ * content of a version is never rewritten, so a retried dispatch can't corrupt
+ * or duplicate a row. Best-effort: a snapshot failure is logged and swallowed
+ * so it can never wedge the edit it follows. Prunes the oldest rows past
+ * `MAX_REVISIONS_PER_SKILL` (also post-success, so a rejected edit can't evict
+ * a real rollback point).
  */
 export async function snapshotSkillVersion(
   snapshot: SkillVersionSnapshot,

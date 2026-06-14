@@ -83,26 +83,30 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   if (data.linkedRoutineIds !== undefined) patch.linkedRoutineIds = data.linkedRoutineIds;
   if (editsVersionedFields(patch)) patch.version = existing.version + 1;
 
-  if (editsContentFields(patch)) {
-    await snapshotSkillVersion(
-      {
-        skillId: existing.id,
-        chatId: existing.chatId,
-        version: existing.version,
-        name: existing.name,
-        description: existing.description,
-        body: existing.body,
-        triggers: existing.triggers,
-        tags: existing.tags,
-      },
-      { reason: "manual-edit", actor: "dashboard" },
-    );
-  }
-
   try {
     const updated = await updateSkill(id, patch);
     if (!updated) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Snapshot the pre-edit version to history only AFTER the update lands, so a
+    // rejected PATCH — e.g. a rename hitting the unique (chatId, name) index,
+    // which throws below — never leaves a bogus revision for the still-live
+    // version. `existing` still holds the pre-edit content.
+    if (editsContentFields(patch)) {
+      await snapshotSkillVersion(
+        {
+          skillId: existing.id,
+          chatId: existing.chatId,
+          version: existing.version,
+          name: existing.name,
+          description: existing.description,
+          body: existing.body,
+          triggers: existing.triggers,
+          tags: existing.tags,
+        },
+        { reason: "manual-edit", actor: "dashboard" },
+      );
     }
 
     const detail = await getSkillDetail(id);

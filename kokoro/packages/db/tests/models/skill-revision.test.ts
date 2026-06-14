@@ -151,6 +151,32 @@ describe("updateSkillIfVersionWithHistory", () => {
     expect(await listSkillRevisions(skill.id, "chat-1")).toHaveLength(0);
   });
 
+  it("a rejected edit at the retention cap neither snapshots nor evicts a rollback point", async () => {
+    const skill = await createSkill("chat-1", baseInput);
+    // Seed history to the cap, then attempt an edit against the wrong version.
+    for (let version = 1; version <= MAX_REVISIONS_PER_SKILL; version++) {
+      await snapshotSkillVersion(snapshotInput(skill.id, version, `seed-${version}`), {
+        reason: "refine",
+        actor: "curator",
+      });
+    }
+    const before = await listSkillRevisions(skill.id, "chat-1", 100);
+    expect(before).toHaveLength(MAX_REVISIONS_PER_SKILL);
+
+    const result = await updateSkillIfVersionWithHistory(
+      skill.id,
+      "chat-1",
+      999, // wrong version → CAS miss
+      { body: "x" },
+      { reason: "refine", actor: "curator" },
+    );
+
+    expect(result).toBeNull();
+    const after = await listSkillRevisions(skill.id, "chat-1", 100);
+    expect(after).toHaveLength(MAX_REVISIONS_PER_SKILL);
+    expect(after[after.length - 1].version).toBe(1); // oldest rollback point still there
+  });
+
   it("round-trips a rollback: restoring old content is itself recorded and reversible", async () => {
     const skill = await createSkill("chat-1", baseInput);
 

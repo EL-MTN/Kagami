@@ -13,6 +13,15 @@ import { OWNER } from "../persona";
  * change lands only after Goshujin-sama taps Approve.
  */
 
+// The review LLM's one-line `rationale` is stored verbatim as the revision
+// `note`, but the dispatcher caps `note` at 500 chars — a longer rationale
+// would raise a valid-looking bubble whose Approve then fails `invalid_args`.
+// Cap it here, at the single point where rationale becomes a dispatched arg, so
+// the bubble text (which can be longer) is unaffected. Keep ≤ the dispatcher's
+// `updateSkill`/`mergeSkills` `note` max.
+const MAX_NOTE_LENGTH = 500;
+const toNote = (rationale: string): string => rationale.slice(0, MAX_NOTE_LENGTH);
+
 /** The curated content fields. `enabled`, `name`, and `source` are deliberately
  * absent — curation rewrites WHAT a skill says, never renames its stable handle
  * or re-enables it. */
@@ -218,7 +227,7 @@ export async function proposeSkillRefinement(opts: {
         signature,
         skillId: skill.id,
         baseVersion: skill.version,
-        note: rationale,
+        note: toNote(rationale),
         ...(pruned.description !== undefined ? { newDescription: pruned.description } : {}),
         ...(pruned.body !== undefined ? { newBody: pruned.body } : {}),
         ...(pruned.triggers !== undefined ? { newTriggers: pruned.triggers } : {}),
@@ -331,7 +340,7 @@ export async function proposeSkillMerge(opts: {
         signature,
         skillId: survivor.id,
         baseVersion: survivor.version,
-        note: rationale,
+        note: toNote(rationale),
         absorbed: absorbed.map((s) => ({ skillId: s.id, baseVersion: s.version })),
         newBody: pruned.body,
         ...(pruned.description !== undefined ? { newDescription: pruned.description } : {}),
