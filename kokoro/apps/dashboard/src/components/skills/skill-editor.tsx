@@ -64,6 +64,10 @@ function isDirty(draft: Draft, saved: Draft): boolean {
 export function SkillEditor({ skill }: SkillEditorProps) {
   const [saved, setSaved] = useState<Draft>(() => skillToDraft(skill));
   const [draft, setDraft] = useState<Draft>(() => skillToDraft(skill));
+  // Track the live version across saves so each PATCH CASes on the version this
+  // editor last knew about — a stale or racing save then 409s instead of
+  // silently clobbering another edit (and dropping its history snapshot).
+  const [version, setVersion] = useState(skill.version);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [flash, setFlash] = useState<string | null>(null);
@@ -122,6 +126,7 @@ export function SkillEditor({ skill }: SkillEditorProps) {
     }
     if (normalizedDraft.enabled !== normalizedSaved.enabled) body.enabled = normalizedDraft.enabled;
     if (normalizedDraft.source !== normalizedSaved.source) body.source = normalizedDraft.source;
+    body.expectedVersion = version;
 
     try {
       const res = await fetch(`/api/skills/${skill.id}`, {
@@ -148,6 +153,7 @@ export function SkillEditor({ skill }: SkillEditorProps) {
       const newSaved = skillToDraft(data.skill!);
       setSaved(newSaved);
       setDraft(newSaved);
+      setVersion(data.skill!.version);
       setFlash("Saved");
       setTimeout(() => setFlash(null), 2000);
     } catch {
@@ -278,7 +284,7 @@ export function SkillEditor({ skill }: SkillEditorProps) {
       </div>
 
       <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-border pt-6 text-[10px] uppercase tracking-[0.15em] text-faint">
-        <span>v{skill.version}</span>
+        <span>v{version}</span>
         <span>Chat: {skill.chatId}</span>
         <span>Uses: {skill.usageCount}</span>
         {skill.lastUsedAt && (

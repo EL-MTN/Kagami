@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getSkillById, getSkillRevision, updateSkillIfVersionWithHistory } from "@kokoro/db";
 import { ensureDB } from "@/lib/db";
 import { getSkillDetail } from "@/lib/queries/skills";
@@ -10,6 +11,13 @@ function isValidObjectId(id: string): boolean {
   return mongoose.Types.ObjectId.isValid(id);
 }
 
+// The version the history page was rendered at. The restore CASes on THIS, not a
+// fresh re-read, so a restore confirmed from a stale page (the skill moved on
+// since it loaded) returns 409 instead of overwriting the intervening edit.
+const restoreBodySchema = z.object({
+  expectedVersion: z.number().int().nonnegative(),
+});
+
 /**
  * Restore a skill's content to one of its superseded versions. Rollback is just
  * another content edit: it snapshots the now-current version first (so the
@@ -20,7 +28,7 @@ function isValidObjectId(id: string): boolean {
  * archived (`requireEnabled: false`). A direct operator action, so no approval
  * bubble.
  */
-export async function POST(_request: Request, { params }: RouteParams) {
+export async function POST(request: Request, { params }: RouteParams) {
   const { id, version } = await params;
   if (!isValidObjectId(id)) {
     return NextResponse.json({ error: "Invalid skill ID" }, { status: 400 });
@@ -29,6 +37,12 @@ export async function POST(_request: Request, { params }: RouteParams) {
   if (!Number.isInteger(targetVersion) || targetVersion < 1) {
     return NextResponse.json({ error: "Invalid version" }, { status: 400 });
   }
+
+  const parsedBody = restoreBodySchema.safeParse(await request.json().catch(() => null));
+  if (!parsedBody.success) {
+    return NextResponse.json({ error: "expectedVersion is required" }, { status: 400 });
+  }
+  const { expectedVersion } = parsedBody.data;
 
   await ensureDB();
 
@@ -45,7 +59,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
   const restored = await updateSkillIfVersionWithHistory(
     id,
     live.chatId,
-    live.version,
+    expectedVersion,
     {
       description: revision.description,
       body: revision.body,
@@ -54,14 +68,14 @@ export async function POST(_request: Request, { params }: RouteParams) {
     },
     { reason: "rollback", actor: "dashboard", note: `Restored v${targetVersion}` },
     // Operator action: allow restoring an archived skill's content (it stays
-    // archived). The CAS still guards on version, so a concurrent edit is
-    // rejected, not clobbered.
+    // archived). The CAS still guards on `expectedVersion`, so a concurrent edit
+    // is rejected, not clobbered.
     { requireEnabled: false },
   );
 
   if (!restored) {
-    // The CAS only guards on version now, so this means the skill changed
-    // (or was deleted) between loading the history and confirming the restore.
+    // The CAS guards on the page's `expectedVersion`, so this means the skill
+    // changed (or was deleted) between loading the history and confirming.
     return NextResponse.json(
       { error: "Skill changed since the history was loaded — reload and try again" },
       { status: 409 },

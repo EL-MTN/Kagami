@@ -50,6 +50,10 @@ export function SkillHistory({ skillId, currentVersion, revisions }: SkillHistor
     try {
       const res = await fetch(`/api/skills/${skillId}/revisions/${target.version}`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // CAS against the version this page was rendered at, so a restore from a
+        // stale page (the skill moved on) is rejected rather than clobbering it.
+        body: JSON.stringify({ expectedVersion: currentVersion }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -115,13 +119,42 @@ export function SkillHistory({ skillId, currentVersion, revisions }: SkillHistor
                   Restore
                 </Button>
               </div>
+              {/* Restore writes ALL content fields, so the preview shows them
+                  all — otherwise a revision that only changed metadata would
+                  look identical to current (same body) yet silently roll the
+                  metadata back. */}
               <details className="mt-3 group">
                 <summary className="cursor-pointer text-[10px] uppercase tracking-[0.15em] text-faint hover:text-muted-foreground">
                   View content
                 </summary>
-                <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-background/60 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
-                  {revision.body}
-                </pre>
+                <dl className="mt-2 space-y-2 text-[11px] text-muted-foreground">
+                  <div>
+                    <dt className="text-[10px] uppercase tracking-[0.15em] text-faint">
+                      Description
+                    </dt>
+                    <dd className="font-mono">{revision.description}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] uppercase tracking-[0.15em] text-faint">Triggers</dt>
+                    <dd className="font-mono">
+                      {revision.triggers.length > 0 ? revision.triggers.join(", ") : "(none)"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] uppercase tracking-[0.15em] text-faint">Tags</dt>
+                    <dd className="font-mono">
+                      {revision.tags.length > 0 ? revision.tags.join(", ") : "(none)"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] uppercase tracking-[0.15em] text-faint">Body</dt>
+                    <dd>
+                      <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-background/60 p-3 font-mono leading-relaxed">
+                        {revision.body}
+                      </pre>
+                    </dd>
+                  </div>
+                </dl>
               </details>
             </li>
           ))}
@@ -135,7 +168,7 @@ export function SkillHistory({ skillId, currentVersion, revisions }: SkillHistor
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Restore this skill&apos;s content to{" "}
+              Restore all content (description, body, triggers, tags) to{" "}
               <span className="font-medium text-foreground">v{target?.version}</span>? The current
               version (v{currentVersion}) is snapshotted first, so this is itself reversible. The
               name and enabled state are left unchanged.

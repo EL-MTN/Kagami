@@ -81,12 +81,39 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   if (data.enabled !== undefined) patch.enabled = data.enabled;
   if (data.source !== undefined) patch.source = data.source;
   if (data.linkedRoutineIds !== undefined) patch.linkedRoutineIds = data.linkedRoutineIds;
-  if (editsVersionedFields(patch)) patch.version = existing.version + 1;
+
+  // The version the editor loaded (when sent). Reject a save from a stale editor
+  // up front, then CAS the write on it so two racing saves can't both bump from
+  // the same base — the loser gets 409 instead of silently overwriting the
+  // other's content and dropping its history snapshot.
+  const expectedVersion = data.expectedVersion ?? existing.version;
+  if (existing.version !== expectedVersion) {
+    return NextResponse.json(
+      {
+        error: "Skill changed since you loaded it — reload and try again",
+        actual: existing.version,
+      },
+      { status: 409 },
+    );
+  }
+  if (editsVersionedFields(patch)) patch.version = expectedVersion + 1;
 
   try {
-    const updated = await updateSkill(id, patch);
+    const updated = await updateSkill(id, patch, undefined, { expectedVersion });
     if (!updated) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      // CAS miss: another save bumped the version between the read above and
+      // this write (or the skill was deleted). Disambiguate.
+      const current = await getSkillById(id);
+      if (!current) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      return NextResponse.json(
+        {
+          error: "Skill changed since you loaded it — reload and try again",
+          actual: current.version,
+        },
+        { status: 409 },
+      );
     }
 
     // Snapshot the pre-edit version to history only AFTER the update lands, so a

@@ -80,6 +80,24 @@ describe("Skill model helpers", () => {
     expect(await deleteSkill(skill.id, "chat-1")).toBe(true);
     expect(await getSkillByName("chat-1", baseInput.name)).toBeNull();
   });
+
+  it("updateSkill with expectedVersion CASes — a stale save writes nothing", async () => {
+    const skill = await createSkill("chat-1", baseInput); // v1
+    const first = await updateSkill(skill.id, { body: "v2 body", version: 2 }, "chat-1", {
+      expectedVersion: 1,
+    });
+    expect(first?.version).toBe(2);
+
+    // A second save still believing it's editing v1 must be rejected, not clobber v2.
+    const stale = await updateSkill(skill.id, { body: "v3 body", version: 3 }, "chat-1", {
+      expectedVersion: 1,
+    });
+    expect(stale).toBeNull();
+
+    const current = await getSkillByName("chat-1", baseInput.name);
+    expect(current?.version).toBe(2);
+    expect(current?.body).toBe("v2 body");
+  });
 });
 
 describe("updateSkillIfVersion", () => {

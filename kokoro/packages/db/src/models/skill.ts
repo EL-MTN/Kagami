@@ -138,9 +138,15 @@ export async function updateSkill(
     >
   > & { linkedRoutineIds?: string[] },
   chatId?: string,
+  opts: { expectedVersion?: number } = {},
 ): Promise<ISkill | null> {
   const filter: Record<string, unknown> = { _id: skillId };
   if (chatId) filter.chatId = chatId;
+  // Optimistic-concurrency guard for the dashboard PATCH: when the caller passes
+  // the version it edited, the write lands only if the skill is still at that
+  // version, so two racing saves (or a save from a stale editor) get a null
+  // instead of silently clobbering each other and dropping a history snapshot.
+  if (opts.expectedVersion !== undefined) filter.version = opts.expectedVersion;
   const update: Record<string, unknown> = { ...patch };
   if (patch.linkedRoutineIds) {
     update.linkedRoutineIds = patch.linkedRoutineIds.map((id) => new Types.ObjectId(id));

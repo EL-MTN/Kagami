@@ -53,6 +53,10 @@ export const skillPatchSchema = z.object({
   enabled: z.boolean().optional(),
   source: z.enum(skillSources).optional(),
   linkedRoutineIds: z.array(objectIdSchema).optional(),
+  // The version the editor loaded; the PATCH lands only if the skill is still
+  // there, so a stale or racing save returns 409 instead of clobbering an
+  // intervening edit (and losing its history snapshot).
+  expectedVersion: z.number().int().nonnegative().optional(),
 });
 
 export interface SkillListItem {

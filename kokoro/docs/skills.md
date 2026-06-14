@@ -71,7 +71,7 @@ The Kokoro dashboard exposes `/skills` and `/skills/[id]`:
 - delete skills
 - view version history and restore a prior version (see [Version History & Rollback](#version-history--rollback))
 
-API routes live under `apps/dashboard/src/app/api/skills`. Content edits bump `version` (which also clears `lastReviewedAt` — the edited skill re-enters curation) and snapshot the pre-edit version to history; enabled-only toggles do neither. `linkedRoutineIds` must be Mongo ObjectId-shaped strings.
+API routes live under `apps/dashboard/src/app/api/skills`. Content edits bump `version` (which also clears `lastReviewedAt` — the edited skill re-enters curation) and snapshot the pre-edit version to history; enabled-only toggles do neither. Both a content PATCH and a restore are version-guarded on the version the editor / history page loaded (`expectedVersion`), so a stale or racing write returns 409 instead of silently clobbering an intervening edit. `linkedRoutineIds` must be Mongo ObjectId-shaped strings.
 
 ## Package Import/Export
 
