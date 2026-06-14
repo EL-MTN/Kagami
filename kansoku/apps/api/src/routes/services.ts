@@ -1,11 +1,28 @@
 import { Router } from "express";
 import { z } from "zod";
-import { serviceSummary, serviceTimeline, type TimelineGranularity } from "../storage/metrics.js";
+import {
+  distinctServiceNames,
+  serviceSummary,
+  serviceTimeline,
+  type TimelineGranularity,
+} from "../storage/metrics.js";
 
 export const servicesRouter = Router();
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
+
+// Distinct service names across all retained logs (no time window) for filter
+// dropdowns — separate from the windowed summary so the names list isn't capped
+// to a 30d window and doesn't pay for the summary's per-service aggregation.
+servicesRouter.get("/services/names", async (_req, res, next) => {
+  try {
+    const names = await distinctServiceNames();
+    res.json({ names });
+  } catch (err) {
+    next(err);
+  }
+});
 
 const SummaryQuery = z.object({
   windowHours: z.coerce.number().int().positive().max(720).optional(), // up to 30 days

@@ -181,17 +181,15 @@ export async function listServices(
   return api(`/v1/services${suffix}`);
 }
 
-// Distinct service names for filter dropdowns. Use the maximum log-retention
-// ceiling (365d, the cap on KANSOKU_LOGS_TTL_DAYS) so that — even in
-// deployments that raise retention above 30d and use the /traces "all" window —
-// services with only older retained logs remain discoverable in the dropdown,
-// not just selectable via an already-active value. The window self-scales:
-// where retention is the 30d default, only ~30d of logs exist to scan anyway.
-// Fail-soft to [] so a dead API doesn't break a page that only wants options.
+// Distinct service names for filter dropdowns, from the dedicated
+// `/v1/services/names` endpoint (a `distinct` over all retained logs, with no
+// time window). This keeps every retained service discoverable regardless of
+// KANSOKU_LOGS_TTL_DAYS, without a windowHours value the summary endpoint would
+// reject. Fail-soft to [] so a dead API doesn't break a page that wants options.
 export async function listServiceNames(): Promise<string[]> {
   try {
-    const { services } = await listServices({ windowHours: 24 * 365 });
-    return [...new Set(services.map((s) => s.service))].sort();
+    const { names } = await api<{ names: string[] }>("/v1/services/names");
+    return names;
   } catch {
     return [];
   }

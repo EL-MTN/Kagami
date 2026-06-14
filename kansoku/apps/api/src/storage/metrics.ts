@@ -13,6 +13,19 @@ async function getLogsCollection(): Promise<Collection<StoredLog>> {
   return db.collection<StoredLog>("logs");
 }
 
+/**
+ * Distinct service names across all retained logs, sorted. Uses `distinct` on
+ * the time-series metaField (`meta.service`) so it reads bucket metadata rather
+ * than scanning measurements — cheap and bounded only by retention (not a time
+ * window), so quiet-but-retained services stay discoverable in filter dropdowns
+ * regardless of how high KANSOKU_LOGS_TTL_DAYS is set.
+ */
+export async function distinctServiceNames(): Promise<string[]> {
+  const coll = await getLogsCollection();
+  const names = (await coll.distinct("meta.service")) as string[];
+  return names.filter((s) => typeof s === "string" && s.length > 0).sort();
+}
+
 interface ServiceSummary {
   service: string;
   count: number;

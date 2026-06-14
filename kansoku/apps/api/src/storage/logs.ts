@@ -159,46 +159,35 @@ export async function listTraces(opts: ListTracesOptions = {}): Promise<TraceSum
   const tsFilter: { $gte: Date; $lte?: Date } = { $gte: since };
   if (opts.until) tsFilter.$lte = opts.until;
 
-  // Service filter: resolve the most-recent traces that involve this service in
-  // the window first, then (below) aggregate their full cross-service logs.
-  let traceScope: string[] | undefined;
-  if (opts.service) {
-    const ids = (await coll
-      .aggregate(
-        [
-          {
-            $match: {
-              "meta.service": opts.service,
-              traceId: { $exists: true, $ne: "" },
-              ts: tsFilter,
-            },
-          },
-          { $group: { _id: "$traceId", startedAt: { $min: "$ts" } } },
-          { $sort: { startedAt: -1 } },
-          { $limit: limit },
-        ],
-        { allowDiskUse: true },
-      )
-      .toArray()) as Array<{ _id: string }>;
-    traceScope = ids.map((d) => d._id);
-    if (traceScope.length === 0) return [];
-  }
+  // Stage 1 — resolve the `limit` most-recent trace IDs whose logs fall in the
+  // window (optionally involving `service`). Grouping by traceId dedupes; the
+  // window (+ optional service) bounds the scan. Excludes logs with no traceId
+  // (defensive against absent/empty values so they don't form a phantom "" trace).
+  const scopeMatch: Filter<StoredLog> = { traceId: { $exists: true, $ne: "" }, ts: tsFilter };
+  if (opts.service) scopeMatch["meta.service"] = opts.service;
+  const idRows = (await coll
+    .aggregate(
+      [
+        { $match: scopeMatch },
+        { $group: { _id: "$traceId", startedAt: { $min: "$ts" } } },
+        { $sort: { startedAt: -1 } },
+        { $limit: limit },
+      ],
+      { allowDiskUse: true },
+    )
+    .toArray()) as Array<{ _id: string }>;
+  const traceIds = idRows.map((r) => r._id);
+  if (traceIds.length === 0) return [];
 
-  // Exclude logs with no traceId (defensive against absent/empty values so they
-  // don't aggregate into a phantom "" trace). With a service scope, match the
-  // resolved traces by id — full traces, no slice, no ts bound (already ≤ limit).
-  const match: Filter<StoredLog> = traceScope
-    ? { traceId: { $in: traceScope } }
-    : { traceId: { $exists: true, $ne: "" }, ts: tsFilter };
-
+  // Stage 2 — aggregate the FULL traces for those IDs: no service slice and no
+  // ts bound, so each summary matches /traces/:id even for a long-running trace
+  // that started before the window or whose logs span services.
   const rows = (await coll
     .aggregate(
       [
-        { $match: match },
+        { $match: { traceId: { $in: traceIds } } },
         // Order docs ts-descending so $last in each group lands on the earliest
-        // log (the trace root). No raw-row cap before the $group: the window
-        // bounds the scan, and capping rows here truncated to the newest lines
-        // and could drop other traces still inside the window.
+        // log (the trace root).
         { $sort: { ts: -1 } },
         {
           $group: {
