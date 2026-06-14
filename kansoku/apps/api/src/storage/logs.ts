@@ -122,28 +122,30 @@ interface ListTracesOptions {
   service?: string;
 }
 
-// Cap the number of raw log docs the trace-summary aggregation scans, so an
-// unbounded window can't fan out an arbitrarily large $group. At Kagami's
-// scale this comfortably covers the recent traces a dashboard list needs.
-const TRACE_SCAN_CAP = 50_000;
 // Default lookback when the caller gives no `since`, so a bare all-services
-// list is bounded by the time-series time index instead of sorting the whole
-// retained traced-log set. The dashboard always sends an explicit window.
+// list is bounded by the time-series time index instead of scanning the whole
+// retained set. The dashboard always sends an explicit window ("all" = 365d).
+// The aggregation runs with allowDiskUse so a wide window's $group/$sort can
+// spill rather than hit the 100MB in-memory limit; we deliberately do NOT cap
+// raw log rows before the $group — that truncated to the newest log lines and
+// could drop other traces still inside the window.
 const DEFAULT_TRACE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Aggregate the `logs` time-series collection into one TraceSummary per
  * traceId, newest-first by startedAt. Logs without a traceId are excluded.
  * The earliest log in each trace supplies rootService/rootMsg; spanCount is
- * the count of distinct spanIds; durationMs is max(ts)-min(ts); errorCount
- * counts error/fatal lines; services is the distinct set of meta.service.
+ * the count of distinct spanIds; durationMs is max(ts)-min(ts); services is
+ * the distinct set of meta.service. errorCount counts error/fatal log lines
+ * AND failed span events (logged at info level with event.status:"error"), so
+ * a trace whose only failure is a failed span still reports errors.
  *
- * The scan is bounded two ways: a time window ($match on ts, defaulting to the
- * last 7d so the time index can satisfy the $sort before TRACE_SCAN_CAP). When
- * a `service` is given we first resolve the traces that *involve* it, then
- * aggregate the FULL traces — matching by service before the $group would
- * compute each summary (root, errors, services, duration) from only that
- * service's slice of a cross-service trace, disagreeing with the trace detail.
+ * The scan is bounded by the time window ($match on ts, default last 7d), not
+ * by a raw-row cap before the $group (that truncated to the newest log lines
+ * and could hide other traces in the window). When a `service` is given we
+ * first resolve the traces that *involve* it, then aggregate the FULL traces —
+ * matching by service before the $group would compute each summary from only
+ * that service's slice of a cross-service trace.
  */
 export async function listTraces(opts: ListTracesOptions = {}): Promise<TraceSummary[]> {
   const coll = await getLogsCollection();
@@ -162,18 +164,21 @@ export async function listTraces(opts: ListTracesOptions = {}): Promise<TraceSum
   let traceScope: string[] | undefined;
   if (opts.service) {
     const ids = (await coll
-      .aggregate([
-        {
-          $match: {
-            "meta.service": opts.service,
-            traceId: { $exists: true, $ne: "" },
-            ts: tsFilter,
+      .aggregate(
+        [
+          {
+            $match: {
+              "meta.service": opts.service,
+              traceId: { $exists: true, $ne: "" },
+              ts: tsFilter,
+            },
           },
-        },
-        { $group: { _id: "$traceId", startedAt: { $min: "$ts" } } },
-        { $sort: { startedAt: -1 } },
-        { $limit: limit },
-      ])
+          { $group: { _id: "$traceId", startedAt: { $min: "$ts" } } },
+          { $sort: { startedAt: -1 } },
+          { $limit: limit },
+        ],
+        { allowDiskUse: true },
+      )
       .toArray()) as Array<{ _id: string }>;
     traceScope = ids.map((d) => d._id);
     if (traceScope.length === 0) return [];
@@ -187,33 +192,50 @@ export async function listTraces(opts: ListTracesOptions = {}): Promise<TraceSum
     : { traceId: { $exists: true, $ne: "" }, ts: tsFilter };
 
   const rows = (await coll
-    .aggregate([
-      { $match: match },
-      // Newest docs first so the scan cap keeps the most recent activity, and
-      // so $last within each group lands on the earliest log (root) after the
-      // group's internal ordering is by descending ts.
-      { $sort: { ts: -1 } },
-      { $limit: TRACE_SCAN_CAP },
-      {
-        $group: {
-          _id: "$traceId",
-          startedAt: { $min: "$ts" },
-          endedAt: { $max: "$ts" },
-          logCount: { $sum: 1 },
-          errorCount: {
-            $sum: { $cond: [{ $in: ["$meta.level", ["error", "fatal"]] }, 1, 0] },
+    .aggregate(
+      [
+        { $match: match },
+        // Order docs ts-descending so $last in each group lands on the earliest
+        // log (the trace root). No raw-row cap before the $group: the window
+        // bounds the scan, and capping rows here truncated to the newest lines
+        // and could drop other traces still inside the window.
+        { $sort: { ts: -1 } },
+        {
+          $group: {
+            _id: "$traceId",
+            startedAt: { $min: "$ts" },
+            endedAt: { $max: "$ts" },
+            logCount: { $sum: 1 },
+            errorCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $or: [
+                      { $in: ["$meta.level", ["error", "fatal"]] },
+                      // Failed spans log at info level with event.status:"error"
+                      // (to avoid double-registering fingerprints); count them or
+                      // a trace with only failed spans reports "no errors".
+                      { $eq: ["$fields.event.status", "error"] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            services: { $addToSet: "$meta.service" },
+            spanIds: { $addToSet: "$spanId" },
+            // Docs arrive ts-descending, so the last one in the group is the
+            // earliest log — the trace root.
+            rootService: { $last: "$meta.service" },
+            rootMsg: { $last: "$msg" },
           },
-          services: { $addToSet: "$meta.service" },
-          spanIds: { $addToSet: "$spanId" },
-          // Docs arrive ts-descending, so the last one in the group is the
-          // earliest log — the trace root.
-          rootService: { $last: "$meta.service" },
-          rootMsg: { $last: "$msg" },
         },
-      },
-      { $sort: { startedAt: -1 } },
-      { $limit: limit },
-    ])
+        { $sort: { startedAt: -1 } },
+        { $limit: limit },
+      ],
+      { allowDiskUse: true },
+    )
     .toArray()) as Array<{
     _id: string;
     startedAt: Date;
