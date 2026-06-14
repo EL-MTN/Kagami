@@ -2,7 +2,7 @@ import { Search } from "lucide-react";
 import { PageHeader, EmptyState } from "@/components/shell";
 import { LogRow } from "@/components/log-row";
 import { ServiceSelect } from "@/components/service-select";
-import { levelChipFormClassName } from "@/components/level-chips";
+import { levelChipFormClassName } from "@/components/level-chip-styles";
 import type { StoredLog } from "@/lib/api";
 import { searchLogs, listServiceNames } from "@/lib/api";
 import { formatRelative } from "@/lib/format";
