@@ -158,10 +158,12 @@ function axisTicks(totalMs: number): { ms: number; pct: number }[] {
 
 // Primary label for a span row. Prefer the call-op (so the six identical
 // "llm.generate" spans become "answer", "extract", …); otherwise the span
-// name; otherwise the component. When both name and op exist and differ,
-// pair them as "llm.generate · answer" so the wrapped operation stays visible.
+// name; otherwise the component. When both name and op exist and differ, lead
+// with the op — "answer · llm.generate" — so the disambiguating op stays
+// visible even when the headline truncates (leading with the shared name would
+// truncate every row to an identical "llm.generate · …").
 function spanHeadline(span: Span): string {
-  if (span.op && span.name && span.op !== span.name) return `${span.name} · ${span.op}`;
+  if (span.op && span.name && span.op !== span.name) return `${span.op} · ${span.name}`;
   return span.op ?? span.name ?? span.component;
 }
 

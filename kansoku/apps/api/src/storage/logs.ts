@@ -203,8 +203,15 @@ export async function listTraces(opts: ListTracesOptions = {}): Promise<TraceSum
                       { $in: ["$meta.level", ["error", "fatal"]] },
                       // Failed spans log at info level with event.status:"error"
                       // (to avoid double-registering fingerprints); count them or
-                      // a trace with only failed spans reports "no errors".
-                      { $eq: ["$fields.event.status", "error"] },
+                      // a trace with only failed spans reports "no errors". Gate
+                      // on kind:"span" so an ordinary structured event that merely
+                      // carries status:"error" doesn't inflate the count.
+                      {
+                        $and: [
+                          { $eq: ["$fields.event.kind", "span"] },
+                          { $eq: ["$fields.event.status", "error"] },
+                        ],
+                      },
                     ],
                   },
                   1,
